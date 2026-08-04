@@ -260,4 +260,10 @@ connectDB().then(async () => {
       } catch (err) { console.error("Agreement expiry sweep failed:", err); }
     });
   });
+}).catch((err) => {
+  // A clear, one-line reason instead of an unhandled-rejection topology dump. The usual cause
+  // in production is the database host not being reachable — check MONGO_URI and that the host's
+  // IP is allowed in MongoDB Atlas → Network Access (0.0.0.0/0 works for a start).
+  console.error("❌ Server failed to start:", err instanceof Error ? err.message : err);
+  process.exit(1);
 });
