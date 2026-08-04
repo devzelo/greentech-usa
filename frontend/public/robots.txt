@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /reset-password
+Disallow: /uploads/
+Disallow: /api/
+
+Sitemap: https://gt-usa.com/sitemap.xml

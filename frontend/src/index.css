@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Twemoji Country Flags", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Twemoji Country Flags", "Outfit", sans-serif;
+  --color-primary: #10B981;
+  --color-secondary: #3B82F6;
+}
+
+@layer base {
+  body {
+    @apply font-sans text-slate-900 bg-white antialiased;
+  }
+
+  a,
+  button,
+  [role="button"],
+  label[for],
+  summary,
+  select,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="file"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  input:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@utility bg-gt-gradient {
+  background: linear-gradient(94.88deg, #10B981 12.68%, #3B82F6 110.15%);
+}
+
+@utility text-gt-gradient {
+  background: linear-gradient(94.88deg, #10B981 12.68%, #3B82F6 110.15%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility glass {
+  @apply bg-white/80 backdrop-blur-md border border-white/20;
+}
+
+/* Rich-text editor (proposal builder) */
+.rte-surface:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.rte-surface h2 { font-size: 1.05rem; font-weight: 700; margin: 0.6em 0 0.3em; color: #0f172a; }
+.rte-surface h3 { font-size: 0.95rem; font-weight: 700; margin: 0.5em 0 0.25em; color: #0f172a; }
+.rte-surface p { margin: 0 0 0.5em; }
+.rte-surface ul { list-style: disc; padding-left: 1.4em; margin: 0 0 0.5em; }
+.rte-surface ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 0.5em; }

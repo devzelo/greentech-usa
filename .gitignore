@@ -1,0 +1,25 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+.env
+.claude
+
+# Uploaded files (user content, large — not source)
+uploads/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Editor / OS
+.vscode/
+Thumbs.db
+
+# Internal spec docs & scratch (not part of the app)
+docs/
+grill-me.md

@@ -1,0 +1,418 @@
+import { Fragment, useEffect, useState } from "react";
+import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye } from "lucide-react";
+import {
+  fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
+  addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
+  invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
+  invoicePaid, invoiceRemaining,
+  type ApiInvoice, type ApiProcurementPO, type ApiVendor,
+} from "../../lib/api";
+import { buildPoPackage } from "../../lib/poPdf";
+import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
+import PdfPreviewModal from "./PdfPreviewModal";
+import { toast } from "../../lib/toast";
+import { useDialogs } from "../../lib/useDialogs";
+
+// Invoice Sent / Invoice Received with real payments.
+//   · Every invoice tracks its total, what's been paid, and what's left.
+//   · Recording a payment on a RECEIVED invoice posts a matching row in Expenses automatically,
+//     with the receipt attached — so paying a bill is tracked in one place.
+//   · A vendor invoice on a Procurement PO can be pulled straight in ("From a purchase order").
+
+const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
+const inp = "w-full px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium";
+const finp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
+
+const STATUS_CLS: Record<string, string> = {
+  Draft: "bg-slate-100 text-slate-500",
+  Sent: "bg-indigo-50 text-indigo-600",
+  Unpaid: "bg-amber-50 text-amber-600",
+  "Partially Paid": "bg-blue-50 text-blue-600",
+  Paid: "bg-emerald-50 text-emerald-600",
+  Overdue: "bg-red-50 text-red-600",
+  Disputed: "bg-orange-50 text-orange-600",
+  Cancelled: "bg-slate-100 text-slate-400",
+};
+
+export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged }: {
+  projectId: string; kind: "sent" | "received"; canEdit: boolean;
+  projectInfo?: ProjectPdfInfo;
+  /** Called after a payment posts/removes an expense, so the Expenses tab can reload. */
+  onExpensesChanged?: () => void;
+}) {
+  const isSent = kind === "sent";
+  const [rows, setRows] = useState<ApiInvoice[]>([]);
+  const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
+  const [vendors, setVendors] = useState<ApiVendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [payFor, setPayFor] = useState<ApiInvoice | null>(null);
+  const [pay, setPay] = useState({ amount: "", date: new Date().toISOString().slice(0, 10), method: "Bank transfer", reference: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [poPicker, setPoPicker] = useState(false);
+  // The PO document opened from a linked-PO chip in the table.
+  const [poPreview, setPoPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
+  // New-invoice popup (Invoice Sent) — the client asked for a form instead of an inline blank row.
+  const [newOpen, setNewOpen] = useState(false);
+  const [draft, setDraft] = useState({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
+  const { confirm, dialogs } = useDialogs();
+
+  const viewPO = (po: ApiProcurementPO) => setPoPreview({
+    title: `Purchase Order ${po.poNo}${po.vendorName ? ` · ${po.vendorName}` : ""}`,
+    fileName: `PO_${po.poNo}.pdf`,
+    build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob,
+  });
+
+  const heading = isSent ? "Invoices Sent" : "Invoices Received";
+  const partyLabel = isSent ? "Client" : "Vendor / Subcontractor";
+  const numLabel = isSent ? "Invoice #" : "Bill #";
+  const dateLabel = isSent ? "Date sent" : "Date received";
+  const statusOpts = isSent
+    ? ["Draft", "Sent", "Unpaid", "Partially Paid", "Paid", "Overdue", "Cancelled"]
+    : ["Unpaid", "Partially Paid", "Paid", "Overdue", "Disputed", "Cancelled"];
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [inv, p, v] = await Promise.all([
+        fetchInvoices(projectId, kind),
+        fetchProcurementPOs(projectId).catch(() => [] as ApiProcurementPO[]),
+        fetchVendors(projectId).catch(() => [] as ApiVendor[]),
+      ]);
+      setRows(inv); setPOs(p); setVendors(v);
+    } catch { /* keep */ } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, kind]);
+
+  const patch = (inv: ApiInvoice) => setRows((p) => p.map((x) => (x._id === inv._id ? inv : x)));
+  const edit = (id: string, field: keyof ApiInvoice, value: string) =>
+    setRows((p) => p.map((r) => (r._id === id ? { ...r, [field]: value } : r)));
+  const save = (id: string, field: keyof ApiInvoice, value: string) =>
+    updateInvoice(projectId, id, { [field]: value })
+      // Merge only the saved field plus the server-derived status — replacing the whole row
+      // would clobber whatever the user is typing in another cell right now.
+      .then((srv) => setRows((p) => p.map((r) => (r._id === id ? { ...r, [field]: srv[field], status: srv.status } : r))))
+      .catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+
+  // Totals across the whole tab — the client asked for these at the top.
+  const total = rows.reduce((s, r) => s + n(r.amount), 0);
+  const paid = rows.reduce((s, r) => s + invoicePaid(r), 0);
+  const remaining = Math.max(0, total - paid);
+
+  // New invoice via a form popup (client request) — fill the fields, then it's added as a row.
+  const openNew = () => {
+    setDraft({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
+    setNewOpen(true);
+  };
+  const submitNew = async () => {
+    setSaving(true);
+    try {
+      const row = await addInvoice(projectId, {
+        type: kind, number: draft.number.trim(), party: draft.party.trim(),
+        description: draft.description.trim(), amount: draft.amount.trim(), date: draft.date,
+        status: isSent ? "Sent" : "Unpaid",
+      });
+      setRows((p) => [...p, row]); setNewOpen(false);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not add.", "error"); }
+    finally { setSaving(false); }
+  };
+  const removeRow = async (row: ApiInvoice) => {
+    if (!(await confirm({ title: "Delete invoice?", message: "Its payments and the expenses they created are removed too.", confirmLabel: "Delete" }))) return;
+    try { await deleteInvoice(projectId, row._id); setRows((p) => p.filter((r) => r._id !== row._id)); onExpensesChanged?.(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
+  const pullFromPO = async (po: ApiProcurementPO) => {
+    if (!n(po.invoiceAmount) && !n(po.total)) { toast(`PO ${po.poNo} has no invoice amount yet — add it on the PO first.`, "error"); return; }
+    try {
+      const inv = await invoiceFromPO(projectId, po._id);
+      setRows((p) => (p.some((r) => r._id === inv._id) ? p.map((r) => (r._id === inv._id ? inv : r)) : [...p, inv]));
+      setPoPicker(false); setOpenId(inv._id);
+      toast(`Invoice for PO ${po.poNo} added.`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not pull the PO invoice.", "error"); }
+  };
+  const openPay = (row: ApiInvoice) => {
+    setPay({ amount: String(invoiceRemaining(row) || ""), date: new Date().toISOString().slice(0, 10), method: "Bank transfer", reference: "", notes: "" });
+    setPayFor(row);
+  };
+  const submitPay = async () => {
+    if (!payFor) return;
+    if (!n(pay.amount)) { toast("Enter the amount paid.", "error"); return; }
+    setSaving(true);
+    try {
+      patch(await addInvoicePayment(projectId, payFor._id, pay));
+      if (!isSent) onExpensesChanged?.();
+      toast(isSent ? "Payment recorded." : "Payment recorded — added to Expenses.", "success");
+      setPayFor(null);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not record the payment.", "error"); }
+    finally { setSaving(false); }
+  };
+  const removePayment = async (row: ApiInvoice, pid: string) => {
+    if (!(await confirm({ title: "Remove payment?", message: "The linked expense row is removed too.", confirmLabel: "Remove" }))) return;
+    try { patch(await deleteInvoicePayment(projectId, row._id, pid)); onExpensesChanged?.(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not remove.", "error"); }
+  };
+
+  if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
+
+  return (
+    <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-display font-bold text-slate-900">{heading}</h3>
+          <p className="text-xs font-medium text-slate-400 mt-1">
+            {rows.length} invoice{rows.length === 1 ? "" : "s"}. Record payments against each one — what's paid and what's left is worked out for you.
+            {!isSent && " Every payment is also logged in Expenses with its receipt."}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          {canEdit && !isSent && (
+            <button onClick={() => setPoPicker(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"><Link2 size={13} /> From a purchase order</button>
+          )}
+          {canEdit && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary"><Plus size={13} /> {isSent ? "New invoice" : "Log invoice"}</button>}
+        </div>
+      </div>
+
+      {/* Totals — how much was invoiced, paid and is still outstanding */}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
+            <span className="text-lg font-display font-bold text-slate-700 leading-none">{rows.length}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoices</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+            <span className="text-lg font-display font-bold text-primary leading-none">{money(total)}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Total invoiced" : "Total billed"}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
+            <span className="text-lg font-display font-bold text-emerald-600 leading-none">{money(paid)}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Received" : "Paid"}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100">
+            <span className="text-lg font-display font-bold text-amber-600 leading-none">{money(remaining)}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remaining</span>
+          </span>
+        </div>
+      )}
+
+      <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+        <table className="w-full min-w-[1000px] text-xs">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              <th className="w-8 px-3 py-3" />
+              {[numLabel, partyLabel, "Description", "Total", "Paid", "Remaining", dateLabel, "Status", ""].map((h) => (
+                <th key={h} className="text-left px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {rows.length === 0 && <tr><td colSpan={10} className="px-3 py-10 text-center text-slate-400 italic">No invoices yet.</td></tr>}
+            {rows.map((row) => {
+              const isOpen = openId === row._id;
+              const rPaid = invoicePaid(row), rLeft = invoiceRemaining(row);
+              const po = pos.find((p) => p._id === row.poId);
+              return (
+                <Fragment key={row._id}>
+                  <tr className="hover:bg-slate-50/40 align-top">
+                    <td className="px-3 py-2"><button onClick={() => setOpenId(isOpen ? null : row._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button></td>
+                    <td className="px-1 py-1"><input className={inp} value={row.number} disabled={!canEdit} onChange={(e) => edit(row._id, "number", e.target.value)} onBlur={(e) => save(row._id, "number", e.target.value)} /></td>
+                    <td className="px-1 py-1">
+                      <input className={inp} value={row.party} disabled={!canEdit} onChange={(e) => edit(row._id, "party", e.target.value)} onBlur={(e) => save(row._id, "party", e.target.value)} />
+                      {po && <button onClick={() => viewPO(po)} title={`Open the PO ${po.poNo} document`} className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/5 border border-primary/15 text-[9px] font-bold text-primary hover:bg-primary hover:text-white transition-colors"><Eye size={9} /> PO {po.poNo}</button>}
+                    </td>
+                    <td className="px-1 py-1"><input className={inp} value={row.description} disabled={!canEdit} onChange={(e) => edit(row._id, "description", e.target.value)} onBlur={(e) => save(row._id, "description", e.target.value)} placeholder="—" /></td>
+                    <td className="px-1 py-1"><input className={`${inp} font-bold`} value={row.amount} disabled={!canEdit} onChange={(e) => edit(row._id, "amount", e.target.value)} onBlur={(e) => save(row._id, "amount", e.target.value)} placeholder="0.00" /></td>
+                    <td className="px-3 py-2 font-bold text-emerald-600 whitespace-nowrap">{rPaid ? money(rPaid) : "—"}</td>
+                    <td className={`px-3 py-2 font-bold whitespace-nowrap ${rLeft > 0 ? "text-amber-600" : "text-slate-400"}`}>{n(row.amount) ? money(rLeft) : "—"}</td>
+                    <td className="px-1 py-1"><input type="date" className={inp} value={row.date} disabled={!canEdit} onChange={(e) => edit(row._id, "date", e.target.value)} onBlur={(e) => save(row._id, "date", e.target.value)} /></td>
+                    <td className="px-1 py-1">
+                      <select className={`${inp} font-bold`} value={row.status} disabled={!canEdit} onChange={(e) => { edit(row._id, "status", e.target.value); save(row._id, "status", e.target.value); }}>
+                        {statusOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+                        {!statusOpts.includes(row.status) && <option value={row.status}>{row.status}</option>}
+                      </select>
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        {canEdit && <button onClick={() => openPay(row)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold hover:bg-emerald-100" title={isSent ? "Record an amount received from the client" : "Record a payment made"}><Wallet size={11} /> {isSent ? "Received" : "Pay"}</button>}
+                        {canEdit && <button onClick={() => removeRow(row)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {isOpen && (
+                    <tr className="bg-slate-50/40">
+                      <td colSpan={10} className="px-6 py-4 space-y-3">
+                        {/* Payments */}
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payments ({row.payments.length})</p>
+                          {row.payments.length === 0 ? (
+                            <p className="text-[11px] text-slate-400 italic">No payments recorded yet.</p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {row.payments.map((p) => (
+                                <div key={p._id} className="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-slate-100 px-3 py-2">
+                                  <span className="text-xs font-bold text-emerald-700">{money(n(p.amount))}</span>
+                                  <span className="text-[11px] text-slate-500">{p.date}</span>
+                                  {p.method && <span className="text-[11px] text-slate-500">· {p.method}</span>}
+                                  {p.reference && <span className="text-[11px] text-slate-400">· ref {p.reference}</span>}
+                                  {p.notes && <span className="text-[11px] text-slate-400 truncate max-w-[16rem]">· {p.notes}</span>}
+                                  {p.expenseId && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wider">In Expenses</span>}
+                                  <div className="flex items-center gap-1.5 ml-auto">
+                                    {p.attachments.map((a) => (
+                                      <a key={a._id} href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline max-w-[10rem] truncate" title={a.name}><FileText size={10} />{a.name}</a>
+                                    ))}
+                                    {canEdit && (
+                                      <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200" title="Upload the receipt / proof">
+                                        <Upload size={10} /> Receipt
+                                        <input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { try { patch(await uploadPaymentReceipt(projectId, row._id, p._id, f)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} />
+                                      </label>
+                                    )}
+                                    {canEdit && <button onClick={() => removePayment(row, p._id)} className="text-slate-300 hover:text-red-500"><X size={12} /></button>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* The invoice document itself */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoice document</span>
+                          {row.attachments.map((a) => (
+                            <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-white border border-slate-100 text-[10px] font-bold text-slate-600">
+                              <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[12rem] truncate inline-flex items-center gap-1" title={a.name}><FileText size={10} />{a.name}</a>
+                              {canEdit && <button onClick={async () => { try { patch(await deleteInvoiceFile(projectId, row._id, a._id)); } catch { /* ignore */ } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>}
+                            </span>
+                          ))}
+                          {row.attachments.length === 0 && <span className="text-[11px] text-slate-400 italic">none</span>}
+                          {canEdit && (
+                            <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200">
+                              <Upload size={10} /> Upload
+                              <input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { try { patch(await uploadInvoiceFile(projectId, row._id, f)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} />
+                            </label>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="border-t border-slate-100 bg-slate-50/60">
+                <td colSpan={4} className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Totals</td>
+                <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{money(total)}</td>
+                <td className="px-3 py-2.5 font-bold text-emerald-600 whitespace-nowrap">{money(paid)}</td>
+                <td className="px-3 py-2.5 font-bold text-amber-600 whitespace-nowrap">{money(remaining)}</td>
+                <td colSpan={3} />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {dialogs}
+      {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
+
+      {/* New invoice — a form popup instead of a blank inline row */}
+      {newOpen && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setNewOpen(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+              <p className="text-sm font-bold text-slate-900">{isSent ? "New invoice" : "Log invoice"}</p>
+              <button onClick={() => setNewOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numLabel}
+                  <input className={`${finp} mt-1`} value={draft.number} onChange={(e) => setDraft({ ...draft, number: e.target.value })} placeholder={isSent ? "GT-1001" : "Bill no."} /></label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{dateLabel}
+                  <input type="date" className={`${finp} mt-1`} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
+              </div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{partyLabel}
+                <input className={`${finp} mt-1`} value={draft.party} onChange={(e) => setDraft({ ...draft, party: e.target.value })} placeholder={isSent ? "Client name" : "Vendor / subcontractor"} /></label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description
+                <textarea rows={2} className={`${finp} mt-1 resize-y`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What is this invoice for?" /></label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount
+                <input className={`${finp} mt-1 font-bold`} value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="0.00" /></label>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setNewOpen(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
+                <button onClick={submitNew} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Add invoice</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record a payment */}
+      {payFor && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPayFor(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+              <div>
+                <p className="text-sm font-bold text-slate-900">{isSent ? "Record a payment received" : "Record a payment made"}</p>
+                <p className="text-[10px] text-slate-400">{payFor.number || "Invoice"}{payFor.party ? ` · ${payFor.party}` : ""} · {money(n(payFor.amount))} total, {money(invoiceRemaining(payFor))} outstanding</p>
+              </div>
+              <button onClick={() => setPayFor(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount paid
+                  <input className={`${finp} mt-1 font-bold`} value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} placeholder="0.00" /></label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date
+                  <input type="date" className={`${finp} mt-1`} value={pay.date} onChange={(e) => setPay({ ...pay, date: e.target.value })} /></label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Method
+                  <select className={`${finp} mt-1`} value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
+                    {["Bank transfer", "Cheque", "Cash", "Card", "Other"].map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select></label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reference
+                  <input className={`${finp} mt-1`} value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} placeholder="Transfer / cheque no." /></label>
+              </div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Proof / remarks
+                <textarea rows={2} className={`${finp} mt-1 resize-y`} value={pay.notes} onChange={(e) => setPay({ ...pay, notes: e.target.value })} placeholder="e.g. Paid against invoice 2214, cleared 12 Aug" /></label>
+              <p className="text-[11px] text-slate-400">
+                {isSent ? "Upload the remittance advice after saving." : "This payment is also added to the Expenses tab. Upload the receipt after saving."}
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setPayFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
+                <button onClick={submitPay} disabled={saving} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />} Record payment</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pull a vendor invoice in from a purchase order */}
+      {poPicker && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPoPicker(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+              <div>
+                <p className="text-sm font-bold text-slate-900">Invoice from a purchase order</p>
+                <p className="text-[10px] text-slate-400">Pulls the vendor's invoice number, amount and date from the PO.</p>
+              </div>
+              <button onClick={() => setPoPicker(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 max-h-80 overflow-y-auto space-y-1">
+              {pos.length === 0 ? (
+                <p className="text-sm text-slate-400 italic text-center py-6">No purchase orders in this project yet.</p>
+              ) : pos.map((po) => {
+                const already = rows.some((r) => r.poId === po._id);
+                return (
+                  <button key={po._id} onClick={() => pullFromPO(po)} disabled={already} className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 text-left border border-transparent hover:border-slate-100 disabled:opacity-50 disabled:hover:bg-transparent">
+                    <div className="min-w-0 flex-grow">
+                      <p className="text-sm font-bold text-slate-800">PO {po.poNo} · {po.vendorName || "vendor"}</p>
+                      <p className="text-[10px] font-bold text-slate-400">{po.invoiceNo ? `Invoice ${po.invoiceNo} · ` : ""}{money(n(po.invoiceAmount || po.total))}{already ? " · already added" : ""}</p>
+                    </div>
+                    {!already && <Plus size={15} className="text-slate-300 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
