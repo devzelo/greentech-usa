@@ -1,4 +1,8 @@
-// Thin fetch wrapper — all requests go through Vite's /api proxy → localhost:4000
+// Thin fetch wrapper. In dev, requests are relative and go through Vite's /api proxy → localhost:4000.
+// In production (split hosting), set VITE_API_URL to the backend's origin (e.g. https://api.example.com)
+// so the browser calls the backend directly; /api and /uploads are prefixed with it. Leave it unset
+// to keep same-origin/relative behaviour.
+export const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || "").replace(/\/+$/, "");
 
 // ── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -37,9 +41,11 @@ export async function refreshFileToken(): Promise<void> {
 
 /** Append the current file token to an /uploads URL so the browser can open it directly. */
 export function withFileToken(url: string): string {
+  if (!url.startsWith('/uploads')) return url;
   const token = getFileToken();
-  if (!token || !url.startsWith('/uploads')) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  const withTok = token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url;
+  // Prefix the backend origin in production (split hosting) so files load cross-origin.
+  return `${API_BASE}${withTok}`;
 }
 
 /** Mint a signed single-file link (7-day expiry) safe to share outside the app. */
@@ -368,7 +374,7 @@ export async function uploadProposalAsset(projectId: string, file: File): Promis
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/proposal-assets`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/proposal-assets`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -475,7 +481,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`/api${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
   if (res.status === 401) {
     clearAuthToken();
     // Bounce to login if we're inside the dashboard
@@ -574,7 +580,7 @@ export async function deleteUser(id: string): Promise<{ message: string }> {
 // Download the proposal as a Word (.docx) document (built server-side).
 export async function downloadProposalDocx(projectId: string, kind: 'technical' | 'financial'): Promise<void> {
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/proposal-docx?kind=${kind}`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/proposal-docx?kind=${kind}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -597,7 +603,7 @@ export async function downloadProposalDocx(projectId: string, kind: 'technical' 
 // Download a per-project zip export. Triggers a save dialog in the browser.
 export async function downloadProjectExport(projectId: string, suggestedName?: string): Promise<void> {
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/export`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/export`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -729,7 +735,7 @@ export async function updatePartnerProfile(projectId: string, body: PartnerProfi
 export async function uploadPartnerAsset(projectId: string, file: File): Promise<{ url: string }> {
   const fd = new FormData(); fd.append("file", file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/partner-profile/asset`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/partner-profile/asset`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -738,7 +744,7 @@ export async function uploadProjectContract(id: string, file: File): Promise<Api
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${id}/contract`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api/projects/${id}/contract`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return normalise(await res.json() as Record<string, unknown>);
 }
@@ -751,7 +757,7 @@ export async function uploadProjectImage(id: string, file: File): Promise<ApiPro
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${id}/image`, {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/image`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -824,7 +830,7 @@ export async function uploadExpenseAttachment(projectId: string, eid: string, fi
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/expenses/${eid}/attachments`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/expenses/${eid}/attachments`, {
     method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
   });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
@@ -944,7 +950,7 @@ export async function deleteSubInvoice(projectId: string, iid: string) {
 export async function uploadSubInvoiceAttachment(projectId: string, iid: string, file: File) {
   const fd = new FormData(); fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/sub-invoices/${iid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sub-invoices/${iid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json() as Promise<ApiSubInvoice>;
 }
@@ -1023,7 +1029,7 @@ export async function deleteInvoicePayment(projectId: string, iid: string, pid: 
 async function invoiceUpload(path: string, file: File): Promise<ApiInvoice> {
   const fd = new FormData(); fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api${path}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${path}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1150,7 +1156,7 @@ export async function uploadDocument(projectId: string, file: File, section: str
   if (replace) fd.append('replace', 'true');
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/documents`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/documents`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -1216,7 +1222,7 @@ export interface ApiPublicProjectDetail {
 }
 
 export async function fetchPublicProject(id: string): Promise<ApiPublicProjectDetail> {
-  const res = await fetch(`/api/public/projects/${encodeURIComponent(id)}`);
+  const res = await fetch(`${API_BASE}/api/public/projects/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
@@ -1226,7 +1232,7 @@ export async function uploadGalleryFile(projectId: string, file: File): Promise<
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/gallery`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/gallery`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -1270,7 +1276,7 @@ export async function uploadProcurementAttachment(projectId: string, rid: string
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/projects/${projectId}/procurement-rows/${rid}/attachments`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/procurement-rows/${rid}/attachments`, {
     method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
   });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
@@ -1422,7 +1428,7 @@ export async function updateSubmittalRevision(projectId: string, sid: string, ri
 export async function uploadSubmittalAttachment(projectId: string, sid: string, rid: string, file: File, component: SubmittalComponent, decision = ''): Promise<ApiSubmittalRevision> {
   const fd = new FormData(); fd.append('file', file); fd.append('component', component); if (decision) fd.append('decision', decision);
   const token = getAuthToken();
-  const res = await fetch(`/api${subBase(projectId)}/${sid}/revisions/${rid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${subBase(projectId)}/${sid}/revisions/${rid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1486,7 +1492,7 @@ export async function awardVendorQuote(projectId: string, rid: string, qid: stri
 export async function uploadVendorQuoteAttachment(projectId: string, rid: string, qid: string, file: File): Promise<ApiVendorQuote> {
   const fd = new FormData(); fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api${rfqBase(projectId)}/${rid}/quotes/${qid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${rfqBase(projectId)}/${rid}/quotes/${qid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1521,7 +1527,7 @@ export async function deleteShipmentRow(projectId: string, sid: string, rid: str
 export async function uploadShipmentFile(projectId: string, sid: string, rid: string, file: File): Promise<ApiShipment> {
   const fd = new FormData(); fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api${shipBase(projectId)}/${sid}/rows/${rid}/files`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${shipBase(projectId)}/${sid}/rows/${rid}/files`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1547,7 +1553,7 @@ export async function deleteSubAgreement(projectId: string, aid: string): Promis
 export async function uploadSubAgreementFile(projectId: string, aid: string, file: File, kind: SubAgreementDocKind): Promise<ApiSubAgreement> {
   const fd = new FormData(); fd.append("file", file); fd.append("kind", kind);
   const token = getAuthToken();
-  const res = await fetch(`/api${subAgrBase(projectId)}/${aid}/files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${subAgrBase(projectId)}/${aid}/files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1623,7 +1629,7 @@ export async function deleteRequestResponse(projectId: string, rid: string, resp
 async function reqUpload(path: string, file: File): Promise<ApiProjectRequest> {
   const fd = new FormData(); fd.append("file", file);
   const token = getAuthToken();
-  const res = await fetch(`/api${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1674,7 +1680,7 @@ export async function deleteTechnicalDoc(projectId: string, did: string): Promis
 export async function uploadTechnicalDocFile(projectId: string, did: string, file: File, category: string, remarks = "", folder = ""): Promise<ApiTechnicalDoc> {
   const fd = new FormData(); fd.append("file", file); if (remarks) fd.append("remarks", remarks);
   const token = getAuthToken();
-  const res = await fetch(`/api${techBase(projectId)}/${did}/files?category=${encodeURIComponent(category)}&folder=${encodeURIComponent(folder)}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${techBase(projectId)}/${did}/files?category=${encodeURIComponent(category)}&folder=${encodeURIComponent(folder)}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1693,7 +1699,7 @@ export async function deleteTechnicalDocFile(projectId: string, did: string, fid
 export async function uploadTechnicalDocClientFile(projectId: string, did: string, file: File): Promise<ApiTechnicalDoc> {
   const fd = new FormData(); fd.append("file", file);
   const token = getAuthToken();
-  const res = await fetch(`/api${techBase(projectId)}/${did}/client-files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${techBase(projectId)}/${did}/client-files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1703,7 +1709,7 @@ export async function deleteTechnicalDocClientFile(projectId: string, did: strin
 // Streams the folder-by-folder ZIP and triggers a browser download.
 export async function exportTechnicalDocsZip(projectId: string, did?: string): Promise<void> {
   const token = getAuthToken();
-  const res = await fetch(`/api${techBase(projectId)}/export${did ? `?did=${did}` : ""}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const res = await fetch(`${API_BASE}/api${techBase(projectId)}/export${did ? `?did=${did}` : ""}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -1730,7 +1736,7 @@ export async function deleteTableRow(projectId: string, rid: string): Promise<vo
 export async function uploadTableRowFile(projectId: string, rid: string, file: File, folder = ""): Promise<ApiTableRow> {
   const fd = new FormData(); fd.append("file", file);
   const token = getAuthToken();
-  const res = await fetch(`/api${tblBase(projectId)}/${rid}/files?folder=${encodeURIComponent(folder)}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${tblBase(projectId)}/${rid}/files?folder=${encodeURIComponent(folder)}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1833,7 +1839,7 @@ export async function cancelAgreement(ctx: AgreementCtx, aid: string, note = "")
 }
 async function agrMultipart(path: string, fd: FormData): Promise<ApiAgreement> {
   const token = getAuthToken();
-  const res = await fetch(`/api${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1889,7 +1895,7 @@ export async function deleteProcurementPO(projectId: string, pid: string): Promi
 export async function uploadPOPartyImage(projectId: string, pid: string, file: File, target: "signature" | "stamp"): Promise<ApiProcurementPO> {
   const fd = new FormData(); fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api${poBase(projectId)}/${pid}/party-image?target=${target}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${poBase(projectId)}/${pid}/party-image?target=${target}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -1900,7 +1906,7 @@ export async function attachPOFile(projectId: string, pid: string, file: { fileP
 export async function uploadPOAttachment(projectId: string, pid: string, file: File, kind: string): Promise<ApiProcurementPO> {
   const fd = new FormData(); fd.append('file', file); fd.append('kind', kind);
   const token = getAuthToken();
-  const res = await fetch(`/api${poBase(projectId)}/${pid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api${poBase(projectId)}/${pid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json();
 }
@@ -2090,7 +2096,7 @@ export async function createRfpDocument(title: string, docType: string, file?: F
   fd.append("docType", docType);
   if (file) fd.append("file", file);
   const token = getAuthToken();
-  const res = await fetch(`/api/rfp-documents`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api/rfp-documents`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const err = await res.json().catch(() => ({ error: res.statusText })); throw new Error(err.error || res.statusText); }
   return res.json();
 }
@@ -2162,7 +2168,7 @@ export async function uploadCompanyFile(file: File, opts: { kind: "company" | "c
   if (opts.tabId) fd.append('tabId', opts.tabId);
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch(`/api/company/files`, {
+  const res = await fetch(`${API_BASE}/api/company/files`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
