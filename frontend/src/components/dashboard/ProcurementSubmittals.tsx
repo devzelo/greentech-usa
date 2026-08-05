@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor } from "lucide-react";
+import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw } from "lucide-react";
 import {
-  fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal,
+  fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
   addSubmittalRevision, updateSubmittalRevision, uploadSubmittalAttachment, deleteSubmittalAttachment,
   addSubmittalAttachmentFromDocument, attachmentUrl, fetchProcurementItems, fetchProcurementSections, fetchDocuments, getAuthUser, uploadDocument,
   type ApiSubmittal, type ApiSubmittalRevision, type SubmittalDisposition, type SubmittalComponent, type ApiProcurementItem, type ApiProcurementSection, type ApiDocument,
@@ -66,14 +66,19 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
   // Partners & subcontractors don't get the "Choose from project documents" option — employees only.
   const isGuest = getAuthUser()?.role === "subcontractor";
 
+  const [showArchived, setShowArchived] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
-      const [s, it, secs] = await Promise.all([fetchSubmittals(projectId), fetchProcurementItems(projectId).catch(() => []), fetchProcurementSections(projectId).catch(() => [])]);
+      const [s, it, secs] = await Promise.all([fetchSubmittals(projectId, showArchived), fetchProcurementItems(projectId).catch(() => []), fetchProcurementSections(projectId).catch(() => [])]);
       setSubs(s); setItems(it.filter((x) => x.status !== "Cancelled")); setSections(secs);
     } catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, showArchived]);
+  const archiveSub = async (sid: string, next: boolean) => {
+    try { await setSubmittalArchived(projectId, sid, next); setSubs((p) => p.filter((s) => s._id !== sid)); }
+    catch { /* ignore */ }
+  };
 
   // §C9 — when jumped here from a BOQ item, open that item's submittal and flash it for ~2.5s.
   useEffect(() => {
@@ -485,6 +490,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
           <td className="px-2 py-2 align-top">
             <div className="flex items-center justify-end gap-1">
               {canEdit && <button onClick={() => setManageId(sub._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — edit, upload, add revision"><Settings2 size={12} /> Manage</button>}
+              {canEdit && <button onClick={() => archiveSub(sub._id, !sub.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500 hover:bg-white" title={sub.archived ? "Restore" : "Archive"}>{sub.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
               {canEdit && <button onClick={() => removeSub(sub._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete"><Trash2 size={13} /></button>}
             </div>
           </td>
@@ -505,7 +511,10 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
           <h3 className="text-xl font-display font-bold text-slate-900">Submittals</h3>
           <p className="text-xs font-medium text-slate-400 mt-1">One package per product. Each revision is kept (locked once superseded). Internal — the client never sees this table.</p>
         </div>
-        {canEdit && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New submittal</button>}
+        <div className="flex items-center gap-2">
+          {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
+          {canEdit && !showArchived && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New submittal</button>}
+        </div>
       </div>
 
       {/* How this tab works */}

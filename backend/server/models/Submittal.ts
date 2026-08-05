@@ -13,6 +13,7 @@ export interface ISubmittal extends Document {
   specSection: string;   // CSI / spec division
   status: string;        // coarse internal state: Draft | Submitted | Closed
   currentRevisionNo: number;
+  archived: boolean;
   addedByName: string;
 }
 
@@ -27,6 +28,7 @@ const SubmittalSchema = new Schema<ISubmittal>(
     specSection: { type: String, default: "" },
     status: { type: String, default: "Draft" },
     currentRevisionNo: { type: Number, default: 0 },
+    archived: { type: Boolean, default: false },
     addedByName: { type: String, default: "" },
   },
   { timestamps: true }

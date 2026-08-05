@@ -24,7 +24,8 @@ async function logEvent(req: AuthedRequest, e: { entityId: string; action: strin
 // List packages, each with their revisions attached.
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const subs = await Submittal.find({ projectId: req.params.id }).sort({ createdAt: 1 }).lean();
+    const archivedClause = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
+    const subs = await Submittal.find({ projectId: req.params.id, ...archivedClause }).sort({ createdAt: 1 }).lean();
     const revs = await SubmittalRevision.find({ projectId: req.params.id }).sort({ revisionNo: 1 }).lean();
     const byPkg: Record<string, unknown[]> = {};
     for (const r of revs) (byPkg[String(r.submittalId)] ||= []).push(r);
@@ -55,6 +56,7 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (blockSub(req, res)) return;
     const patch: Record<string, unknown> = {};
     for (const f of PKG_FIELDS) if (f in (req.body || {})) patch[f] = req.body[f];
+    if (typeof req.body?.archived === "boolean") patch.archived = req.body.archived;
     const sub = await Submittal.findOneAndUpdate({ _id: req.params.sid, projectId: req.params.id }, patch, { new: true });
     if (!sub) return res.status(404).json({ error: "Not found" });
     res.json(sub);

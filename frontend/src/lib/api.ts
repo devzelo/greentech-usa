@@ -1420,12 +1420,15 @@ export interface ApiSubmittalRevision {
 export interface ApiSubmittal {
   _id: string; projectId: string; itemId: string; title: string; productName: string;
   manufacturer: string; modelNo: string; specSection: string; status: string; currentRevisionNo: number;
-  addedByName: string; revisions: ApiSubmittalRevision[];
+  archived?: boolean; addedByName: string; revisions: ApiSubmittalRevision[];
 }
 const subBase = (projectId: string) => `/projects/${projectId}/submittals`;
 
-export async function fetchSubmittals(projectId: string): Promise<ApiSubmittal[]> {
-  return request(subBase(projectId));
+export async function fetchSubmittals(projectId: string, archived = false): Promise<ApiSubmittal[]> {
+  return request(`${subBase(projectId)}${archived ? "?archived=true" : ""}`);
+}
+export async function setSubmittalArchived(projectId: string, sid: string, archived: boolean): Promise<ApiSubmittal> {
+  return request(`${subBase(projectId)}/${sid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
 export async function createSubmittal(projectId: string, body: { itemId?: string; title?: string; productName?: string; manufacturer?: string; modelNo?: string; specSection?: string }): Promise<ApiSubmittal> {
   return request(subBase(projectId), { method: 'POST', body: JSON.stringify(body) });
