@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, Send, MessageSquare } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, Send, MessageSquare, Archive, RotateCcw } from "lucide-react";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
@@ -47,12 +47,17 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     onPick(s ? { signerName: s.name, signerTitle: s.jobTitle || "", signatureUrl: s.signatureUrl } : { signerName: "", signerTitle: "", signatureUrl: "" });
   };
 
+  const [showArchived, setShowArchived] = useState(false);
   const load = async () => {
     setLoading(true);
-    try { setRows(await fetchProjectRequests(projectId, category)); } catch { /* keep */ } finally { setLoading(false); }
+    try { setRows(await fetchProjectRequests(projectId, category, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, category]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, category, showArchived]);
   useEffect(() => { fetchSignatories().then(setSignatories).catch(() => {}); }, []);
+  const archive = async (r: ApiProjectRequest, next: boolean) => {
+    try { await updateProjectRequest(projectId, r._id, { archived: next }); setRows((p) => p.filter((x) => x._id !== r._id)); toast(next ? "Request archived." : "Request restored.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
   const patch = (r: ApiProjectRequest) => setRows((p) => p.map((x) => (x._id === r._id ? r : x)));
 
   const create = async (send = false) => {
@@ -111,9 +116,12 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] text-slate-400">{rows.length} request{rows.length === 1 ? "" : "s"}. Each has an auto-number; the client's replies are kept under it.</p>
-        {canEdit && <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> New request</button>}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-[11px] text-slate-400">{rows.length} request{rows.length === 1 ? "" : "s"}{showArchived ? " (archived)" : ""}. Each has an auto-number; the client's replies are kept under it.</p>
+        <div className="flex items-center gap-2">
+          {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
+          {canEdit && !showArchived && <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> New request</button>}
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -150,6 +158,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openPreview(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
                           <button onClick={() => download(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Download"><Download size={14} /></button>
+                          {canEdit && <button onClick={() => archive(r, !r.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500" title={r.archived ? "Restore" : "Archive"}>{r.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                           {canEdit && <button onClick={() => remove(r)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                         </div>
                       </td>

@@ -34,6 +34,7 @@ export interface IProjectRequest extends Document {
   stampUrl: string;
   contextLines: Array<{ label: string; value: string }>;  // custom info lines printed on the document
   sections: Array<{ title: string; body: string }>;       // extra named rich-text sections (HTML)
+  archived: boolean;   // hidden from the normal list; restorable from the Archived view
   attachments: IRequestFile[];  // our drafted request document(s)
   responses: IRequestResponse[];
   addedById: string;
@@ -67,6 +68,7 @@ const ProjectRequestSchema = new Schema<IProjectRequest>(
     stampUrl: { type: String, default: "" },
     contextLines: { type: [{ label: { type: String, default: "" }, value: { type: String, default: "" } }], default: [] },
     sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" } }], default: [] },
+    archived: { type: Boolean, default: false },
     attachments: { type: [FileSchema], default: [] },
     responses: { type: [ResponseSchema], default: [] },
     addedById: { type: String, default: "" },

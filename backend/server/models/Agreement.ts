@@ -46,6 +46,7 @@ export interface IAgreement extends Document {
   // agreement file, which becomes the document itself (preview/download serve the file as-is).
   documentMode: "built" | "uploaded";
   uploadedDocument: { name: string; filePath: string; fileType: string; size: string } | null;
+  archived: boolean;   // hidden from the normal list; restorable from the Archived view
 
   sections: {
     scope: string;
@@ -106,6 +107,7 @@ const AgreementSchema = new Schema<IAgreement>(
     jvLogoUrl: { type: String, default: "" },
     documentMode: { type: String, enum: ["built", "uploaded"], default: "built" },
     uploadedDocument: { type: { name: String, filePath: String, fileType: String, size: String }, default: null },
+    archived: { type: Boolean, default: false },
 
     sections: {
       scope: { type: String, default: "" },

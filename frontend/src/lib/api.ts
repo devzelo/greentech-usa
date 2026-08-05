@@ -1613,6 +1613,7 @@ export interface ApiProjectRequest {
   signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string;
   contextLines?: Array<{ label: string; value: string }>;
   sections?: Array<{ title: string; body: string }>;
+  archived?: boolean;
   attachments: ApiRequestFile[]; responses: ApiRequestResponse[];
   addedById: string; addedByName: string; createdAt?: string;
 }
@@ -1627,13 +1628,16 @@ export const REQUEST_TYPES: string[] = [
   "Request for Site Instruction", "Request for Site Access", "Request for Acceptance", "Custom Request",
 ];
 const reqBase = (projectId: string) => `/projects/${projectId}/requests`;
-export async function fetchProjectRequests(projectId: string, category?: RequestCategory): Promise<ApiProjectRequest[]> {
-  return request(`${reqBase(projectId)}${category ? `?category=${category}` : ""}`);
+export async function fetchProjectRequests(projectId: string, category?: RequestCategory, archived = false): Promise<ApiProjectRequest[]> {
+  const parts: string[] = [];
+  if (category) parts.push(`category=${category}`);
+  if (archived) parts.push("archived=true");
+  return request(`${reqBase(projectId)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
 export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: Array<{ title: string; body: string }> }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
-export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections">>): Promise<ApiProjectRequest> {
+export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived">>): Promise<ApiProjectRequest> {
   return request(`${reqBase(projectId)}/${rid}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 export async function deleteProjectRequest(projectId: string, rid: string): Promise<void> { await request(`${reqBase(projectId)}/${rid}`, { method: "DELETE" }); }
@@ -1791,6 +1795,7 @@ export interface ApiAgreement {
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
+  archived?: boolean;
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1818,9 +1823,15 @@ const agrBase = (ctx: AgreementCtx) =>
   : ctx.kind === "general" ? `/general-agreements`
   : `/projects/${ctx.projectId}/agreements`;
 
-export async function fetchAgreements(ctx: AgreementCtx): Promise<ApiAgreement[]> {
-  const qs = ctx.kind === "project" ? `?entityType=${encodeURIComponent(ctx.entityType)}&entityId=${encodeURIComponent(ctx.entityId)}` : "";
-  return request(`${agrBase(ctx)}${qs}`);
+export async function fetchAgreements(ctx: AgreementCtx, archived = false): Promise<ApiAgreement[]> {
+  const parts: string[] = [];
+  if (ctx.kind === "project") parts.push(`entityType=${encodeURIComponent(ctx.entityType)}`, `entityId=${encodeURIComponent(ctx.entityId)}`);
+  if (archived) parts.push("archived=true");
+  return request(`${agrBase(ctx)}${parts.length ? `?${parts.join("&")}` : ""}`);
+}
+/** Archive or restore an agreement (hidden from the normal list). */
+export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archived: boolean): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
 export interface AgreementInput {
   name?: string; agreementType?: string; templateId?: string;

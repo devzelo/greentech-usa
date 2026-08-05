@@ -134,6 +134,8 @@ function buildAgreementRouter(ctx: Ctx): Router {
       const qId = req.query.entityId ? String(req.query.entityId) : "";
       if (qType) filter.ownerEntityType = qType;
       if (qId) filter.ownerEntityId = qId;
+      // Archived agreements are hidden unless staff explicitly asks for the archived view.
+      filter.archived = p.staff && String(req.query.archived) === "true" ? true : { $ne: true };
       if (!p.staff) {
         // A recipient never sees drafts or cancelled records — only what was actually issued.
         filter.status = { $nin: ["Draft", "Cancelled"] };
@@ -210,6 +212,10 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can edit agreements." });
       const ag = await findAg(req);
       if (!ag) return res.status(404).json({ error: "Not found" });
+      // Archive/restore is allowed in any status (it doesn't change the agreement's terms).
+      if (typeof req.body?.archived === "boolean" && Object.keys(req.body).length === 1) {
+        ag.archived = req.body.archived; await ag.save(); return res.json(ag);
+      }
       if (ag.status === "Signed") return res.status(400).json({ error: "A signed agreement is locked. Only cancel/expire are possible." });
       const b = req.body || {};
       for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : 200);

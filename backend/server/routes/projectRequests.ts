@@ -31,8 +31,9 @@ const cleanSections = (v: unknown): Array<{ title: string; body: string }> =>
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const filter: Record<string, string> = { projectId: req.params.id };
+    const filter: Record<string, unknown> = { projectId: req.params.id };
     if (req.query.category) filter.category = String(req.query.category);
+    filter.archived = String(req.query.archived) === "true" ? true : { $ne: true };
     res.json(await ProjectRequest.find(filter).sort({ createdAt: -1 }));
   } catch (err) { next(err); }
 });
@@ -79,6 +80,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     for (const f of FIELDS) if (typeof b[f] === "string") (doc as unknown as Record<string, unknown>)[f] = b[f].slice(0, f === "description" ? 20000 : 200);
     if (Array.isArray(b.contextLines)) doc.contextLines = cleanLines(b.contextLines);
     if (Array.isArray(b.sections)) doc.sections = cleanSections(b.sections);
+    if (typeof b.archived === "boolean") doc.archived = b.archived;
     if (b.status && ["Draft", "Sent", "Responded", "Closed", "Cancelled"].includes(b.status)) doc.status = b.status as RequestStatus;
     await doc.save();
     res.json(doc);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, History, Ban, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, History, Ban, CheckCircle2, Archive, RotateCcw } from "lucide-react";
 import {
-  fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement,
+  fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchMe, attachmentUrl, companyFileUrl,
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
@@ -78,12 +78,17 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [mySignatureUrl, setMySignatureUrl] = useState("");
   const [signName, setSignName] = useState("");
   const { confirm, prompt, dialogs } = useDialogs();
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    try { setList(await fetchAgreements(ctx)); } catch { /* keep */ } finally { setLoading(false); }
+    try { setList(await fetchAgreements(ctx, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx)]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx), showArchived]);
+  const archive = async (ag: ApiAgreement, next: boolean) => {
+    try { patch(await setAgreementArchived(ctx, ag._id, next)); if (next !== showArchived) setList((p) => p.filter((x) => x._id !== ag._id)); toast(next ? "Agreement archived." : "Agreement restored.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
 
   const patch = (ag: ApiAgreement) => setList((p) => p.map((x) => (x._id === ag._id ? ag : x)));
 
@@ -294,9 +299,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Handshake size={12} /> Agreements</p>
-        {canManage && <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors"><Plus size={12} /> Create agreement</button>}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Handshake size={12} /> Agreements{showArchived && <span className="text-amber-600">· archived</span>}</p>
+        <div className="flex items-center gap-2">
+          {canManage && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
+          {canManage && !showArchived && <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors"><Plus size={12} /> Create agreement</button>}
+        </div>
       </div>
 
       {list.length === 0 ? (
@@ -345,6 +353,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     )}
                     {canManage && ag.status !== "Signed" && (
                       <button onClick={() => remove(ag)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+                    )}
+                    {canManage && (
+                      <button onClick={() => archive(ag, !ag.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500" title={ag.archived ? "Restore" : "Archive"}>{ag.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
                     )}
                     <button onClick={() => setHistoryFor(historyFor === ag._id ? null : ag._id)} className="p-1.5 rounded text-slate-300 hover:text-slate-600" title="History">
                       {historyFor === ag._id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
