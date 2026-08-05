@@ -247,30 +247,32 @@ export default function Documents() {
         </p>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-fit">
-        <button
-          onClick={() => setTab("projects")}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${tab === "projects" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
-        >
-          <FolderOpen size={14} /> Project Documents
-        </button>
-        {!isGuest && (
+      {/* Sub-tabs — horizontally scrollable strip so nothing is ever cut off on mobile. */}
+      <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
           <button
-            onClick={() => setTab("company")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${tab === "company" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
+            onClick={() => setTab("projects")}
+            className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${tab === "projects" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
           >
-            <Building2 size={14} /> Company Documents
+            <FolderOpen size={14} className="shrink-0" /> Project<span className="hidden sm:inline"> Documents</span>
           </button>
-        )}
-        {isAdmin && (
-          <button
-            onClick={() => setTab("classified")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${tab === "classified" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
-          >
-            <ShieldAlert size={14} /> Classified Documents
-          </button>
-        )}
+          {!isGuest && (
+            <button
+              onClick={() => setTab("company")}
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${tab === "company" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
+            >
+              <Building2 size={14} className="shrink-0" /> Company<span className="hidden sm:inline"> Documents</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setTab("classified")}
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${tab === "classified" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
+            >
+              <ShieldAlert size={14} className="shrink-0" /> Classified<span className="hidden sm:inline"> Documents</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {tab === "projects" && (

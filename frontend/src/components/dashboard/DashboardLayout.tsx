@@ -183,12 +183,13 @@ export default function DashboardLayout() {
         <div className="flex-grow overflow-y-auto py-6 px-4 space-y-8">
           <div className="space-y-1">
             {sidebarLinks.map((link) => (
-              <Link 
-                key={link.name} 
+              <Link
+                key={link.name}
                 to={link.path}
+                onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
                 className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all group ${
-                  location.pathname === link.path 
-                  ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20" 
+                  location.pathname === link.path
+                  ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
@@ -202,12 +203,13 @@ export default function DashboardLayout() {
              {isSidebarOpen && <p className="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Account</p>}
              <div className="space-y-1">
                 {secondaryLinks.map((link) => (
-                  <Link 
-                    key={link.name} 
+                  <Link
+                    key={link.name}
                     to={link.path}
+                    onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
                     className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all group ${
-                      location.pathname === link.path 
-                      ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20" 
+                      location.pathname === link.path
+                      ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                   >

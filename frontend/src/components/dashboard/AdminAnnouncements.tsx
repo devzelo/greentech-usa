@@ -52,13 +52,13 @@ export default function AdminAnnouncements() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-10">
-      <div className="flex items-center justify-between gap-3 mb-6">
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="bg-white rounded-3xl sm:rounded-[3rem] border border-slate-100 shadow-sm p-5 sm:p-10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
-          <h2 className="text-xl font-display font-bold text-slate-900 flex items-center gap-2"><Megaphone size={20} className="text-primary" /> Public Announcements</h2>
+          <h2 className="text-lg sm:text-xl font-display font-bold text-slate-900 flex items-center gap-2"><Megaphone size={20} className="text-primary shrink-0" /> Public Announcements</h2>
           <p className="text-xs text-slate-400 mt-1">Shown in the glass banner on the public website hero. Holidays, notices, or events.</p>
         </div>
-        <button onClick={seed} disabled={seeding} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 shrink-0">
+        <button onClick={seed} disabled={seeding} className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 shrink-0 self-start sm:self-auto">
           {seeding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Load this year's holidays
         </button>
       </div>

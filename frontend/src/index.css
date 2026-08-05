@@ -49,6 +49,16 @@
   @apply bg-white/80 backdrop-blur-md border border-white/20;
 }
 
+/* Hide the scrollbar on horizontally-scrollable strips (mobile tab bars, tables). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+
 /* Rich-text editor (proposal builder) */
 .rte-surface:empty::before {
   content: attr(data-placeholder);

@@ -171,13 +171,15 @@ export default function Reminders() {
 
       {/* Status tabs + per-tab project filter */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-fit">
-          {TABS.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${tab === t ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
-              {t === "All" ? "All" : STATUS_META[t].label}
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${tab === t ? "bg-white/20" : "bg-slate-100 text-slate-500"}`}>{counts[t] || 0}</span>
-            </button>
-          ))}
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
+            {TABS.map((t) => (
+              <button key={t} onClick={() => setTab(t)} className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${tab === t ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
+                {t === "All" ? "All" : STATUS_META[t].label}
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${tab === t ? "bg-white/20" : "bg-slate-100 text-slate-500"}`}>{counts[t] || 0}</span>
+              </button>
+            ))}
+          </div>
         </div>
         {projectsInTab.length > 0 && (
           <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 outline-none shadow-sm">

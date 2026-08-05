@@ -82,10 +82,12 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-fit">
-        {topBtn("rfp", "RFP", FileText)}
-        {topBtn("award", "Award Docs", Award)}
-        {topBtn("ntp", "NTPs", FileCheck2)}
+      <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
+          {topBtn("rfp", "RFP", FileText)}
+          {topBtn("award", "Award Docs", Award)}
+          {topBtn("ntp", "NTPs", FileCheck2)}
+        </div>
       </div>
 
       <div className="space-y-4">
