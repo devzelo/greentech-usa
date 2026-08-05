@@ -13,7 +13,7 @@ import {
 import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
 fetchSubAgreements, createSubAgreement, deleteSubAgreement, uploadSubAgreementFile, deleteSubAgreementFile, type ApiSubAgreement, type SubAgreementDocKind, fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
 import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind } from "../../lib/api";
-import { uploadProposalAsset, uploadInlineImage } from "../../lib/api";
+import { uploadProposalAsset, uploadInlineImage, setProjectArchived } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 import ProcurementBOQ from "./ProcurementBOQ";
 import ProcurementMasterLog from "./ProcurementMasterLog";
@@ -2421,12 +2421,25 @@ export default function ProjectWorkspace() {
                 </PDFDownloadLink>
               )}
 
+              {canManage && (
+                <button
+                  onClick={async () => {
+                    if (!id || !project) return;
+                    try { const u = await setProjectArchived(id, !project.archived); setProject(u); toast(u.archived ? "Project archived — hidden from the lists." : "Project restored.", "success"); }
+                    catch (e) { toast(e instanceof Error ? e.message : "Could not update.", "error"); }
+                  }}
+                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-amber-600 text-xs font-bold shadow-sm"
+                >
+                  <Archive size={14} /> {project.archived ? "Restore" : "Archive"}
+                </button>
+              )}
+
               {(canManage || (isGuest && Object.values(myGuestPerms).includes("edit"))) && (
               <button
                 onClick={handleSave}
                 disabled={!canEdit || saving}
                 title={!canEdit ? "Switch to a tab you can edit to save." : ""}
-                className={`px-7 py-2.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+                className={`px-4 sm:px-7 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
                   !canEdit
                     ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                     : "bg-slate-900 text-white shadow-slate-900/20 hover:bg-primary"

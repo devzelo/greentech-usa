@@ -22,6 +22,7 @@ export interface IProject extends Document {
   };
   description: string;
   reportNotes: string;
+  archived: boolean;   // archived projects are hidden from normal lists, shown in the Archived view
   owner: string;
   ownerId: mongoose.Types.ObjectId | null;
   image: string;
@@ -146,6 +147,7 @@ const ProjectSchema = new Schema<IProject>(
     },
     description: { type: String, default: "" },
     reportNotes: { type: String, default: "" }, // rich-text HTML narrative shown in the project report PDF
+    archived: { type: Boolean, default: false },
     owner: { type: String, default: "" },
     ownerId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     image: { type: String, default: "" },

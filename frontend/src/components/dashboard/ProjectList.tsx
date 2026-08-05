@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
-  MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2
+  MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -34,6 +34,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const [view, setView] = useState<"grid" | "list">("list");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [archivedView, setArchivedView] = useState(false);
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
   const [loading, setLoading] = useState(true);
@@ -41,7 +42,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
 
   useEffect(() => {
     setLoading(true);
-    const scope = mode === "my" ? "mine" : mode === "drafts" ? "drafts" : "all";
+    const scope = archivedView ? "archived" : mode === "my" ? "mine" : mode === "drafts" ? "drafts" : "all";
     fetchProjects(scope)
       .then((ps) => {
         setProjects(ps);
@@ -52,7 +53,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       })
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, archivedView]);
 
   const filteredRaw = projects.filter((p) => {
     const q = search.toLowerCase();
@@ -208,6 +209,16 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             );
           })}
         </div>
+        {/* Archived view toggle — staff only; archived projects are hidden from the normal lists. */}
+        {isStaff && mode !== "drafts" && (
+          <button
+            onClick={() => setArchivedView((v) => !v)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border shadow-sm ${archivedView ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-400 border-slate-100 hover:text-slate-900"}`}
+            title={archivedView ? "Back to active projects" : "Show archived projects"}
+          >
+            <Archive size={12} /> {archivedView ? "Viewing archived" : "Archived"}
+          </button>
+        )}
       </div>
 
       {/* Loading */}

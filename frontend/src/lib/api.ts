@@ -124,6 +124,7 @@ export interface ApiProject {
   contractFile?: { name: string; filePath: string; fileType: string; size: string } | null;
   description: string;
   reportNotes?: string; // rich-text HTML narrative for the project report PDF
+  archived?: boolean;
   fiscal: string;
   compliance: string;
   value: string; // contract value / project worth (free-form)
@@ -666,9 +667,13 @@ export async function fetchSignatories(): Promise<ApiSignatory[]> { return reque
 
 // ── Projects ────────────────────────────────────────────────────────────────
 
-export async function fetchProjects(scope: 'mine' | 'all' | 'drafts' = 'all'): Promise<ApiProject[]> {
+export async function fetchProjects(scope: 'mine' | 'all' | 'drafts' | 'archived' = 'all'): Promise<ApiProject[]> {
   const data = await request<Record<string, unknown>[]>(`/projects?scope=${scope}`);
   return data.map(normalise);
+}
+/** Archive or restore a project (archived projects are hidden from the normal lists). */
+export async function setProjectArchived(id: string, archived: boolean): Promise<ApiProject> {
+  return updateProject(id, { archived } as Partial<ApiProject>);
 }
 
 export async function fetchProject(id: string): Promise<ApiProject> {

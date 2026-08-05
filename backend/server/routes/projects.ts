@@ -75,31 +75,36 @@ router.get("/my-expenses", async (req: AuthedRequest, res: Response, next: NextF
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const raw = String(req.query.scope || "all");
-    const scope: "mine" | "all" | "drafts" =
-      raw === "mine" ? "mine" : raw === "drafts" ? "drafts" : "all";
+    const scope: "mine" | "all" | "drafts" | "archived" =
+      raw === "mine" ? "mine" : raw === "drafts" ? "drafts" : raw === "archived" ? "archived" : "all";
     const userId = req.user!.userId;
     const me = await User.findById(userId).lean();
     const empId = (me as { empId?: string } | null)?.empId || "";
     const role = (me as { role?: string } | null)?.role || req.user!.role;
+    // Every scope except "archived" hides archived projects; "archived" shows only those.
+    const archiveClause = scope === "archived" ? { archived: true } : { archived: { $ne: true } };
 
     let filter: Record<string, unknown> = {};
     if (role === "subcontractor") {
-      // Guests only ever see the (non-draft) projects they are assigned to.
-      filter = { "guests.userId": userId, status: { $ne: "Draft" } };
+      // Guests only ever see the (non-draft, non-archived) projects they are assigned to.
+      filter = { "guests.userId": userId, status: { $ne: "Draft" }, ...archiveClause };
       const projects = await Project.find(filter).sort({ createdAt: -1 });
       return res.json(projects);
     }
     if (scope === "mine") {
       const ownerClause: Record<string, unknown>[] = [{ ownerId: userId }];
       if (empId) ownerClause.push({ assignedEmployees: empId });
-      filter = { $or: ownerClause, status: { $ne: "Draft" } };
+      filter = { $or: ownerClause, status: { $ne: "Draft" }, ...archiveClause };
     } else if (scope === "drafts") {
       // Drafts are private to their creator
-      filter = { ownerId: userId, status: "Draft" };
+      filter = { ownerId: userId, status: "Draft", ...archiveClause };
+    } else if (scope === "archived") {
+      // Archived — staff see all archived projects.
+      filter = { archived: true };
     } else {
-      // "all" â€” exclude other employees' drafts; show only your own drafts here
+      // "all" — exclude other employees' drafts; show only your own drafts here
       filter = {
-        $or: [{ status: { $ne: "Draft" } }, { ownerId: userId }],
+        $and: [{ $or: [{ status: { $ne: "Draft" } }, { ownerId: userId }] }, archiveClause],
       };
     }
 
