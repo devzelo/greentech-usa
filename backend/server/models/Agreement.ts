@@ -58,6 +58,7 @@ export interface IAgreement extends Document {
     ndaText: string;
     ndaFile: { name: string; url: string } | null;  // the attached NDA (from classified NDA Files)
   };
+  extraSections: Array<{ title: string; body: string }>;  // custom named rich-text sections (HTML)
 
   signatures: {
     company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
@@ -119,6 +120,7 @@ const AgreementSchema = new Schema<IAgreement>(
       ndaText: { type: String, default: "" },
       ndaFile: { type: { name: String, url: String }, default: null },
     },
+    extraSections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" } }], default: [] },
 
     signatures: {
       company: {

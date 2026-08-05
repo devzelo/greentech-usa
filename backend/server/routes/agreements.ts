@@ -27,6 +27,12 @@ type Ctx = "user" | "project" | "general";
 
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
 const today = () => new Date().toISOString().slice(0, 10);
+// Custom named rich-text sections on an agreement (title + HTML body).
+const cleanExtraSections = (v: unknown): Array<{ title: string; body: string }> =>
+  Array.isArray(v)
+    ? v.map((s) => ({ title: String((s as { title?: unknown })?.title ?? "").slice(0, 120), body: String((s as { body?: unknown })?.body ?? "").slice(0, 20000) }))
+       .filter((s) => s.title || s.body).slice(0, 20)
+    : [];
 
 function act(ag: IAgreement, actorName: string, action: string, note = "") {
   ag.activity.push({ at: new Date(), actorName, action, note });
@@ -192,6 +198,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
         endDate: String(b.endDate || ""),
         partySnapshot: b.partySnapshot || {},
         sections: b.sections || {},
+        extraSections: cleanExtraSections(b.extraSections),
         letterhead: b.letterhead === "jv" ? "jv" : "gt",
         jvLogoUrl: String(b.jvLogoUrl || ""),
         documentMode: b.documentMode === "uploaded" ? "uploaded" : "built",
@@ -223,6 +230,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (typeof b.jvLogoUrl === "string") ag.jvLogoUrl = b.jvLogoUrl;
       if (b.documentMode === "built" || b.documentMode === "uploaded") ag.documentMode = b.documentMode;
       if (b.sections && typeof b.sections === "object") ag.sections = { ...ag.sections, ...b.sections };
+      if (Array.isArray(b.extraSections)) ag.extraSections = cleanExtraSections(b.extraSections);
       // The party snapshot freezes at send time (spec §3) — applied only while still a Draft.
       // Once sent it is silently ignored so that editing the TERMS of a sent/rejected agreement
       // (and re-sending it) still works.

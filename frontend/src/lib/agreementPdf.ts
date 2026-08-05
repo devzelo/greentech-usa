@@ -233,6 +233,16 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     else cur.para(body, font, 9, INK);
   }
 
+  // Custom named sections added by the user (title + rich-text body).
+  for (const s of ag.extraSections || []) {
+    if (!s.title && !s.body?.trim()) continue;
+    idx++;
+    cur.need(40); cur.gap(6);
+    cur.text(`${idx}. ${s.title || "Section"}`, bold, 11, INK);
+    cur.gap(2);
+    if (s.body?.trim()) { if (/<[a-z][\s\S]*>/i.test(s.body)) await renderHtml(cur, doc, s.body, font, bold); else cur.para(s.body, font, 9, INK); }
+  }
+
   // 9) Signature blocks — signature + stamp kept together with each party's details.
   cur.gap(18);
   cur.need(130);

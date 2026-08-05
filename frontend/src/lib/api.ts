@@ -1796,6 +1796,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
+  extraSections?: Array<{ title: string; body: string }>;
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1840,6 +1841,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
+  extraSections?: Array<{ title: string; body: string }>;
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
 }

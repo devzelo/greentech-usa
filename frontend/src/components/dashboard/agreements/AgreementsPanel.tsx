@@ -56,6 +56,7 @@ type Draft = {
   party2: ApiAgreementParty;
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
+  extraSections: Array<{ title: string; body: string }>;
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
 
@@ -133,6 +134,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       party2: { ...BLANK_PARTY, ...(defaults?.party2 || {}) },
       contextLines: defaults?.contextLines?.map((l) => ({ ...l })) || [],
       sections: { ...BLANK_SECTIONS },
+      extraSections: [],
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "" },
     });
     setEditor({ aid: null });
@@ -148,6 +150,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       party2: { ...BLANK_PARTY, ...(ag.partySnapshot?.party2 || {}) },
       contextLines: (ag.partySnapshot?.contextLines || []).map((l) => ({ ...l })),
       sections: { ...BLANK_SECTIONS, ...(ag.sections || {}) },
+      extraSections: (ag.extraSections || []).map((s) => ({ ...s })),
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
     });
     setEditor({ aid: ag._id });
@@ -189,6 +192,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     documentMode: draft!.documentMode,
     ...(isDraftStatus ? { partySnapshot: { party1: party1(), party2: draft!.party2, contextLines: draft!.contextLines.filter((l) => l.label || l.value) } } : {}),
     sections: draft!.sections,
+    extraSections: draft!.extraSections.filter((s) => s.title || s.body),
     companySignature: draft!.company,
   });
 
@@ -597,6 +601,18 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   </div>
                 ))}
               </div>
+
+              {/* Custom named sections — each a titled rich-text block (tables, pictures, lists). */}
+              {draft.extraSections.map((s, i) => (
+                <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
+                  <div className="flex items-center gap-2">
+                    <input className={`${inp} font-bold`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
+                    <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
+                  </div>
+                  <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />
+                </div>
+              ))}
+              <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
 
               {/* Company signer */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
