@@ -58,6 +58,32 @@
   }
 }
 
+/*
+ * Mobile touch targets (WCAG 2.5.5 / touch guideline: ~44px minimum).
+ * Applied only below the `sm` breakpoint so desktop density is unchanged.
+ * - Any button whose direct child is an icon gets a comfortable 44px tap
+ *   height and centres its glyph.
+ * - Icon-only actions (tooltip + glyph, no visible text label) additionally
+ *   get a full 44x44 square. The `[title]` filter targets exactly the
+ *   icon-action idiom used across the dashboard (title="Preview"/"Delete"…).
+ * The :not([class*="hidden"]) guard avoids un-hiding responsively-hidden
+ * controls, and links are left to size naturally to avoid breaking card
+ * layouts that legitimately use block/grid.
+ */
+@media (max-width: 639px) {
+  button:has(> svg):not([class*="hidden"]) {
+    min-height: 44px;
+  }
+  button[title]:has(> svg):not([class*="hidden"]),
+  a[title]:has(> svg):not([class*="hidden"]) {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
 
 /* Rich-text editor (proposal builder) */
 .rte-surface:empty::before {
