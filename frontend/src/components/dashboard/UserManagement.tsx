@@ -171,25 +171,29 @@ export default function UserManagement() {
             {filtered.map((u) => {
               const isSelf = me?.id === u._id;
               return (
-                <div key={u._id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/60 transition-colors">
-                  <div className="w-11 h-11 rounded-full bg-gt-gradient p-0.5 shrink-0">
-                    {u.avatarUrl
-                      ? <img src={u.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
-                      : <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-sm font-bold text-primary">{(u.name || u.email || "?").charAt(0).toUpperCase()}</div>}
-                  </div>
-                  <div className="min-w-0 flex-grow">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-900 truncate">{u.name}</p>
-                      {isSelf && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">You</span>}
+                <div key={u._id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 sm:px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
+                  {/* Identity — avatar + name/email + role. Takes the full width so the name is never crushed by the actions. */}
+                  <div className="flex items-center gap-3 min-w-0 flex-grow">
+                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gt-gradient p-0.5 shrink-0">
+                      {u.avatarUrl
+                        ? <img src={u.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
+                        : <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-sm font-bold text-primary">{(u.name || u.email || "?").charAt(0).toUpperCase()}</div>}
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{u.email}{u.empId ? ` · ${u.empId}` : ""}</p>
+                    <div className="min-w-0 flex-grow">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-slate-900 truncate">{u.name || u.email}</p>
+                        {isSelf && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">You</span>}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">{u.email}{u.empId ? ` · ${u.empId}` : ""}</p>
+                    </div>
+                    <span className={`text-[10px] sm:text-[11px] font-bold px-2 sm:px-2.5 py-1 rounded-full uppercase tracking-wide shrink-0 ${roleBadge(u.role)}`}>{u.role}</span>
                   </div>
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide shrink-0 ${roleBadge(u.role)}`}>{u.role}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => setAgreementsFor(u)} title="Agreements — create, send & track this employee's agreements" className="p-2.5 rounded-xl text-slate-400 hover:bg-primary/5 hover:text-primary transition-colors"><Handshake size={16} /></button>
-                    <button onClick={() => openEdit(u)} title="Edit" className="p-2.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil size={16} /></button>
-                    <button onClick={() => { setPwTarget(u); setNewPw(""); }} title="Reset password" className="p-2.5 rounded-xl text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"><KeyRound size={16} /></button>
-                    <button onClick={() => setDeleteTarget(u)} disabled={isSelf} title={isSelf ? "You can't delete your own account" : "Delete"} className="p-2.5 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"><Trash2 size={16} /></button>
+                  {/* Actions — their own right-aligned row on mobile, inline on desktop. */}
+                  <div className="flex items-center gap-1 shrink-0 justify-end">
+                    <button onClick={() => setAgreementsFor(u)} title="Agreements — create, send & track this employee's agreements" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-primary/5 hover:text-primary transition-colors"><Handshake size={16} /></button>
+                    <button onClick={() => openEdit(u)} title="Edit" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil size={16} /></button>
+                    <button onClick={() => { setPwTarget(u); setNewPw(""); }} title="Reset password" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"><KeyRound size={16} /></button>
+                    <button onClick={() => setDeleteTarget(u)} disabled={isSelf} title={isSelf ? "You can't delete your own account" : "Delete"} className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"><Trash2 size={16} /></button>
                   </div>
                 </div>
               );

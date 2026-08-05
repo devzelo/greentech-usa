@@ -139,7 +139,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
             const url = attachmentUrl(d.filePath);
             const when = (() => { try { return new Date(d.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; } })();
             return (
-              <div key={d._id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-100 hover:bg-slate-50/60">
+              <div key={d._id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-3 py-2 rounded-xl border border-slate-100 hover:bg-slate-50/60">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                 <span className="shrink-0 inline-flex items-center justify-center w-9 h-7 rounded-lg bg-slate-100 text-[11px] font-extrabold text-slate-600">v{d.version}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -152,7 +153,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
                   </div>
                   <p className="text-[10px] text-slate-400 truncate">{d.fileType.toUpperCase()} · {d.size} · {d.createdByName || "—"} · {when}</p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                </div>
+                <div className="flex items-center gap-1 shrink-0 justify-end">
                   <button onClick={() => window.open(url, "_blank")} title="Preview" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Eye size={14} /></button>
                   <button onClick={() => printFile(url)} title="Print" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Printer size={14} /></button>
                   <button onClick={() => downloadFile(url, d.fileName)} title="Download" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Download size={14} /></button>

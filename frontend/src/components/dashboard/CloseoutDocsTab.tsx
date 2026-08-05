@@ -216,18 +216,22 @@ function ManageModal({ projectId, row, canEdit, projectName, confirm, prompt, on
   };
   const toggleFolder = (name: string) => setOpenFolders((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
   const fileRow = (f: ApiTableFile) => (
-    <div key={f._id} className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
-      <FileText size={15} className="text-slate-400 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <button onClick={() => setView(f)} className="text-xs font-semibold text-slate-700 hover:text-primary truncate block text-left">{f.name}</button>
-        {canEdit
-          ? <input defaultValue={f.remarks || ""} placeholder="Add remarks…" onBlur={(e) => { if (e.target.value !== (f.remarks || "")) saveRemark(f._id, e.target.value); }} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px]" />
-          : f.remarks && <p className="text-[11px] text-slate-500">{f.remarks}</p>}
+    <div key={f._id} className="flex flex-col sm:flex-row sm:items-start gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
+      <div className="flex items-start gap-2 min-w-0 flex-1">
+        <FileText size={15} className="text-slate-400 shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <button onClick={() => setView(f)} className="text-xs font-semibold text-slate-700 hover:text-primary truncate block text-left w-full">{f.name}</button>
+          {canEdit
+            ? <input defaultValue={f.remarks || ""} placeholder="Add remarks…" onBlur={(e) => { if (e.target.value !== (f.remarks || "")) saveRemark(f._id, e.target.value); }} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px]" />
+            : f.remarks && <p className="text-[11px] text-slate-500">{f.remarks}</p>}
+        </div>
       </div>
-      <button onClick={() => setView(f)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
-      <ShareMenu fileName={f.name} fileUrl={tableRowFileUrl(f)} projectName={projectName} />
-      <a href={tableRowFileUrl(f)} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
-      {canEdit && <button onClick={() => removeFile(f)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>}
+      <div className="flex items-center gap-1 shrink-0 justify-end">
+        <button onClick={() => setView(f)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
+        <ShareMenu fileName={f.name} fileUrl={tableRowFileUrl(f)} projectName={projectName} />
+        <a href={tableRowFileUrl(f)} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
+        {canEdit && <button onClick={() => removeFile(f)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>}
+      </div>
     </div>
   );
 

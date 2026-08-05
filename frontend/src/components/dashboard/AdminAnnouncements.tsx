@@ -125,7 +125,7 @@ export default function AdminAnnouncements() {
                 <p className="text-sm font-bold text-slate-800 truncate">{a.title} <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300 ml-1">{a.kind}</span></p>
                 {a.message && <p className="text-[11px] text-slate-500 truncate">{a.message}</p>}
               </div>
-              {a.date && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 whitespace-nowrap"><CalendarDays size={11} /> {new Date(a.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}{a.endDate ? ` → ${new Date(a.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</span>}
+              {a.date && <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 whitespace-nowrap"><CalendarDays size={11} /> {new Date(a.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}{a.endDate ? ` → ${new Date(a.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</span>}
               <button onClick={() => patch(a, { active: !a.active })} title={a.active ? "Shown — click to hide" : "Hidden — click to show"} className={`p-1.5 rounded-lg ${a.active ? "text-emerald-600 hover:bg-emerald-50" : "text-slate-400 hover:bg-slate-100"}`}>
                 {a.active ? <Eye size={15} /> : <EyeOff size={15} />}
               </button>

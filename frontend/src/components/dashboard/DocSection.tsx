@@ -114,24 +114,27 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
         )}
 
         {!loading && docs.map((d) => (
-          <div key={d._id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl group">
-            <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-primary flex-shrink-0 border border-slate-100 mt-0.5">
-              <FileText size={15} />
-            </div>
-            <div className="flex-grow min-w-0">
-              <button onClick={() => setPreview(d)} className="block text-left w-full" title="Preview">
-                <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
-                <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}</p>
-              </button>
-              {canEdit ? (
-                <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-[11px] font-medium py-0.5 hover:text-primary transition-colors">
-                  {d.description ? <span className="text-slate-500 italic">{d.description}</span> : <span className="text-slate-400">+ Add a description…</span>}
+          <div key={d._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 p-3 bg-slate-50 rounded-xl group">
+            <div className="flex items-start gap-3 flex-grow min-w-0">
+              <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-primary flex-shrink-0 border border-slate-100 mt-0.5">
+                <FileText size={15} />
+              </div>
+              <div className="flex-grow min-w-0">
+                <button onClick={() => setPreview(d)} className="block text-left w-full" title="Preview">
+                  <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}</p>
                 </button>
-              ) : d.description ? (
-                <p className="mt-0.5 text-[11px] text-slate-500 font-medium italic">{d.description}</p>
-              ) : null}
+                {canEdit ? (
+                  <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-[11px] font-medium py-0.5 hover:text-primary transition-colors">
+                    {d.description ? <span className="text-slate-500 italic">{d.description}</span> : <span className="text-slate-400">+ Add a description…</span>}
+                  </button>
+                ) : d.description ? (
+                  <p className="mt-0.5 text-[11px] text-slate-500 font-medium italic">{d.description}</p>
+                ) : null}
+              </div>
             </div>
-            <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity mt-1">
+            {/* Actions — full opacity + own right-aligned row on mobile (no hover on touch). */}
+            <div className="flex gap-1 shrink-0 justify-end opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
               <button onClick={() => setPreview(d)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview"><Eye size={13} /></button>
               <a href={documentUrl(d)} download={d.name} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
               <ShareMenu fileName={d.name} fileUrl={documentUrl(d)} size={13} />

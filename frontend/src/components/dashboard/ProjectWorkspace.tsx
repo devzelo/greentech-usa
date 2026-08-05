@@ -5617,7 +5617,7 @@ export default function ProjectWorkspace() {
                           <div key={d._id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50/60">
                             <FileText size={14} className="text-slate-400 flex-shrink-0" />
                             <span className="flex-grow min-w-0 text-xs font-bold text-slate-900 truncate" title={d.name}>{d.name}</span>
-                            <span className="w-28 text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{docSectionLabel(d.section)}</span>
+                            <span className="hidden sm:block w-28 text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{docSectionLabel(d.section)}</span>
                             <div className="w-20 flex justify-end">
                               <button onClick={() => toggleDocPublic(d)} className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${d.public ? "bg-emerald-500" : "bg-slate-200"}`} title={d.public ? "Visible on public page" : "Hidden"}>
                                 <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow ${d.public ? "left-[18px]" : "left-0.5"}`} />
