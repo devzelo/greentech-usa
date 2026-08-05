@@ -540,7 +540,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
   };
 
   return (
-    <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+    <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3>

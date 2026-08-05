@@ -2821,7 +2821,7 @@ export default function ProjectWorkspace() {
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
                   ]).map((p) => (
                     <div key={p.which} className="space-y-4">
-                      <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                      <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                         <div className="flex items-center justify-between">
                           <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
                           <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${PROPOSAL_STATUS_COLOR[proposals[p.which].status] || "bg-slate-100 text-slate-500"}`}>
@@ -3617,7 +3617,7 @@ export default function ProjectWorkspace() {
                   const subInp = "bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-primary/10";
                   const tabCls = (on: boolean) => `px-4 py-2 rounded-xl text-xs font-bold transition-all ${on ? "bg-slate-900 text-white shadow" : "bg-white border border-slate-100 text-slate-500 hover:text-slate-900"}`;
                   return (
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+                    <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
                       {/* Inner tab bar */}
                       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
                         {[{ k: "info", label: "Info" }, { k: "agreement", label: "Agreements" }, { k: "invoices", label: "Invoices" }, { k: "expenses", label: "Expenses" }].map((t) => (
@@ -3934,7 +3934,7 @@ export default function ProjectWorkspace() {
 
           {/* EXPENSES */}
           {activeTab === "expenses" && id && (
-            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm">
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-xl font-display font-bold text-slate-900">Expense Log</h3>
@@ -4058,7 +4058,7 @@ export default function ProjectWorkspace() {
           {/* PURCHASE ORDERS */}
           {activeTab === "po" && id && (
             <div className="space-y-6">
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3>
@@ -4174,7 +4174,7 @@ export default function ProjectWorkspace() {
               {procActive === "shipment" && id && <ProcurementShipment projectId={id} canEdit={procPermFor("shipment") === "edit"} projectInfo={projectPdfInfo(project)} />}
 
               {procActive === "legacy" && (
-            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+            <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <h3 className="text-xl font-display font-bold text-slate-900">Procurement Log <span className="text-[11px] font-bold text-slate-400">(legacy)</span></h3>

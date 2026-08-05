@@ -265,7 +265,7 @@ export default function DashboardLayout() {
       {/* Main Content */}
       <main className="flex-grow flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Top Header */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 flex-shrink-0">
+        <header className="h-16 sm:h-20 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 lg:px-10 flex-shrink-0">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -290,7 +290,7 @@ export default function DashboardLayout() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-grow overflow-y-auto overflow-x-hidden p-6 lg:p-10">
+        <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-10">
            <Outlet />
         </div>
       </main>

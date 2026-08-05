@@ -24,7 +24,7 @@ export default function GeneralAgreements() {
         </p>
       </div>
 
-      <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+      <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm">
         <AgreementsPanel ctx={{ kind: "general" }} canManage />
       </div>
     </div>

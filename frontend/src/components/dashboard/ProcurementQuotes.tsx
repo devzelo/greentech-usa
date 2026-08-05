@@ -95,7 +95,7 @@ export default function ProcurementQuotes({ projectId }: { projectId: string; ca
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
 
   return (
-    <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+    <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div>
         <h3 className="text-xl font-display font-bold text-slate-900">Quotes</h3>
         <p className="text-xs font-medium text-slate-400 mt-1">Every quote sent to vendors, grouped by item — <span className="font-bold text-emerald-600">accepted</span> quotes are highlighted, the rest are shown in gray. Quotation documents are saved to Documents (Procurement → Quotes) automatically.</p>
