@@ -122,7 +122,8 @@ function TableSection({
 }) {
   return (
     <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden">
-      <table className="w-full">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px]">
         <thead>
           <tr className="bg-slate-50/50 border-b border-slate-50">
             {headers.map((h) => (
@@ -144,6 +145,7 @@ function TableSection({
           ))}
         </tbody>
       </table>
+      </div>
       <div className="px-6 py-4 border-t border-slate-50">
         <button onClick={onAdd} className="flex items-center gap-2 text-xs font-bold text-primary hover:underline">
           <Plus size={13} /> {addLabel}

@@ -281,7 +281,8 @@ function PreviewModal({ title, files, projectName, onClose }: { title: string; f
     <>
       <Modal title={title} onClose={onClose} wide>
         <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-          <table className="w-full text-xs">
+          <div className="overflow-x-auto">
+          <table className="w-full text-xs min-w-[560px]">
             <thead><tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100"><th className="py-2.5 px-3 w-8">#</th><th className="py-2.5 px-3">Document</th><th className="py-2.5 px-3 w-32">Folder</th><th className="py-2.5 px-3">Remarks</th><th className="py-2.5 px-3 text-right w-28">Actions</th></tr></thead>
             <tbody>
               {files.length === 0 && <tr><td colSpan={5} className="text-center text-slate-300 py-8">No files.</td></tr>}
@@ -305,6 +306,7 @@ function PreviewModal({ title, files, projectName, onClose }: { title: string; f
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </Modal>
       {view && <DocumentViewer doc={toViewable(view)} onClose={() => setView(null)} />}

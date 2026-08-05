@@ -254,18 +254,19 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
 
           {/* List View */}
           {filtered.length > 0 && view === "list" && (
-            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-              <table className="w-full">
+            <div className="bg-white rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px]">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-50">
-                    <th className="text-left px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("name")} className="uppercase tracking-widest hover:text-slate-700">Project / Contract{sortArrow("name")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("category")} className="uppercase tracking-widest hover:text-slate-700">Category{sortArrow("category")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("client")} className="uppercase tracking-widest hover:text-slate-700">Client{sortArrow("client")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("year")} className="uppercase tracking-widest hover:text-slate-700">Year{sortArrow("year")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("deadline")} className="uppercase tracking-widest hover:text-slate-700">Deadline{sortArrow("deadline")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("status")} className="uppercase tracking-widest hover:text-slate-700">Status{sortArrow("status")}</button></th>
-                    <th className="text-left px-6 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("progress")} className="uppercase tracking-widest hover:text-slate-700">Progress{sortArrow("progress")}</button></th>
-                    <th className="text-right px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                    <th className="text-left px-4 sm:px-8 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("name")} className="uppercase tracking-widest hover:text-slate-700">Project / Contract{sortArrow("name")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("category")} className="uppercase tracking-widest hover:text-slate-700">Category{sortArrow("category")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("client")} className="uppercase tracking-widest hover:text-slate-700">Client{sortArrow("client")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("year")} className="uppercase tracking-widest hover:text-slate-700">Year{sortArrow("year")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("deadline")} className="uppercase tracking-widest hover:text-slate-700">Deadline{sortArrow("deadline")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("status")} className="uppercase tracking-widest hover:text-slate-700">Status{sortArrow("status")}</button></th>
+                    <th className="text-left px-4 sm:px-6 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><button onClick={() => toggleSort("progress")} className="uppercase tracking-widest hover:text-slate-700">Progress{sortArrow("progress")}</button></th>
+                    <th className="text-right px-4 sm:px-8 py-3 sm:py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -273,7 +274,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                     const sm = statusMeta(p.status);
                     return (
                     <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-6">
+                      <td className="px-4 sm:px-8 py-4 sm:py-6">
                         <div className="flex items-center gap-4">
                           <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
                           <div className="flex flex-col min-w-0">
@@ -287,20 +288,20 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-6 text-xs font-bold text-slate-600">{p.category || "—"}</td>
-                      <td className="px-6 py-6 text-xs font-medium text-slate-600">{p.clientInfo?.name || "—"}</td>
-                      <td className="px-6 py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
-                      <td className="px-6 py-6 text-xs font-bold whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-600">{p.category || "—"}</td>
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-medium text-slate-600">{p.clientInfo?.name || "—"}</td>
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold whitespace-nowrap">
                         {p.endDate
                           ? <span className={overdue(p) ? "text-red-600" : "text-slate-500"}>{p.endDate}{overdue(p) ? " ⚠" : ""}</span>
                           : <span className="text-slate-400">—</span>}
                       </td>
-                      <td className="px-6 py-6">
+                      <td className="px-4 sm:px-6 py-4 sm:py-6">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border ${sm.badge}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${sm.dot}`} /> {sm.label}
                         </span>
                       </td>
-                      <td className="px-6 py-6">
+                      <td className="px-4 sm:px-6 py-4 sm:py-6">
                         <div className="w-24 space-y-1.5">
                           <div className="text-[10px] font-bold text-slate-400">{p.progress}%</div>
                           <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -312,7 +313,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           </div>
                         </div>
                       </td>
-                      <td className="px-8 py-6 text-right">
+                      <td className="px-4 sm:px-8 py-4 sm:py-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => navigate(`/dashboard/projects/${p.id}`)}
@@ -330,6 +331,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 

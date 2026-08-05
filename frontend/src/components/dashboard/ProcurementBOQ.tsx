@@ -777,7 +777,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               </div>
               <div className="p-6 space-y-4">
                 <div className="rounded-2xl border border-slate-100 overflow-hidden">
-                  <table className="w-full text-left">
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-left min-w-[880px]">
                     <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       <tr><th className="px-3 py-2">Column</th><th className="px-3 py-2">Example</th></tr>
                     </thead>
@@ -790,6 +791,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
                 <p className="text-[11px] text-slate-400">Need-on-site date, lead time and status aren’t required here — fill those in per row afterwards.</p>
                 <div className="flex flex-wrap items-center gap-3 pt-1">
