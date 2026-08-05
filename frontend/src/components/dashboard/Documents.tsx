@@ -235,7 +235,7 @@ export default function Documents() {
   return (
     <div className="flex flex-col space-y-6">
       <div>
-        <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Documents</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">Documents</h1>
         <p className="text-slate-500 font-medium">
           {tab === "company"
             ? "Official GreenTech USA company documents — organized into tabs you control."
@@ -283,7 +283,7 @@ export default function Documents() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search files or projects…"
-              className="bg-white border border-slate-100 rounded-xl py-2.5 pl-10 pr-4 text-xs font-medium focus:ring-4 focus:ring-primary/5 outline-none w-72 shadow-sm"
+              className="bg-white border border-slate-100 rounded-xl py-2.5 pl-10 pr-4 text-xs font-medium focus:ring-4 focus:ring-primary/5 outline-none w-40 sm:w-72 shadow-sm"
             />
           </div>
           <select

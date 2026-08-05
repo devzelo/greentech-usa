@@ -111,7 +111,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {/* Header — title/description on the left, report + search + view on the right. */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">
             {mode === "my" ? "My Workspace" : mode === "drafts" ? "My Drafts" : "Global Project Directory"}
           </h1>
           <p className="text-slate-500 font-medium">
@@ -149,7 +149,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, number or location..."
-              className="bg-white border border-slate-100 rounded-xl py-2.5 pl-10 pr-8 text-xs font-medium focus:ring-4 focus:ring-primary/5 outline-none w-64 shadow-sm"
+              className="bg-white border border-slate-100 rounded-xl py-2.5 pl-10 pr-8 text-xs font-medium focus:ring-4 focus:ring-primary/5 outline-none w-40 sm:w-64 shadow-sm"
             />
             {search && (
               <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors">

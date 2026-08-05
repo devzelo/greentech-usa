@@ -138,7 +138,7 @@ export default function UserManagement() {
             <Shield size={18} />
             <span className="text-xs font-bold uppercase tracking-widest">Admin</span>
           </div>
-          <h1 className="text-3xl font-display font-bold text-slate-900">User Management</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">User Management</h1>
           <p className="text-sm text-slate-500 mt-1">Add or remove employee accounts, change roles, and reset passwords.</p>
         </div>
         <button

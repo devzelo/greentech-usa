@@ -150,7 +150,7 @@ export default function Reminders() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-primary mb-2"><Bell size={18} /><span className="text-xs font-bold uppercase tracking-widest">Reminders</span></div>
-          <h1 className="text-3xl font-display font-bold text-slate-900">My Reminders</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">My Reminders</h1>
           <p className="text-sm text-slate-500 mt-1">{loading ? "Loading…" : `${counts.Pending + counts.InProgress} open. You're notified in-app when one falls due.`}</p>
         </div>
         <button onClick={openNew} className="bg-gt-gradient text-white px-5 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all self-start">

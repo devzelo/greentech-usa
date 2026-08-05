@@ -99,7 +99,7 @@ export default function NewRecordMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl p-2 z-50 max-h-[70vh] overflow-y-auto">
+        <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1.5rem)] bg-white border border-slate-100 rounded-2xl shadow-2xl p-2 z-50 max-h-[70vh] overflow-y-auto">
           <p className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">General</p>
           {GENERAL.filter(visible).map((r) => (
             <button key={r.key} onClick={() => choose(r)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-bold text-slate-700 hover:bg-slate-50">

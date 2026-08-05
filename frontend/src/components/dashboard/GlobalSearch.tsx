@@ -122,7 +122,7 @@ export default function GlobalSearch() {
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); ensureLoaded(); }}
         placeholder="Search projects, docs, people…"
-        className="bg-slate-50 border border-slate-100 rounded-full py-2 pl-10 pr-4 text-xs font-medium focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none w-64 lg:w-80 transition-all"
+        className="bg-slate-50 border border-slate-100 rounded-full py-2 pl-10 pr-4 text-xs font-medium focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none w-28 sm:w-48 lg:w-80 transition-all"
       />
       {open && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 max-h-[520px] overflow-y-auto z-50 w-[26rem]">

@@ -53,7 +53,7 @@ export default function DashboardOverview() {
     <div className="space-y-10">
       {/* Welcome */}
       <div>
-        <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Welcome back, {firstName}!</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">Welcome back, {firstName}!</h1>
         <p className="text-slate-500 font-medium">Here&apos;s what&apos;s happening with your projects today.</p>
       </div>
 

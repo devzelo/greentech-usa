@@ -74,7 +74,7 @@ function AddressModal({ projectSite, initial, onClose, onSave }: {
         </div>
         <div className="p-5 space-y-4">
           {/* Type selector */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {OPTIONS.map((o) => {
               const Icon = o.icon;
               const active = kind === o.k;

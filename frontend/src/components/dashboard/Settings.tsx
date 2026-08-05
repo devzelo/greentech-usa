@@ -45,7 +45,7 @@ export default function Settings() {
   return (
     <div className="max-w-4xl mx-auto pb-20">
       <div className="mb-10">
-        <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Portal Settings</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">Portal Settings</h1>
         <p className="text-slate-500 font-medium">Configure your workspace preferences and security clearances.</p>
       </div>
 

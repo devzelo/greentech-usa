@@ -16,7 +16,7 @@ export default function GeneralAgreements() {
         <div className="flex items-center gap-2 text-primary mb-2">
           <Handshake size={18} /><span className="text-xs font-bold uppercase tracking-widest">Agreements</span>
         </div>
-        <h1 className="text-3xl font-display font-bold text-slate-900">General Agreements</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">General Agreements</h1>
         <p className="text-sm text-slate-500 mt-1">
           Company agreements with an outside party — not tied to any project or employee. {GREENTECH.name}'s
           details are filled in for you; add the other party, then save as a draft or send it out.
