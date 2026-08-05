@@ -1900,7 +1900,7 @@ export interface POLine { itemId: string; description: string; qty: string; unit
 export interface ApiProcurementPO {
   _id: string; projectId: string; poNo: string; rfqId: string; quoteId: string; vendorId: string; vendorName: string;
   lineItems: POLine[]; shipping: string; tax: string; total: string; terms: string; termsMode?: "constant" | "file"; notes?: string; shipTo: string; deliveryMethod?: string;
-  status: "Sent" | "Confirmed" | "InvoiceReceived" | "Paid";
+  status: "Sent" | "Confirmed" | "InvoiceReceived" | "Paid"; archived?: boolean;
   invoiceNo: string; invoiceAmount: string; invoiceDate: string; invoiceMatch: "" | "Matched" | "Discrepancy";
   expenseId: string; attachments: Array<ExpenseAttachment & { kind: string }>; addedByName: string;
   // Signatures & stamps
@@ -1912,7 +1912,10 @@ export type PoPatch = Partial<Pick<ApiProcurementPO,
   "signerName" | "signerEmail" | "signerPhone" | "signerTitle" | "signatureUrl" | "stampUrl" |
   "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "partnerSignatureUrl" | "partnerStampUrl">>;
 const poBase = (projectId: string) => `/projects/${projectId}/procurement-pos`;
-export async function fetchProcurementPOs(projectId: string): Promise<ApiProcurementPO[]> { return request(poBase(projectId)); }
+export async function fetchProcurementPOs(projectId: string, archived = false): Promise<ApiProcurementPO[]> { return request(`${poBase(projectId)}${archived ? "?archived=true" : ""}`); }
+export async function setProcurementPOArchived(projectId: string, pid: string, archived: boolean): Promise<ApiProcurementPO> {
+  return request(`${poBase(projectId)}/${pid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
+}
 export async function createProcurementPO(projectId: string, rfqId: string, quoteId: string): Promise<ApiProcurementPO> {
   return request(poBase(projectId), { method: 'POST', body: JSON.stringify({ rfqId, quoteId }) });
 }

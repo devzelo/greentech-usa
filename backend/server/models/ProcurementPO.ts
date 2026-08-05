@@ -22,6 +22,7 @@ export interface IProcurementPO extends Document {
   notes: string;            // extra info printed on the PO document after the item table (like RFQ notes)
   shipTo: string;
   deliveryMethod: string;   // "Delivery" | "Pickup" (free text, carried from the RFQ, editable)
+  archived: boolean;
   status: "Sent" | "Confirmed" | "InvoiceReceived" | "Paid";
   invoiceNo: string;
   invoiceAmount: string;
@@ -59,6 +60,7 @@ const ProcurementPOSchema = new Schema<IProcurementPO>(
     notes: { type: String, default: "" },
     shipTo: { type: String, default: "" },
     deliveryMethod: { type: String, default: "Delivery" },
+    archived: { type: Boolean, default: false },
     status: { type: String, enum: ["Sent", "Confirmed", "InvoiceReceived", "Paid"], default: "Sent" },
     invoiceNo: { type: String, default: "" },
     invoiceAmount: { type: String, default: "" },

@@ -37,7 +37,10 @@ async function logEvent(req: AuthedRequest, e: { entityId: string; action: strin
 }
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-  try { res.json(await ProcurementPO.find({ projectId: req.params.id }).sort({ createdAt: 1 })); } catch (err) { next(err); }
+  try {
+    const arch = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
+    res.json(await ProcurementPO.find({ projectId: req.params.id, ...arch }).sort({ createdAt: 1 }));
+  } catch (err) { next(err); }
 });
 
 // Create a PO from an awarded quote — snapshot line items + prices, compute total.
@@ -117,6 +120,7 @@ router.patch("/:pid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!po) return res.status(404).json({ error: "Not found" });
     const hadInvoice = !!po.invoiceAmount;
     for (const f of PO_FIELDS) if (f in (req.body || {})) (po as unknown as Record<string, unknown>)[f] = req.body[f];
+    if (typeof req.body?.archived === "boolean") po.archived = req.body.archived;
     // Recording an invoice amount for the first time advances the PO to "Invoice received".
     // No amount matching and no auto-expense — expenses are managed manually.
     if (po.invoiceAmount && num(po.invoiceAmount) && !hadInvoice && po.status === "Sent") po.status = "InvoiceReceived";

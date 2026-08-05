@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt } from "lucide-react";
+import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt, Archive, RotateCcw } from "lucide-react";
 import {
-  fetchProcurementPOs, createProcurementPO, updateProcurementPO, deleteProcurementPO,
+  fetchProcurementPOs, createProcurementPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
   uploadPOAttachment, deletePOAttachment, fetchRfqs, fetchVendors, attachmentUrl,
   fetchProcurementItems, fetchProcurementSections, uploadDocument,
   fetchSignatories, fetchStamps, uploadPOPartyImage, attachPOFile, fetchSubmittals, invoiceFromPO, fetchInvoices,
@@ -29,6 +29,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
@@ -50,7 +51,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
     setLoading(true);
     try {
       const [p, r, v, it, secs, sig, stmp, subs, recInv] = await Promise.all([
-        fetchProcurementPOs(projectId), fetchRfqs(projectId), fetchVendors(projectId),
+        fetchProcurementPOs(projectId, showArchived), fetchRfqs(projectId), fetchVendors(projectId),
         fetchProcurementItems(projectId).catch(() => []), fetchProcurementSections(projectId).catch(() => []),
         fetchSignatories().catch(() => []), fetchStamps().catch(() => []), fetchSubmittals(projectId).catch(() => []),
         // Which POs already have an invoice on the Invoice Received tab — drives the button state.
@@ -62,7 +63,11 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
     }
     catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, showArchived]);
+  const archivePO = async (pid: string, next: boolean) => {
+    try { await setProcurementPOArchived(projectId, pid, next); setPOs((p) => p.filter((x) => x._id !== pid)); }
+    catch { /* ignore */ }
+  };
 
   // Awarded quotes that don't yet have a PO.
   const awardable = rfqs.flatMap((rfq) => rfq.quotes.filter((q) => q.status === "Awarded" && !pos.some((p) => p.quoteId === q._id)).map((q) => ({ rfq, quote: q })));
@@ -520,6 +525,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
                   {canEdit && <button onClick={() => setManageId(po._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — status, terms, invoice, documents"><Settings2 size={12} /> Manage</button>}
                   <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: `PO_${po.poNo}.pdf`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview PO document"><Eye size={14} /></button>
                   <button onClick={() => downloadPdf(po)} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="PO PDF"><Download size={14} /></button>
+                  {canEdit && <button onClick={() => archivePO(po._id, !po.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500 hover:bg-white" title={po.archived ? "Restore" : "Archive"}>{po.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                   {canEdit && <button onClick={() => removePO(po._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete"><Trash2 size={13} /></button>}
                 </div>
               </td>
@@ -540,9 +546,10 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
           <h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3>
           <p className="text-xs font-medium text-slate-400 mt-1">Create a PO from an accepted quote, link the vendor invoice, and it auto-posts to the project expenses.</p>
         </div>
-        {pos.length > 0 && (
-          <button onClick={printSummary} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold shrink-0"><FileText size={13} /> Print summary</button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
+          {pos.length > 0 && <button onClick={printSummary} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"><FileText size={13} /> Print summary</button>}
+        </div>
       </div>
 
       {/* §F6 — PO summary: how many + total value */}
