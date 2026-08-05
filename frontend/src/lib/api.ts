@@ -386,6 +386,18 @@ export async function uploadProposalAsset(projectId: string, file: File): Promis
   return res.json();
 }
 
+/**
+ * Upload an image for insertion into a rich-text editor and return an **absolute** URL.
+ * Rich-text bodies store `<img src="…">` verbatim, so the src must resolve to the backend even
+ * when the frontend is hosted on a different origin (split Vercel + Render). In dev, API_BASE is
+ * empty so it stays relative and works through the Vite proxy.
+ */
+export async function uploadInlineImage(projectId: string, file: File): Promise<string> {
+  const { url } = await uploadProposalAsset(projectId, file);
+  if (/^https?:\/\//.test(url) || url.startsWith('data:')) return url;
+  return `${API_BASE}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
 // Built-in technical sections (data lives in dedicated fields; layout controls order/visibility).
 export const PROPOSAL_BUILTINS: { kind: ProposalSectionKind; title: string }[] = [
   { kind: "description", title: "Technical Description" },

@@ -3,7 +3,7 @@ import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown,
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
-  REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadProposalAsset,
+  REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
 } from "../../lib/api";
 import { buildRequestPdf } from "../../lib/requestPdf";
@@ -41,7 +41,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   const { confirm, dialogs } = useDialogs();
   const blankDraft = { type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [] as Array<{ label: string; value: string }>, sections: [] as Array<{ title: string; body: string }> };
   const sigSrc = (url: string) => (!url ? "" : url.startsWith("http") || url.startsWith("data:") ? url : attachmentUrl(url.replace(/^\/+/, "")));
-  const imageUpload = async (file: File) => (await uploadProposalAsset(projectId, file)).url;
+  const imageUpload = (file: File) => uploadInlineImage(projectId, file);
   const pickSigner = (id: string, onPick: (s: { signerName: string; signerTitle: string; signatureUrl: string }) => void) => {
     const s = signatories.find((x) => x.id === id);
     onPick(s ? { signerName: s.name, signerTitle: s.jobTitle || "", signatureUrl: s.signatureUrl } : { signerName: "", signerTitle: "", signatureUrl: "" });
@@ -55,13 +55,16 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   useEffect(() => { fetchSignatories().then(setSignatories).catch(() => {}); }, []);
   const patch = (r: ApiProjectRequest) => setRows((p) => p.map((x) => (x._id === r._id ? r : x)));
 
-  const create = async () => {
+  const create = async (send = false) => {
     if (!draft.title.trim() && draft.type !== "Custom Request") { toast("Give the request a subject.", "error"); return; }
     setSaving(true);
     try {
-      const r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body) });
+      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body) });
+      // "Save & send" marks it Sent; "Save as draft" leaves it as a Draft.
+      if (send) r = await updateProjectRequest(projectId, r._id, { status: "Sent" });
       setRows((p) => [r, ...p]); setCreating(false); setOpenId(r._id);
       setDraft(blankDraft);
+      toast(send ? "Request saved & sent." : "Saved as draft.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
     finally { setSaving(false); }
   };
@@ -332,9 +335,10 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 )}
               </div>
               <p className="text-[11px] text-slate-400">The number is assigned automatically (e.g. RFI-001). Saved as a <strong>Draft</strong> — upload your drafted document, add the client's responses, and the client-signature block is a placeholder on the generated PDF.</p>
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
                 <button onClick={() => setCreating(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-                <button onClick={create} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} <Send size={13} /> Create request</button>
+                <button onClick={() => create(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Save as draft</button>
+                <button onClick={() => create(true)} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Save &amp; send</button>
               </div>
             </div>
           </div>

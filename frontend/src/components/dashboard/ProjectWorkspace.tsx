@@ -13,7 +13,7 @@ import {
 import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
 fetchSubAgreements, createSubAgreement, deleteSubAgreement, uploadSubAgreementFile, deleteSubAgreementFile, type ApiSubAgreement, type SubAgreementDocKind, fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
 import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind } from "../../lib/api";
-import { uploadProposalAsset } from "../../lib/api";
+import { uploadProposalAsset, uploadInlineImage } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 import ProcurementBOQ from "./ProcurementBOQ";
 import ProcurementMasterLog from "./ProcurementMasterLog";
@@ -2400,7 +2400,7 @@ export default function ProjectWorkspace() {
                   onClick={handleExport}
                   disabled={exporting}
                   title="Download a zip containing project data and all uploaded files"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm disabled:opacity-50"
                 >
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
                   {exporting ? "Preparing…" : "Export Project"}
@@ -2413,7 +2413,7 @@ export default function ProjectWorkspace() {
                   fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
                 >
                   {({ loading }) => (
-                    <span className="cursor-pointer flex items-center gap-2 px-5 py-2.5 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+                    <span className="cursor-pointer flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
                       <FileText size={14} />
                       {loading ? "Preparing…" : "Create Report"}
                     </span>
@@ -2443,13 +2443,13 @@ export default function ProjectWorkspace() {
               <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                 <button
                   onClick={openAddTab}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
                 >
                   <Plus size={14} /> Add Tab
                 </button>
                 <button
                   onClick={() => setShowTemplatesModal(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
                 >
                   <BookOpen size={14} /> Templates
                 </button>
@@ -2460,8 +2460,8 @@ export default function ProjectWorkspace() {
       </div>
 
       {/* ── Tab Bar (top-level) ── */}
-      <div className="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-1 p-1.5 min-w-max">
+      <div className="bg-white border border-slate-100 rounded-2xl sm:rounded-[1.5rem] shadow-sm overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-max">
           {topLevelTabs.map((tab) => {
             const ct = customTabs.find((c) => c.id === tab.id);
             const isCustom = !!ct;
@@ -2470,14 +2470,14 @@ export default function ProjectWorkspace() {
               <div key={tab.id} className="relative flex-shrink-0">
                 <button
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-widest transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:pl-3 sm:pr-4 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[10px] sm:text-[11px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
                     isActive ? "bg-slate-900 text-white shadow-lg" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
                   {ct?.color && TAB_COLOR_DOT[ct.color] && (
-                    <span className={`w-2.5 h-2.5 shrink-0 rounded-full ${TAB_COLOR_DOT[ct.color]}`} />
+                    <span className={`w-2 h-2 sm:w-2.5 sm:h-2.5 shrink-0 rounded-full ${TAB_COLOR_DOT[ct.color]}`} />
                   )}
-                  <tab.icon size={14} /> {tab.label}
+                  <tab.icon size={13} className="shrink-0" /> {tab.label}
                   {isCustom && canManage && (
                     <span
                       onClick={(e) => openTabMenu(e, tab.id)}
@@ -2514,7 +2514,7 @@ export default function ProjectWorkspace() {
                 <div key={sub.id} className="relative">
                   <button
                     onClick={() => setActiveTab(sub.id)}
-                    className={`flex items-center gap-2 px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
                       isActive ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"
                     }`}
                   >
@@ -2790,7 +2790,7 @@ export default function ProjectWorkspace() {
                   <button
                     key={t.k}
                     onClick={() => setProposalSub(t.k)}
-                    className={`px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${
+                    className={`px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
                       proposalSub === t.k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"
                     }`}
                   >
@@ -2895,7 +2895,7 @@ export default function ProjectWorkspace() {
                 const descriptionEditor = (
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
                     <h4 className="font-bold text-slate-800 text-sm">Technical Description</h4>
-                    <RichTextEditor value={technical.description} onChange={(html) => setTech("description", html)} disabled={!canEdit} placeholder="Describe the technical approach, methodology, scope of work…" minHeight={200} onImageUpload={id ? async (file) => (await uploadProposalAsset(id, file)).url : undefined} />
+                    <RichTextEditor value={technical.description} onChange={(html) => setTech("description", html)} disabled={!canEdit} placeholder="Describe the technical approach, methodology, scope of work…" minHeight={200} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
                   </div>
                 );
                 const personnelEditor = (
@@ -2973,7 +2973,7 @@ export default function ProjectWorkspace() {
                   if (!s) return null;
                   return (
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
-                      <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? async (file) => (await uploadProposalAsset(id, file)).url : undefined} />
+                      <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
                     </div>
                   );
                 };
@@ -3141,7 +3141,7 @@ export default function ProjectWorkspace() {
 
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
                     <h4 className="font-bold text-slate-800 text-sm">Notes / Terms</h4>
-                    <RichTextEditor value={financial.notes} onChange={(html) => setFin("notes", html)} disabled={!canEdit} placeholder="Payment terms, validity period, assumptions…" minHeight={120} onImageUpload={id ? async (file) => (await uploadProposalAsset(id, file)).url : undefined} />
+                    <RichTextEditor value={financial.notes} onChange={(html) => setFin("notes", html)} disabled={!canEdit} placeholder="Payment terms, validity period, assumptions…" minHeight={120} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
                   </div>
                 </div>
                 );
@@ -4147,7 +4147,7 @@ export default function ProjectWorkspace() {
               <div className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 flex items-center gap-1 overflow-x-auto no-scrollbar">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 shrink-0">Procurement:</span>
                 {procNav.map((t) => (
-                  <button key={t.k} onClick={() => setProcSub(t.k)} className={`px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${procActive === t.k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"}`}>{t.label}</button>
+                  <button key={t.k} onClick={() => setProcSub(t.k)} className={`px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${procActive === t.k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"}`}>{t.label}</button>
                 ))}
               </div>
 
@@ -5088,7 +5088,7 @@ export default function ProjectWorkspace() {
                     disabled={!isOwner}
                     minHeight={140}
                     placeholder="Executive summary, status narrative, tables, photos…"
-                    onImageUpload={id ? async (file) => (await uploadProposalAsset(id, file)).url : undefined}
+                    onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined}
                   />
                 </div>
               </div>
