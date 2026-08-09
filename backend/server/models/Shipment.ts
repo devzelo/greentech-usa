@@ -20,6 +20,16 @@ export interface IShipment extends Document {
   toLocation: string;     // where it goes
   status: ShipmentStatus;
   deadline: string;       // expected receipt date (date string)
+  // Live-tracking header (client CR-PR-08). Updated manually (or pasted from the carrier site).
+  trackingNo: string;     // tracking / container #
+  carrier: string;        // carrier / line (e.g. Maersk)
+  currentLocation: string; // last known location (e.g. Istanbul Port)
+  etaDate: string;        // current anticipated date of arrival (date string) — countdown derives from this
+  trackingUrl: string;    // link to the carrier's tracking page
+  // Container details (client CR-PR-09).
+  containerType: string;  // e.g. 40' HC, 20' DV, Flat Rack
+  containerSize: string;
+  openBed: boolean;       // open-bed / flat-rack shipment?
   poIds: string[];        // linked ProcurementPO ids — their items sync with this shipment's status
   // Shipment cost breakdown — summed into the total shown on the shipment tab.
   costFreight: string;
@@ -42,6 +52,14 @@ const ShipmentSchema = new Schema<IShipment>(
     toLocation: { type: String, default: "" },
     status: { type: String, enum: ["Preparing", "Fabrication", "Transit", "Clearance", "Warehouse", "Delivered"], default: "Preparing" },
     deadline: { type: String, default: "" },
+    trackingNo: { type: String, default: "" },
+    carrier: { type: String, default: "" },
+    currentLocation: { type: String, default: "" },
+    etaDate: { type: String, default: "" },
+    trackingUrl: { type: String, default: "" },
+    containerType: { type: String, default: "" },
+    containerSize: { type: String, default: "" },
+    openBed: { type: Boolean, default: false },
     poIds: { type: [String], default: [] },
     costFreight: { type: String, default: "" },
     costCustoms: { type: String, default: "" },

@@ -1530,11 +1530,15 @@ export interface ApiShipment {
   description?: string; fromLocation?: string; toLocation?: string;
   status?: ShipmentStatus; deadline?: string; poIds?: string[];
   costFreight?: string; costCustoms?: string; costDemurrage?: string; costOther?: string;
+  // Tracking header + container details (CR-PR-08/09).
+  trackingNo?: string; carrier?: string; currentLocation?: string; etaDate?: string; trackingUrl?: string;
+  containerType?: string; containerSize?: string; openBed?: boolean;
   rows: ApiShipmentRow[];
 }
 export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
-  "costFreight" | "costCustoms" | "costDemurrage" | "costOther">>;
+  "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
+  "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }

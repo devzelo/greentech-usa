@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
   addShipmentRow, renameShipmentRow, updateShipmentRow, deleteShipmentRow, uploadShipmentFile, deleteShipmentFile,
@@ -54,11 +54,26 @@ type ShipDraft = {
   name: string; fromLocation: string; toLocation: string; description: string;
   status: ShipmentStatus; deadline: string; poIds: string[];
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
+  trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
+  containerType: string; containerSize: string; openBed: boolean;
 };
 const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
+  trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
+  containerType: "", containerSize: "", openBed: false,
 };
+
+// Days-until-ETA countdown for the tracking header (CR-PR-08).
+function etaCountdown(etaDate?: string): string {
+  if (!etaDate) return "";
+  const d = new Date(etaDate); if (isNaN(d.getTime())) return "";
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (days > 1) return `in ${days} days`;
+  if (days === 1) return "tomorrow";
+  if (days === 0) return "today";
+  return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
+}
 
 // One sub-tab per shipment; each holds the shipment's logistics info (from/to, status, deadline,
 // linked POs) and a table of document rows (predefined + custom) with files and remarks.
@@ -130,6 +145,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       name: s.name, fromLocation: s.fromLocation || "", toLocation: s.toLocation || "", description: s.description || "",
       status: s.status || "Preparing", deadline: s.deadline || "", poIds: s.poIds || [],
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
+      trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
+      containerType: s.containerType || "", containerSize: s.containerSize || "", openBed: !!s.openBed,
     });
     setPopup({ mode: "edit", sid: s._id });
   };
@@ -141,6 +158,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       name: draft.name.trim(), fromLocation: draft.fromLocation, toLocation: draft.toLocation,
       description: draft.description, status: draft.status, deadline: draft.deadline, poIds: draft.poIds,
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
+      trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
+      containerType: draft.containerType, containerSize: draft.containerSize, openBed: draft.openBed,
     };
     try {
       if (popup.mode === "create") {
@@ -273,6 +292,18 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     {canEdit && <button onClick={() => removeShipment(active)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-[11px] font-bold hover:bg-red-100"><Trash2 size={12} /> Delete</button>}
                   </div>
                 </div>
+
+                {/* CR-PR-08/09 — tracking header: container #, carrier, current location, ETA
+                    countdown, container details, and a link to the carrier's tracking page. */}
+                <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-[11px]">
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Tracking / Container #</p><p className="font-bold text-slate-800 break-all">{active.trackingNo || "—"}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Carrier</p><p className="font-bold text-slate-800">{active.carrier || "—"}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Current location</p><p className="font-bold text-slate-800">{active.currentLocation || "—"}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</p><p className="font-bold text-slate-800">{active.etaDate || "—"}{active.etaDate && etaCountdown(active.etaDate) && <span className="text-primary"> ({etaCountdown(active.etaDate)})</span>}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType, active.containerSize].filter(Boolean).join(" · ") || "—"}{active.openBed ? " · Open bed" : ""}</p></div>
+                  {active.trackingUrl && <div className="col-span-2 sm:col-span-3 flex items-end"><a href={active.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline"><ExternalLink size={11} /> Track on carrier site</a></div>}
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 text-[11px]">
                   <div className="flex items-start gap-1.5"><MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">From:</span> <span className="font-bold text-slate-700">{active.fromLocation || "—"}</span></span></div>
                   <div className="flex items-start gap-1.5"><MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">To:</span> <span className="font-bold text-slate-700">{active.toLocation || "—"}</span></span></div>
@@ -403,6 +434,29 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               </div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description
                 <textarea rows={2} className={`${inp} mt-1 resize-y`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What's in this shipment…" /></label>
+
+              {/* CR-PR-08/09 — tracking header + container details (entered/pasted manually). */}
+              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Ship size={11} /> Tracking &amp; container</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
+                    <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier
+                    <input className={`${inp} mt-1`} value={draft.carrier} onChange={(e) => setDraft({ ...draft, carrier: e.target.value })} placeholder="e.g. Maersk" /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current location
+                    <input className={`${inp} mt-1`} value={draft.currentLocation} onChange={(e) => setDraft({ ...draft, currentLocation: e.target.value })} placeholder="e.g. Istanbul Port" /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Anticipated arrival
+                    <input type="date" className={`${inp} mt-1`} value={draft.etaDate} onChange={(e) => setDraft({ ...draft, etaDate: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container type
+                    <input className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. 40' HC" /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container size
+                    <input className={`${inp} mt-1`} value={draft.containerSize} onChange={(e) => setDraft({ ...draft, containerSize: e.target.value })} placeholder="e.g. 40 ft" /></label>
+                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link
+                    <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="https://www.maersk.com/tracking/…" /></label>
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
+                </div>
+                <p className="text-[10px] text-slate-400">Paste the latest status from the carrier's site — a live auto-fetch can be added later.</p>
+              </div>
 
               {/* Shipment costs — summed into the total shown on the shipment tab. */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">
