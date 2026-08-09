@@ -649,8 +649,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5"><Eye size={13} /> Preview</button>
                 )}
                 <button onClick={() => { setEditor(null); setDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Cancel</button>
-                <button onClick={() => saveDraft(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save as draft</button>
-                <button onClick={() => saveDraft(true)} disabled={saving || (draft.documentMode === "built" ? !draft.party2.name.trim() : !draft.uploadFile && !list.find((a) => a._id === editor?.aid)?.uploadedDocument)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Save &amp; send</button>
+                {/* CR-P-11 — Save and Send are separate. Save here; then Send from the row
+                    action (which asks for confirmation), never a combined "Save & send". */}
+                <button onClick={() => saveDraft(false)} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save as draft</button>
+                <button onClick={() => saveDraft(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
               </div>
             </div>
           </div>

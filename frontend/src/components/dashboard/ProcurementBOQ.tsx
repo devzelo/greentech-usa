@@ -346,19 +346,28 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     }));
   };
 
+  // Turn parsed import rows into local DRAFTS (CR-P-13 — imports must NOT auto-save;
+  // the user reviews every row, then saves them explicitly via "Save all").
+  const payloadToDrafts = (payload: ProcurementItemInput[], sectionId: string, tag: string): DraftItem[] =>
+    payload.map((p, i) => ({
+      tempId: `${tag}-${Date.now()}-${i}-${Math.round(Math.random() * 1e6)}`,
+      sectionId,
+      description: p.description || "", manufacturer: p.manufacturer || "", modelNo: p.modelNo || "",
+      qty: String(p.qty ?? ""), unit: p.unit || "", spec: p.spec || "", needOnSiteDate: "", leadTimeDays: "",
+    }));
+
   // Import a file's rows INTO an existing category (B1 — the per-category import button).
+  // Rows land as unsaved drafts (yellow "Not saved") so nothing is committed without review.
   const importIntoSection = async (file: File, sectionId: string) => {
     setBusy(true);
     try {
       const payload = await parseSheet(file, sectionId);
       if (!payload.length) { toast("That sheet looks empty.", "error"); return; }
-      // Continue item numbering from what's already in the section.
-      const base = itemsIn(sectionId).length;
-      payload.forEach((p, i) => { if (!p.itemNo || /^\d+$/.test(String(p.itemNo)) && Number(p.itemNo) <= payload.length) p.itemNo = String(base + i + 1); });
-      const created = await bulkAddProcurementItems(projectId, payload);
-      setItems((p) => [...p, ...created]);
+      const newDrafts = payloadToDrafts(payload, sectionId, "imp");
+      setDrafts((p) => [...p, ...newDrafts]);
+      setCollapsed((c) => ({ ...c, [sectionId]: false }));
       const secName = sections.find((s) => s._id === sectionId)?.name || "category";
-      toast(`Imported ${created.length} item(s) into "${secName}".`, "success");
+      toast(`${newDrafts.length} row(s) added to "${secName}" as drafts — review, then Save all.`, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not read that file. Use a .xlsx or .csv.", "error");
     } finally { setBusy(false); }
@@ -382,7 +391,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     URL.revokeObjectURL(a.href);
   };
 
-  // Top-level import: creates a fresh category named after the file, then imports into it.
+  // Top-level import: creates a fresh (empty) category named after the file, then loads
+  // its rows in as drafts for review (CR-P-13 — no auto-save of the items themselves).
   const importAsNewSection = async (file: File) => {
     setBusy(true);
     try {
@@ -390,13 +400,40 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       const section = await addProcurementSection(projectId, sectionName);
       setSections((p) => [...p, section]);
       const payload = await parseSheet(file, section._id);
-      if (!payload.length) { toast("That sheet looks empty.", "error"); return; }
-      const created = await bulkAddProcurementItems(projectId, payload);
-      setItems((p) => [...p, ...created]);
-      toast(`Imported ${created.length} item(s) into new category "${sectionName}".`, "success");
+      if (!payload.length) { toast(`Created empty category "${sectionName}" — that sheet had no rows.`, "error"); return; }
+      const newDrafts = payloadToDrafts(payload, section._id, "imp");
+      setDrafts((p) => [...p, ...newDrafts]);
+      toast(`${newDrafts.length} row(s) loaded into new category "${sectionName}" as drafts — review, then Save all.`, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not read that file. Use a .xlsx or .csv.", "error");
     } finally { setBusy(false); }
+  };
+
+  // Bulk-save / discard the drafts in a category (CR-P-13 — explicit, reviewed commit).
+  const saveAllDrafts = async (sid: string) => {
+    const ds = drafts.filter((d) => d.sectionId === sid && d.description.trim());
+    if (!ds.length) { toast("Add a description to each row before saving.", "error"); return; }
+    setBusy(true);
+    try {
+      const base = itemsIn(sid).length;
+      const payload: ProcurementItemInput[] = ds.map((d, i) => ({
+        sectionId: sid, itemNo: String(base + i + 1), description: d.description, manufacturer: d.manufacturer,
+        modelNo: d.modelNo, qty: d.qty, unit: d.unit, spec: d.spec, needOnSiteDate: d.needOnSiteDate, leadTimeDays: d.leadTimeDays,
+      }));
+      const created = await bulkAddProcurementItems(projectId, payload);
+      setItems((p) => [...p, ...created]);
+      const savedIds = new Set(ds.map((d) => d.tempId));
+      setDrafts((p) => p.filter((d) => !savedIds.has(d.tempId)));
+      toast(`Saved ${created.length} item(s).`, "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not save the items.", "error");
+    } finally { setBusy(false); }
+  };
+  const discardAllDrafts = async (sid: string) => {
+    const n = draftsIn(sid).length;
+    if (!n) return;
+    if (!(await confirm({ title: "Discard drafts?", message: `Remove ${n} unsaved draft row${n === 1 ? "" : "s"} from this category? They have not been saved.`, confirmLabel: "Discard", danger: true }))) return;
+    setDrafts((p) => p.filter((d) => d.sectionId !== sid));
   };
 
   // Rows grouped by category, numbered continuously (C5) — shared by CSV + Excel export.
@@ -728,6 +765,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                     })}
                   </tbody>
                 </table>
+                {canEdit && draftsIn(s._id).length > 0 && (
+                  <div className="px-3 py-2 border-t border-yellow-100 bg-yellow-50/60 flex flex-wrap items-center gap-3">
+                    <span className="text-[11px] font-bold text-yellow-700">{draftsIn(s._id).length} unsaved draft{draftsIn(s._id).length === 1 ? "" : "s"} — nothing is saved until you confirm.</span>
+                    <button onClick={() => saveAllDrafts(s._id)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 disabled:opacity-50"><Check size={13} /> Save all</button>
+                    <button onClick={() => discardAllDrafts(s._id)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600 hover:border-red-200 disabled:opacity-50"><Trash2 size={13} /> Discard all</button>
+                  </div>
+                )}
                 {canEdit && (
                   <div className="px-3 py-2 border-t border-slate-50 flex items-center gap-4">
                     <button onClick={() => addItem(s._id)} className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add item</button>

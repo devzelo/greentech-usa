@@ -2400,7 +2400,7 @@ export default function ProjectWorkspace() {
                   onClick={handleExport}
                   disabled={exporting}
                   title="Download a zip containing project data and all uploaded files"
-                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm disabled:opacity-50"
                 >
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
                   {exporting ? "Preparing…" : "Export Project"}
@@ -2413,7 +2413,7 @@ export default function ProjectWorkspace() {
                   fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
                 >
                   {({ loading }) => (
-                    <span className="cursor-pointer flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+                    <span className="cursor-pointer flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
                       <FileText size={14} />
                       {loading ? "Preparing…" : "Create Report"}
                     </span>
@@ -2428,7 +2428,7 @@ export default function ProjectWorkspace() {
                     try { const u = await setProjectArchived(id, !project.archived); setProject(u); toast(u.archived ? "Project archived — hidden from the lists." : "Project restored.", "success"); }
                     catch (e) { toast(e instanceof Error ? e.message : "Could not update.", "error"); }
                   }}
-                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white text-slate-700 hover:text-amber-600 text-xs font-bold shadow-sm"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-amber-600 text-xs font-bold shadow-sm"
                 >
                   <Archive size={14} /> {project.archived ? "Restore" : "Archive"}
                 </button>
@@ -2439,7 +2439,7 @@ export default function ProjectWorkspace() {
                 onClick={handleSave}
                 disabled={!canEdit || saving}
                 title={!canEdit ? "Switch to a tab you can edit to save." : ""}
-                className={`px-4 sm:px-7 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+                className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
                   !canEdit
                     ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                     : "bg-slate-900 text-white shadow-slate-900/20 hover:bg-primary"
@@ -2456,13 +2456,13 @@ export default function ProjectWorkspace() {
               <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                 <button
                   onClick={openAddTab}
-                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
                 >
                   <Plus size={14} /> Add Tab
                 </button>
                 <button
                   onClick={() => setShowTemplatesModal(true)}
-                  className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"
                 >
                   <BookOpen size={14} /> Templates
                 </button>
@@ -2483,7 +2483,7 @@ export default function ProjectWorkspace() {
               <div key={tab.id} className="relative flex-shrink-0">
                 <button
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:pl-3 sm:pr-4 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[10px] sm:text-[11px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:pl-3 sm:pr-3.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-[10px] sm:text-[11px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
                     isActive ? "bg-slate-900 text-white shadow-lg" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >

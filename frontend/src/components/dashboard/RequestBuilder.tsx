@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, Send, MessageSquare, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, MessageSquare, Archive, RotateCcw } from "lucide-react";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
@@ -346,8 +346,10 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
               <p className="text-[11px] text-slate-400">The number is assigned automatically (e.g. RFI-001). Saved as a <strong>Draft</strong> — upload your drafted document, add the client's responses, and the client-signature block is a placeholder on the generated PDF.</p>
               <div className="flex flex-wrap justify-end gap-2 pt-1">
                 <button onClick={() => setCreating(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-                <button onClick={() => create(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Save as draft</button>
-                <button onClick={() => create(true)} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Save &amp; send</button>
+                {/* CR-P-11 — Save and Send are separate. Save here as a draft; then set the
+                    request's status to "Sent" from the row when you're ready to send. */}
+                <button onClick={() => create(false)} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Save as draft</button>
+                <button onClick={() => create(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Save</button>
               </div>
             </div>
           </div>
