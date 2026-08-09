@@ -112,7 +112,7 @@ router.post("/items/bulk", async (req: AuthedRequest, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
-const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName"] as const;
+const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked"] as const;
 // I2 — editing any of these "content" fields snapshots the prior state as a revision.
 const TRACKED_FIELDS = ["description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays"] as const;
 

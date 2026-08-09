@@ -1342,6 +1342,7 @@ export interface ApiProcurementItem {
   needOnSiteDate: string;
   leadTimeDays: string;
   status: ProcurementStatus;
+  locked?: boolean;
   vendorName?: string;
   revNo: number;
   cancelledAt: string | null;

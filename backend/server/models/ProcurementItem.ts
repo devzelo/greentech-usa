@@ -22,6 +22,7 @@ export interface IProcurementItem extends Document {
   needOnSiteDate: string;   // required-on-site deadline (date string)
   leadTimeDays: string;     // procurement lead time (days) — order-by date = need − lead
   status: ProcurementStatus;
+  locked: boolean;          // CR-P-13 — locked items can't be edited/deleted until unlocked
   vendorName: string;       // the accepted vendor (set when an RFQ quote is awarded)
   revNo: number;            // I2 — current revision number (0-based); bumps when a tracked field changes
   cancelledAt: Date | null;
@@ -50,6 +51,7 @@ const ProcurementItemSchema = new Schema<IProcurementItem>(
       enum: ["BOQ", "RFQ_Sent", "Quoted", "PO_Sent", "Invoiced", "Ordered", "Fabrication", "Transit", "OnSite", "Complete", "Cancelled"],
       default: "BOQ",
     },
+    locked: { type: Boolean, default: false },
     vendorName: { type: String, default: "" },
     revNo: { type: Number, default: 0 },
     cancelledAt: { type: Date, default: null },

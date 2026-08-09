@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check } from "lucide-react";
+import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock } from "lucide-react";
 import {
   fetchProcurementSections, addProcurementSection, updateProcurementSection, deleteProcurementSection,
   fetchProcurementItems, addProcurementItem, updateProcurementItem, cancelProcurementItem, restoreProcurementItem,
@@ -245,6 +245,20 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       });
       setItems((p) => [...p, it]);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not duplicate item.", "error"); }
+  };
+  // CR-P-13 — Lock an item (or a whole category) so it can't be accidentally changed/deleted.
+  const toggleLock = async (it: ApiProcurementItem) => {
+    const locked = !it.locked;
+    setItems((p) => p.map((x) => (x._id === it._id ? { ...x, locked } : x)));
+    try { await updateProcurementItem(projectId, it._id, { locked }); }
+    catch (err) { setItems((p) => p.map((x) => (x._id === it._id ? { ...x, locked: !locked } : x))); toast(err instanceof Error ? err.message : "Could not update lock.", "error"); }
+  };
+  const lockSection = async (sid: string, locked: boolean) => {
+    const targets = items.filter((it) => it.sectionId === sid && it.status !== "Cancelled" && !!it.locked !== locked);
+    if (!targets.length) return;
+    setItems((p) => p.map((x) => (x.sectionId === sid && x.status !== "Cancelled" ? { ...x, locked } : x)));
+    try { await Promise.all(targets.map((it) => updateProcurementItem(projectId, it._id, { locked }))); toast(locked ? "Category locked." : "Category unlocked.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update the category lock.", "error"); }
   };
   const editCell = (iid: string, field: keyof ProcurementItemInput, value: string) =>
     setItems((p) => p.map((it) => (it._id === iid ? { ...it, [field]: value } : it)));
@@ -600,6 +614,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                   <button onClick={() => moveSection(s._id, 1)} disabled={sIdx === sections.length - 1} className="p-1 rounded text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent" title="Move category down"><ArrowDown size={13} /></button>
                 </div>
               )}
+              {canEdit && (() => {
+                const active = items.filter((it) => it.sectionId === s._id && it.status !== "Cancelled");
+                const allLocked = active.length > 0 && active.every((it) => it.locked);
+                return <button onClick={() => lockSection(s._id, !allLocked)} disabled={!active.length} className={`p-1.5 rounded disabled:opacity-30 disabled:hover:bg-transparent ${allLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-700 hover:bg-white"}`} title={allLocked ? "Category locked — click to unlock all items" : "Lock all items in this category (prevents accidental changes)"}>{allLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>;
+              })()}
               {canEdit && <button onClick={() => removeSection(s._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete category"><Trash2 size={13} /></button>}
             </div>
 
@@ -630,7 +649,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                       <tr><td colSpan={colCount} className="px-3 py-5 text-center text-[11px] text-slate-400 italic">No items.{canEdit ? " Add one below." : ""}</td></tr>
                     ) : its.map((it) => {
                       const isCancelled = it.status === "Cancelled";
-                      const rowEdit = canEdit && !isCancelled;     // cancelled rows are locked in place (I3)
+                      const isLocked = !!it.locked;
+                      const rowEdit = canEdit && !isCancelled && !isLocked;   // cancelled (I3) or locked (CR-P-13) rows are read-only
                       const strike = isCancelled ? "line-through text-red-400" : "";
                       const c = (field: keyof ProcurementItemInput, w = "") => (
                         <td className="px-1 py-1 align-top"><input value={(it[field] as string) || ""} onChange={(e) => editCell(it._id, field, e.target.value)} onBlur={(e) => saveCell(it._id, field, e.target.value)} disabled={!rowEdit} className={`${cell} ${w} ${strike}`} /></td>
@@ -645,13 +665,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                               {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
                             </button>
                           ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} onBlur={(v) => saveCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[12rem] w-full align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} onBlur={(v) => saveCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[16rem] w-full align-top ${strike}`} /></td>
                           {c("manufacturer", "w-28")}
                           {c("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap" title="Accepted vendor — set automatically when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>
                           {c("qty", "w-14")}
                           {c("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} onBlur={(v) => saveCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} w-40 align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} onBlur={(v) => saveCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[13rem] w-52 align-top ${strike}`} /></td>
                           <td className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} onBlur={(e) => saveCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} className={`${cell} w-32`} /></td>
                           {c("leadTimeDays", "w-14")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}</td>
@@ -689,8 +709,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                             ) : (
                               <div className="flex items-center gap-1">
                                 <button onClick={() => setManageId(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — edit, submittal, duplicate, cancel"><Settings2 size={12} /> Manage</button>
+                                <button onClick={() => toggleLock(it)} className={`p-1.5 rounded ${isLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600 hover:bg-slate-50"}`} title={isLocked ? "Locked — click to unlock" : "Lock this item (prevents accidental edits/delete)"}>{isLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                                 <button onClick={() => duplicateItem(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Duplicate row"><Copy size={13} /></button>
-                                <button onClick={() => hardDelete(it._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={13} /></button>
+                                <button onClick={() => hardDelete(it._id)} disabled={isLocked} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:hover:text-slate-300 disabled:hover:bg-transparent" title={isLocked ? "Unlock first to delete" : "Delete"}><Trash2 size={13} /></button>
                               </div>
                             ))}
                           </td>
@@ -742,13 +763,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                           {selCol && <td className="px-3 py-2 align-top w-8" />}
                           <td className="px-3 py-2 align-top w-12"><span className="text-[9px] font-bold text-primary uppercase tracking-widest">New</span></td>
                           <td className="px-2 py-2 align-top"><span className="text-[10px] text-slate-300 px-1.5">—</span></td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[12rem] w-full align-top`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[16rem] w-full align-top`} /></td>
                           {dc("manufacturer", "w-28")}
                           {dc("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>
                           {dc("qty", "w-14")}
                           {dc("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} w-40 align-top`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} min-w-[13rem] w-52 align-top`} /></td>
                           <td className="px-1 py-1 align-top"><input type="date" value={d.needOnSiteDate} onChange={(e) => editDraft(d.tempId, "needOnSiteDate", e.target.value)} className={`${cell} w-32`} /></td>
                           {dc("leadTimeDays", "w-14")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(d.needOnSiteDate, d.leadTimeDays) || "—"}</td>
