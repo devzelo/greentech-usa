@@ -91,8 +91,18 @@
   color: #94a3b8;
   pointer-events: none;
 }
+.rte-surface h1 { font-size: 1.3rem; font-weight: 800; margin: 0.6em 0 0.35em; color: #0f172a; }
 .rte-surface h2 { font-size: 1.05rem; font-weight: 700; margin: 0.6em 0 0.3em; color: #0f172a; }
 .rte-surface h3 { font-size: 0.95rem; font-weight: 700; margin: 0.5em 0 0.25em; color: #0f172a; }
+.rte-surface h4 { font-size: 0.9rem; font-weight: 700; margin: 0.5em 0 0.2em; color: #0f172a; }
 .rte-surface p { margin: 0 0 0.5em; }
 .rte-surface ul { list-style: disc; padding-left: 1.4em; margin: 0 0 0.5em; }
 .rte-surface ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 0.5em; }
+/* Footnotes (client request: footnote support in builders). */
+.rte-surface sup[data-fn] { color: #2563eb; font-weight: 700; cursor: default; }
+.rte-surface hr.rte-fn-sep { margin: 1.2em 0 0.6em; border: none; border-top: 1px solid #e2e8f0; }
+.rte-surface ol.rte-footnotes { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0 0; font-size: 0.8rem; color: #475569; }
+.rte-surface ol.rte-footnotes li { margin: 0 0 0.25em; }
+/* Inline images can be resized / floated side by side from the editor toolbar. */
+.rte-surface img { cursor: pointer; max-width: 100%; }
+.rte-surface table { border-collapse: collapse; }

@@ -7,6 +7,34 @@ import { embedImage } from "./poPdf";
 const INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
 const LINE = rgb(0.8, 0.83, 0.87), HEADBG = rgb(0.95, 0.96, 0.97);
 
+// Parse an inline CSS color (#rgb, #rrggbb, rgb()/rgba()) into a pdf-lib color, so
+// text the user coloured in the editor keeps its colour in the exported PDF.
+function parseColor(input?: string | null) {
+  if (!input) return null;
+  const s = input.trim().toLowerCase();
+  const hex = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const n = parseInt(h, 16);
+    return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+  }
+  const m = s.match(/^rgba?\(([^)]+)\)/);
+  if (m) { const p = m[1].split(",").map((x) => parseFloat(x)); return rgb((p[0] || 0) / 255, (p[1] || 0) / 255, (p[2] || 0) / 255); }
+  return null;
+}
+// Editor font-size (px) → PDF point size, scaled to keep the layout sane and clamped.
+function stylePt(el?: HTMLElement | null): number | null {
+  const fs = el?.style?.fontSize; if (!fs) return null;
+  const m = fs.match(/^([\d.]+)px$/); if (!m) return null;
+  return Math.max(7, Math.min(30, parseFloat(m[1]) * 0.75));
+}
+// Block-level colour: the element's own inline colour, else a coloured descendant span.
+function blockColor(el: HTMLElement) {
+  return parseColor(el.style?.color) || parseColor((el.querySelector("[style*='color']") as HTMLElement | null)?.style?.color) || INK;
+}
+const HEADING_PT: Record<string, number> = { H1: 15, H2: 12.5, H3: 11, H4: 10, H5: 9.5, H6: 9 };
+
 function wrap(font: PDFFont, text: string, size: number, maxW: number): string[] {
   const out: string[] = [];
   for (const raw of String(text || "").split(/\r?\n/)) {
@@ -126,10 +154,16 @@ export async function renderHtml(cur: PdfCursor, doc: PDFDocument, html: string,
       if (tag === "TABLE") { drawTbl(el); continue; }
       if (tag === "UL" || tag === "OL") { drawList(el, tag === "OL"); continue; }
       if (tag === "BR") { cur.gap(6); continue; }
-      if (/^H[1-6]$/.test(tag)) { const t = (el.textContent || "").trim(); if (t) { cur.gap(4); cur.text(t.slice(0, 120), bold, 10, INK); cur.gap(2); } continue; }
+      if (/^H[1-6]$/.test(tag)) { const t = (el.textContent || "").trim(); if (t) { cur.gap(4); cur.para(t, bold, HEADING_PT[tag] || 10, blockColor(el)); cur.gap(2); } continue; }
       if (el.querySelector && el.querySelector("img, table, ul, ol")) { await walk(Array.from(el.childNodes)); continue; }
       const t = el.textContent || "";
-      if (t.trim()) cur.para(t, font, 9, INK);
+      if (t.trim()) {
+        // Honour a block-level colour and font-size the user applied in the editor.
+        const size = stylePt(el) || stylePt(el.querySelector("span[style*='font-size']") as HTMLElement | null) || 9;
+        const weight = el.style?.fontWeight;
+        const isBold = weight === "bold" || weight === "700" || tag === "B" || tag === "STRONG";
+        cur.para(t, isBold ? bold : font, size, blockColor(el));
+      }
     }
   };
   await walk(Array.from(parsed.body.childNodes));
