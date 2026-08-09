@@ -42,7 +42,7 @@ import SavedVersionsPanel from "./SavedVersionsPanel";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
-import { fetchVendors, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
+import { fetchVendors, addVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry, COUNTRIES } from "../../lib/countryFlag";
@@ -1010,6 +1010,18 @@ export default function ProjectWorkspace() {
   // Vendors (shared with the RFQ tab) — listed here so each vendor record can hold agreements.
   const [projVendors, setProjVendors] = useState<ApiVendor[]>([]);
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null);
+  const [newVendorName, setNewVendorName] = useState("");
+  // CR-P-05 — add a vendor straight from the project (same shared supplier list as RFQ → Vendors).
+  const addNewVendor = async () => {
+    const name = newVendorName.trim();
+    if (!name || !id) return;
+    try {
+      const v = await addVendor(id, { name });
+      setProjVendors((p) => [...p, v]);
+      setActiveVendorId(v._id);
+      setNewVendorName("");
+    } catch { /* ignore — surfaced by the empty state otherwise */ }
+  };
   useEffect(() => {
     if (subsSubTab !== "vendors" || !id) return;
     fetchVendors(id).then((v) => { setProjVendors(v); setActiveVendorId((cur) => cur && v.some((x) => x._id === cur) ? cur : v[0]?._id || null); }).catch(() => {});
@@ -2262,7 +2274,13 @@ export default function ProjectWorkspace() {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
-                <h1 className="text-2xl font-display font-bold text-slate-900">{project.name}</h1>
+                {/* CR-P-04 — country flag right beside the project name in the Overview header. */}
+                <h1 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
+                  {(flagForCountry(project.siteAddress?.country) || locationFlag(project.location)) && (
+                    <span className="text-[1.1em] leading-none" title={project.siteAddress?.country || project.location}>{flagForCountry(project.siteAddress?.country) || locationFlag(project.location)}</span>
+                  )}
+                  {project.name}
+                </h1>
                 {/* Colour-coded status — the same palette as the projects table's status key. */}
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider ${statusMeta(project.status).badge}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${statusMeta(project.status).dot}`} /> {statusMeta(project.status).label}
@@ -3519,8 +3537,14 @@ export default function ProjectWorkspace() {
                   <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Vendors</h3>
                   <p className="text-xs font-medium text-slate-400">GreenTech's shared supplier list (managed in Procurement → RFQs). Agreements you create here belong to <strong>this project</strong>. Vendors have no login, so download the agreement, share it outside the platform, and upload the counter-signed copy when it returns.</p>
                 </div>
+                {canEdit && !isGuest && (
+                  <div className="flex items-center gap-2">
+                    <input value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addNewVendor(); }} placeholder="New vendor name…" className="flex-grow max-w-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15" />
+                    <button onClick={addNewVendor} disabled={!newVendorName.trim()} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-40"><Plus size={14} /> Add new Vendor</button>
+                  </div>
+                )}
                 {projVendors.length === 0 ? (
-                  <p className="text-sm text-slate-400 italic">No vendors yet. Add them in <strong>Procurement → RFQs → Vendors</strong>.</p>
+                  <p className="text-sm text-slate-400 italic">No vendors yet — add one above (it joins the shared list used in <strong>Procurement → RFQs → Vendors</strong>).</p>
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-2">
