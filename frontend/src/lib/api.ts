@@ -1975,6 +1975,49 @@ export interface ApiAnnouncement {
   _id: string; title: string; message: string; emoji: string; date: string; endDate?: string;
   kind: "holiday" | "news" | "event"; active: boolean; addedByName: string; createdAt?: string;
 }
+// ── Companies / Contact Directory (client CR-P-06) ──────────────────────────
+export type CompanyCategory = "vendor" | "subcontractor" | "client" | "manufacturer" | "consultant" | "partner" | "supplier" | "other";
+export const COMPANY_CATEGORIES: { v: CompanyCategory; label: string }[] = [
+  { v: "vendor", label: "Vendor" }, { v: "subcontractor", label: "Subcontractor" }, { v: "client", label: "Client" },
+  { v: "manufacturer", label: "Manufacturer" }, { v: "consultant", label: "Consultant" }, { v: "partner", label: "Partner" },
+  { v: "supplier", label: "Supplier" }, { v: "other", label: "Other" },
+];
+export interface ApiCompany {
+  _id: string;
+  name: string;
+  category: CompanyCategory;
+  logoUrl: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  contactPersons: Array<{ name: string; role: string; email: string; phone: string }>;
+  banking: { bankName: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string };
+  tax: { taxId: string; registrationNo: string };
+  notes: string;
+  archived?: boolean;
+  createdByName?: string;
+  createdAt?: string;
+}
+export type CompanyInput = Partial<Omit<ApiCompany, "_id" | "createdByName" | "createdAt">>;
+export async function fetchCompanies(category?: CompanyCategory, archived = false): Promise<ApiCompany[]> {
+  const q = new URLSearchParams();
+  if (category) q.set("category", category);
+  if (archived) q.set("archived", "true");
+  const qs = q.toString();
+  return request(`/companies${qs ? `?${qs}` : ""}`);
+}
+export async function fetchCompany(id: string): Promise<ApiCompany> { return request(`/companies/${id}`); }
+export async function createCompany(body: CompanyInput): Promise<ApiCompany> {
+  return request(`/companies`, { method: "POST", body: JSON.stringify(body) });
+}
+export async function updateCompany(id: string, body: CompanyInput): Promise<ApiCompany> {
+  return request(`/companies/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+export async function deleteCompany(id: string): Promise<void> {
+  await request(`/companies/${id}`, { method: "DELETE" });
+}
+
 export async function fetchAnnouncements(): Promise<ApiAnnouncement[]> { return request(`/announcements`); }
 export async function fetchAllAnnouncements(): Promise<ApiAnnouncement[]> { return request(`/announcements/all`); }
 export async function createAnnouncement(body: Partial<ApiAnnouncement>): Promise<ApiAnnouncement> {

@@ -14,7 +14,8 @@ import {
   X,
   ChevronRight,
   Handshake,
-  Bell
+  Bell,
+  Building2
 } from "lucide-react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
@@ -33,6 +34,7 @@ const allSidebarLinks = [
   { name: "Drafts", icon: FileEdit, path: "/dashboard/drafts" },
   { name: "New Project", icon: PlusCircle, path: "/dashboard/new-project" },
   { name: "Documents", icon: FileText, path: "/dashboard/documents" },
+  { name: "Directory", icon: Building2, path: "/dashboard/directory" },
   { name: "General Agreements", icon: Handshake, path: "/dashboard/agreements" },
 ];
 

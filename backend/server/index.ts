@@ -46,6 +46,7 @@ import subAgreementRoutes from "./routes/subAgreements";
 import { userAgreementRouter, projectAgreementRouter, generalAgreementRouter, agreementTemplateRouter, expireOverdueAgreements } from "./routes/agreements";
 import savedDocumentRoutes from "./routes/savedDocuments";
 import announcementRoutes from "./routes/announcements";
+import companiesRoutes from "./routes/companies";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import { startBackupCron } from "./services/backupCron";
 import { schedule as cronSchedule } from "node-cron";
@@ -111,6 +112,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/company", companyRoutes);
+app.use("/api/companies", companiesRoutes);
 app.use("/api/users", userRoutes);
 
 // Health check

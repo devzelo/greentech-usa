@@ -31,6 +31,7 @@ import ProjectWorkspace from "./components/dashboard/ProjectWorkspace";
 import UserManagement from "./components/dashboard/UserManagement";
 import Reminders from "./components/dashboard/Reminders";
 import GeneralAgreements from "./components/dashboard/GeneralAgreements";
+import Directory from "./components/dashboard/Directory";
 import { motion, useScroll, useSpring } from "motion/react";
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
@@ -147,6 +148,7 @@ export default function App() {
           <Route path="projects/:id" element={<ProjectWorkspace />} />
           <Route path="new-project" element={<NonGuest><NewProjectForm /></NonGuest>} />
           <Route path="documents" element={<Documents />} />
+          <Route path="directory" element={<NonGuest><Directory /></NonGuest>} />
           <Route path="users" element={<AdminOnly><UserManagement /></AdminOnly>} />
           <Route path="reminders" element={<Reminders />} />
           <Route path="agreements" element={<NonGuest><GeneralAgreements /></NonGuest>} />
