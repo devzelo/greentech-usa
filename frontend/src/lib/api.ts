@@ -1463,7 +1463,8 @@ export async function addSubmittalAttachmentFromDocument(projectId: string, sid:
 
 // ── Vendors + RFQ / bid-leveling ─────────────────────────────────────────────
 export interface ApiVendor { _id: string; projectId: string; name: string; country: string; city: string; contactName: string; email: string; phone: string }
-export interface RfqLineItem { itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; manufacturer?: string; modelNo?: string; needOnSiteDate?: string }
+export interface RfqLineFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
+export interface RfqLineItem { _id?: string; itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; manufacturer?: string; modelNo?: string; needOnSiteDate?: string; includeSubmittal?: boolean; attachments?: RfqLineFile[] }
 export interface QuoteLine { itemId: string; unitPrice: string }
 export type QuoteStatus = "Received" | "NotSelected" | "Awarded";
 export interface ApiVendorQuote {
@@ -1519,6 +1520,17 @@ export async function uploadVendorQuoteAttachment(projectId: string, rid: string
 }
 export async function deleteVendorQuoteAttachment(projectId: string, rid: string, qid: string, aid: string): Promise<ApiVendorQuote> {
   return request(`${rfqBase(projectId)}/${rid}/quotes/${qid}/attachments/${aid}`, { method: 'DELETE' });
+}
+// CR-PR-03 — per-item RFQ documents (specs / data sheet / drawings for the vendor).
+export async function uploadRfqLineFile(projectId: string, rid: string, lid: string, file: File): Promise<ApiRfq> {
+  const fd = new FormData(); fd.append('file', file);
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${rfqBase(projectId)}/${rid}/line-items/${lid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function deleteRfqLineFile(projectId: string, rid: string, lid: string, aid: string): Promise<ApiRfq> {
+  return request(`${rfqBase(projectId)}/${rid}/line-items/${lid}/attachments/${aid}`, { method: 'DELETE' });
 }
 
 // ── Shipments (documents per delivery) ───────────────────────────────────────

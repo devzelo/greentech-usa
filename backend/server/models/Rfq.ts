@@ -3,7 +3,10 @@ import mongoose, { Schema, Document } from "mongoose";
 // A Request For Quotation built from selected BOQ items. Its line items are a SNAPSHOT so the
 // RFQ stays stable even if the BOQ later changes. One RFQ is sent to many vendors; each vendor's
 // quote is a VendorQuote linked back to this RFQ.
-export interface IRfqLineItem { itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean }
+export interface IRfqLineFile { name: string; filePath: string; fileType: string; size: string }
+// includeSubmittal (CR-PR-03) — attach the item's current submittal package to the RFQ PDF.
+// attachments (CR-PR-03) — per-item reference docs (specs, data sheet, drawings) for the vendor.
+export interface IRfqLineItem { itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; includeSubmittal?: boolean; attachments?: IRfqLineFile[] }
 
 export interface IRfq extends Document {
   projectId: string;
@@ -22,8 +25,9 @@ export interface IRfq extends Document {
   addedByName: string;
 }
 
+const RfqLineFileSchema = new Schema<IRfqLineFile>({ name: String, filePath: String, fileType: String, size: String }, { _id: true });
 const LineItemSchema = new Schema<IRfqLineItem>(
-  { itemId: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" }, spec: { type: String, default: "" }, cancelled: { type: Boolean, default: false } },
+  { itemId: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" }, spec: { type: String, default: "" }, cancelled: { type: Boolean, default: false }, includeSubmittal: { type: Boolean, default: false }, attachments: { type: [RfqLineFileSchema], default: [] } },
   { _id: true }
 );
 

@@ -82,6 +82,16 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (block(req, res)) return;
     const patch: Record<string, unknown> = {};
     for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems"]) if (f in (req.body || {})) patch[f] = req.body[f];
+    // Per-item docs (CR-PR-03) are uploaded separately, so a wholesale lineItems PATCH must NOT
+    // wipe them — preserve each existing line's attachments by _id when the client omits them.
+    if (Array.isArray(patch.lineItems)) {
+      const existing = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+      const byId = new Map((existing?.lineItems || []).map((l) => [String((l as { _id?: unknown })._id), l.attachments || []]));
+      patch.lineItems = (patch.lineItems as Array<Record<string, unknown>>).map((l) => {
+        const id = l._id ? String(l._id) : "";
+        return l.attachments === undefined && id && byId.has(id) ? { ...l, attachments: byId.get(id) } : l;
+      });
+    }
     const rfq = await Rfq.findOneAndUpdate({ _id: req.params.rid, projectId: req.params.id }, patch, { new: true });
     if (!rfq) return res.status(404).json({ error: "Not found" });
     res.json(rfq);
@@ -201,6 +211,45 @@ router.delete("/:rid/quotes/:qid/attachments/:aid", async (req: AuthedRequest, r
     q.attachments = (q.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
     await q.save();
     res.json(q);
+  } catch (err) { next(err); }
+});
+
+// ── Per-item RFQ documents (CR-PR-03 — specs/data sheets/drawings the vendor needs) ────────────
+const lineStorage = multer.diskStorage({
+  destination: (req: AuthedRequest, _file, cb) => {
+    const dir = path.join("uploads", req.params.id, "rfq-items", req.params.rid);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const lineUpload = multer({ storage: lineStorage, limits: { fileSize: 64 * 1024 * 1024 } });
+
+router.post("/:rid/line-items/:lid/attachments", lineUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    const line = rfq?.lineItems?.find((l) => String((l as { _id?: unknown })._id) === req.params.lid);
+    if (!rfq || !line) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "RFQ item not found." }); }
+    const fileType = (req.file.originalname.split(".").pop() || "").toLowerCase();
+    line.attachments = line.attachments || [];
+    line.attachments.push({ name: req.file.originalname, filePath: req.file.path.replace(/\\/g, "/"), fileType, size: humanSize(req.file.size) });
+    await rfq.save();
+    res.status(201).json(rfq);
+  } catch (err) { next(err); }
+});
+
+router.delete("/:rid/line-items/:lid/attachments/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (block(req, res)) return;
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    const line = rfq?.lineItems?.find((l) => String((l as { _id?: unknown })._id) === req.params.lid);
+    if (!rfq || !line) return res.status(404).json({ error: "Not found" });
+    const att = (line.attachments || []).find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
+    if (att?.filePath) fs.unlink(path.resolve(att.filePath), () => {});
+    line.attachments = (line.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
+    await rfq.save();
+    res.json(rfq);
   } catch (err) { next(err); }
 });
 

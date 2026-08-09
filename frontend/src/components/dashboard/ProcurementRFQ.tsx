@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip } from "lucide-react";
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
-  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment,
+  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus,
 } from "../../lib/api";
@@ -40,6 +40,7 @@ function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
 export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: () => void; openRfqId?: string; onOpenedRfq?: () => void }) {
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
+  const [openDocs, setOpenDocs] = useState<Set<string>>(new Set()); // CR-PR-03 — expanded per-item doc panels
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [submittals, setSubmittals] = useState<ApiSubmittal[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
@@ -208,6 +209,24 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     setRfqs((p) => p.map((r) => r._id === rfq._id ? { ...r, lineItems } : r));
     try { await updateRfq(projectId, rfq._id, { lineItems }); } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
   };
+
+  // CR-PR-03 — per-item documents + "Include Submittal Package?".
+  const toggleDocs = (id?: string) => { if (!id) return; setOpenDocs((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
+  const toggleIncludeSubmittal = async (rfq: ApiRfq, li: RfqLineItem) => {
+    const lineItems = rfq.lineItems.map((l) => (l._id === li._id ? { ...l, includeSubmittal: !l.includeSubmittal } : l));
+    setRfqs((p) => p.map((r) => (r._id === rfq._id ? { ...r, lineItems } : r)));
+    try { await updateRfq(projectId, rfq._id, { lineItems }); } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
+  const uploadLineDoc = async (rfq: ApiRfq, li: RfqLineItem, file: File) => {
+    if (!li._id) return;
+    try { const up = await uploadRfqLineFile(projectId, rfq._id, li._id, file); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+  };
+  const deleteLineDoc = async (rfq: ApiRfq, li: RfqLineItem, aid?: string) => {
+    if (!li._id || !aid) return;
+    try { const up = await deleteRfqLineFile(projectId, rfq._id, li._id, aid); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
   const confirmAddItems = async (rfq: ApiRfq) => {
     const chosen = items.filter((it) => addItemPicks[it._id] && !rfq.lineItems.some((l) => l.itemId === it._id));
     if (!chosen.length) { setAddItemsFor(null); return; }
@@ -366,25 +385,50 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   <div className="rounded-xl border border-slate-100 overflow-x-auto">
                     <table className="w-full min-w-[520px] text-[11px]">
                       <thead className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400"><tr>
-                        <th className="text-left px-2 py-1.5 w-8">#</th><th className="text-left px-2 py-1.5">Description</th><th className="text-left px-2 py-1.5">Brand</th><th className="text-left px-2 py-1.5">Qty</th><th className="text-left px-2 py-1.5">Unit</th><th className="text-left px-2 py-1.5">Spec</th><th className="text-left px-2 py-1.5">Need by</th>{canEdit && <th className="w-8" />}
+                        <th className="text-left px-2 py-1.5 w-8">#</th><th className="text-left px-2 py-1.5">Description</th><th className="text-left px-2 py-1.5">Brand</th><th className="text-left px-2 py-1.5">Qty</th><th className="text-left px-2 py-1.5">Unit</th><th className="text-left px-2 py-1.5">Spec</th><th className="text-left px-2 py-1.5">Need by</th><th className="text-left px-2 py-1.5 w-16">Docs</th>
                       </tr></thead>
                       <tbody>
                         {rfq.lineItems.map((li0, i) => {
                           const li = enrichLine(li0);
+                          const docCount = (li0.attachments || []).length;
+                          const docsOpen = !!li0._id && openDocs.has(li0._id);
                           return (
-                          <tr key={li.itemId} className={`border-t border-slate-50 ${li.cancelled ? "bg-red-50/40" : ""}`}>
+                          <Fragment key={li0._id || li.itemId}>
+                          <tr className={`border-t border-slate-50 ${li.cancelled ? "bg-red-50/40" : ""}`}>
                             <td className="px-2 py-1.5 text-slate-400 font-bold">{i + 1}</td>
-                            <td className={`px-2 py-1.5 font-bold ${li.cancelled ? "text-red-400 line-through" : "text-slate-700"}`}>{li.description || "—"}{li.cancelled && <span className="ml-1.5 text-[9px] font-bold text-red-500 uppercase">cancelled</span>}</td>
+                            <td className={`px-2 py-1.5 font-bold ${li.cancelled ? "text-red-400 line-through" : "text-slate-700"}`}>{li.description || "—"}{li.cancelled && <span className="ml-1.5 text-[9px] font-bold text-red-500 uppercase">cancelled</span>}{li0.includeSubmittal && <span className="ml-1.5 text-[9px] font-bold text-primary uppercase">+ submittal</span>}</td>
                             <td className="px-2 py-1.5 text-slate-500">{li.manufacturer || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li.qty || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500">{li.unit || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500">{li.spec || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li.needOnSiteDate || "—"}</td>
-                            {canEdit && <td className="px-2 py-1.5 text-right"><button onClick={() => removeLineItem(rfq, li.itemId)} className="text-slate-300 hover:text-red-500" title="Remove item from this RFQ"><Trash2 size={11} /></button></td>}
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              <button onClick={() => toggleDocs(li0._id)} disabled={!li0._id} className={`inline-flex items-center gap-1 mr-1 px-1.5 py-0.5 rounded ${docCount || docsOpen ? "text-primary" : "text-slate-300 hover:text-primary"} disabled:opacity-30`} title="Per-item documents / include submittal package"><Paperclip size={11} />{docCount > 0 ? docCount : ""}</button>
+                              {canEdit && <button onClick={() => removeLineItem(rfq, li.itemId)} className="text-slate-300 hover:text-red-500" title="Remove item from this RFQ"><Trash2 size={11} /></button>}
+                            </td>
                           </tr>
+                          {docsOpen && (
+                            <tr className="bg-slate-50/70">
+                              <td colSpan={8} className="px-3 py-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className={`flex items-center gap-1.5 text-[11px] font-bold text-slate-600 ${canEdit ? "cursor-pointer" : ""}`}><input type="checkbox" checked={!!li0.includeSubmittal} disabled={!canEdit} onChange={() => toggleIncludeSubmittal(rfq, li0)} /> Include Submittal Package?</label>
+                                  <span className="w-px h-4 bg-slate-200" />
+                                  {(li0.attachments || []).map((a) => (
+                                    <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                                      <FileText size={10} /> <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[12rem] truncate">{a.name}</a>
+                                      {canEdit && <button onClick={() => deleteLineDoc(rfq, li0, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
+                                    </span>
+                                  ))}
+                                  {canEdit && <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> Upload Docs<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLineDoc(rfq, li0, f); e.target.value = ""; }} /></label>}
+                                  {(li0.attachments || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No docs yet — add specs, data sheet, drawings for the vendor.</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                           );
                         })}
-                        {rfq.lineItems.length === 0 && <tr><td colSpan={canEdit ? 8 : 7} className="px-2 py-3 text-center text-slate-400 italic">No items — add from the BOQ below.</td></tr>}
+                        {rfq.lineItems.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-slate-400 italic">No items — add from the BOQ below.</td></tr>}
                       </tbody>
                     </table>
                   </div>
