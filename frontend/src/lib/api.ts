@@ -1931,6 +1931,10 @@ export async function createProcurementPO(projectId: string, rfqId: string, quot
 export async function createPOFromItems(projectId: string, itemIds: string[]): Promise<ApiProcurementPO> {
   return request(`${poBase(projectId)}/from-items`, { method: 'POST', body: JSON.stringify({ itemIds }) });
 }
+// CR-PR-06 — a manual PO not tied to a BOQ/RFQ/approved quote (starts empty).
+export async function createManualPO(projectId: string, vendorName = ""): Promise<ApiProcurementPO> {
+  return request(`${poBase(projectId)}/manual`, { method: 'POST', body: JSON.stringify({ vendorName }) });
+}
 export async function updateProcurementPO(projectId: string, pid: string, body: PoPatch): Promise<ApiProcurementPO> {
   return request(`${poBase(projectId)}/${pid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }

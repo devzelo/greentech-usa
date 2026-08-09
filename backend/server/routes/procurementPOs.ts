@@ -110,6 +110,22 @@ router.post("/from-items", async (req: AuthedRequest, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
+// Manual PO (CR-PR-06) — a PO not tied to a BOQ/RFQ/approved quote. Starts empty; the user
+// adds line items and a vendor in the PO editor.
+router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (block(req, res)) return;
+    const count = await ProcurementPO.countDocuments({ projectId: req.params.id });
+    const poNo = String(8000 + count + 1);
+    const po = await ProcurementPO.create({
+      projectId: req.params.id, poNo, lineItems: [], total: "0",
+      vendorName: String(req.body?.vendorName || ""), terms: DEFAULT_PO_TERMS, addedByName: req.user!.name || "",
+    });
+    await logEvent(req, { entityId: String(po._id), action: "created", toValue: poNo });
+    res.status(201).json(po);
+  } catch (err) { next(err); }
+});
+
 const PO_FIELDS = ["terms", "termsMode", "notes", "shipTo", "deliveryMethod", "status", "invoiceNo", "invoiceAmount", "invoiceDate",
   "signerName", "signerEmail", "signerPhone", "signerTitle", "signatureUrl", "stampUrl",
   "partnerSignerName", "partnerSignerEmail", "partnerSignerPhone", "partnerSignatureUrl", "partnerStampUrl"] as const;

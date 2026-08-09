@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt, Archive, RotateCcw } from "lucide-react";
 import {
-  fetchProcurementPOs, createProcurementPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
+  fetchProcurementPOs, createProcurementPO, createManualPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
   uploadPOAttachment, deletePOAttachment, fetchRfqs, fetchVendors, attachmentUrl,
   fetchProcurementItems, fetchProcurementSections, uploadDocument,
   fetchSignatories, fetchStamps, uploadPOPartyImage, attachPOFile, fetchSubmittals, invoiceFromPO, fetchInvoices,
@@ -31,6 +31,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [newPoMenu, setNewPoMenu] = useState(false); // CR-PR-06 — "+New PO" dropdown
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
   const [manageId, setManageId] = useState<string | null>(null); // §A1 — actions via popup
@@ -113,6 +114,12 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
       const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
       await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), "procurement-po", true);
     } catch { /* best-effort */ }
+  };
+  // CR-PR-06 — a manual PO (not from a BOQ/quote); opens straight into the editor.
+  const createManual = async () => {
+    setNewPoMenu(false);
+    try { const po = await createManualPO(projectId); setPOs((p) => [po, ...p]); setOpenId(po._id); void autoSavePoDoc(po); toast(`Manual PO ${po.poNo} created — add the vendor and line items.`, "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not create the PO.", "error"); }
   };
   const createPO = async (rfqId: string, quoteId: string) => {
     try { const po = await createProcurementPO(projectId, rfqId, quoteId); setPOs((p) => [...p, po]); setOpenId(po._id); void autoSavePoDoc(po); }
@@ -549,6 +556,22 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
         <div className="flex items-center gap-2 shrink-0">
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
           {pos.length > 0 && <button onClick={printSummary} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"><FileText size={13} /> Print summary</button>}
+          {/* CR-PR-06 — the PO tab now has a +New PO button with source options. */}
+          {canEdit && !showArchived && (
+            <div className="relative">
+              <button onClick={() => setNewPoMenu((v) => !v)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary"><Plus size={14} /> New PO <ChevronDown size={12} /></button>
+              {newPoMenu && (
+                <>
+                  <button type="button" aria-label="Close" onClick={() => setNewPoMenu(false)} className="fixed inset-0 z-10 cursor-default" />
+                  <div className="absolute right-0 z-20 mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5">
+                    <button onClick={createManual} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700">Manual PO <span className="block text-[10px] font-medium text-slate-400">Empty PO — add vendor &amp; line items yourself</span></button>
+                    <div className="border-t border-slate-100 my-1" />
+                    <p className="px-3 py-1.5 text-[11px] text-slate-400">From an <strong>approved quote</strong>: open <strong>RFQs</strong> → an accepted quote has a “Create PO” button. From <strong>BOQ items</strong>: select items in <strong>BOQ</strong> → “Create PO”.</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
