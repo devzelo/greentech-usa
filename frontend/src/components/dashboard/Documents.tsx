@@ -95,6 +95,9 @@ export default function Documents() {
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [view, setView] = useState<ViewMode>("list");
   const [selected, setSelected] = useState<ApiGlobalDocument | null>(null);
+  // CR-P-07 — in the card view the per-file description is hidden by default; the user
+  // reveals it with a subtle "+ note" opt-in (kept for RFP appendix labels).
+  const [descOpen, setDescOpen] = useState<Set<string>>(new Set());
   const [highlightId, setHighlightId] = useState<string | null>(null);
   // Folder-drill navigation: pick a project → tab → section group. Null = top level.
   const [browse, setBrowse] = useState<{ pid?: string; tabId?: string; group?: string }>({});
@@ -504,14 +507,19 @@ export default function Documents() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{d.projectName}</p>
                 <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">{sectionLabel(d.section)}</p>
               </button>
-              {/* Per-file description — right under the name, editable inline. */}
+              {/* Per-file description — hidden by default (CR-P-07); shown when set or opted in. */}
               {canEditDocs ? (
-                <input
-                  defaultValue={d.description || ""}
-                  onBlur={(e) => saveDescription(d, e.target.value)}
-                  placeholder="Add a description…"
-                  className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-100 focus:ring-2 focus:ring-primary/20 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 outline-none"
-                />
+                d.description || descOpen.has(d._id) ? (
+                  <input
+                    autoFocus={descOpen.has(d._id) && !d.description}
+                    defaultValue={d.description || ""}
+                    onBlur={(e) => saveDescription(d, e.target.value)}
+                    placeholder="Add a description…"
+                    className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-100 focus:ring-2 focus:ring-primary/20 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 outline-none"
+                  />
+                ) : (
+                  <button onClick={() => setDescOpen((s) => new Set(s).add(d._id))} className="text-[10px] font-semibold text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">+ note</button>
+                )
               ) : d.description ? (
                 <p className="text-[11px] text-slate-500">{d.description}</p>
               ) : null}
