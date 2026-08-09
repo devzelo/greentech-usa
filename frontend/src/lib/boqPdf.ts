@@ -19,22 +19,23 @@ export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiP
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
   const M = 40;
-  const PW = 841.89, PH = 595.28; // A4 landscape (wide table)
+  const PW = 1190.55, PH = 841.89; // A3 landscape (CR-P-16 — fits all columns + full text)
 
   let page = doc.addPage([PW, PH]);
   let y = 0;
 
+  // A3-landscape column layout — the extra width goes mostly to Description and Spec (CR-P-15).
   const cols = [
     { label: "#", x: M, w: 26 },
-    { label: "Description", x: M + 26, w: 196 },
-    { label: "Brand", x: M + 222, w: 82 },
-    { label: "Vendor", x: M + 304, w: 82 },
-    { label: "Qty", x: M + 386, w: 38 },
-    { label: "Unit", x: M + 424, w: 40 },
-    { label: "Spec", x: M + 464, w: 84 },
-    { label: "Need on site", x: M + 548, w: 76 },
-    { label: "Order by", x: M + 624, w: 76 },
-    { label: "Status", x: M + 700, w: 62 },
+    { label: "Description", x: M + 26, w: 336 },
+    { label: "Brand", x: M + 362, w: 100 },
+    { label: "Vendor", x: M + 462, w: 100 },
+    { label: "Qty", x: M + 562, w: 40 },
+    { label: "Unit", x: M + 602, w: 44 },
+    { label: "Spec", x: M + 646, w: 190 },
+    { label: "Need on site", x: M + 836, w: 84 },
+    { label: "Order by", x: M + 920, w: 84 },
+    { label: "Status", x: M + 1004, w: 64 },
   ];
 
   const drawHeader = () => {
