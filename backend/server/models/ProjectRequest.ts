@@ -33,7 +33,8 @@ export interface IProjectRequest extends Document {
   signatureUrl: string;
   stampUrl: string;
   contextLines: Array<{ label: string; value: string }>;  // custom info lines printed on the document
-  sections: Array<{ title: string; body: string }>;       // extra named rich-text sections (HTML)
+  // Extra named rich-text sections (HTML). Per-section status / lock / notes (client CR-B-15/17/19).
+  sections: Array<{ title: string; body: string; status?: string; locked?: boolean; notes?: string }>;
   archived: boolean;   // hidden from the normal list; restorable from the Archived view
   attachments: IRequestFile[];  // our drafted request document(s)
   responses: IRequestResponse[];
@@ -67,7 +68,7 @@ const ProjectRequestSchema = new Schema<IProjectRequest>(
     signatureUrl: { type: String, default: "" },
     stampUrl: { type: String, default: "" },
     contextLines: { type: [{ label: { type: String, default: "" }, value: { type: String, default: "" } }], default: [] },
-    sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" } }], default: [] },
+    sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, notes: { type: String, default: "" } }], default: [] },
     archived: { type: Boolean, default: false },
     attachments: { type: [FileSchema], default: [] },
     responses: { type: [ResponseSchema], default: [] },

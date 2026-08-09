@@ -1615,11 +1615,14 @@ export interface ApiProjectRequest {
   title: string; date: string; description: string; status: ProjectRequestStatus;
   signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string;
   contextLines?: Array<{ label: string; value: string }>;
-  sections?: Array<{ title: string; body: string }>;
+  sections?: RequestSection[];
   archived?: boolean;
   attachments: ApiRequestFile[]; responses: ApiRequestResponse[];
   addedById: string; addedByName: string; createdAt?: string;
 }
+// A custom named section with per-section status / lock / notes (client CR-B-15/17/19).
+export type RequestSectionStatus = "" | "NotStarted" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
+export type RequestSection = { title: string; body: string; status?: RequestSectionStatus; locked?: boolean; notes?: string };
 // The Contract-Administration request catalogue (must mirror the backend REQUEST_TYPES list).
 export const REQUEST_TYPES: string[] = [
   "Request for Information (RFI)", "Request for Clarification (RFC)", "Technical Clarification",
@@ -1637,7 +1640,7 @@ export async function fetchProjectRequests(projectId: string, category?: Request
   if (archived) parts.push("archived=true");
   return request(`${reqBase(projectId)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
-export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: Array<{ title: string; body: string }> }): Promise<ApiProjectRequest> {
+export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[] }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
 export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived">>): Promise<ApiProjectRequest> {

@@ -22,11 +22,22 @@ const cleanLines = (v: unknown): Array<{ label: string; value: string }> =>
     ? v.map((l) => ({ label: String((l as { label?: unknown })?.label ?? "").slice(0, 80), value: String((l as { value?: unknown })?.value ?? "").slice(0, 400) }))
        .filter((l) => l.label || l.value).slice(0, 30)
     : [];
-// Custom named rich-text sections (title + HTML body).
-const cleanSections = (v: unknown): Array<{ title: string; body: string }> =>
+// Custom named rich-text sections (title + HTML body + per-section status/lock/notes).
+const SECTION_STATUSES = ["", "NotStarted", "InProgress", "WaitingInfo", "UnderReview", "Complete", "NeedsRevision"];
+const cleanSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; notes: string }> =>
   Array.isArray(v)
-    ? v.map((s) => ({ title: String((s as { title?: unknown })?.title ?? "").slice(0, 120), body: String((s as { body?: unknown })?.body ?? "").slice(0, 20000) }))
-       .filter((s) => s.title || s.body).slice(0, 20)
+    ? v.map((s) => {
+        const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; notes?: unknown };
+        const status = String(o?.status ?? "");
+        return {
+          title: String(o?.title ?? "").slice(0, 120),
+          body: String(o?.body ?? "").slice(0, 20000),
+          status: SECTION_STATUSES.includes(status) ? status : "",
+          locked: Boolean(o?.locked),
+          notes: String(o?.notes ?? "").slice(0, 4000),
+        };
+      })
+       .filter((s) => s.title || s.body || s.status || s.notes).slice(0, 40)
     : [];
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {

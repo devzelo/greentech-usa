@@ -1,11 +1,23 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, MessageSquare, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy } from "lucide-react";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
   REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
+  type RequestSection, type RequestSectionStatus,
 } from "../../lib/api";
+
+// Per-section status options (client CR-B-15). Locked/Unlocked is a separate toggle.
+const SECTION_STATUS_OPTS: { v: RequestSectionStatus; label: string; cls: string }[] = [
+  { v: "", label: "No status", cls: "bg-slate-100 text-slate-400" },
+  { v: "NotStarted", label: "Not Started", cls: "bg-slate-100 text-slate-500" },
+  { v: "InProgress", label: "In Progress", cls: "bg-amber-50 text-amber-600" },
+  { v: "WaitingInfo", label: "Waiting for Info", cls: "bg-orange-50 text-orange-600" },
+  { v: "UnderReview", label: "Under Review", cls: "bg-blue-50 text-blue-600" },
+  { v: "Complete", label: "Complete", cls: "bg-emerald-50 text-emerald-600" },
+  { v: "NeedsRevision", label: "Needs Revision", cls: "bg-red-50 text-red-600" },
+];
 import { buildRequestPdf } from "../../lib/requestPdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
@@ -87,16 +99,28 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
   // Custom sections on an existing request — update locally, debounce the PATCH of the whole array.
   const secTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const onSectionsChange = (rid: string, sections: Array<{ title: string; body: string }>, immediate = false) => {
+  const onSectionsChange = (rid: string, sections: RequestSection[], immediate = false) => {
     setRows((p) => p.map((x) => (x._id === rid ? { ...x, sections } : x)));
     clearTimeout(secTimers.current[rid]);
     const commit = () => { saveStatus.track(updateProjectRequest(projectId, rid, { sections }).then(patch)).catch(() => {}); };
     if (immediate) commit(); else secTimers.current[rid] = setTimeout(commit, 700);
   };
-  const secUpdate = (r: ApiProjectRequest, i: number, p: Partial<{ title: string; body: string }>, immediate: boolean) =>
+  const secUpdate = (r: ApiProjectRequest, i: number, p: Partial<RequestSection>, immediate: boolean) =>
     onSectionsChange(r._id, (r.sections || []).map((x, j) => (j === i ? { ...x, ...p } : x)), immediate);
   const secAdd = (r: ApiProjectRequest) => onSectionsChange(r._id, [...(r.sections || []), { title: "", body: "" }], true);
   const secDel = (r: ApiProjectRequest, i: number) => onSectionsChange(r._id, (r.sections || []).filter((_, j) => j !== i), true);
+  // Section actions (CR-B-17): reorder + duplicate.
+  const secMove = (r: ApiProjectRequest, i: number, dir: -1 | 1) => {
+    const arr = [...(r.sections || [])]; const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    onSectionsChange(r._id, arr, true);
+  };
+  const secDup = (r: ApiProjectRequest, i: number) => {
+    const arr = [...(r.sections || [])]; const s = arr[i];
+    arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "", locked: false });
+    onSectionsChange(r._id, arr, true);
+  };
   const setStatus = (r: ApiProjectRequest, status: ProjectRequestStatus) => { patch({ ...r, status }); updateProjectRequest(projectId, r._id, { status }).then(patch).catch(() => {}); };
   const remove = async (r: ApiProjectRequest) => {
     if (!(await confirm({ title: "Delete request?", message: `${r.number} and its responses will be removed.`, confirmLabel: "Delete" }))) return;
@@ -181,16 +205,41 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                           ) : <div className="mt-1 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: r.description || "<span class='text-slate-400'>—</span>" }} />}
                         </div>
 
-                        {/* Custom named sections for this request. */}
-                        {(r.sections || []).map((s, i) => (
-                          <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
-                            <div className="flex items-center gap-2">
-                              {canEdit ? <input className={`${inp} font-bold`} placeholder="Section title" defaultValue={s.title} onBlur={(e) => secUpdate(r, i, { title: e.target.value }, true)} /> : <p className="text-xs font-bold text-slate-700 normal-case">{s.title}</p>}
-                              {canEdit && <button onClick={() => secDel(r, i)} className="text-slate-300 hover:text-red-500 shrink-0"><X size={16} /></button>}
+                        {/* Custom named sections — per-section status, lock, reorder, duplicate,
+                            notes (client CR-B-15/17/19). A locked section can't be edited/deleted. */}
+                        {(r.sections || []).map((s, i) => {
+                          const st = SECTION_STATUS_OPTS.find((o) => o.v === (s.status || "")) || SECTION_STATUS_OPTS[0];
+                          const locked = !!s.locked;
+                          const secEditable = canEdit && !locked;
+                          const count = (r.sections || []).length;
+                          return (
+                            <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {secEditable
+                                  ? <input className={`${inp} font-bold flex-grow min-w-[8rem]`} placeholder="Section title" defaultValue={s.title} onBlur={(e) => secUpdate(r, i, { title: e.target.value }, true)} />
+                                  : <p className="text-xs font-bold text-slate-700 normal-case flex-grow">{s.title || "Untitled section"}{locked && <Lock size={11} className="inline ml-1 text-amber-500" />}</p>}
+                                {canEdit && (
+                                  <div className="flex items-center gap-0.5 shrink-0">
+                                    <select value={s.status || ""} onChange={(e) => secUpdate(r, i, { status: e.target.value as RequestSectionStatus }, true)} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+                                      {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                                    </select>
+                                    <button onClick={() => secUpdate(r, i, { locked: !locked }, true)} title={locked ? "Unlock section" : "Lock section"} className={`p-1 rounded ${locked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+                                    <button onClick={() => secMove(r, i, -1)} disabled={i === 0} title="Move up" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronUp size={13} /></button>
+                                    <button onClick={() => secMove(r, i, 1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
+                                    <button onClick={() => secDup(r, i)} title="Duplicate section" className="p-1 rounded text-slate-300 hover:text-primary"><Copy size={13} /></button>
+                                    <button onClick={() => secDel(r, i)} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
+                                  </div>
+                                )}
+                              </div>
+                              {secEditable
+                                ? <RichTextEditor value={s.body} onChange={(html) => secUpdate(r, i, { body: html }, false)} minHeight={110} placeholder="Section content…" onImageUpload={imageUpload} />
+                                : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />}
+                              {canEdit && !locked && (
+                                <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" defaultValue={s.notes || ""} onBlur={(e) => secUpdate(r, i, { notes: e.target.value }, true)} />
+                              )}
                             </div>
-                            {canEdit ? <RichTextEditor value={s.body} onChange={(html) => secUpdate(r, i, { body: html }, false)} minHeight={110} placeholder="Section content…" onImageUpload={imageUpload} /> : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "" }} />}
-                          </div>
-                        ))}
+                          );
+                        })}
                         {canEdit && <button onClick={() => secAdd(r)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={12} /> Add section</button>}
                         {/* Custom info lines for this request. */}
                         {canEdit && (
