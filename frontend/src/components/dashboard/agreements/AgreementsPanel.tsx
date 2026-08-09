@@ -574,6 +574,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   <div className="mt-1"><RichTextEditor value={draft.sections[f]} onChange={(html) => setDraft({ ...draft, sections: { ...draft.sections, [f]: html } })} minHeight={mh} placeholder={`${label}…`} /></div>
                 </div>
               ))}
+
+              {/* Custom named sections — CR-B-04: these live BEFORE the NDA; the NDA is always
+                  the last section before the signature. Each is a titled rich-text block. */}
+              {draft.extraSections.map((s, i) => (
+                <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
+                  <div className="flex items-center gap-2">
+                    <input className={`${inp} font-bold`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
+                    <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
+                  </div>
+                  <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />
+                </div>
+              ))}
+              <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
+
+              {/* NDA — always the last section before the signature (CR-B-04). */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
@@ -601,18 +616,6 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   </div>
                 ))}
               </div>
-
-              {/* Custom named sections — each a titled rich-text block (tables, pictures, lists). */}
-              {draft.extraSections.map((s, i) => (
-                <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
-                  <div className="flex items-center gap-2">
-                    <input className={`${inp} font-bold`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
-                    <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
-                  </div>
-                  <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />
-                </div>
-              ))}
-              <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
 
               {/* Company signer */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">

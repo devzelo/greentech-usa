@@ -205,24 +205,17 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   }
 
   // 4–8) Sections
+  // CR-B-04 — order: fixed sections, then the user's custom sections, then the NDA LAST
+  // (right before the signatures). The NDA is intentionally excluded from this first list.
   const sections: Array<[string, string]> = [
     ["Scope / Description", ag.sections?.scope || ""],
     ["Terms & Conditions", ag.sections?.terms || ""],
     ["Payment Conditions", ag.sections?.paymentConditions || ""],
     ["Delivery Conditions", ag.sections?.deliveryConditions || ""],
   ];
-  if (ag.sections?.ndaEnabled) {
-    // NDA can be written inline OR attached as a file from the NDA library. When a file is used,
-    // the agreement notes that the NDA is attached (the file is stapled after the document).
-    if (ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.name) {
-      sections.push(["Non-Disclosure (NDA)", `A Non-Disclosure Agreement ("${ag.sections.ndaFile.name}") is attached to and forms part of this agreement.`]);
-    } else {
-      sections.push(["Non-Disclosure (NDA)", ag.sections?.ndaText || ""]);
-    }
-  }
   let idx = 0;
-  for (const [heading, body] of sections) {
-    if (!body.trim()) continue;
+  const renderSection = async (heading: string, body: string) => {
+    if (!body.trim()) return;
     idx++;
     cur.need(40);
     cur.gap(6);
@@ -231,16 +224,22 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     // Bodies may be rich-text HTML (tables/pictures) or plain text; renderHtml handles both.
     if (/<[a-z][\s\S]*>/i.test(body)) await renderHtml(cur, doc, body, font, bold);
     else cur.para(body, font, 9, INK);
-  }
+  };
+  for (const [heading, body] of sections) await renderSection(heading, body);
 
-  // Custom named sections added by the user (title + rich-text body).
+  // Custom named sections added by the user (title + rich-text body) — before the NDA.
   for (const s of ag.extraSections || []) {
     if (!s.title && !s.body?.trim()) continue;
-    idx++;
-    cur.need(40); cur.gap(6);
-    cur.text(`${idx}. ${s.title || "Section"}`, bold, 11, INK);
-    cur.gap(2);
-    if (s.body?.trim()) { if (/<[a-z][\s\S]*>/i.test(s.body)) await renderHtml(cur, doc, s.body, font, bold); else cur.para(s.body, font, 9, INK); }
+    await renderSection(s.title || "Section", s.body || "");
+  }
+
+  // NDA — always the last numbered section before the signatures.
+  if (ag.sections?.ndaEnabled) {
+    if (ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.name) {
+      await renderSection("Non-Disclosure (NDA)", `A Non-Disclosure Agreement ("${ag.sections.ndaFile.name}") is attached to and forms part of this agreement.`);
+    } else {
+      await renderSection("Non-Disclosure (NDA)", ag.sections?.ndaText || "");
+    }
   }
 
   // 9) Signature blocks — signature + stamp kept together with each party's details.

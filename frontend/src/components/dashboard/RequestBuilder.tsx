@@ -13,6 +13,7 @@ import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import ShareMenu from "./ShareMenu";
 import RichTextEditor from "./RichTextEditor";
+import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import PdfPreviewModal from "./PdfPreviewModal";
 
 // A request/notice builder — the same engine for the Contract Administration tab (full type
@@ -73,22 +74,23 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
     finally { setSaving(false); }
   };
+  const saveStatus = useSaveStatus();
   const save = (rid: string, field: "title" | "date" | "description" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl", value: string) =>
-    updateProjectRequest(projectId, rid, { [field]: value }).then(patch).catch(() => {});
+    saveStatus.track(updateProjectRequest(projectId, rid, { [field]: value }).then(patch)).catch(() => {});
   // Rich-text body edits: update the row locally at once (keeps the editor in sync) and debounce
   // the PATCH so we don't hit the API on every keystroke.
   const descTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const onDescChange = (rid: string, html: string) => {
     setRows((p) => p.map((x) => (x._id === rid ? { ...x, description: html } : x)));
     clearTimeout(descTimers.current[rid]);
-    descTimers.current[rid] = setTimeout(() => { updateProjectRequest(projectId, rid, { description: html }).catch(() => {}); }, 700);
+    descTimers.current[rid] = setTimeout(() => { saveStatus.track(updateProjectRequest(projectId, rid, { description: html })).catch(() => {}); }, 700);
   };
   // Custom sections on an existing request — update locally, debounce the PATCH of the whole array.
   const secTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const onSectionsChange = (rid: string, sections: Array<{ title: string; body: string }>, immediate = false) => {
     setRows((p) => p.map((x) => (x._id === rid ? { ...x, sections } : x)));
     clearTimeout(secTimers.current[rid]);
-    const commit = () => { updateProjectRequest(projectId, rid, { sections }).then(patch).catch(() => {}); };
+    const commit = () => { saveStatus.track(updateProjectRequest(projectId, rid, { sections }).then(patch)).catch(() => {}); };
     if (immediate) commit(); else secTimers.current[rid] = setTimeout(commit, 700);
   };
   const secUpdate = (r: ApiProjectRequest, i: number, p: Partial<{ title: string; body: string }>, immediate: boolean) =>
@@ -119,6 +121,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-slate-400">{rows.length} request{rows.length === 1 ? "" : "s"}{showArchived ? " (archived)" : ""}. Each has an auto-number; the client's replies are kept under it.</p>
         <div className="flex items-center gap-2">
+          <SaveStatus state={saveStatus.state} savedAt={saveStatus.savedAt} className="mr-1" />
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
           {canEdit && !showArchived && <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> New request</button>}
         </div>
