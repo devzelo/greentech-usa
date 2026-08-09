@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, ChevronUp, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare } from "lucide-react";
 import {
   fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
   addSubmittalRevision, updateSubmittalRevision, uploadSubmittalAttachment, deleteSubmittalAttachment,
@@ -47,6 +47,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
   const [building, setBuilding] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
+  const [openResp, setOpenResp] = useState<Set<string>>(new Set()); // CR-P-20 — revealed "Client Response" panels
   const [search, setSearch] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [dispoFilter, setDispoFilter] = useState("all");
@@ -293,6 +294,10 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
           <div className={`rounded-2xl border p-4 ${rev.isCurrent ? "border-primary/20 bg-primary/5" : "border-slate-100 bg-slate-50/40 opacity-90"}`}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2 flex-wrap">
+                {/* CR-P-19 — unique submittal number, from the linked BOQ item; revisions read "· RV2". */}
+                {sub.itemId && itemNo[sub.itemId] != null && (
+                  <span className="text-sm font-extrabold text-primary">Submittal #{itemNo[sub.itemId]}{rev.revisionNo > 0 ? ` · RV${rev.revisionNo}` : ""}</span>
+                )}
                 <span className="text-sm font-bold text-slate-800">Rev {rev.revisionNo}</span>
                 {rev.optionLabel && <span className="text-xs font-bold text-slate-500">· {rev.optionLabel}</span>}
                 {rev.isCurrent ? <span className="text-[10px] font-bold text-primary">CURRENT</span> : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400"><Lock size={10} /> Superseded (locked)</span>}
@@ -313,31 +318,50 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Brand / option submitted</label>
                   <input className={inp} value={rev.optionLabel || ""} onChange={(e) => saveRevField(sub._id, rev._id, "optionLabel", e.target.value)} placeholder="e.g. United PVC pipe" />
                 </div>
-                <div className="mb-3">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client decision <span className="font-medium normal-case text-slate-400">— set this after the client responds on their portal</span></label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
-                    <select value={rev.disposition} onChange={(e) => setDispo(sub._id, rev._id, e.target.value as SubmittalDisposition)} className={`${inp} font-bold`}>
-                      {DISPO.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
-                    </select>
-                    <label className="flex items-center gap-2 text-[11px] text-slate-500">Sent <input type="date" value={rev.sentToClientAt} onChange={(e) => saveRevField(sub._id, rev._id, "sentToClientAt", e.target.value)} onBlur={(e) => onSentDateCommit(sub._id, rev._id, e.target.value)} className={inp} /></label>
-                    <label className="flex items-center gap-2 text-[11px] text-slate-500">Returned <input type="date" value={rev.respondedAt} onChange={(e) => saveRevField(sub._id, rev._id, "respondedAt", e.target.value)} className={inp} /></label>
-                  </div>
-                </div>
-                {/* C7 — once the client has decided, their signed letter is mandatory */}
-                {DECIDED.includes(rev.disposition) && !rev.attachments.some((a) => a.component === "clientLetter") && (
-                  <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">
-                    <AlertTriangle size={13} className="text-red-500 shrink-0" />
-                    <span className="text-[11px] font-bold text-red-600">Client letter is missing — upload the signed “{dispoMeta(rev.disposition).label}” letter under “Client response” on the right.</span>
-                  </div>
-                )}
-                {/* Client comments + the client's signed reply, side by side (the reply is separate from the package) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client comments</label>
-                    <textarea rows={4} value={rev.notes} onChange={(e) => saveRevField(sub._id, rev._id, "notes", e.target.value)} placeholder="Client comments (e.g. the reason they gave for rejection)…" className={`${inp} resize-none mt-1 h-[calc(100%-1.25rem)]`} />
-                  </div>
-                  {renderClientResponse(sub, rev, false)}
-                </div>
+                {/* CR-P-20 — the client decision, comments and signed letter are hidden by
+                    default behind a "Client Response (N)" button so the builder stays clean
+                    until a response comes in. N = signed client letters filed on this revision. */}
+                {(() => {
+                  const respCount = rev.attachments.filter((a) => a.component === "clientLetter").length;
+                  const open = openResp.has(rev._id);
+                  const missingLetter = DECIDED.includes(rev.disposition) && respCount === 0;
+                  return (
+                    <div className="mb-3">
+                      <button onClick={() => setOpenResp((s) => { const n = new Set(s); if (n.has(rev._id)) n.delete(rev._id); else n.add(rev._id); return n; })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold ${missingLetter ? "bg-red-50 text-red-600 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                        <MessageSquare size={12} /> Client Response ({respCount}) {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      {open && (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client decision <span className="font-medium normal-case text-slate-400">— set this after the client responds on their portal</span></label>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
+                              <select value={rev.disposition} onChange={(e) => setDispo(sub._id, rev._id, e.target.value as SubmittalDisposition)} className={`${inp} font-bold`}>
+                                {DISPO.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
+                              </select>
+                              <label className="flex items-center gap-2 text-[11px] text-slate-500">Sent <input type="date" value={rev.sentToClientAt} onChange={(e) => saveRevField(sub._id, rev._id, "sentToClientAt", e.target.value)} onBlur={(e) => onSentDateCommit(sub._id, rev._id, e.target.value)} className={inp} /></label>
+                              <label className="flex items-center gap-2 text-[11px] text-slate-500">Returned <input type="date" value={rev.respondedAt} onChange={(e) => saveRevField(sub._id, rev._id, "respondedAt", e.target.value)} className={inp} /></label>
+                            </div>
+                          </div>
+                          {/* C7 — once the client has decided, their signed letter is mandatory */}
+                          {missingLetter && (
+                            <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                              <AlertTriangle size={13} className="text-red-500 shrink-0" />
+                              <span className="text-[11px] font-bold text-red-600">Client letter is missing — upload the signed “{dispoMeta(rev.disposition).label}” letter under “Client response” on the right.</span>
+                            </div>
+                          )}
+                          {/* Client comments + the client's signed reply, side by side */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client comments</label>
+                              <textarea rows={4} value={rev.notes} onChange={(e) => saveRevField(sub._id, rev._id, "notes", e.target.value)} placeholder="Client comments (e.g. the reason they gave for rejection)…" className={`${inp} resize-none mt-1 h-[calc(100%-1.25rem)]`} />
+                            </div>
+                            {renderClientResponse(sub, rev, false)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               /* Read-only — superseded (locked) revisions keep the full record */

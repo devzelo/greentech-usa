@@ -23,8 +23,9 @@ import ProcurementQuotes from "./ProcurementQuotes";
 import ProcurementShipment from "./ProcurementShipment";
 import ProcurementPO from "./ProcurementPO";
 import { projectPdfInfo } from "../../lib/pdfProjectHeader";
-import { PDFDownloadLink, BlobProvider } from "@react-pdf/renderer";
+import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import ProjectReportPDF from "./ProjectReportPDF";
+import PdfPreviewModal from "./PdfPreviewModal";
 import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
@@ -212,6 +213,7 @@ export default function ProjectWorkspace() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [showReport, setShowReport] = useState(false);   // CR-P-01 — Quick Report popup preview
 
   // Tabs
   const [activeTab, setActiveTab] = useState("nature");
@@ -2407,18 +2409,11 @@ export default function ProjectWorkspace() {
                 </button>
               )}
 
+              {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
               {!isGuest && (
-                <PDFDownloadLink
-                  document={<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />}
-                  fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
-                >
-                  {({ loading }) => (
-                    <span className="cursor-pointer flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
-                      <FileText size={14} />
-                      {loading ? "Preparing…" : "Create Report"}
-                    </span>
-                  )}
-                </PDFDownloadLink>
+                <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+                  <FileText size={14} /> Quick Report
+                </button>
               )}
 
               {canManage && (
@@ -5880,6 +5875,16 @@ export default function ProjectWorkspace() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
+      {showReport && project && (
+        <PdfPreviewModal
+          title={`Quick Report — ${project.name || "Project"}`}
+          fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
+          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />).toBlob()}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
