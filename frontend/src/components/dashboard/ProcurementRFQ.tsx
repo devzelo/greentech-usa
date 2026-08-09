@@ -5,7 +5,8 @@ import {
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
   uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
-  type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus,
+  fetchCompanies, COMPANY_CATEGORIES,
+  type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
 } from "../../lib/api";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { buildRfqPdf } from "../../lib/rfqPdf";
@@ -41,6 +42,10 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
   const [openDocs, setOpenDocs] = useState<Set<string>>(new Set()); // CR-PR-03 — expanded per-item doc panels
+  // CR-PR-04 — choose RFQ receivers from the Companies Directory.
+  const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [receiverFor, setReceiverFor] = useState<string | null>(null); // rfq id whose receiver picker is open
+  const [recvSearch, setRecvSearch] = useState("");
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [submittals, setSubmittals] = useState<ApiSubmittal[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
@@ -226,6 +231,17 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     if (!li._id || !aid) return;
     try { const up = await deleteRfqLineFile(projectId, rfq._id, li._id, aid); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
+
+  // CR-PR-04 — receiver picker (from the Companies Directory).
+  useEffect(() => { fetchCompanies().then(setCompanies).catch(() => {}); }, []);
+  const toggleRecipient = async (rfq: ApiRfq, c: ApiCompany) => {
+    const has = (rfq.recipients || []).some((r) => r.companyId === c._id);
+    const recipients: RfqRecipient[] = has
+      ? (rfq.recipients || []).filter((r) => r.companyId !== c._id)
+      : [...(rfq.recipients || []), { companyId: c._id, name: c.name, category: c.category }];
+    setRfqs((p) => p.map((r) => (r._id === rfq._id ? { ...r, recipients } : r)));
+    try { await updateRfq(projectId, rfq._id, { recipients }); } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
   };
   const confirmAddItems = async (rfq: ApiRfq) => {
     const chosen = items.filter((it) => addItemPicks[it._id] && !rfq.lineItems.some((l) => l.itemId === it._id));
@@ -440,6 +456,23 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   <div className="bg-slate-50 rounded-xl p-3 space-y-1.5">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={12} /> Notes &amp; description <span className="font-medium normal-case text-slate-400">— extra info for the vendor (specs, standards); shown after the table on the PDF</span></div>
                     <textarea rows={3} className={`${inp} resize-y`} placeholder="e.g. All items must comply with ASTM C591; submit mill certs with delivery…" value={rfq.notes || ""} disabled={!canEdit} onChange={(e) => setRfqNotes(rfq._id, e.target.value)} onBlur={(e) => saveRfqNotes(rfq._id, e.target.value)} />
+                  </div>
+
+                  {/* CR-PR-04 — receivers chosen from the Companies Directory. */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Send size={12} /> Send to {(rfq.recipients?.length || 0) > 0 && <span className="text-slate-400 normal-case">({rfq.recipients!.length})</span>}</div>
+                      {canEdit && <button onClick={() => { setReceiverFor(rfq._id); setRecvSearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Building2 size={11} /> Choose receivers</button>}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(rfq.recipients || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No receivers chosen — pick vendors, subs, manufacturers, etc. from the Directory.</span>}
+                      {(rfq.recipients || []).map((r) => (
+                        <span key={r.companyId} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                          {r.name}<span className="text-slate-300">· {r.category}</span>
+                          {canEdit && <button onClick={() => toggleRecipient(rfq, { _id: r.companyId, name: r.name, category: r.category } as ApiCompany)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Shipping (address + type) — carried onto the PO */}
@@ -883,6 +916,45 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       )}
       {dialogs}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
+
+      {/* CR-PR-04 — receiver picker (Companies Directory) */}
+      {receiverFor && (() => {
+        const rfq = rfqs.find((r) => r._id === receiverFor);
+        if (!rfq) return null;
+        const q = recvSearch.trim().toLowerCase();
+        const list = companies.filter((c) => !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q));
+        return (
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setReceiverFor(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-900">Choose receivers{rfq.rfqNo ? ` — RFQ #${rfq.rfqNo}` : ""}</h3>
+                <button onClick={() => setReceiverFor(null)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input value={recvSearch} onChange={(e) => setRecvSearch(e.target.value)} placeholder="Search vendors, subs, manufacturers…" className={`${inp} pl-9`} />
+                </div>
+                {companies.length === 0 && <p className="text-sm text-slate-400 italic">No companies in the Directory yet — add them under <strong>Directory</strong> in the left menu.</p>}
+                <div className="max-h-80 overflow-y-auto space-y-1">
+                  {list.map((c) => {
+                    const on = (rfq.recipients || []).some((r) => r.companyId === c._id);
+                    return (
+                      <button key={c._id} onClick={() => toggleRecipient(rfq, c)} className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left ${on ? "border-primary bg-primary/5" : "border-slate-100 hover:bg-slate-50"}`}>
+                        <div className="min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{c.name}</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">{COMPANY_CATEGORIES.find((x) => x.v === c.category)?.label || c.category}{c.email ? ` · ${c.email}` : ""}</p></div>
+                        {on ? <CheckCircle2 size={16} className="text-primary shrink-0" /> : <span className="w-4 h-4 rounded-full border border-slate-200 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex justify-end px-5 py-3 border-t border-slate-100">
+                <button onClick={() => setReceiverFor(null)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary">Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Add-item picker — append BOQ items to an existing RFQ */}
       {addItemsFor && (() => {

@@ -1474,11 +1474,13 @@ export interface ApiVendorQuote {
   attachments: ExpenseAttachment[];
 }
 export type RfqStatus = "Draft" | "Sent" | "Quoting" | "Awarded";
+export interface RfqRecipient { companyId: string; name: string; category: string }
 export interface ApiRfq {
   _id: string; projectId: string; rfqNo: string; title: string;
   lineItems: RfqLineItem[]; includesShipping: boolean; includesTax: boolean; notes: string;
   shipToLocation: string; deliveryMethod: string;
   status?: RfqStatus; sentAt?: string; createdAt?: string;
+  recipients?: RfqRecipient[];
   addedByName: string; quotes: ApiVendorQuote[];
 }
 
@@ -1492,7 +1494,7 @@ export async function fetchRfqs(projectId: string): Promise<ApiRfq[]> { return r
 export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string }): Promise<ApiRfq> {
   return request(rfqBase(projectId), { method: 'POST', body: JSON.stringify(body) });
 }
-export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[] }>): Promise<ApiRfq> {
+export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[] }>): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 export async function deleteRfq(projectId: string, rid: string): Promise<void> { await request(`${rfqBase(projectId)}/${rid}`, { method: 'DELETE' }); }
