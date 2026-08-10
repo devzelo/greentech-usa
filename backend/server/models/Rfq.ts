@@ -27,6 +27,7 @@ export interface IRfq extends Document {
   uploadedDocument: IRfqLineFile | null;
   notes: string;
   addedByName: string;
+  archived: boolean;        // CR-PR-07 — archived RFQs are hidden from the normal list.
 }
 
 const RfqLineFileSchema = new Schema<IRfqLineFile>({ name: String, filePath: String, fileType: String, size: String }, { _id: true });
@@ -51,6 +52,7 @@ const RfqSchema = new Schema<IRfq>(
     uploadedDocument: { type: RfqLineFileSchema, default: null },
     notes: { type: String, default: "" },
     addedByName: { type: String, default: "" },
+    archived: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

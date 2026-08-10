@@ -1510,6 +1510,7 @@ export interface ApiRfq {
   recipients?: RfqRecipient[];
   uploadedDocument?: RfqLineFile | null;
   addedByName: string; quotes: ApiVendorQuote[];
+  archived?: boolean;
 }
 
 export async function fetchVendors(projectId: string): Promise<ApiVendor[]> { return request(`/projects/${projectId}/vendors`); }
@@ -1518,12 +1519,16 @@ export async function updateVendor(projectId: string, vid: string, body: Partial
 export async function deleteVendor(projectId: string, vid: string): Promise<void> { await request(`/projects/${projectId}/vendors/${vid}`, { method: 'DELETE' }); }
 
 const rfqBase = (projectId: string) => `/projects/${projectId}/rfqs`;
-export async function fetchRfqs(projectId: string): Promise<ApiRfq[]> { return request(rfqBase(projectId)); }
+export async function fetchRfqs(projectId: string, archived = false): Promise<ApiRfq[]> { return request(`${rfqBase(projectId)}${archived ? '?archived=true' : ''}`); }
 export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string }): Promise<ApiRfq> {
   return request(rfqBase(projectId), { method: 'POST', body: JSON.stringify(body) });
 }
-export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[] }>): Promise<ApiRfq> {
+export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean }>): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+/** CR-PR-07 — archive or restore an RFQ (archived RFQs are hidden from the normal list). */
+export async function setRfqArchived(projectId: string, rid: string, archived: boolean): Promise<ApiRfq> {
+  return request(`${rfqBase(projectId)}/${rid}`, { method: 'PATCH', body: JSON.stringify({ archived }) });
 }
 export async function deleteRfq(projectId: string, rid: string): Promise<void> { await request(`${rfqBase(projectId)}/${rid}`, { method: 'DELETE' }); }
 // STEP 1 — send the request to vendors (marks Sent, advances the BOQ items to RFQ_Sent).

@@ -30,7 +30,9 @@ async function logEvent(req: AuthedRequest, e: { entityId: string; action: strin
 // List RFQs with their vendor quotes attached.
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const rfqs = await Rfq.find({ projectId: req.params.id }).sort({ createdAt: 1 }).lean();
+    // CR-PR-07 — hide archived RFQs by default; ?archived=true returns only archived ones.
+    const arch = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
+    const rfqs = await Rfq.find({ projectId: req.params.id, ...arch }).sort({ createdAt: 1 }).lean();
     const quotes = await VendorQuote.find({ projectId: req.params.id }).lean();
     const byRfq: Record<string, unknown[]> = {};
     for (const q of quotes) (byRfq[String(q.rfqId)] ||= []).push(q);
@@ -83,7 +85,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
   try {
     if (block(req, res)) return;
     const patch: Record<string, unknown> = {};
-    for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients"]) if (f in (req.body || {})) patch[f] = req.body[f];
+    for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients", "archived"]) if (f in (req.body || {})) patch[f] = req.body[f];
     // Per-item docs (CR-PR-03) are uploaded separately, so a wholesale lineItems PATCH must NOT
     // wipe them — preserve each existing line's attachments by _id when the client omits them.
     if (Array.isArray(patch.lineItems)) {

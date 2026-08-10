@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip, Archive, RotateCcw } from "lucide-react";
 import {
-  fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, sendRfq,
+  fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
   uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
@@ -73,6 +73,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [addItemPicks, setAddItemPicks] = useState<Record<string, boolean>>({});
   const [inlineVendorFor, setInlineVendorFor] = useState<string | null>(null); // RFQ id showing the inline "new vendor" form
   const [savingDoc, setSavingDoc] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false); // CR-PR-07 — toggle archived RFQs
   const { confirm, dialogs } = useDialogs();
 
   // Auto-open a specific RFQ's manage popup (e.g. right after creating it from the BOQ).
@@ -84,12 +85,17 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const load = async () => {
     setLoading(true);
     try {
-      const [v, r, it, secs, subs] = await Promise.all([fetchVendors(projectId), fetchRfqs(projectId), fetchProcurementItems(projectId), fetchProcurementSections(projectId), fetchSubmittals(projectId)]);
+      const [v, r, it, secs, subs] = await Promise.all([fetchVendors(projectId), fetchRfqs(projectId, showArchived), fetchProcurementItems(projectId), fetchProcurementSections(projectId), fetchSubmittals(projectId)]);
       setVendors(v); setRfqs(r); setItems(it.filter((x) => x.status !== "Cancelled")); setSubmittals(subs); setSections(secs);
       setSecNames(Object.fromEntries(secs.map((s) => [s._id, s.name])));
     } catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, showArchived]);
+  // CR-PR-07 — archive or restore an RFQ; it drops out of the current (active/archived) view.
+  const archiveRfq = async (rid: string, next: boolean) => {
+    try { await setRfqArchived(projectId, rid, next); setRfqs((p) => p.filter((r) => r._id !== rid)); toast(next ? "RFQ archived." : "RFQ restored.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not archive.", "error"); }
+  };
 
   const vendorName = (vid: string) => vendors.find((v) => v._id === vid)?.name || "Unassigned";
 
@@ -808,6 +814,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   {canEdit && <button onClick={() => setManageId(rfq._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — quotes, prices, award, shipping"><Settings2 size={12} /> Manage</button>}
                   <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: `RFQ_${rfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(rfq) })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview"><Eye size={14} /></button>
                   <button onClick={() => downloadRfqPdf(rfq)} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="RFQ PDF"><Download size={14} /></button>
+                  {canEdit && <button onClick={() => archiveRfq(rfq._id, !rfq.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500 hover:bg-white" title={rfq.archived ? "Restore" : "Archive"}>{rfq.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                   {canEdit && <button onClick={() => removeRfq(rfq._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete"><Trash2 size={13} /></button>}
                 </div>
               </td>
@@ -830,8 +837,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           <h3 className="text-xl font-display font-bold text-slate-900">RFQs &amp; Bid Leveling</h3>
           <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>
         </div>
-        {canEdit && <button onClick={createUploadRfq} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:border-primary hover:text-primary transition-all" title="RFQ already made — upload the ready document"><Upload size={13} /> Upload RFQ</button>}
-        {canEdit && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New RFQ</button>}
+        {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`} title={showArchived ? "Show active RFQs" : "Show archived RFQs"}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
+        {canEdit && !showArchived && <button onClick={createUploadRfq} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:border-primary hover:text-primary transition-all" title="RFQ already made — upload the ready document"><Upload size={13} /> Upload RFQ</button>}
+        {canEdit && !showArchived && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New RFQ</button>}
       </div>
 
       {/* Vendors */}
