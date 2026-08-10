@@ -1,11 +1,12 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import { Upload, FileText, Eye, Download, X, Loader2, Globe } from "lucide-react";
+import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw } from "lucide-react";
 import {
   fetchDocuments,
   uploadDocument,
   deleteDocument,
   setDocumentPublic,
   updateDocumentDescription,
+  setDocumentArchived,
   documentUrl,
   ApiDocument,
 } from "../../lib/api";
@@ -37,11 +38,12 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
   // rather than saving silently on blur.
   const [descEdit, setDescEdit] = useState<{ doc: ApiDocument; value: string } | null>(null);
   const [descSaving, setDescSaving] = useState(false);
+  const [showArchived, setShowArchived] = useState(false); // CR-P-10
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const list = await fetchDocuments(projectId, section);
+      const list = await fetchDocuments(projectId, section, showArchived);
       setDocs(list);
     } catch {
       /* ignore */
@@ -50,7 +52,12 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
     }
   };
 
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [projectId, section]);
+  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [projectId, section, showArchived]);
+
+  const archiveDoc = async (d: ApiDocument, next: boolean) => {
+    try { await setDocumentArchived(projectId, d._id, next); setDocs((p) => p.filter((x) => x._id !== d._id)); toast(next ? "File archived." : "File restored.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
 
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -106,12 +113,15 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
         <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
           {title}{docs.length > 0 && <span className="text-slate-400 ml-2 font-medium normal-case tracking-normal">({docs.length})</span>}
         </h4>
-        {/* CR-P-09/10 — download every file in this category/section at once. */}
-        {docs.length > 1 && (
-          <button onClick={() => docs.forEach((d, i) => setTimeout(() => { const a = document.createElement("a"); a.href = documentUrl(d); a.download = d.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-primary hover:text-white transition-colors" title="Download all files in this section">
-            <Download size={12} /> Download all
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
+          {/* CR-P-09/10 — download every file in this category/section at once. */}
+          {docs.length > 1 && !showArchived && (
+            <button onClick={() => docs.forEach((d, i) => setTimeout(() => { const a = document.createElement("a"); a.href = documentUrl(d); a.download = d.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-primary hover:text-white transition-colors" title="Download all files in this section">
+              <Download size={12} /> Download all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -157,6 +167,9 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                 >
                   <Globe size={13} />
                 </button>
+              )}
+              {canEdit && (
+                <button onClick={() => archiveDoc(d, !showArchived)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
               )}
               {canEdit && (
                 <button onClick={() => handleDelete(d._id)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-red-500" title="Delete"><X size={13} /></button>

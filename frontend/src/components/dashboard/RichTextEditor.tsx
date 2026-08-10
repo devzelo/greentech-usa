@@ -67,6 +67,7 @@ export default function RichTextEditor({
   placeholder,
   minHeight = 160,
   onImageUpload,
+  draftKey,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -74,6 +75,7 @@ export default function RichTextEditor({
   placeholder?: string;
   minHeight?: number;
   onImageUpload?: (file: File) => Promise<string>;
+  draftKey?: string;   // CR-B-14b — persist an offline local draft under this key
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -84,14 +86,28 @@ export default function RichTextEditor({
   const [selImg, setSelImg] = useState<HTMLImageElement | null>(null);
   const [tableDims, setTableDims] = useState({ rows: 3, cols: 3 });
   const [fullscreen, setFullscreen] = useState(false); // CR-B-02 — bigger editing area
+  const [localDraft, setLocalDraft] = useState<string | null>(null); // CR-B-14b — recovered offline draft
 
   // Sync external value in only when it differs, so typing doesn't reset the caret.
   useEffect(() => {
     const el = ref.current;
     if (el && el.innerHTML !== value) el.innerHTML = value || "";
-  }, [value]);
+    // Once the server value matches the saved draft, the local copy is no longer needed.
+    if (draftKey && value) { try { if (localStorage.getItem(`rte:${draftKey}`) === value) localStorage.removeItem(`rte:${draftKey}`); } catch { /* ignore */ } }
+  }, [value, draftKey]);
 
-  const emit = () => { if (ref.current) onChange(ref.current.innerHTML); };
+  // On mount, offer to restore an unsaved local draft (e.g. after an offline reload).
+  useEffect(() => {
+    if (!draftKey) return;
+    try { const d = localStorage.getItem(`rte:${draftKey}`); if (d && d !== (value || "")) setLocalDraft(d); } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  const emit = () => {
+    if (!ref.current) return;
+    if (draftKey) { try { localStorage.setItem(`rte:${draftKey}`, ref.current.innerHTML); } catch { /* quota/full — ignore */ } }
+    onChange(ref.current.innerHTML);
+  };
 
   // Remember the caret/selection so toolbar popovers (which can steal focus) can
   // restore it before applying a command.
@@ -438,6 +454,17 @@ export default function RichTextEditor({
         </div>
       )}
 
+      {/* CR-B-14b — recovered offline draft: offer to restore, never auto-apply. */}
+      {!disabled && localDraft && (
+        <div className="flex items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-3 py-1.5 text-[11px]">
+          <span className="font-bold text-amber-700">Unsaved draft recovered from this device.</span>
+          <span className="flex items-center gap-1.5">
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); if (ref.current) { ref.current.innerHTML = localDraft; } emit(); setLocalDraft(null); }} className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-bold hover:bg-amber-600">Restore</button>
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); if (draftKey) { try { localStorage.removeItem(`rte:${draftKey}`); } catch { /* ignore */ } } setLocalDraft(null); }} className="px-2 py-0.5 rounded-lg border border-amber-200 text-amber-700 font-bold hover:bg-amber-100">Dismiss</button>
+          </span>
+        </div>
+      )}
+
       {/* Contextual image toolbar — appears when an image is selected (CR-B-13). */}
       {!disabled && selImg && (
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-primary/5 px-3 py-1.5 text-xs">
@@ -459,7 +486,7 @@ export default function RichTextEditor({
         ref={ref}
         contentEditable={!disabled}
         suppressContentEditableWarning
-        onInput={(e) => { saveSelection(); onChange((e.target as HTMLDivElement).innerHTML); }}
+        onInput={() => { saveSelection(); emit(); }}
         onKeyUp={saveSelection}
         onMouseUp={onSurfaceMouse}
         onClick={onSurfaceMouse}

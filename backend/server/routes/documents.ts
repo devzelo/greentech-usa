@@ -57,8 +57,10 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       const a = await sectionAccess(req, req.params.id, req.query.section as string);
       if (!a?.canView) return res.json([]);
     }
-    const filter: Record<string, string> = { projectId: req.params.id };
+    const filter: Record<string, unknown> = { projectId: req.params.id };
     if (req.query.section) filter.section = req.query.section as string;
+    // Hide archived files by default; ?archived=true shows the archived view (CR-P-10).
+    filter.archived = req.query.archived === "true" ? true : { $ne: true };
     const docs = await ProjectDocument.find(filter).sort({ uploadedAt: -1 });
     res.json(docs);
   } catch (err) {
@@ -139,6 +141,7 @@ router.patch("/:did", async (req: AuthedRequest, res: Response, next: NextFuncti
     const allowed = await canEditSection(req, target.projectId, target.section);
     if (!allowed) return res.status(403).json({ error: "Not allowed." });
     if (typeof req.body?.description === "string") target.description = req.body.description.slice(0, 500);
+    if (typeof req.body?.archived === "boolean") target.archived = req.body.archived;
     await target.save();
     res.json(target);
   } catch (err) {

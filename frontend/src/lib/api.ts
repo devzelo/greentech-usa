@@ -1128,6 +1128,7 @@ export interface ApiDocument {
   filePath: string;
   description?: string;
   public?: boolean;
+  archived?: boolean;
   uploadedAt: string;
 }
 
@@ -1147,9 +1148,16 @@ export async function updateDocumentDescription(projectId: string, did: string, 
   });
 }
 
-export async function fetchDocuments(projectId: string, section?: string): Promise<ApiDocument[]> {
-  const qs = section ? `?section=${encodeURIComponent(section)}` : '';
-  return request<ApiDocument[]>(`/projects/${projectId}/documents${qs}`);
+// CR-P-10 — archive / restore a file.
+export async function setDocumentArchived(projectId: string, did: string, archived: boolean): Promise<ApiDocument> {
+  return request<ApiDocument>(`/projects/${projectId}/documents/${did}`, { method: 'PATCH', body: JSON.stringify({ archived }) });
+}
+export async function fetchDocuments(projectId: string, section?: string, archived = false): Promise<ApiDocument[]> {
+  const q = new URLSearchParams();
+  if (section) q.set("section", section);
+  if (archived) q.set("archived", "true");
+  const qs = q.toString();
+  return request<ApiDocument[]>(`/projects/${projectId}/documents${qs ? `?${qs}` : ""}`);
 }
 
 export interface ApiGlobalDocument extends ApiDocument {

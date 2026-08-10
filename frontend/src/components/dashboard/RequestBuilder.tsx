@@ -241,7 +241,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         </div>
                         <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / request
                           {canEdit ? (
-                            <div className="mt-1"><RichTextEditor value={r.description} onChange={(html) => onDescChange(r._id, html)} minHeight={140} placeholder="Describe the request… (tables, pictures, lines supported)" onImageUpload={imageUpload} /></div>
+                            <div className="mt-1"><RichTextEditor value={r.description} onChange={(html) => onDescChange(r._id, html)} minHeight={140} placeholder="Describe the request… (tables, pictures, lines supported)" onImageUpload={imageUpload} draftKey={`req-desc-${r._id}`} /></div>
                           ) : <div className="mt-1 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: r.description || "<span class='text-slate-400'>—</span>" }} />}
                         </div>
 
