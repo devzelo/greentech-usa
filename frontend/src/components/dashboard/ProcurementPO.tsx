@@ -24,7 +24,7 @@ const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5
 const STATUSES = ["Sent", "Confirmed", "InvoiceReceived", "Paid"] as const;
 const statusCls: Record<string, string> = { Sent: "bg-amber-50 text-amber-600", Confirmed: "bg-blue-50 text-blue-600", InvoiceReceived: "bg-indigo-50 text-indigo-600", Paid: "bg-emerald-50 text-emerald-600" };
 
-export default function ProcurementPO({ projectId, canEdit, projectInfo }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo }) {
+export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void }) {
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
@@ -565,8 +565,8 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo }: { pro
                   <button type="button" aria-label="Close" onClick={() => setNewPoMenu(false)} className="fixed inset-0 z-10 cursor-default" />
                   <div className="absolute right-0 z-20 mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5">
                     <button onClick={createManual} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700">Manual PO <span className="block text-[10px] font-medium text-slate-400">Empty PO — add vendor &amp; line items yourself</span></button>
-                    <div className="border-t border-slate-100 my-1" />
-                    <p className="px-3 py-1.5 text-[11px] text-slate-400">From an <strong>approved quote</strong>: open <strong>RFQs</strong> → an accepted quote has a “Create PO” button. From <strong>BOQ items</strong>: select items in <strong>BOQ</strong> → “Create PO”.</p>
+                    <button onClick={() => { setNewPoMenu(false); onGoToBOQ?.(); }} disabled={!onGoToBOQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From BOQ items <span className="block text-[10px] font-medium text-slate-400">Select items in BOQ → Create PO</span></button>
+                    <button onClick={() => { setNewPoMenu(false); onGoToRFQ?.(); }} disabled={!onGoToRFQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From an approved quote / RFQ <span className="block text-[10px] font-medium text-slate-400">Open RFQs → accepted quote → Create PO</span></button>
                   </div>
                 </>
               )}

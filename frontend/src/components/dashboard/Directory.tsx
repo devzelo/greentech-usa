@@ -279,7 +279,18 @@ export default function Directory() {
                       ))}</div>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-400">Records auto-link here when this company is chosen as an invoice receiver or RFQ recipient. POs/submittals link by vendor and can be added next.</p>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><FileText size={12} /> Purchase Orders ({links.pos.length})</p>
+                    {links.pos.length === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.pos.map((po) => (
+                        <div key={po._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">PO #{po.poNo}</span>
+                          <span className="text-slate-500">{po.total || "—"} · {po.status}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400">Records auto-link here when this company is chosen as an invoice receiver / RFQ recipient, or matches a PO's vendor name.</p>
                 </>
               )}
             </div>

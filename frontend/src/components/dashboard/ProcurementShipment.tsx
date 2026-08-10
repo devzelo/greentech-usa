@@ -56,12 +56,15 @@ type ShipDraft = {
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
   trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
   containerType: string; containerSize: string; openBed: boolean;
+  goods: Array<{ description: string; qty: string; unit: string }>;
+  agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string;
 };
 const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
   containerType: "", containerSize: "", openBed: false,
+  goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "",
 };
 
 // Days-until-ETA countdown for the tracking header (CR-PR-08).
@@ -147,6 +150,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
       trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
       containerType: s.containerType || "", containerSize: s.containerSize || "", openBed: !!s.openBed,
+      goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "",
     });
     setPopup({ mode: "edit", sid: s._id });
   };
@@ -160,6 +164,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
       containerType: draft.containerType, containerSize: draft.containerSize, openBed: draft.openBed,
+      goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
     };
     try {
       if (popup.mode === "create") {
@@ -303,6 +308,21 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType, active.containerSize].filter(Boolean).join(" · ") || "—"}{active.openBed ? " · Open bed" : ""}</p></div>
                   {active.trackingUrl && <div className="col-span-2 sm:col-span-3 flex items-end"><a href={active.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline"><ExternalLink size={11} /> Track on carrier site</a></div>}
                 </div>
+
+                {/* CR-PR-09 — items in the shipment + shipping agency. */}
+                {((active.goods?.length || 0) > 0 || active.agencyName) && (
+                  <div className="rounded-2xl border border-slate-100 p-3 space-y-2">
+                    {(active.goods?.length || 0) > 0 && (
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Items ({active.goods!.length})</p>
+                        <div className="space-y-0.5">{active.goods!.map((g, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 text-[11px]"><span className="text-slate-700 font-medium truncate">{g.description || "—"}</span><span className="text-slate-400 whitespace-nowrap">{[g.qty, g.unit].filter(Boolean).join(" ")}</span></div>
+                        ))}</div>
+                      </div>
+                    )}
+                    {active.agencyName && <p className="text-[11px] text-slate-500"><span className="font-bold text-slate-400">Shipping agency:</span> {[active.agencyName, active.agencyContact, active.agencyPhone, active.agencyEmail].filter(Boolean).join(" · ")}</p>}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 text-[11px]">
                   <div className="flex items-start gap-1.5"><MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">From:</span> <span className="font-bold text-slate-700">{active.fromLocation || "—"}</span></span></div>
@@ -456,6 +476,28 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
                 <p className="text-[10px] text-slate-400">Paste the latest status from the carrier's site — a live auto-fetch can be added later.</p>
+              </div>
+
+              {/* CR-PR-09 — goods in the shipment + shipping agency / forwarder contact. */}
+              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Package size={11} /> Items in this shipment</p>
+                  <button onClick={() => setDraft({ ...draft, goods: [...draft.goods, { description: "", qty: "", unit: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add item</button>
+                </div>
+                {draft.goods.length === 0 && <p className="text-[11px] text-slate-400 italic">No items listed.</p>}
+                {draft.goods.map((g, i) => (
+                  <div key={i} className="grid grid-cols-6 gap-2 items-center">
+                    <input className={`${inp} col-span-4`} placeholder="Description" value={g.description} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} />
+                    <input className={inp} placeholder="Qty" value={g.qty} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} />
+                    <div className="flex items-center gap-1"><input className={inp} placeholder="Unit" value={g.unit} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)) })} /><button onClick={() => setDraft({ ...draft, goods: draft.goods.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button></div>
+                  </div>
+                ))}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <input className={inp} placeholder="Shipping agency" value={draft.agencyName} onChange={(e) => setDraft({ ...draft, agencyName: e.target.value })} />
+                  <input className={inp} placeholder="Agency contact" value={draft.agencyContact} onChange={(e) => setDraft({ ...draft, agencyContact: e.target.value })} />
+                  <input className={inp} placeholder="Agency phone" value={draft.agencyPhone} onChange={(e) => setDraft({ ...draft, agencyPhone: e.target.value })} />
+                  <input className={inp} placeholder="Agency email" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} />
+                </div>
               </div>
 
               {/* Shipment costs — summed into the total shown on the shipment tab. */}

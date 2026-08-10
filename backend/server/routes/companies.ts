@@ -3,7 +3,10 @@ import crypto from "crypto";
 import Company from "../models/Company";
 import Invoice from "../models/Invoice";
 import Rfq from "../models/Rfq";
+import ProcurementPO from "../models/ProcurementPO";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Fields a company may self-update via the public link. Banking/tax are "sensitive": changes go
 // into a pending buffer for GT to approve, rather than overwriting verified data immediately.
@@ -60,11 +63,17 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
 // CR-PR-05 — records that reference this company (auto-linked into its profile).
 router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const [invoices, rfqs] = await Promise.all([
-      Invoice.find({ companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
+    const c = await Company.findById(req.params.id).select("name").lean();
+    const name = (c as { name?: string } | null)?.name || "";
+    const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
+    const [invoices, rfqs, pos] = await Promise.all([
+      // Invoices link by companyId (receiver picker) OR by matching party name.
+      Invoice.find(nameRx ? { $or: [{ companyId: req.params.id }, { party: nameRx }] } : { companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
       Rfq.find({ "recipients.companyId": req.params.id }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
+      // POs store the vendor NAME — match the company's name to surface them under the profile.
+      nameRx ? ProcurementPO.find({ vendorName: nameRx }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     ]);
-    res.json({ invoices, rfqs });
+    res.json({ invoices, rfqs, pos });
   } catch (err) { next(err); }
 });
 

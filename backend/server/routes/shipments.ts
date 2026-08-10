@@ -86,8 +86,13 @@ async function syncItemsFromShipment(req: AuthedRequest, projectId: string, ship
 
 const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadline",
   "costFreight", "costCustoms", "costDemurrage", "costOther",
-  // Tracking header + container details (CR-PR-08/09).
-  "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize"] as const;
+  // Tracking header + container details + agency (CR-PR-08/09).
+  "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
+  "agencyName", "agencyContact", "agencyPhone", "agencyEmail"] as const;
+
+const cleanGoods = (v: unknown) => Array.isArray(v)
+  ? v.map((g) => ({ description: String((g as { description?: unknown })?.description ?? "").slice(0, 300), qty: String((g as { qty?: unknown })?.qty ?? "").slice(0, 40), unit: String((g as { unit?: unknown })?.unit ?? "").slice(0, 40) })).filter((g) => g.description || g.qty).slice(0, 200)
+  : [];
 
 // The rows every shipment must keep (Demurrage Cost, the shipper contract) — they can't be
 // renamed or removed, or the read-time backfill would silently recreate them as empty rows.
@@ -129,6 +134,7 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const patch: Record<string, unknown> = {};
     for (const f of META_FIELDS) if (typeof body[f] === "string") patch[f] = body[f].slice(0, f === "description" ? 2000 : 300);
     if (typeof body.openBed === "boolean") patch.openBed = body.openBed;
+    if (Array.isArray(body.goods)) patch.goods = cleanGoods(body.goods);
     if (Array.isArray(body.poIds)) patch.poIds = body.poIds.map(String).slice(0, 100);
     if (typeof body.status === "string" && STATUSES.includes(body.status as ShipmentStatus)) patch.status = body.status;
     const before = await Shipment.findOne({ _id: req.params.sid, projectId: req.params.id });

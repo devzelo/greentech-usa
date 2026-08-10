@@ -1574,15 +1574,18 @@ export interface ApiShipment {
   description?: string; fromLocation?: string; toLocation?: string;
   status?: ShipmentStatus; deadline?: string; poIds?: string[];
   costFreight?: string; costCustoms?: string; costDemurrage?: string; costOther?: string;
-  // Tracking header + container details (CR-PR-08/09).
+  // Tracking header + container details + goods/agency (CR-PR-08/09).
   trackingNo?: string; carrier?: string; currentLocation?: string; etaDate?: string; trackingUrl?: string;
   containerType?: string; containerSize?: string; openBed?: boolean;
+  goods?: Array<{ description: string; qty: string; unit: string }>;
+  agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
   rows: ApiShipmentRow[];
 }
 export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
-  "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed">>;
+  "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
+  "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }
@@ -2093,6 +2096,7 @@ export async function resolveCompanyPending(id: string, action: "approve" | "dis
 export interface CompanyLinks {
   invoices: Array<{ _id: string; number: string; type: string; party: string; amount: string; date: string; status: string; projectId: string }>;
   rfqs: Array<{ _id: string; rfqNo: string; title: string; status: string; projectId: string; sentAt: string }>;
+  pos: Array<{ _id: string; poNo: string; vendorName: string; total: string; status: string; projectId: string }>;
 }
 export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }
 export async function fetchPublicCompany(token: string): Promise<PublicCompany> {
