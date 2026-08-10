@@ -99,7 +99,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // CR-PR-03 — build the RFQ PDF and append each "Include Submittal Package?" item's current
   // submittal package pages after it, so the vendor gets the RFQ + the specs in one document.
   const buildRfqWithSubmittals = async (rfq: ApiRfq, vendor?: ApiVendor): Promise<Blob> => {
-    const base = await buildRfqWithSubmittals(rfq, vendor);
+    const base = await buildRfqPdf(pdfRfq(rfq), vendor, projectInfo);
     const includeItems = (rfq.lineItems || []).filter((li) => li.includeSubmittal);
     if (!includeItems.length) return base;
     try {
