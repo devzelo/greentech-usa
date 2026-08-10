@@ -29,7 +29,7 @@ import ShareMenu from "./ShareMenu";
 import RichTextEditor from "./RichTextEditor";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import PresenceBar from "./PresenceBar";
-import { usePresence } from "../../lib/usePresence";
+import { useSectionPresence } from "../../lib/usePresence";
 import PdfPreviewModal from "./PdfPreviewModal";
 
 // A request/notice builder — the same engine for the Contract Administration tab (full type
@@ -92,7 +92,10 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
   const saveStatus = useSaveStatus();
   // CR-B-01/16 — presence on this builder + notify when a new colleague joins.
-  const present = usePresence(`requests:${projectId}:${category}`);
+  // `activeSection` is the "<requestId>:<sectionIndex>" the current user is editing, reported to
+  // peers so each section can show who else is in it.
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const present = useSectionPresence(`requests:${projectId}:${category}`, activeSection);
   const prevPresent = useRef<Set<string>>(new Set());
   useEffect(() => {
     const now = new Set(present.map((u) => u.userId));
@@ -241,7 +244,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         </div>
                         <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / request
                           {canEdit ? (
-                            <div className="mt-1"><RichTextEditor value={r.description} onChange={(html) => onDescChange(r._id, html)} minHeight={140} placeholder="Describe the request… (tables, pictures, lines supported)" onImageUpload={imageUpload} draftKey={`req-desc-${r._id}`} /></div>
+                            <div className="mt-1" onFocusCapture={() => setActiveSection(null)}><RichTextEditor value={r.description} onChange={(html) => onDescChange(r._id, html)} minHeight={140} placeholder="Describe the request… (tables, pictures, lines supported)" onImageUpload={imageUpload} draftKey={`req-desc-${r._id}`} /></div>
                           ) : <div className="mt-1 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: r.description || "<span class='text-slate-400'>—</span>" }} />}
                         </div>
 
@@ -252,12 +255,21 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                           const locked = !!s.locked;
                           const secEditable = canEdit && !locked;
                           const count = (r.sections || []).length;
+                          const secKey = `${r._id}:${i}`;
+                          const secPeers = present.filter((u) => u.section === secKey);
                           return (
-                            <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
+                            <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`} onFocusCapture={() => secEditable && setActiveSection(secKey)}>
                               <div className="flex flex-wrap items-center gap-2">
                                 {secEditable
                                   ? <input className={`${inp} font-bold flex-grow min-w-[8rem]`} placeholder="Section title" defaultValue={s.title} onBlur={(e) => secUpdate(r, i, { title: e.target.value }, true)} />
                                   : <p className="text-xs font-bold text-slate-700 normal-case flex-grow">{s.title || "Untitled section"}{locked && <Lock size={11} className="inline ml-1 text-amber-500" />}</p>}
+                                {/* CR-B-16 — live: who else is editing this section right now. */}
+                                {secPeers.length > 0 && (
+                                  <span className="inline-flex items-center gap-1 shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5" title={`${secPeers.map((u) => u.name).join(", ")} editing this section`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    {secPeers.map((u) => u.name).join(", ")}
+                                  </span>
+                                )}
                                 {canEdit && (
                                   <div className="flex items-center gap-0.5 shrink-0">
                                     <select value={s.status || ""} onChange={(e) => secSetStatus(r, i, e.target.value as RequestSectionStatus)} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">

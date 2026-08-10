@@ -2116,9 +2116,12 @@ export async function submitPublicCompany(token: string, body: Partial<PublicCom
 }
 
 // Live presence (CR-B-16) — who else is viewing/editing a record.
-export interface PresenceUser { userId: string; name: string }
-export async function presenceBeat(resource: string): Promise<{ users: PresenceUser[] }> {
-  return request(`/presence/${encodeURIComponent(resource)}`, { method: "POST" });
+export interface PresenceUser { userId: string; name: string; section?: string }
+export async function presenceBeat(resource: string, section?: string | null): Promise<{ users: PresenceUser[] }> {
+  return request(`/presence/${encodeURIComponent(resource)}`, {
+    method: "POST",
+    body: section != null ? JSON.stringify({ section }) : undefined,
+  });
 }
 export async function presenceLeave(resource: string): Promise<void> {
   try { await request(`/presence/${encodeURIComponent(resource)}`, { method: "DELETE" }); } catch { /* best-effort */ }

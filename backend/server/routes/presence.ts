@@ -8,7 +8,9 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 const router = Router();
 router.use(requireAuth);
 
-type Entry = { userId: string; name: string; lastSeen: number };
+// `section` (optional) lets a user report WHICH sub-area of a record they are in, so the UI can
+// show per-section presence (CR-B-16) from a single room/heartbeat.
+type Entry = { userId: string; name: string; lastSeen: number; section?: string };
 const rooms = new Map<string, Map<string, Entry>>();
 const TTL = 30_000;
 
@@ -19,7 +21,7 @@ function prune(room: Map<string, Entry>) {
 function listUsers(room?: Map<string, Entry>) {
   if (!room) return [];
   prune(room);
-  return [...room.values()].map((e) => ({ userId: e.userId, name: e.name }));
+  return [...room.values()].map((e) => ({ userId: e.userId, name: e.name, section: e.section }));
 }
 
 // Heartbeat — marks the caller present in the room and returns everyone currently there.
@@ -28,7 +30,9 @@ router.post("/:resource", (req: AuthedRequest, res: Response) => {
   let room = rooms.get(key);
   if (!room) { room = new Map(); rooms.set(key, room); }
   const uid = req.user!.userId;
-  room.set(uid, { userId: uid, name: req.user!.name || "Someone", lastSeen: Date.now() });
+  const rawSection = (req.body as { section?: unknown } | undefined)?.section;
+  const section = typeof rawSection === "string" ? rawSection.slice(0, 80) : undefined;
+  room.set(uid, { userId: uid, name: req.user!.name || "Someone", lastSeen: Date.now(), section });
   res.json({ users: listUsers(room) });
 });
 
