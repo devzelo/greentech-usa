@@ -3,7 +3,7 @@ import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Buil
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
-  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile,
+  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
   fetchCompanies, COMPANY_CATEGORIES,
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
@@ -193,6 +193,23 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       void autoSaveRfqDoc(rfq); // documents copy exists whether or not "Save to documents" is clicked
       void load(); // pulls the RFQ back with its vendor quote columns
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create RFQ.", "error"); }
+  };
+  // CR-PR-02 — create a shell RFQ so an already-made RFQ document can be uploaded to it.
+  const createUploadRfq = async () => {
+    try {
+      const rfq = await createRfq(projectId, { title: "Uploaded RFQ", lineItems: [] });
+      setRfqs((p) => [...p, rfq]); setOpenId(rfq._id); setCreating(false);
+      toast("RFQ created — upload your ready-made document in the panel below.", "success");
+      void load();
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not create RFQ.", "error"); }
+  };
+  const uploadRfqDoc = async (rfq: ApiRfq, file: File) => {
+    try { const up = await uploadRfqDocument(projectId, rfq._id, file); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+  };
+  const removeRfqDoc = async (rfq: ApiRfq) => {
+    try { const up = await deleteRfqDocument(projectId, rfq._id); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
   const removeRfq = async (rid: string) => {
     if (!(await confirm({ title: "Delete RFQ?", message: "This deletes the RFQ and all its vendor quotes.", confirmLabel: "Delete" }))) return;
@@ -456,6 +473,20 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   <div className="bg-slate-50 rounded-xl p-3 space-y-1.5">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={12} /> Notes &amp; description <span className="font-medium normal-case text-slate-400">— extra info for the vendor (specs, standards); shown after the table on the PDF</span></div>
                     <textarea rows={3} className={`${inp} resize-y`} placeholder="e.g. All items must comply with ASTM C591; submit mill certs with delivery…" value={rfq.notes || ""} disabled={!canEdit} onChange={(e) => setRfqNotes(rfq._id, e.target.value)} onBlur={(e) => saveRfqNotes(rfq._id, e.target.value)} />
+                  </div>
+
+                  {/* CR-PR-02 — an already-made RFQ document uploaded for this RFQ. */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Upload size={12} /> Uploaded RFQ document <span className="font-medium normal-case text-slate-400">— optional, if the RFQ was made outside the platform</span></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {rfq.uploadedDocument ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-600">
+                          <FileText size={11} /> <a href={attachmentUrl(rfq.uploadedDocument.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary">{rfq.uploadedDocument.name}</a>
+                          {canEdit && <button onClick={() => removeRfqDoc(rfq)} className="text-slate-300 hover:text-red-500 ml-1"><X size={11} /></button>}
+                        </span>
+                      ) : <span className="text-[11px] text-slate-400 italic">No document uploaded.</span>}
+                      {canEdit && <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> {rfq.uploadedDocument ? "Replace" : "Upload"}<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRfqDoc(rfq, f); e.target.value = ""; }} /></label>}
+                    </div>
                   </div>
 
                   {/* CR-PR-04 — receivers chosen from the Companies Directory. */}
@@ -778,6 +809,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           <h3 className="text-xl font-display font-bold text-slate-900">RFQs &amp; Bid Leveling</h3>
           <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>
         </div>
+        {canEdit && <button onClick={createUploadRfq} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:border-primary hover:text-primary transition-all" title="RFQ already made — upload the ready document"><Upload size={13} /> Upload RFQ</button>}
         {canEdit && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New RFQ</button>}
       </div>
 

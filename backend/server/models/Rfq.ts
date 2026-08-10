@@ -23,6 +23,8 @@ export interface IRfq extends Document {
   sentAt: string;           // date the request was sent to vendors
   // Who this RFQ was sent to — chosen from the Companies Directory (CR-PR-04).
   recipients: Array<{ companyId: string; name: string; category: string }>;
+  // An already-made RFQ document uploaded instead of building on the platform (CR-PR-02).
+  uploadedDocument: IRfqLineFile | null;
   notes: string;
   addedByName: string;
 }
@@ -46,6 +48,7 @@ const RfqSchema = new Schema<IRfq>(
     status: { type: String, enum: ["Draft", "Sent", "Quoting", "Awarded"], default: "Draft" },
     sentAt: { type: String, default: "" },
     recipients: { type: [{ companyId: { type: String, default: "" }, name: { type: String, default: "" }, category: { type: String, default: "" } }], default: [] },
+    uploadedDocument: { type: RfqLineFileSchema, default: null },
     notes: { type: String, default: "" },
     addedByName: { type: String, default: "" },
   },

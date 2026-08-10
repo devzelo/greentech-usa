@@ -253,4 +253,28 @@ router.delete("/:rid/line-items/:lid/attachments/:aid", async (req: AuthedReques
   } catch (err) { next(err); }
 });
 
+// CR-PR-02 — upload / remove an already-made RFQ document (reuses the per-item storage folder).
+router.post("/:rid/document", lineUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!rfq) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "RFQ not found." }); }
+    const fileType = (req.file.originalname.split(".").pop() || "").toLowerCase();
+    rfq.uploadedDocument = { name: req.file.originalname, filePath: req.file.path.replace(/\\/g, "/"), fileType, size: humanSize(req.file.size) };
+    await rfq.save();
+    res.status(201).json(rfq);
+  } catch (err) { next(err); }
+});
+router.delete("/:rid/document", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (block(req, res)) return;
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!rfq) return res.status(404).json({ error: "Not found" });
+    if (rfq.uploadedDocument?.filePath) fs.unlink(path.resolve(rfq.uploadedDocument.filePath), () => {});
+    rfq.uploadedDocument = null;
+    await rfq.save();
+    res.json(rfq);
+  } catch (err) { next(err); }
+});
+
 export default router;

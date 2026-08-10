@@ -1486,6 +1486,7 @@ export interface ApiRfq {
   shipToLocation: string; deliveryMethod: string;
   status?: RfqStatus; sentAt?: string; createdAt?: string;
   recipients?: RfqRecipient[];
+  uploadedDocument?: RfqLineFile | null;
   addedByName: string; quotes: ApiVendorQuote[];
 }
 
@@ -1538,6 +1539,17 @@ export async function uploadRfqLineFile(projectId: string, rid: string, lid: str
 }
 export async function deleteRfqLineFile(projectId: string, rid: string, lid: string, aid: string): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}/line-items/${lid}/attachments/${aid}`, { method: 'DELETE' });
+}
+// CR-PR-02 — upload / remove an already-made RFQ document.
+export async function uploadRfqDocument(projectId: string, rid: string, file: File): Promise<ApiRfq> {
+  const fd = new FormData(); fd.append('file', file);
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${rfqBase(projectId)}/${rid}/document`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function deleteRfqDocument(projectId: string, rid: string): Promise<ApiRfq> {
+  return request(`${rfqBase(projectId)}/${rid}/document`, { method: 'DELETE' });
 }
 
 // ── Shipments (documents per delivery) ───────────────────────────────────────
