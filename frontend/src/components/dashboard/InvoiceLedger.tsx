@@ -8,6 +8,7 @@ import {
   type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
+import { buildInvoicePdf } from "../../lib/invoicePdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { toast } from "../../lib/toast";
@@ -509,6 +510,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
               <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
                 <button onClick={() => cur && duplicateInvoice(cur)} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Plus size={13} /> Duplicate</button>
                 <div className="flex items-center gap-2">
+                  <button onClick={() => {
+                    const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractTotal };
+                    setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
+                  }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
                   <button onClick={() => { setBuilderId(null); setBDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
                   <button onClick={saveBuilder} disabled={saving} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
                 </div>
