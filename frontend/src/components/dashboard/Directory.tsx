@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
+  generateCompanyRegisterLink, resolveCompanyPending,
   COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -74,6 +75,19 @@ export default function Directory() {
     try { await deleteCompany(c._id); setCompanies((p) => p.filter((x) => x._id !== c._id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
+  // CR-P-06d — generate + copy the vendor self-registration link.
+  const copyLink = async (c: ApiCompany) => {
+    try {
+      const { token } = await generateCompanyRegisterLink(c._id);
+      const url = `${window.location.origin}/company/register/${token}`;
+      await navigator.clipboard.writeText(url).catch(() => {});
+      toast("Registration link copied — send it to the company to fill in their own details.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not generate the link.", "error"); }
+  };
+  const resolvePending = async (c: ApiCompany, action: "approve" | "discard") => {
+    try { const up = await resolveCompanyPending(c._id, action); setCompanies((p) => p.map((x) => (x._id === up._id ? up : x))); toast(action === "approve" ? "Update approved & applied." : "Pending update discarded.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
 
   // Contact-person repeater helpers
   const cps = () => editor?.draft.contactPersons || [];
@@ -126,11 +140,22 @@ export default function Directory() {
                   <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => copyLink(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Copy self-registration link — the company fills in their own details"><Link2 size={15} /></button>
                   <button onClick={() => openEdit(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Edit"><Pencil size={15} /></button>
                   <button onClick={() => archive(c, !showArchived)} className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
                   <button onClick={() => remove(c)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={15} /></button>
                 </div>
               </div>
+              {/* CR-P-06d — a self-submitted update awaiting GT review. */}
+              {c.pendingUpdate && (
+                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                  <span className="text-[11px] font-bold text-amber-700">Company submitted an update for review.</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => resolvePending(c, "approve")} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600"><Check size={11} /> Approve</button>
+                    <button onClick={() => resolvePending(c, "discard")} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-red-600"><X size={11} /> Discard</button>
+                  </div>
+                </div>
+              )}
               <div className="text-[12px] text-slate-500 space-y-1">
                 {c.email && <p className="flex items-center gap-1.5 truncate"><Mail size={12} className="text-slate-300 shrink-0" /> {c.email}</p>}
                 {c.phone && <p className="flex items-center gap-1.5 truncate"><Phone size={12} className="text-slate-300 shrink-0" /> {c.phone}</p>}

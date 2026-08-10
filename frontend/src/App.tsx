@@ -32,6 +32,7 @@ import UserManagement from "./components/dashboard/UserManagement";
 import Reminders from "./components/dashboard/Reminders";
 import GeneralAgreements from "./components/dashboard/GeneralAgreements";
 import Directory from "./components/dashboard/Directory";
+import CompanyRegister from "./components/CompanyRegister";
 import { motion, useScroll, useSpring } from "motion/react";
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
@@ -138,6 +139,8 @@ export default function App() {
         {/* Auth Routes */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        {/* Public vendor self-registration (CR-P-06d) — no login */}
+        <Route path="/company/register/:token" element={<CompanyRegister />} />
 
         {/* Dashboard Routes */}
         <Route path="/dashboard" element={<DashboardLayout />}>

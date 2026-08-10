@@ -1,6 +1,11 @@
-import { Router, Response, NextFunction } from "express";
+import { Router, Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import Company from "../models/Company";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+
+// Fields a company may self-update via the public link. Banking/tax are "sensitive": changes go
+// into a pending buffer for GT to approve, rather than overwriting verified data immediately.
+const SELF_FIELDS = ["name", "logoUrl", "address", "phone", "email", "website", "contactPersons", "banking", "tax", "notes"] as const;
 
 // Companies / Contact Directory (client CR-P-06). Top-level, project-independent master list.
 const router = Router();
@@ -50,4 +55,55 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
   catch (err) { next(err); }
 });
 
+// CR-P-06d — generate (or reuse) the self-registration token for a company.
+router.post("/:id/register-link", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: "Company not found." });
+    if (!c.registerToken) { c.registerToken = crypto.randomBytes(24).toString("hex"); await c.save(); }
+    res.json({ token: c.registerToken });
+  } catch (err) { next(err); }
+});
+
+// Approve (apply) or discard a company's pending self-submitted update.
+router.post("/:id/pending/:action", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: "Company not found." });
+    if (req.params.action === "approve" && c.pendingUpdate?.data) {
+      const data = JSON.parse(c.pendingUpdate.data) as Record<string, unknown>;
+      for (const f of SELF_FIELDS) if (f in data) (c as unknown as Record<string, unknown>)[f] = data[f];
+    }
+    c.pendingUpdate = null;
+    await c.save();
+    res.json(c);
+  } catch (err) { next(err); }
+});
+
 export default router;
+
+// ── Public self-registration router (NO auth) — mounted separately at /api/public/companies ──
+export const publicCompanyRouter = Router();
+// The vendor opens the link and sees only what they need to fill in (never GT's internal notes).
+publicCompanyRouter.get("/:token", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findOne({ registerToken: req.params.token });
+    if (!c) return res.status(404).json({ error: "This link is invalid or has expired." });
+    res.json({
+      name: c.name, category: c.category, logoUrl: c.logoUrl, address: c.address, phone: c.phone,
+      email: c.email, website: c.website, contactPersons: c.contactPersons, banking: c.banking, tax: c.tax,
+    });
+  } catch (err) { next(err); }
+});
+// The vendor submits their update — it lands in the pending buffer for GT to review.
+publicCompanyRouter.patch("/:token", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findOne({ registerToken: req.params.token });
+    if (!c) return res.status(404).json({ error: "This link is invalid or has expired." });
+    const clean: Record<string, unknown> = {};
+    for (const f of SELF_FIELDS) if (f in (req.body || {})) clean[f] = req.body[f];
+    c.pendingUpdate = { data: JSON.stringify(clean), submittedAt: new Date().toISOString() };
+    await c.save();
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});

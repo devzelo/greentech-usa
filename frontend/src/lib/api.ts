@@ -2025,8 +2025,11 @@ export interface ApiCompany {
   archived?: boolean;
   createdByName?: string;
   createdAt?: string;
+  registerToken?: string;
+  pendingUpdate?: { data: string; submittedAt: string } | null;
 }
-export type CompanyInput = Partial<Omit<ApiCompany, "_id" | "createdByName" | "createdAt">>;
+export type CompanyInput = Partial<Omit<ApiCompany, "_id" | "createdByName" | "createdAt" | "registerToken" | "pendingUpdate">>;
+export interface PublicCompany { name: string; category: string; logoUrl: string; address: string; phone: string; email: string; website: string; contactPersons: ApiCompany["contactPersons"]; banking: ApiCompany["banking"]; tax: ApiCompany["tax"] }
 export async function fetchCompanies(category?: CompanyCategory, archived = false): Promise<ApiCompany[]> {
   const q = new URLSearchParams();
   if (category) q.set("category", category);
@@ -2043,6 +2046,19 @@ export async function updateCompany(id: string, body: CompanyInput): Promise<Api
 }
 export async function deleteCompany(id: string): Promise<void> {
   await request(`/companies/${id}`, { method: "DELETE" });
+}
+// CR-P-06d — vendor self-registration.
+export async function generateCompanyRegisterLink(id: string): Promise<{ token: string }> {
+  return request(`/companies/${id}/register-link`, { method: "POST" });
+}
+export async function resolveCompanyPending(id: string, action: "approve" | "discard"): Promise<ApiCompany> {
+  return request(`/companies/${id}/pending/${action}`, { method: "POST" });
+}
+export async function fetchPublicCompany(token: string): Promise<PublicCompany> {
+  return request(`/public/companies/${token}`);
+}
+export async function submitPublicCompany(token: string, body: Partial<PublicCompany>): Promise<{ ok: boolean }> {
+  return request(`/public/companies/${token}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function fetchAnnouncements(): Promise<ApiAnnouncement[]> { return request(`/announcements`); }
