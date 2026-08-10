@@ -1443,6 +1443,7 @@ export interface ApiSubmittalAttachment { _id: string; name: string; filePath: s
 export interface ApiSubmittalRevision {
   _id: string; submittalId: string; projectId: string; revisionNo: number;
   optionLabel: string; disposition: SubmittalDisposition; notes: string; sentToClientAt: string; respondedAt: string;
+  clientName?: string; submittedBy?: string; receivedBy?: string;
   attachments: ApiSubmittalAttachment[]; isCurrent: boolean; createdByName: string;
 }
 export interface ApiSubmittal {
@@ -1470,7 +1471,7 @@ export async function deleteSubmittal(projectId: string, sid: string): Promise<v
 export async function addSubmittalRevision(projectId: string, sid: string, duplicate = false): Promise<ApiSubmittalRevision> {
   return request(`${subBase(projectId)}/${sid}/revisions`, { method: 'POST', body: JSON.stringify({ duplicate }) });
 }
-export async function updateSubmittalRevision(projectId: string, sid: string, rid: string, body: Partial<{ disposition: SubmittalDisposition; notes: string; sentToClientAt: string; respondedAt: string; optionLabel: string }>): Promise<ApiSubmittalRevision> {
+export async function updateSubmittalRevision(projectId: string, sid: string, rid: string, body: Partial<{ disposition: SubmittalDisposition; notes: string; sentToClientAt: string; respondedAt: string; optionLabel: string; clientName: string; submittedBy: string; receivedBy: string }>): Promise<ApiSubmittalRevision> {
   return request(`${subBase(projectId)}/${sid}/revisions/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 export async function uploadSubmittalAttachment(projectId: string, sid: string, rid: string, file: File, component: SubmittalComponent, decision = ''): Promise<ApiSubmittalRevision> {

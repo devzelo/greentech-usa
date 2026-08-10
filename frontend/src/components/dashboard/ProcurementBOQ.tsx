@@ -59,8 +59,8 @@ function orderByDate(needOnSite: string, leadDays: string): string {
 const cell = "w-full px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium";
 
 // A not-yet-saved new BOQ row. Edited locally, then created in one shot via the ✓ button.
-type DraftItem = { tempId: string; sectionId: string; description: string; manufacturer: string; modelNo: string; qty: string; unit: string; spec: string; needOnSiteDate: string; leadTimeDays: string };
-const BLANK_DRAFT = (sectionId: string): DraftItem => ({ tempId: `draft-${Date.now()}-${Math.round(Math.random() * 1e6)}`, sectionId, description: "", manufacturer: "", modelNo: "", qty: "", unit: "", spec: "", needOnSiteDate: "", leadTimeDays: "" });
+type DraftItem = { tempId: string; sectionId: string; description: string; manufacturer: string; modelNo: string; qty: string; unit: string; spec: string; needOnSiteDate: string; leadTimeDays: string; remarks: string };
+const BLANK_DRAFT = (sectionId: string): DraftItem => ({ tempId: `draft-${Date.now()}-${Math.round(Math.random() * 1e6)}`, sectionId, description: "", manufacturer: "", modelNo: "", qty: "", unit: "", spec: "", needOnSiteDate: "", leadTimeDays: "", remarks: "" });
 
 // Column sorting for each category table (like the Master Log).
 const num = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
@@ -232,7 +232,10 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     setDrafts((p) => p.map((d) => (d.tempId === tempId ? { ...d, [field]: value } : d)));
   const removeDraft = (tempId: string) => setDrafts((p) => p.filter((d) => d.tempId !== tempId));
   // Save the draft as a single create (no per-field PATCH → no spurious revisions; the item starts at RV0).
-  const saveDraft = async (tempId: string) => {
+  // CR-P-12 — save the draft as a single create. `openDocs` then opens Manage so the user can
+  // attach the item's pictures / catalogue / data sheet / drawing / submittal (files need the
+  // saved item's id, so they're added in the step right after creation).
+  const saveDraft = async (tempId: string, openDocs = false) => {
     const d = drafts.find((x) => x.tempId === tempId);
     if (!d) return;
     if (!d.description.trim()) { toast("Add a description before saving the item.", "error"); return; }
@@ -240,10 +243,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     try {
       const it = await addProcurementItem(projectId, {
         sectionId: d.sectionId, itemNo: nextNo, description: d.description, manufacturer: d.manufacturer,
-        modelNo: d.modelNo, qty: d.qty, unit: d.unit, spec: d.spec, needOnSiteDate: d.needOnSiteDate, leadTimeDays: d.leadTimeDays,
+        modelNo: d.modelNo, qty: d.qty, unit: d.unit, spec: d.spec, needOnSiteDate: d.needOnSiteDate, leadTimeDays: d.leadTimeDays, remarks: d.remarks,
       });
       setItems((p) => [...p, it]);
       removeDraft(tempId);
+      if (openDocs) setManageId(it._id);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not add item.", "error"); }
   };
   // Duplicate a row (B2) — copies every field into a new item in the same category so
@@ -408,7 +412,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       tempId: `${tag}-${Date.now()}-${i}-${Math.round(Math.random() * 1e6)}`,
       sectionId,
       description: p.description || "", manufacturer: p.manufacturer || "", modelNo: p.modelNo || "",
-      qty: String(p.qty ?? ""), unit: p.unit || "", spec: p.spec || "", needOnSiteDate: "", leadTimeDays: "",
+      qty: String(p.qty ?? ""), unit: p.unit || "", spec: p.spec || "", needOnSiteDate: "", leadTimeDays: "", remarks: "",
     }));
 
   // Import a file's rows INTO an existing category (B1 — the per-category import button).
@@ -827,6 +831,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                           <td className="px-2 py-1 align-top">
                             <div className="flex items-center gap-1">
                               <button onClick={() => saveDraft(d.tempId)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save this item"><Check size={13} /> Save</button>
+                              {/* CR-P-12 — save then jump to Manage to attach pictures / catalogue / data sheet / drawing / submittal + remarks. */}
+                              <button onClick={() => saveDraft(d.tempId, true)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500 text-emerald-600 text-[10px] font-bold hover:bg-emerald-50" title="Save this item and attach its documents (pictures, catalogue, data sheet, drawing, submittal)"><FileText size={13} /> Save &amp; docs</button>
                               <button onClick={() => removeDraft(d.tempId)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50" title="Discard"><Trash2 size={13} /></button>
                             </div>
                           </td>

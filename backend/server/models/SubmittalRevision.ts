@@ -18,6 +18,10 @@ export interface ISubmittalRevision extends Document {
   notes: string;             // reviewer / client comments
   sentToClientAt: string;    // date string
   respondedAt: string;       // date string
+  // CR-P-20a — who was involved on the client response (captured in the Client Response popup).
+  clientName: string;        // the client company / person the submittal went to
+  submittedBy: string;       // who at GreenTech submitted it
+  receivedBy: string;        // who received/returned it on the client side
   attachments: ISubmittalAttachment[];
   isCurrent: boolean;
   createdByName: string;
@@ -49,6 +53,9 @@ const SubmittalRevisionSchema = new Schema<ISubmittalRevision>(
     notes: { type: String, default: "" },
     sentToClientAt: { type: String, default: "" },
     respondedAt: { type: String, default: "" },
+    clientName: { type: String, default: "" },
+    submittedBy: { type: String, default: "" },
+    receivedBy: { type: String, default: "" },
     attachments: { type: [AttachmentSchema], default: [] },
     isCurrent: { type: Boolean, default: true },
     createdByName: { type: String, default: "" },
