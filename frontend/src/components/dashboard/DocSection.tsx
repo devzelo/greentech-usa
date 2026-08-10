@@ -179,17 +179,16 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
         ))}
 
         {canEdit && (
-          <label className="border-2 border-dashed border-slate-200 rounded-2xl p-6 flex flex-col items-center justify-center text-center hover:border-primary hover:bg-primary/5 transition-all cursor-pointer group">
+          /* CR-P-08 — a prominent, solid-green upload button (not a faint dashed zone) so it's easy to find. */
+          <label className="border-2 border-dashed border-emerald-200 bg-emerald-50/40 rounded-2xl p-6 flex flex-col items-center justify-center text-center hover:border-emerald-400 hover:bg-emerald-50 transition-all cursor-pointer">
             {uploading ? (
-              <>
-                <Loader2 size={22} className="text-primary animate-spin mb-2" />
-                <p className="text-xs font-bold text-primary">Uploading…</p>
-              </>
+              <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold shadow-sm">
+                <Loader2 size={18} className="animate-spin" /> Uploading…
+              </span>
             ) : (
-              <>
-                <Upload size={22} className="text-slate-300 group-hover:text-primary transition-colors mb-2" />
-                <p className="text-xs font-bold text-slate-400 group-hover:text-primary transition-colors">Upload {title}</p>
-              </>
+              <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold shadow-sm hover:bg-emerald-600 transition-colors">
+                <Upload size={18} /> Upload {title}
+              </span>
             )}
             <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
           </label>

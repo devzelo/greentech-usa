@@ -36,7 +36,7 @@ export default function Directory() {
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const openLinks = async (c: ApiCompany) => {
     setLinksFor(c); setLinks(null);
-    try { setLinks(await fetchCompanyLinks(c._id)); } catch { setLinks({ invoices: [], rfqs: [] }); }
+    try { setLinks(await fetchCompanyLinks(c._id)); } catch { setLinks({ invoices: [], rfqs: [], pos: [], shipments: [], projects: [] }); }
   };
 
   const load = async () => {
