@@ -35,7 +35,7 @@ export interface IProjectRequest extends Document {
   contextLines: Array<{ label: string; value: string }>;  // custom info lines printed on the document
   // Extra named rich-text sections (HTML). Per-section status/lock/notes/hidden/assignee/files
   // (client CR-B-15/17/18/19).
-  sections: Array<{ title: string; body: string; status?: string; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string }> }>;
+  sections: Array<{ title: string; body: string; status?: string; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; viewLock?: boolean; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
   archived: boolean;   // hidden from the normal list; restorable from the Archived view
   attachments: IRequestFile[];  // our drafted request document(s)
   responses: IRequestResponse[];
@@ -69,7 +69,7 @@ const ProjectRequestSchema = new Schema<IProjectRequest>(
     signatureUrl: { type: String, default: "" },
     stampUrl: { type: String, default: "" },
     contextLines: { type: [{ label: { type: String, default: "" }, value: { type: String, default: "" } }], default: [] },
-    sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, notes: { type: String, default: "" }, hidden: { type: Boolean, default: false }, assignedTo: { type: String, default: "" }, attachments: { type: [{ name: String, filePath: String, fileType: String, size: String }], default: [] } }], default: [] },
+    sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, notes: { type: String, default: "" }, hidden: { type: Boolean, default: false }, assignedTo: { type: String, default: "" }, viewLock: { type: Boolean, default: false }, attachments: { type: [{ name: String, filePath: String, fileType: String, size: String }], default: [] }, history: { type: [{ at: String, by: String, text: String }], default: [] } }], default: [] },
     archived: { type: Boolean, default: false },
     attachments: { type: [FileSchema], default: [] },
     responses: { type: [ResponseSchema], default: [] },

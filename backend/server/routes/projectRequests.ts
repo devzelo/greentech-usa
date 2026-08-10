@@ -24,7 +24,7 @@ const cleanLines = (v: unknown): Array<{ label: string; value: string }> =>
     : [];
 // Custom named rich-text sections (title + HTML body + per-section status/lock/notes).
 const SECTION_STATUSES = ["", "NotStarted", "InProgress", "WaitingInfo", "UnderReview", "Complete", "NeedsRevision"];
-type CleanSection = { title: string; body: string; status: string; locked: boolean; notes: string; hidden: boolean; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string }> };
+type CleanSection = { title: string; body: string; status: string; locked: boolean; notes: string; hidden: boolean; assignedTo: string; viewLock: boolean; attachments: Array<{ name: string; filePath: string; fileType: string; size: string }>; history: Array<{ at: string; by: string; text: string }> };
 const cleanSections = (v: unknown): CleanSection[] =>
   Array.isArray(v)
     ? v.map((s) => {
@@ -39,7 +39,9 @@ const cleanSections = (v: unknown): CleanSection[] =>
           notes: String(o?.notes ?? "").slice(0, 4000),
           hidden: Boolean(o?.hidden),
           assignedTo: String(o?.assignedTo ?? "").slice(0, 120),
+          viewLock: Boolean(o?.viewLock),
           attachments: atts,
+          history: Array.isArray(o?.history) ? (o.history as Array<Record<string, unknown>>).map((h) => ({ at: String(h?.at ?? ""), by: String(h?.by ?? ""), text: String(h?.text ?? "").slice(0, 200) })).slice(-50) : [],
         };
       })
        .filter((s) => s.title || s.body || s.status || s.notes || s.attachments.length).slice(0, 40)

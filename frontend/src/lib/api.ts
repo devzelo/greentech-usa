@@ -1647,7 +1647,7 @@ export type ReminderInput = Partial<Pick<ApiReminder, "title" | "notes" | "dueAt
 export async function fetchReminders(status?: ReminderStatus): Promise<ApiReminder[]> {
   return request(`/reminders${status ? `?status=${status}` : ""}`);
 }
-export async function createReminder(body: ReminderInput): Promise<ApiReminder> {
+export async function createReminder(body: ReminderInput & { userId?: string }): Promise<ApiReminder> {
   return request(`/reminders`, { method: "POST", body: JSON.stringify(body) });
 }
 export async function updateReminder(rid: string, body: ReminderInput): Promise<ApiReminder> {
@@ -1676,7 +1676,7 @@ export interface ApiProjectRequest {
 // A custom named section with per-section status / lock / notes (client CR-B-15/17/19).
 export type RequestSectionStatus = "" | "NotStarted" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
 export type RequestSectionFile = { _id?: string; name: string; filePath: string; fileType: string; size: string };
-export type RequestSection = { title: string; body: string; status?: RequestSectionStatus; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; attachments?: RequestSectionFile[] };
+export type RequestSection = { title: string; body: string; status?: RequestSectionStatus; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; viewLock?: boolean; attachments?: RequestSectionFile[]; history?: Array<{ at: string; by: string; text: string }> };
 export async function uploadRequestSectionFile(projectId: string, rid: string, idx: number, file: File): Promise<ApiProjectRequest> {
   const fd = new FormData(); fd.append("file", file);
   const token = getAuthToken();

@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock } from "lucide-react";
+import { getAuthUser } from "../../lib/api";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
   REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
-  uploadRequestSectionFile, deleteRequestSectionFile,
+  uploadRequestSectionFile, deleteRequestSectionFile, fetchUsers, createReminder,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
-  type RequestSection, type RequestSectionStatus,
+  type RequestSection, type RequestSectionStatus, type AdminUser,
 } from "../../lib/api";
 
 // Per-section status options (client CR-B-15). Locked/Unlocked is a separate toggle.
@@ -98,6 +99,25 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     for (const u of present) if (!prevPresent.current.has(u.userId) && prevPresent.current.size > 0) toast(`${u.name} joined this builder.`, "info");
     prevPresent.current = now;
   }, [present]);
+  // CR-B-19a — colleague picker for section assignment + notify the assignee.
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  useEffect(() => { fetchUsers().then(setUsers).catch(() => {}); }, []);
+  // CR-B-17 — record a history entry when a section's status changes.
+  const meName = () => getAuthUser()?.name || "Someone";
+  const [histFor, setHistFor] = useState<{ r: ApiProjectRequest; i: number } | null>(null);
+  const secSetStatus = (r: ApiProjectRequest, i: number, status: RequestSectionStatus) => {
+    const label = SECTION_STATUS_OPTS.find((o) => o.v === status)?.label || status || "No status";
+    const arr = (r.sections || []).map((x, j) => (j === i ? { ...x, status, history: [...(x.history || []), { at: new Date().toISOString(), by: meName(), text: `Status → ${label}` }] } : x));
+    onSectionsChange(r._id, arr, true);
+  };
+  const assignSection = (r: ApiProjectRequest, i: number, userId: string, name: string) => {
+    secUpdate(r, i, { assignedTo: name }, true);
+    if (userId) {
+      const sec = (r.sections || [])[i];
+      createReminder({ userId, title: `Review section "${sec?.title || "Section"}" — ${r.number}`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: `/dashboard/projects/${projectId}`, projectId, projectName: r.number })
+        .then(() => toast(`${name} was notified.`, "success")).catch(() => {});
+    }
+  };
   const save = (rid: string, field: "title" | "date" | "description" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl", value: string) =>
     saveStatus.track(updateProjectRequest(projectId, rid, { [field]: value }).then(patch)).catch(() => {});
   // Rich-text body edits: update the row locally at once (keeps the editor in sync) and debounce
@@ -240,9 +260,11 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                   : <p className="text-xs font-bold text-slate-700 normal-case flex-grow">{s.title || "Untitled section"}{locked && <Lock size={11} className="inline ml-1 text-amber-500" />}</p>}
                                 {canEdit && (
                                   <div className="flex items-center gap-0.5 shrink-0">
-                                    <select value={s.status || ""} onChange={(e) => secUpdate(r, i, { status: e.target.value as RequestSectionStatus }, true)} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+                                    <select value={s.status || ""} onChange={(e) => secSetStatus(r, i, e.target.value as RequestSectionStatus)} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                                       {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
                                     </select>
+                                    {(s.history?.length || 0) > 0 && <button onClick={() => setHistFor({ r, i })} title="View history" className="p-1 rounded text-slate-300 hover:text-slate-600"><Clock size={13} /></button>}
+                                    <button onClick={() => secUpdate(r, i, { viewLock: !s.viewLock }, true)} title={s.viewLock ? "View-restricted — click to unrestrict" : "Restrict who can view this section (e.g. financials)"} className={`p-1 rounded ${s.viewLock ? "text-indigo-600 bg-indigo-50" : "text-slate-300 hover:text-slate-600"}`}><Shield size={13} /></button>
                                     <button onClick={() => secUpdate(r, i, { locked: !locked }, true)} title={locked ? "Unlock section" : "Lock section"} className={`p-1 rounded ${locked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                                     <button onClick={() => secMove(r, i, -1)} disabled={i === 0} title="Move up" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronUp size={13} /></button>
                                     <button onClick={() => secMove(r, i, 1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
@@ -254,6 +276,8 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                               </div>
                               {s.hidden ? (
                                 <p className="text-[11px] text-slate-400 italic bg-slate-50 rounded-lg px-2 py-1.5">Section hidden{s.assignedTo ? ` · assigned to ${s.assignedTo}` : ""} — use the eye icon to show it.</p>
+                              ) : s.viewLock && !canEdit ? (
+                                <p className="text-[11px] text-indigo-500 italic bg-indigo-50 rounded-lg px-2 py-1.5 inline-flex items-center gap-1.5"><Shield size={12} /> Restricted section — you don't have access to view this.</p>
                               ) : (
                                 <>
                                   {secEditable
@@ -265,7 +289,16 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                   {/* CR-B-18/19a — per-section files + assign a colleague. */}
                                   {canEdit && !locked && (
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><UserPlus size={12} className="text-slate-400" /><input className={`${inp} text-[11px] w-40 py-1`} placeholder="Assign to (name)" defaultValue={s.assignedTo || ""} onBlur={(e) => secUpdate(r, i, { assignedTo: e.target.value }, true)} /></span>
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><UserPlus size={12} className="text-slate-400" />
+                                        {users.length > 0 ? (
+                                          <select className={`${inp} text-[11px] w-44 py-1`} value={users.find((u) => u.name === s.assignedTo)?._id || ""} onChange={(e) => { const u = users.find((x) => x._id === e.target.value); assignSection(r, i, u?._id || "", u?.name || ""); }} title="Assign & notify a colleague to edit/review/verify">
+                                            <option value="">Assign to…</option>
+                                            {users.map((u) => <option key={u._id} value={u._id}>{u.name || u.email}</option>)}
+                                          </select>
+                                        ) : (
+                                          <input className={`${inp} text-[11px] w-40 py-1`} placeholder="Assign to (name)" defaultValue={s.assignedTo || ""} onBlur={(e) => secUpdate(r, i, { assignedTo: e.target.value }, true)} />
+                                        )}
+                                      </span>
                                       {(s.attachments || []).map((a) => (
                                         <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600"><Paperclip size={10} /><a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[10rem] truncate">{a.name}</a><button onClick={() => secDeleteFile(r, i, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button></span>
                                       ))}
@@ -468,6 +501,27 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
           </div>
         </div>
       )}
+
+      {/* CR-B-17 — per-section history */}
+      {histFor && (() => {
+        const sec = (histFor.r.sections || [])[histFor.i];
+        const hist = sec?.history || [];
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setHistFor(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900 truncate">History — {sec?.title || "Section"}</h3>
+                <button onClick={() => setHistFor(null)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+              </div>
+              <div className="p-4 max-h-80 overflow-y-auto space-y-1.5">
+                {hist.length === 0 ? <p className="text-xs text-slate-400 italic">No changes recorded yet.</p> : [...hist].reverse().map((h, k) => (
+                  <div key={k} className="flex items-start gap-2 text-[11px]"><Clock size={11} className="text-slate-300 mt-0.5 shrink-0" /><div><span className="font-bold text-slate-700">{h.text}</span> <span className="text-slate-400">· {h.by}{h.at ? ` · ${new Date(h.at).toLocaleString()}` : ""}</span></div></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

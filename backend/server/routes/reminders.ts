@@ -33,8 +33,10 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (!b.title || !String(b.title).trim()) return res.status(400).json({ error: "A reminder needs a title." });
     const dueAt = new Date(b.dueAt);
     if (isNaN(dueAt.getTime())) return res.status(400).json({ error: "A reminder needs a valid date and time." });
+    // CR-B-19a — a reminder can be assigned TO a colleague (target userId), e.g. "review this section".
+    const targetUserId = typeof b.userId === "string" && b.userId.trim() ? b.userId.trim() : req.user!.userId;
     const r = await Reminder.create({
-      userId: req.user!.userId,
+      userId: targetUserId,
       title: clean(b.title, 200),
       notes: clean(b.notes, 2000),
       dueAt,
