@@ -91,6 +91,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [submittals, setSubmittals] = useState<ApiSubmittal[]>([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [linePreview, setLinePreview] = useState<ApiProcurementItem | null>(null); // CR-P-14 — per-line export
   const [subMenu, setSubMenu] = useState<string | null>(null); // itemId whose submittal-link menu is open (C1)
   const [subPreview, setSubPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
@@ -709,6 +710,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                             ) : (
                               <div className="flex items-center gap-1">
                                 <button onClick={() => setManageId(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — edit, submittal, duplicate, cancel"><Settings2 size={12} /> Manage</button>
+                                <button onClick={() => setLinePreview(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Export / share this line as a PDF"><Download size={13} /></button>
                                 <button onClick={() => toggleLock(it)} className={`p-1.5 rounded ${isLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600 hover:bg-slate-50"}`} title={isLocked ? "Locked — click to unlock" : "Lock this item (prevents accidental edits/delete)"}>{isLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                                 <button onClick={() => duplicateItem(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Duplicate row"><Copy size={13} /></button>
                                 <button onClick={() => hardDelete(it._id)} disabled={isLocked} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:hover:text-slate-300 disabled:hover:bg-transparent" title={isLocked ? "Unlock first to delete" : "Delete"}><Trash2 size={13} /></button>
@@ -874,6 +876,15 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       {dialogs}
       {showPreview && (
         <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, items, projectInfo)} onClose={() => setShowPreview(false)} />
+      )}
+      {/* CR-P-14 — per-line export (one BOQ line as its own PDF, downloadable/shareable). */}
+      {linePreview && (
+        <PdfPreviewModal
+          title={`BOQ item #${displayNo[linePreview._id] ?? ""} — ${linePreview.description || "line"}`}
+          fileName={`BOQ_item_${displayNo[linePreview._id] ?? ""}.pdf`}
+          build={() => buildBoqPdf(sections.filter((s) => s._id === linePreview.sectionId), [linePreview], projectInfo)}
+          onClose={() => setLinePreview(null)}
+        />
       )}
       {subPreview && (
         <PdfPreviewModal title={subPreview.title} fileName={subPreview.fileName} build={subPreview.build} onClose={() => setSubPreview(null)} />

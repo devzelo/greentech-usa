@@ -106,6 +106,12 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
         <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
           {title}{docs.length > 0 && <span className="text-slate-400 ml-2 font-medium normal-case tracking-normal">({docs.length})</span>}
         </h4>
+        {/* CR-P-09/10 — download every file in this category/section at once. */}
+        {docs.length > 1 && (
+          <button onClick={() => docs.forEach((d, i) => setTimeout(() => { const a = document.createElement("a"); a.href = documentUrl(d); a.download = d.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-primary hover:text-white transition-colors" title="Download all files in this section">
+            <Download size={12} /> Download all
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">

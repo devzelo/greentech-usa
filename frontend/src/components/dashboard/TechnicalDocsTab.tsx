@@ -520,6 +520,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                   </button>
                   <div className="flex items-center gap-1">
                     {ff.length > 0 && <button onClick={() => onPreview(`${label} / ${name} — ${titleFor}`, ff)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview folder"><Eye size={13} /></button>}
+                    {ff.length > 0 && <button onClick={() => ff.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Download all files in this folder"><Download size={13} /></button>}
                     {canEdit && <button onClick={() => pickInto(name)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 shrink-0" title="Upload into this folder"><Upload size={13} /> Upload</button>}
                     {canEdit && <button onClick={() => removeFolder(name)} className="p-1 rounded hover:bg-rose-50 text-rose-400" title="Delete folder"><Trash2 size={13} /></button>}
                   </div>
