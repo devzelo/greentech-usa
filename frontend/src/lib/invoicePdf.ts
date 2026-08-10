@@ -66,7 +66,11 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   y -= 22;
   for (const it of items) {
     if (y < 140) { page = doc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - M; }
-    const lineY = drawWrapped(page, font, it.description || "", { x: cols[0].x + 4, y, size: 9, maxW: cols[0].w - 8, lineHeight: 12, color: INK, maxLines: 3 });
+    // CR-I-04 — carry the per-line date (prefixed) and remarks (muted sub-line) onto the PDF.
+    const itx = it as typeof it & { date?: string; remarks?: string };
+    const descText = (itx.date ? `[${itx.date}] ` : "") + (it.description || "");
+    let lineY = drawWrapped(page, font, descText, { x: cols[0].x + 4, y, size: 9, maxW: cols[0].w - 8, lineHeight: 12, color: INK, maxLines: 3 });
+    if (itx.remarks) lineY = drawWrapped(page, font, itx.remarks, { x: cols[0].x + 4, y: lineY - 1, size: 7.5, maxW: cols[0].w - 8, lineHeight: 10, color: MUTED, maxLines: 2 });
     page.drawText(String(it.qty || ""), { x: cols[1].x + 4, y, size: 9, font, color: INK });
     page.drawText(money(n(it.unitPrice)), { x: cols[2].x + 4, y, size: 9, font, color: INK });
     const t = money(n(it.qty) * n(it.unitPrice));

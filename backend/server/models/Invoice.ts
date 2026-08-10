@@ -78,7 +78,7 @@ const InvoiceSchema = new Schema<IInvoice>(
     subId: { type: String, default: "" },
     receiverKind: { type: String, default: "" },
     companyId: { type: String, default: "" },
-    lineItems: { type: [{ description: { type: String, default: "" }, qty: { type: String, default: "" }, unitPrice: { type: String, default: "" } }], default: [] },
+    lineItems: { type: [{ description: { type: String, default: "" }, qty: { type: String, default: "" }, unitPrice: { type: String, default: "" }, date: { type: String, default: "" }, remarks: { type: String, default: "" } }], default: [] },
     bank: {
       name: { type: String, default: "" }, accountName: { type: String, default: "" }, accountNumber: { type: String, default: "" },
       iban: { type: String, default: "" }, swift: { type: String, default: "" }, routing: { type: String, default: "" },

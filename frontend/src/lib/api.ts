@@ -1002,7 +1002,7 @@ export interface ApiInvoicePayment {
   _id: string; amount: string; date: string; method: string; reference: string; notes: string;
   attachments: ApiInvoiceFile[]; expenseId: string; addedByName: string;
 }
-export interface InvoiceLineItem { description: string; qty: string; unitPrice: string }
+export interface InvoiceLineItem { description: string; qty: string; unitPrice: string; date?: string; remarks?: string }
 export interface InvoiceBank { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string }
 export interface ApiInvoice {
   _id: string; projectId: string; type: 'sent' | 'received';

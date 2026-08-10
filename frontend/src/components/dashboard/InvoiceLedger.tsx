@@ -457,24 +457,26 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <div className="border border-slate-100 rounded-2xl overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400"><tr>
-                        <th className="text-left px-3 py-2">Description</th><th className="text-left px-2 py-2 w-16">Qty</th><th className="text-left px-2 py-2 w-24">Unit price</th><th className="text-right px-3 py-2 w-28">Total</th><th className="w-8" />
+                        <th className="text-left px-2 py-2 w-28">Date</th><th className="text-left px-3 py-2">Description</th><th className="text-left px-2 py-2 w-16">Qty</th><th className="text-left px-2 py-2 w-24">Unit price</th><th className="text-right px-3 py-2 w-28">Total</th><th className="text-left px-2 py-2 w-32">Remarks</th><th className="w-8" />
                       </tr></thead>
                       <tbody>
                         {bDraft.lineItems.map((it, i) => (
                           <tr key={i} className="border-t border-slate-50">
+                            <td className="px-2 py-1"><input type="date" className={inp} value={it.date || ""} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)) })} /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.description} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} placeholder="Item / service" /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.qty} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.unitPrice} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} placeholder="0.00" /></td>
                             <td className="px-3 py-1 text-right font-bold text-slate-700 whitespace-nowrap">{money(n(it.qty) * n(it.unitPrice))}</td>
+                            <td className="px-2 py-1"><input className={inp} value={it.remarks || ""} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, remarks: e.target.value } : x)) })} placeholder="—" /></td>
                             <td className="px-2 py-1 text-right"><button onClick={() => setB({ lineItems: bDraft.lineItems.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500"><X size={13} /></button></td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr className="border-t border-slate-100 bg-slate-50/60">
-                          <td colSpan={3} className="px-3 py-2"><button onClick={() => setB({ lineItems: [...bDraft.lineItems, { description: "", qty: "1", unitPrice: "" }] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button></td>
+                          <td colSpan={4} className="px-3 py-2"><button onClick={() => setB({ lineItems: [...bDraft.lineItems, { description: "", qty: "1", unitPrice: "", date: "", remarks: "" }] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button></td>
                           <td className="px-3 py-2 text-right font-display font-bold text-primary whitespace-nowrap">{money(lineTotal(bDraft.lineItems))}</td>
-                          <td />
+                          <td colSpan={2} />
                         </tr>
                       </tfoot>
                     </table>
