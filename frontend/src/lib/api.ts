@@ -1002,10 +1002,15 @@ export interface ApiInvoicePayment {
   _id: string; amount: string; date: string; method: string; reference: string; notes: string;
   attachments: ApiInvoiceFile[]; expenseId: string; addedByName: string;
 }
+export interface InvoiceLineItem { description: string; qty: string; unitPrice: string }
+export interface InvoiceBank { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string }
 export interface ApiInvoice {
   _id: string; projectId: string; type: 'sent' | 'received';
   number: string; party: string; amount: string; date: string; status: string; description: string;
   poId: string; subId: string;
+  // Invoice builder (CR-I-03/04/07).
+  receiverKind?: string; companyId?: string; lineItems?: InvoiceLineItem[]; bank?: InvoiceBank;
+  terms?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; contractTotal?: string;
   attachments: ApiInvoiceFile[]; payments: ApiInvoicePayment[]; addedByName: string;
 }
 // Paid / remaining are DERIVED from the payment rows — partial payments are first-class.
@@ -1019,7 +1024,7 @@ export async function fetchInvoices(projectId: string, type?: 'sent' | 'received
   return request<ApiInvoice[]>(`/projects/${projectId}/invoices${qs}`);
 }
 
-export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'poId' | 'subId'>>;
+export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'poId' | 'subId' | 'receiverKind' | 'companyId' | 'lineItems' | 'bank' | 'terms' | 'signerName' | 'signerTitle' | 'signatureUrl' | 'contractTotal'>>;
 export async function addInvoice(projectId: string, body: InvoiceInput): Promise<ApiInvoice> {
   return request(`/projects/${projectId}/invoices`, { method: 'POST', body: JSON.stringify(body) });
 }

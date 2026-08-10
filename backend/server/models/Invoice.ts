@@ -33,6 +33,16 @@ export interface IInvoice extends Document {
   // Where this invoice came from, when it wasn't typed in by hand.
   poId: string;            // ProcurementPO._id — set when raised from a PO's vendor invoice
   subId: string;           // subcontractor record, when it's a sub's bill
+  // Invoice builder (client CR-I-03/04/07).
+  receiverKind: string;    // Client | Contractor | Lab | Vendor | Subcontractor | Other
+  companyId: string;       // link to a Companies Directory record, when chosen there
+  lineItems: Array<{ description: string; qty: string; unitPrice: string }>; // manual line-item builder
+  bank: { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string };
+  terms: string;           // T&C printed on the invoice
+  signerName: string;
+  signerTitle: string;
+  signatureUrl: string;
+  contractTotal: string;   // for the Payment Application (progressive billing)
   attachments: IInvoiceFile[];
   payments: IInvoicePayment[];
   addedByName: string;
@@ -63,6 +73,18 @@ const InvoiceSchema = new Schema<IInvoice>(
     description: { type: String, default: "" },
     poId: { type: String, default: "", index: true },
     subId: { type: String, default: "" },
+    receiverKind: { type: String, default: "" },
+    companyId: { type: String, default: "" },
+    lineItems: { type: [{ description: { type: String, default: "" }, qty: { type: String, default: "" }, unitPrice: { type: String, default: "" } }], default: [] },
+    bank: {
+      name: { type: String, default: "" }, accountName: { type: String, default: "" }, accountNumber: { type: String, default: "" },
+      iban: { type: String, default: "" }, swift: { type: String, default: "" }, routing: { type: String, default: "" },
+    },
+    terms: { type: String, default: "" },
+    signerName: { type: String, default: "" },
+    signerTitle: { type: String, default: "" },
+    signatureUrl: { type: String, default: "" },
+    contractTotal: { type: String, default: "" },
     attachments: { type: [FileSchema], default: [] },
     payments: { type: [PaymentSchema], default: [] },
     addedByName: { type: String, default: "" },

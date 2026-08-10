@@ -19,7 +19,9 @@ const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const subs = (arr: unknown): any => arr as any;
 
-const INVOICE_FIELDS = ["type", "number", "party", "amount", "date", "status", "description", "poId", "subId"] as const;
+const INVOICE_FIELDS = ["type", "number", "party", "amount", "date", "status", "description", "poId", "subId",
+  // Invoice builder (CR-I-03/04/07).
+  "receiverKind", "companyId", "lineItems", "bank", "terms", "signerName", "signerTitle", "signatureUrl", "contractTotal"] as const;
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {

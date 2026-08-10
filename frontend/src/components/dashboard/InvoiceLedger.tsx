@@ -4,8 +4,8 @@ import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
-  invoicePaid, invoiceRemaining,
-  type ApiInvoice, type ApiProcurementPO, type ApiVendor,
+  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories,
+  type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
@@ -35,6 +35,15 @@ const STATUS_CLS: Record<string, string> = {
   Cancelled: "bg-slate-100 text-slate-400",
 };
 
+const RECEIVER_KINDS = ["Client", "Contractor", "Lab", "Vendor", "Subcontractor", "Consultant", "Other"];
+const BLANK_BANK: InvoiceBank = { name: "", accountName: "", accountNumber: "", iban: "", swift: "", routing: "" };
+type BuilderDraft = {
+  receiverKind: string; party: string; companyId: string; date: string; description: string;
+  mode: "build" | "upload";
+  lineItems: InvoiceLineItem[]; bank: InvoiceBank; terms: string;
+  signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
+};
+
 export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged }: {
   projectId: string; kind: "sent" | "received"; canEdit: boolean;
   projectInfo?: ProjectPdfInfo;
@@ -57,6 +66,66 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const [newOpen, setNewOpen] = useState(false);
   const [draft, setDraft] = useState({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
   const { confirm, dialogs } = useDialogs();
+
+  // ── Invoice builder (CR-I-03/04/07) ─────────────────────────────────────────
+  const [builderId, setBuilderId] = useState<string | null>(null);
+  const [bDraft, setBDraft] = useState<BuilderDraft | null>(null);
+  const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
+  const [receiverPickerOpen, setReceiverPickerOpen] = useState(false);
+  const [recvSearch, setRecvSearch] = useState("");
+  useEffect(() => {
+    fetchCompanies().then(setCompanies).catch(() => {});
+    fetchSignatories().then(setSignatories).catch(() => {});
+  }, []);
+
+  const lineTotal = (items: InvoiceLineItem[]) => items.reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);
+  const openBuilder = (inv: ApiInvoice) => {
+    setBuilderId(inv._id);
+    setBDraft({
+      receiverKind: inv.receiverKind || "", party: inv.party || "", companyId: inv.companyId || "",
+      date: inv.date || new Date().toISOString().slice(0, 10), description: inv.description || "",
+      mode: (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
+      lineItems: inv.lineItems?.length ? inv.lineItems : [{ description: "", qty: "1", unitPrice: "" }],
+      bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
+      signerName: inv.signerName || "", signerTitle: inv.signerTitle || "", signatureUrl: inv.signatureUrl || "",
+      contractTotal: inv.contractTotal || "",
+    });
+  };
+  const setB = (p: Partial<BuilderDraft>) => setBDraft((d) => (d ? { ...d, ...p } : d));
+  const saveBuilder = async () => {
+    if (!builderId || !bDraft) return;
+    setSaving(true);
+    const body: InvoiceInput = {
+      receiverKind: bDraft.receiverKind, party: bDraft.party.trim(), companyId: bDraft.companyId,
+      date: bDraft.date, description: bDraft.description,
+      lineItems: bDraft.mode === "build" ? bDraft.lineItems : [],
+      bank: bDraft.bank, terms: bDraft.terms,
+      signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl,
+      contractTotal: bDraft.contractTotal,
+    };
+    if (bDraft.mode === "build") body.amount = String(lineTotal(bDraft.lineItems));
+    try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast("Invoice saved.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
+    finally { setSaving(false); }
+  };
+  const duplicateInvoice = async (inv: ApiInvoice) => {
+    try {
+      const row = await addInvoice(projectId, {
+        type: kind, party: inv.party, receiverKind: inv.receiverKind, companyId: inv.companyId,
+        description: inv.description, amount: inv.amount, date: new Date().toISOString().slice(0, 10),
+        status: isSent ? "Draft" : "Unpaid", lineItems: inv.lineItems, bank: inv.bank, terms: inv.terms,
+        signerName: inv.signerName, signerTitle: inv.signerTitle, signatureUrl: inv.signatureUrl, contractTotal: inv.contractTotal,
+      });
+      setRows((p) => [...p, row]); openBuilder(row); toast(`Duplicated as #${row.number}.`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not duplicate.", "error"); }
+  };
+  // Pick a receiver from the Companies Directory → fills the party + kind.
+  const pickReceiver = (c: ApiCompany) => {
+    const kindMap: Record<string, string> = { client: "Client", subcontractor: "Subcontractor", vendor: "Vendor", consultant: "Consultant", contractor: "Contractor" };
+    setB({ party: c.name, companyId: c._id, receiverKind: kindMap[c.category] || "Other" });
+    setReceiverPickerOpen(false);
+  };
 
   const viewPO = (po: ApiProcurementPO) => setPoPreview({
     title: `Purchase Order ${po.poNo}${po.vendorName ? ` · ${po.vendorName}` : ""}`,
@@ -233,6 +302,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex items-center justify-end gap-1">
+                        {canEdit && <button onClick={() => openBuilder(row)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Open the full invoice builder — line items, bank, signature, payment application"><FileText size={11} /> Builder</button>}
+                        {canEdit && <button onClick={() => duplicateInvoice(row)} className="p-1.5 rounded text-slate-300 hover:text-primary" title="Duplicate this invoice"><Plus size={13} /></button>}
                         {canEdit && <button onClick={() => openPay(row)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold hover:bg-emerald-100" title={isSent ? "Record an amount received from the client" : "Record a payment made"}><Wallet size={11} /> {isSent ? "Received" : "Pay"}</button>}
                         {canEdit && <button onClick={() => removeRow(row)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                       </div>
@@ -314,6 +385,158 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
       {dialogs}
       {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
+
+      {/* CR-I-03/04/07 — the full invoice builder */}
+      {builderId && bDraft && (() => {
+        const cur = rows.find((r) => r._id === builderId);
+        const thisAmount = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(cur?.amount);
+        const contract = n(bDraft.contractTotal);
+        const prevInvoiced = rows.filter((r) => r._id !== builderId).reduce((s, r) => s + n(r.amount), 0);
+        const totalInvoiced = prevInvoiced + thisAmount;
+        const balance = contract ? contract - totalInvoiced : 0;
+        return (
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => { setBuilderId(null); setBDraft(null); }}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
+                <h3 className="text-base font-bold text-slate-900">{isSent ? "Invoice" : "Bill"} #{cur?.number} — builder</h3>
+                <button onClick={() => { setBuilderId(null); setBDraft(null); }} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Receiver (CR-I-03) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Send to" : "From"} — type
+                    <select className={`${finp} mt-1 font-bold`} value={bDraft.receiverKind} onChange={(e) => setB({ receiverKind: e.target.value })}>
+                      <option value="">Choose…</option>{RECEIVER_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select></label>
+                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Receiver" : "Sender"} name
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <input className={finp} value={bDraft.party} onChange={(e) => setB({ party: e.target.value })} placeholder="Company / person to bill" />
+                      <button onClick={() => { setReceiverPickerOpen(true); setRecvSearch(""); }} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><FileText size={11} /> Directory</button>
+                    </div></label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date<input type="date" className={`${finp} mt-1`} value={bDraft.date} onChange={(e) => setB({ date: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / description<input className={`${finp} mt-1`} value={bDraft.description} onChange={(e) => setB({ description: e.target.value })} placeholder="e.g. Progress claim #2" /></label>
+                </div>
+
+                {/* Build vs upload (CR-I-04) */}
+                <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[11px] font-bold">
+                  {(["build", "upload"] as const).map((m) => (
+                    <button key={m} onClick={() => setB({ mode: m })} className={`px-3 py-1.5 ${bDraft.mode === m ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>{m === "build" ? "Build line items" : "Upload invoice"}</button>
+                  ))}
+                </div>
+
+                {bDraft.mode === "build" ? (
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400"><tr>
+                        <th className="text-left px-3 py-2">Description</th><th className="text-left px-2 py-2 w-16">Qty</th><th className="text-left px-2 py-2 w-24">Unit price</th><th className="text-right px-3 py-2 w-28">Total</th><th className="w-8" />
+                      </tr></thead>
+                      <tbody>
+                        {bDraft.lineItems.map((it, i) => (
+                          <tr key={i} className="border-t border-slate-50">
+                            <td className="px-2 py-1"><input className={inp} value={it.description} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} placeholder="Item / service" /></td>
+                            <td className="px-2 py-1"><input className={inp} value={it.qty} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} /></td>
+                            <td className="px-2 py-1"><input className={inp} value={it.unitPrice} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} placeholder="0.00" /></td>
+                            <td className="px-3 py-1 text-right font-bold text-slate-700 whitespace-nowrap">{money(n(it.qty) * n(it.unitPrice))}</td>
+                            <td className="px-2 py-1 text-right"><button onClick={() => setB({ lineItems: bDraft.lineItems.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500"><X size={13} /></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-100 bg-slate-50/60">
+                          <td colSpan={3} className="px-3 py-2"><button onClick={() => setB({ lineItems: [...bDraft.lineItems, { description: "", qty: "1", unitPrice: "" }] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button></td>
+                          <td className="px-3 py-2 text-right font-display font-bold text-primary whitespace-nowrap">{money(lineTotal(bDraft.lineItems))}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                    <p className="text-[11px] font-bold text-slate-500">Uploaded invoice file(s)</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(cur?.attachments || []).map((a) => (
+                        <a key={a._id} href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:text-primary"><FileText size={10} /> {a.name}</a>
+                      ))}
+                      {(cur?.attachments || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No file yet.</span>}
+                      <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f && cur) { try { const srv = await uploadInvoiceFile(projectId, cur._id, f); patch(srv); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} /></label>
+                    </div>
+                    <p className="text-[10px] text-slate-400">Enter the invoice total on the row after uploading (or switch to “Build line items”).</p>
+                  </div>
+                )}
+
+                {/* Bank information (CR-I-04) */}
+                <details className="bg-slate-50 rounded-2xl p-4">
+                  <summary className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Bank information</summary>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+                    <input className={finp} placeholder="Bank name" value={bDraft.bank.name} onChange={(e) => setB({ bank: { ...bDraft.bank, name: e.target.value } })} />
+                    <input className={finp} placeholder="Account name" value={bDraft.bank.accountName} onChange={(e) => setB({ bank: { ...bDraft.bank, accountName: e.target.value } })} />
+                    <input className={finp} placeholder="Account number" value={bDraft.bank.accountNumber} onChange={(e) => setB({ bank: { ...bDraft.bank, accountNumber: e.target.value } })} />
+                    <input className={finp} placeholder="IBAN" value={bDraft.bank.iban} onChange={(e) => setB({ bank: { ...bDraft.bank, iban: e.target.value } })} />
+                    <input className={finp} placeholder="SWIFT/BIC" value={bDraft.bank.swift} onChange={(e) => setB({ bank: { ...bDraft.bank, swift: e.target.value } })} />
+                    <input className={finp} placeholder="Routing" value={bDraft.bank.routing} onChange={(e) => setB({ bank: { ...bDraft.bank, routing: e.target.value } })} />
+                  </div>
+                </details>
+
+                {/* T&C + signature (CR-I-04) */}
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Terms &amp; conditions<textarea rows={2} className={`${finp} mt-1 resize-y`} value={bDraft.terms} onChange={(e) => setB({ terms: e.target.value })} placeholder="Payment due within 30 days…" /></label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signatory
+                    <select className={`${finp} mt-1`} value={signatories.find((s) => s.name === bDraft.signerName && s.signatureUrl === bDraft.signatureUrl)?.id || ""} onChange={(e) => { const s = signatories.find((x) => x.id === e.target.value); if (s) setB({ signerName: s.name, signerTitle: s.title || "", signatureUrl: s.signatureUrl || "" }); }}>
+                      <option value="">Choose…</option>{signatories.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select></label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signer name<input className={`${finp} mt-1`} value={bDraft.signerName} onChange={(e) => setB({ signerName: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signer title<input className={`${finp} mt-1`} value={bDraft.signerTitle} onChange={(e) => setB({ signerTitle: e.target.value })} /></label>
+                </div>
+
+                {/* Payment Application (CR-I-07) */}
+                <div className="bg-primary/[0.04] border border-primary/15 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payment Application</p>
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">Total contract<input className={`${finp} w-32`} value={bDraft.contractTotal} onChange={(e) => setB({ contractTotal: e.target.value })} placeholder="0.00" /></label>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                    <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Contract</p><p className="text-sm font-bold text-slate-800">{money(contract)}</p></div>
+                    <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Previously invoiced</p><p className="text-sm font-bold text-slate-800">{money(prevInvoiced)}</p></div>
+                    <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">This invoice</p><p className="text-sm font-bold text-primary">{money(thisAmount)}</p></div>
+                    <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Balance to finish</p><p className={`text-sm font-bold ${balance < 0 ? "text-red-600" : "text-slate-800"}`}>{money(balance)}</p></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400">{rows.length} invoice{rows.length === 1 ? "" : "s"} on this project · Total invoiced to date {money(totalInvoiced)}.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
+                <button onClick={() => cur && duplicateInvoice(cur)} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Plus size={13} /> Duplicate</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setBuilderId(null); setBDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
+                  <button onClick={saveBuilder} disabled={saving} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
+                </div>
+              </div>
+
+              {/* Receiver picker (Directory) */}
+              {receiverPickerOpen && (
+                <div className="absolute inset-0 z-30 flex items-start justify-center bg-slate-900/40 rounded-3xl p-4 overflow-y-auto" onClick={() => setReceiverPickerOpen(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-6" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100"><h4 className="text-sm font-bold text-slate-900">Choose from Directory</h4><button onClick={() => setReceiverPickerOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={16} /></button></div>
+                    <div className="p-3 space-y-2">
+                      <input value={recvSearch} onChange={(e) => setRecvSearch(e.target.value)} placeholder="Search…" className={finp} />
+                      {companies.length === 0 && <p className="text-xs text-slate-400 italic">No companies yet — add them under Directory in the left menu.</p>}
+                      <div className="max-h-72 overflow-y-auto space-y-1">
+                        {companies.filter((c) => { const q = recvSearch.trim().toLowerCase(); return !q || `${c.name} ${c.category}`.toLowerCase().includes(q); }).map((c) => (
+                          <button key={c._id} onClick={() => pickReceiver(c)} className="w-full text-left px-3 py-2 rounded-xl border border-slate-100 hover:bg-slate-50">
+                            <p className="text-sm font-bold text-slate-800">{c.name}</p><p className="text-[10px] text-slate-400 uppercase tracking-wide">{COMPANY_CATEGORIES.find((x) => x.v === c.category)?.label || c.category}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* New invoice — a form popup instead of a blank inline row */}
       {newOpen && (
