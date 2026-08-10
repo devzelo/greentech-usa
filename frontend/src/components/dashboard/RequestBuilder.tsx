@@ -27,6 +27,8 @@ import { useDialogs } from "../../lib/useDialogs";
 import ShareMenu from "./ShareMenu";
 import RichTextEditor from "./RichTextEditor";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
+import PresenceBar from "./PresenceBar";
+import { usePresence } from "../../lib/usePresence";
 import PdfPreviewModal from "./PdfPreviewModal";
 
 // A request/notice builder — the same engine for the Contract Administration tab (full type
@@ -88,6 +90,14 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     finally { setSaving(false); }
   };
   const saveStatus = useSaveStatus();
+  // CR-B-01/16 — presence on this builder + notify when a new colleague joins.
+  const present = usePresence(`requests:${projectId}:${category}`);
+  const prevPresent = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const now = new Set(present.map((u) => u.userId));
+    for (const u of present) if (!prevPresent.current.has(u.userId) && prevPresent.current.size > 0) toast(`${u.name} joined this builder.`, "info");
+    prevPresent.current = now;
+  }, [present]);
   const save = (rid: string, field: "title" | "date" | "description" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl", value: string) =>
     saveStatus.track(updateProjectRequest(projectId, rid, { [field]: value }).then(patch)).catch(() => {});
   // Rich-text body edits: update the row locally at once (keeps the editor in sync) and debounce
@@ -154,6 +164,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-slate-400">{rows.length} request{rows.length === 1 ? "" : "s"}{showArchived ? " (archived)" : ""}. Each has an auto-number; the client's replies are kept under it.</p>
         <div className="flex items-center gap-2">
+          <PresenceBar users={present} className="mr-1" />
           <SaveStatus state={saveStatus.state} savedAt={saveStatus.savedAt} className="mr-1" />
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
           {canEdit && !showArchived && <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> New request</button>}
