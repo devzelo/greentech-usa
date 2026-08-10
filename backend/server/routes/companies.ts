@@ -4,6 +4,7 @@ import Company from "../models/Company";
 import Invoice from "../models/Invoice";
 import Rfq from "../models/Rfq";
 import ProcurementPO from "../models/ProcurementPO";
+import Project from "../models/Project";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -66,14 +67,25 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const c = await Company.findById(req.params.id).select("name").lean();
     const name = (c as { name?: string } | null)?.name || "";
     const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
-    const [invoices, rfqs, pos] = await Promise.all([
+    const Shipment = (await import("../models/Shipment")).default;
+    const [invoices, rfqs, pos, shipments] = await Promise.all([
       // Invoices link by companyId (receiver picker) OR by matching party name.
       Invoice.find(nameRx ? { $or: [{ companyId: req.params.id }, { party: nameRx }] } : { companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
       Rfq.find({ "recipients.companyId": req.params.id }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
       // POs store the vendor NAME — match the company's name to surface them under the profile.
       nameRx ? ProcurementPO.find({ vendorName: nameRx }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
+      // CR-P-06b — shipping/delivery records: shipments whose logistics agency is this company.
+      nameRx ? Shipment.find({ agencyName: nameRx }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     ]);
-    res.json({ invoices, rfqs, pos });
+    // CR-P-06b — "projects they have been involved with": every project referenced by any of the
+    // linked records above (invoices / RFQs / POs / shipments), resolved to name + status.
+    const pidSet = new Set<string>();
+    for (const arr of [invoices, rfqs, pos, shipments] as Array<Array<{ projectId?: string }>>)
+      for (const r of arr) if (r.projectId) pidSet.add(r.projectId);
+    const projects = pidSet.size
+      ? await Project.find({ projectId: { $in: [...pidSet] } }).select("projectId name status").limit(200).lean()
+      : [];
+    res.json({ invoices, rfqs, pos, shipments, projects });
   } catch (err) { next(err); }
 });
 

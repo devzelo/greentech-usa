@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText, Truck } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, fetchCompanyLinks,
@@ -299,7 +299,31 @@ export default function Directory() {
                       ))}</div>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-400">Records auto-link here when this company is chosen as an invoice receiver / RFQ recipient, or matches a PO's vendor name.</p>
+                  {/* CR-P-06b — shipping/delivery records where this company is the logistics agency. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Truck size={12} /> Shipments ({links.shipments?.length ?? 0})</p>
+                    {(links.shipments?.length ?? 0) === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.shipments!.map((s) => (
+                        <div key={s._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">{s.name || "Shipment"}</span>
+                          <span className="text-slate-500">{s.status}{s.etaDate ? ` · ETA ${s.etaDate}` : ""}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  {/* CR-P-06b — every project this company has been involved with (via any linked record). */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Building2 size={12} /> Projects involved ({links.projects?.length ?? 0})</p>
+                    {(links.projects?.length ?? 0) === 0 ? <p className="text-xs text-slate-400 italic">None yet.</p> : (
+                      <div className="space-y-1">{links.projects!.map((p) => (
+                        <div key={p._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">{p.name}</span>
+                          <span className="text-slate-500">{p.status}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400">Records auto-link here when this company is chosen as an invoice receiver / RFQ recipient, matches a PO's vendor name, or is a shipment's logistics agency. Projects are inferred from those links.</p>
                 </>
               )}
             </div>

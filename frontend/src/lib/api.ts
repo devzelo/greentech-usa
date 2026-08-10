@@ -2111,6 +2111,8 @@ export interface CompanyLinks {
   invoices: Array<{ _id: string; number: string; type: string; party: string; amount: string; date: string; status: string; projectId: string }>;
   rfqs: Array<{ _id: string; rfqNo: string; title: string; status: string; projectId: string; sentAt: string }>;
   pos: Array<{ _id: string; poNo: string; vendorName: string; total: string; status: string; projectId: string }>;
+  shipments?: Array<{ _id: string; name: string; status: string; etaDate: string; agencyName: string; projectId: string }>;
+  projects?: Array<{ _id: string; projectId: string; name: string; status: string }>;
 }
 export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }
 export async function fetchPublicCompany(token: string): Promise<PublicCompany> {
