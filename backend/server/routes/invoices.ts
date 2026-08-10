@@ -40,8 +40,10 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (!String(body.number || "").trim()) {
       const type = body.type === "received" ? "received" : "sent";
       const base = type === "received" ? 4000 : 9000;
-      const count = await Invoice.countDocuments({ projectId: req.params.id, type });
-      body.number = String(base + count + 1);
+      // Use max-existing + 1 (not a raw count) so deleting an invoice can't cause number reuse.
+      const existing = await Invoice.find({ projectId: req.params.id, type }).select("number").lean();
+      const maxNo = existing.reduce((m, iv) => { const n = parseInt(String((iv as { number?: string }).number ?? "").replace(/[^0-9]/g, ""), 10); return Number.isNaN(n) ? m : Math.max(m, n); }, base);
+      body.number = String(maxNo + 1);
     }
     const invoice = await Invoice.create(body);
     res.status(201).json(invoice);

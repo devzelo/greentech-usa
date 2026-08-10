@@ -107,11 +107,13 @@ export const remainingTotal = (inv: { amount?: string; payments?: Array<{ amount
 export function derivedStatus(inv: { type?: string; amount?: string; status?: string; payments?: Array<{ amount?: string }> }): string {
   const total = num(inv.amount);
   const paid = paidTotal(inv);
-  if (["Disputed", "Cancelled"].includes(inv.status || "")) return inv.status as string;
-  if (inv.status === "Draft" && paid === 0) return "Draft";
+  // Terminal deliberate states — never overridden (client CR-I-05).
+  if (["Disputed", "Cancelled", "Rejected"].includes(inv.status || "")) return inv.status as string;
+  // Pre-payment deliberate states persist while nothing has been paid.
+  if (["Draft", "Pending", "Delayed"].includes(inv.status || "") && paid === 0) return inv.status as string;
   if (total > 0 && paid >= total) return "Paid";
   if (paid > 0) return "Partially Paid";
   // Nothing paid — never keep a stale "Paid"/"Partially Paid" from before the payments were removed.
-  if (["Paid", "Partially Paid", "Draft"].includes(inv.status || "")) return inv.type === "sent" ? "Sent" : "Unpaid";
+  if (["Paid", "Partially Paid", "Draft", "Pending", "Delayed"].includes(inv.status || "")) return inv.type === "sent" ? "Sent" : "Unpaid";
   return inv.status || "Unpaid";
 }

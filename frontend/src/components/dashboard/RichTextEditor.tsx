@@ -14,7 +14,7 @@ import {
  * Client requests covered (client-change-requests-2026-08-10 · CR-B-05…13):
  *  - Font family (Aptos, Arial, Times New Roman, …)
  *  - Block styles: Normal / Header 1–4
- *  - Font size 8–48
+ *  - Font size 3–48
  *  - Footnotes
  *  - Text color + text highlight
  *  - Insert table via a rows/columns prompt; edit table (add/delete row & column,
@@ -43,7 +43,7 @@ const BLOCKS: { label: string; tag: string }[] = [
   { label: "Header 4", tag: "H4" },
 ];
 
-const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48];
+const SIZES = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48];
 
 // Client listed: black, white, blue, orange, green, red, purple, etc.
 const TEXT_COLORS = [

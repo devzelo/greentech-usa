@@ -451,8 +451,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
       {/* ── Editor modal (staff) ────────────────────────────────────────────── */}
       {editor && draft && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => { setEditor(null); setDraft(null); }}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8">
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
               <div>
                 <p className="text-sm font-bold text-slate-900">{editor.aid ? "Manage agreement" : "New agreement"}</p>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Download, X } from "lucide-react";
+import { Loader2, Download, Printer, X } from "lucide-react";
 
 /**
  * Branded modal that builds a PDF (pdf-lib Blob) once, shows it in an iframe preview, and
@@ -49,6 +49,8 @@ export default function PdfPreviewModal({ title, fileName, build, onClose }: {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h3 className="text-base font-display font-bold text-slate-900 truncate">{title}</h3>
           <div className="flex items-center gap-2 shrink-0">
+            {/* CR-P-01 — Print the previewed PDF directly. */}
+            <button onClick={() => { const f = document.querySelector<HTMLIFrameElement>(`iframe[title="${title.replace(/"/g, "")}"]`); (f?.contentWindow || window).print(); }} disabled={!url} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50"><Printer size={12} /> Print</button>
             <button onClick={download} disabled={!blob} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50"><Download size={12} /> Download</button>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
           </div>

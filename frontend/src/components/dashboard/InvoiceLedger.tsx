@@ -33,6 +33,9 @@ const STATUS_CLS: Record<string, string> = {
   Paid: "bg-emerald-50 text-emerald-600",
   Overdue: "bg-red-50 text-red-600",
   Disputed: "bg-orange-50 text-orange-600",
+  Rejected: "bg-red-50 text-red-600",
+  Pending: "bg-amber-50 text-amber-600",
+  Delayed: "bg-orange-50 text-orange-600",
   Cancelled: "bg-slate-100 text-slate-400",
 };
 
@@ -94,7 +97,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     });
   };
   const setB = (p: Partial<BuilderDraft>) => setBDraft((d) => (d ? { ...d, ...p } : d));
-  const saveBuilder = async () => {
+  const saveBuilder = async (status?: string) => {
     if (!builderId || !bDraft) return;
     setSaving(true);
     const body: InvoiceInput = {
@@ -106,7 +109,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       contractTotal: bDraft.contractTotal,
     };
     if (bDraft.mode === "build") body.amount = String(lineTotal(bDraft.lineItems));
-    try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast("Invoice saved.", "success"); }
+    if (status) body.status = status;   // CR-I-01 — Save as Draft / Send set the status
+    try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast(status === "Sent" ? "Invoice sent." : "Invoice saved.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
     finally { setSaving(false); }
   };
@@ -139,8 +143,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const numLabel = isSent ? "Invoice #" : "Bill #";
   const dateLabel = isSent ? "Date sent" : "Date received";
   const statusOpts = isSent
-    ? ["Draft", "Sent", "Unpaid", "Partially Paid", "Paid", "Overdue", "Cancelled"]
-    : ["Unpaid", "Partially Paid", "Paid", "Overdue", "Disputed", "Cancelled"];
+    ? ["Draft", "Sent", "Pending", "Delayed", "Unpaid", "Partially Paid", "Paid", "Overdue", "Rejected", "Cancelled"]
+    : ["Pending", "Delayed", "Unpaid", "Partially Paid", "Paid", "Overdue", "Disputed", "Rejected", "Cancelled"];
 
   const load = async () => {
     setLoading(true);
@@ -515,7 +519,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
                   <button onClick={() => { setBuilderId(null); setBDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
-                  <button onClick={saveBuilder} disabled={saving} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
+                  <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>
+                  <button onClick={() => saveBuilder()} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
+                  {isSent && <button onClick={() => saveBuilder("Sent")} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 disabled:opacity-50">Send</button>}
                 </div>
               </div>
 
