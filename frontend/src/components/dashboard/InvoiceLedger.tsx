@@ -325,8 +325,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
             </div>
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numLabel}
-                  <input className={`${finp} mt-1`} value={draft.number} onChange={(e) => setDraft({ ...draft, number: e.target.value })} placeholder={isSent ? "GT-1001" : "Bill no."} /></label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numLabel} <span className="font-medium normal-case text-slate-400">— leave blank to auto-number ({isSent ? "9001, 9002…" : "4001, 4002…"})</span>
+                  <input className={`${finp} mt-1`} value={draft.number} onChange={(e) => setDraft({ ...draft, number: e.target.value })} placeholder={isSent ? "Auto (e.g. 9001)" : "Auto (e.g. 4001)"} /></label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{dateLabel}
                   <input type="date" className={`${finp} mt-1`} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
               </div>

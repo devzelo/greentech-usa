@@ -34,6 +34,13 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
   try {
     const body: Record<string, unknown> = { projectId: req.params.id, addedByName: req.user!.name || "" };
     for (const f of INVOICE_FIELDS) if (f in (req.body || {})) body[f] = req.body[f];
+    // CR-I-02 — auto-assign a unique number when none is given: sent invoices 9000+, received 4000+.
+    if (!String(body.number || "").trim()) {
+      const type = body.type === "received" ? "received" : "sent";
+      const base = type === "received" ? 4000 : 9000;
+      const count = await Invoice.countDocuments({ projectId: req.params.id, type });
+      body.number = String(base + count + 1);
+    }
     const invoice = await Invoice.create(body);
     res.status(201).json(invoice);
   } catch (err) { next(err); }
