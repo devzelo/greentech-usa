@@ -47,6 +47,7 @@ import { userAgreementRouter, projectAgreementRouter, generalAgreementRouter, ag
 import savedDocumentRoutes from "./routes/savedDocuments";
 import announcementRoutes from "./routes/announcements";
 import companiesRoutes, { publicCompanyRouter } from "./routes/companies";
+import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import { startBackupCron } from "./services/backupCron";
 import { schedule as cronSchedule } from "node-cron";
@@ -114,6 +115,7 @@ app.use("/api/resume", resumeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/companies", companiesRoutes);
 app.use("/api/public/companies", publicCompanyRouter);   // vendor self-registration (no auth)
+app.use("/api/presence", presenceRoutes);                // live presence (who's here)
 app.use("/api/users", userRoutes);
 
 // Health check

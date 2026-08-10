@@ -26,6 +26,8 @@ import { projectPdfInfo } from "../../lib/pdfProjectHeader";
 import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import ProjectReportPDF from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
+import PresenceBar from "./PresenceBar";
+import { usePresence } from "../../lib/usePresence";
 import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
@@ -214,6 +216,7 @@ export default function ProjectWorkspace() {
   const [notFound, setNotFound] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [showReport, setShowReport] = useState(false);   // CR-P-01 — Quick Report popup preview
+  const presentUsers = usePresence(id ? `project:${id}` : null);   // CR-B-16 — who else is in this project
 
   // Tabs
   const [activeTab, setActiveTab] = useState("nature");
@@ -2281,6 +2284,8 @@ export default function ProjectWorkspace() {
                   )}
                   {project.name}
                 </h1>
+                {/* CR-B-16 — live presence: who else is in this project right now. */}
+                <PresenceBar users={presentUsers} />
                 {/* Colour-coded status — the same palette as the projects table's status key. */}
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider ${statusMeta(project.status).badge}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${statusMeta(project.status).dot}`} /> {statusMeta(project.status).label}

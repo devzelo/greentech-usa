@@ -2061,6 +2061,15 @@ export async function submitPublicCompany(token: string, body: Partial<PublicCom
   return request(`/public/companies/${token}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
+// Live presence (CR-B-16) — who else is viewing/editing a record.
+export interface PresenceUser { userId: string; name: string }
+export async function presenceBeat(resource: string): Promise<{ users: PresenceUser[] }> {
+  return request(`/presence/${encodeURIComponent(resource)}`, { method: "POST" });
+}
+export async function presenceLeave(resource: string): Promise<void> {
+  try { await request(`/presence/${encodeURIComponent(resource)}`, { method: "DELETE" }); } catch { /* best-effort */ }
+}
+
 export async function fetchAnnouncements(): Promise<ApiAnnouncement[]> { return request(`/announcements`); }
 export async function fetchAllAnnouncements(): Promise<ApiAnnouncement[]> { return request(`/announcements/all`); }
 export async function createAnnouncement(body: Partial<ApiAnnouncement>): Promise<ApiAnnouncement> {
