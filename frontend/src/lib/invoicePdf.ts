@@ -94,6 +94,13 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   }
   // T&C
   if (inv.terms) { page.drawText("TERMS & CONDITIONS", { x: M, y, size: 8, font: bold, color: MUTED }); y -= 12; y = drawWrapped(page, font, inv.terms, { x: M, y, size: 9, maxW: PAGE_W - M * 2, lineHeight: 12, color: INK, maxLines: 8 }) - 14; }
+  // Extra sections (CR-I-04)
+  for (const s of inv.sections || []) {
+    if (!s.title && !s.body) continue;
+    if (y < 120) { page = doc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - M; }
+    if (s.title) { page.drawText(s.title.toUpperCase().slice(0, 80), { x: M, y, size: 8, font: bold, color: MUTED }); y -= 12; }
+    if (s.body) y = drawWrapped(page, font, s.body, { x: M, y, size: 9, maxW: PAGE_W - M * 2, lineHeight: 12, color: INK, maxLines: 20 }); y -= 12;
+  }
 
   // Signature
   if (inv.signerName || inv.signatureUrl) {

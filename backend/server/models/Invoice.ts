@@ -39,6 +39,9 @@ export interface IInvoice extends Document {
   lineItems: Array<{ description: string; qty: string; unitPrice: string }>; // manual line-item builder
   bank: { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string };
   terms: string;           // T&C printed on the invoice
+  sections: Array<{ title: string; body: string }>; // extra named sections (CR-I-04)
+  rfqId: string;           // link to an RFQ (received invoice, CR-I-08)
+  isTemplate: boolean;     // saved as a reusable template (CR-I-07)
   signerName: string;
   signerTitle: string;
   signatureUrl: string;
@@ -81,6 +84,9 @@ const InvoiceSchema = new Schema<IInvoice>(
       iban: { type: String, default: "" }, swift: { type: String, default: "" }, routing: { type: String, default: "" },
     },
     terms: { type: String, default: "" },
+    sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" } }], default: [] },
+    rfqId: { type: String, default: "" },
+    isTemplate: { type: Boolean, default: false },
     signerName: { type: String, default: "" },
     signerTitle: { type: String, default: "" },
     signatureUrl: { type: String, default: "" },

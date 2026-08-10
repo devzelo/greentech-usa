@@ -21,7 +21,7 @@ const subs = (arr: unknown): any => arr as any;
 
 const INVOICE_FIELDS = ["type", "number", "party", "amount", "date", "status", "description", "poId", "subId",
   // Invoice builder (CR-I-03/04/07).
-  "receiverKind", "companyId", "lineItems", "bank", "terms", "signerName", "signerTitle", "signatureUrl", "contractTotal"] as const;
+  "receiverKind", "companyId", "lineItems", "bank", "terms", "sections", "rfqId", "isTemplate", "signerName", "signerTitle", "signatureUrl", "contractTotal"] as const;
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {

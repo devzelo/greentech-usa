@@ -4,8 +4,8 @@ import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
-  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories,
-  type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory,
+  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs,
+  type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
@@ -45,6 +45,7 @@ type BuilderDraft = {
   receiverKind: string; party: string; companyId: string; date: string; description: string;
   mode: "build" | "upload";
   lineItems: InvoiceLineItem[]; bank: InvoiceBank; terms: string;
+  sections: Array<{ title: string; body: string }>; rfqId: string;
   signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
 };
 
@@ -76,12 +77,32 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const [bDraft, setBDraft] = useState<BuilderDraft | null>(null);
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
+  const [rfqList, setRfqList] = useState<ApiRfq[]>([]);
   const [receiverPickerOpen, setReceiverPickerOpen] = useState(false);
   const [recvSearch, setRecvSearch] = useState("");
   useEffect(() => {
     fetchCompanies().then(setCompanies).catch(() => {});
     fetchSignatories().then(setSignatories).catch(() => {});
-  }, []);
+    fetchRfqs(projectId).then(setRfqList).catch(() => {});
+  }, [projectId]);
+  // Distinct saved banks from prior invoices (CR-I-04 bank dropdown) + templates (CR-I-07).
+  const savedBanks = (() => { const seen = new Set<string>(); const out: InvoiceBank[] = []; for (const r of rows) { const b = r.bank; if (b?.name && !seen.has(b.name)) { seen.add(b.name); out.push(b); } } return out; })();
+  const templates = rows.filter((r) => r.isTemplate);
+  const saveAsTemplate = async (inv: ApiInvoice) => {
+    try { const srv = await updateInvoice(projectId, inv._id, { isTemplate: !inv.isTemplate }); patch(srv); toast(srv.isTemplate ? "Saved as a reusable template." : "Removed from templates.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Failed.", "error"); }
+  };
+  const newFromTemplate = async (t: ApiInvoice) => {
+    try {
+      const row = await addInvoice(projectId, {
+        type: kind, party: t.party, receiverKind: t.receiverKind, companyId: t.companyId, description: t.description,
+        amount: t.amount, date: new Date().toISOString().slice(0, 10), status: isSent ? "Draft" : "Unpaid",
+        lineItems: t.lineItems, bank: t.bank, terms: t.terms, sections: t.sections, signerName: t.signerName,
+        signerTitle: t.signerTitle, signatureUrl: t.signatureUrl, contractTotal: t.contractTotal, isTemplate: false,
+      });
+      setRows((p) => [...p, row]); setNewOpen(false); openBuilder(row); toast(`New invoice #${row.number} from template.`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Failed.", "error"); }
+  };
 
   const lineTotal = (items: InvoiceLineItem[]) => items.reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);
   const openBuilder = (inv: ApiInvoice) => {
@@ -92,6 +113,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       mode: (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
       lineItems: inv.lineItems?.length ? inv.lineItems : [{ description: "", qty: "1", unitPrice: "" }],
       bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
+      sections: inv.sections ? inv.sections.map((s) => ({ ...s })) : [], rfqId: inv.rfqId || "",
       signerName: inv.signerName || "", signerTitle: inv.signerTitle || "", signatureUrl: inv.signatureUrl || "",
       contractTotal: inv.contractTotal || "",
     });
@@ -104,7 +126,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       receiverKind: bDraft.receiverKind, party: bDraft.party.trim(), companyId: bDraft.companyId,
       date: bDraft.date, description: bDraft.description,
       lineItems: bDraft.mode === "build" ? bDraft.lineItems : [],
-      bank: bDraft.bank, terms: bDraft.terms,
+      bank: bDraft.bank, terms: bDraft.terms, sections: bDraft.sections, rfqId: bDraft.rfqId,
       signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl,
       contractTotal: bDraft.contractTotal,
     };
@@ -474,6 +496,12 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                 {/* Bank information (CR-I-04) */}
                 <details className="bg-slate-50 rounded-2xl p-4">
                   <summary className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Bank information</summary>
+                  {savedBanks.length > 0 && (
+                    <select className={`${finp} mt-3 font-bold`} value="" onChange={(e) => { const b = savedBanks.find((x) => x.name === e.target.value); if (b) setB({ bank: { ...b } }); }}>
+                      <option value="">Choose a saved bank… (fills the block)</option>
+                      {savedBanks.map((b, i) => <option key={i} value={b.name}>{b.name}{b.accountNumber ? ` · ${b.accountNumber}` : ""}</option>)}
+                    </select>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
                     <input className={finp} placeholder="Bank name" value={bDraft.bank.name} onChange={(e) => setB({ bank: { ...bDraft.bank, name: e.target.value } })} />
                     <input className={finp} placeholder="Account name" value={bDraft.bank.accountName} onChange={(e) => setB({ bank: { ...bDraft.bank, accountName: e.target.value } })} />
@@ -483,6 +511,27 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     <input className={finp} placeholder="Routing" value={bDraft.bank.routing} onChange={(e) => setB({ bank: { ...bDraft.bank, routing: e.target.value } })} />
                   </div>
                 </details>
+
+                {/* Extra sections (CR-I-04 "add sections as needed") */}
+                <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Additional sections</p><button onClick={() => setB({ sections: [...bDraft.sections, { title: "", body: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add section</button></div>
+                  {bDraft.sections.length === 0 && <p className="text-[11px] text-slate-400 italic">None. Add T&amp;C detail, scope notes, etc.</p>}
+                  {bDraft.sections.map((s, i) => (
+                    <div key={i} className="space-y-1 border-l-2 border-primary/30 pl-2">
+                      <div className="flex items-center gap-1.5"><input className={`${finp} font-bold`} placeholder="Section title" value={s.title} onChange={(e) => setB({ sections: bDraft.sections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} /><button onClick={() => setB({ sections: bDraft.sections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button></div>
+                      <textarea rows={2} className={`${finp} resize-y`} placeholder="Section content" value={s.body} onChange={(e) => setB({ sections: bDraft.sections.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)) })} />
+                    </div>
+                  ))}
+                </div>
+
+                {/* CR-I-08 — link a received bill to an RFQ (in addition to the PO link). */}
+                {!isSent && rfqList.length > 0 && (
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Linked RFQ
+                    <select className={`${finp} mt-1`} value={bDraft.rfqId} onChange={(e) => setB({ rfqId: e.target.value })}>
+                      <option value="">None</option>
+                      {rfqList.map((r) => <option key={r._id} value={r._id}>RFQ #{r.rfqNo}{r.title ? ` · ${r.title}` : ""}</option>)}
+                    </select></label>
+                )}
 
                 {/* T&C + signature (CR-I-04) */}
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Terms &amp; conditions<textarea rows={2} className={`${finp} mt-1 resize-y`} value={bDraft.terms} onChange={(e) => setB({ terms: e.target.value })} placeholder="Payment due within 30 days…" /></label>
@@ -512,7 +561,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
               </div>
 
               <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
-                <button onClick={() => cur && duplicateInvoice(cur)} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Plus size={13} /> Duplicate</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => cur && duplicateInvoice(cur)} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Plus size={13} /> Duplicate</button>
+                  <button onClick={() => cur && saveAsTemplate(cur)} className={`px-3 py-2 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 ${cur?.isTemplate ? "border-primary text-primary bg-primary/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>{cur?.isTemplate ? "★ Template" : "Save as template"}</button>
+                </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => {
                     const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractTotal };
@@ -558,6 +610,14 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
               <button onClick={() => setNewOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-3">
+              {/* CR-I-07 — start from a saved template. */}
+              {templates.length > 0 && (
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Start from a template
+                  <select className={`${finp} mt-1 font-bold`} value="" onChange={(e) => { const t = templates.find((x) => x._id === e.target.value); if (t) newFromTemplate(t); }}>
+                    <option value="">Blank invoice</option>
+                    {templates.map((t) => <option key={t._id} value={t._id}>#{t.number} · {t.party || "template"}</option>)}
+                  </select></label>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numLabel} <span className="font-medium normal-case text-slate-400">— leave blank to auto-number ({isSent ? "9001, 9002…" : "4001, 4002…"})</span>
                   <input className={`${finp} mt-1`} value={draft.number} onChange={(e) => setDraft({ ...draft, number: e.target.value })} placeholder={isSent ? "Auto (e.g. 9001)" : "Auto (e.g. 4001)"} /></label>
