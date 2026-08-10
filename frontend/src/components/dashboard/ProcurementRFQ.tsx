@@ -11,7 +11,7 @@ import {
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { buildPoPackage } from "../../lib/poPdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
@@ -102,21 +102,61 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // The submittal approval state behind a BOQ item — Step 1 keys off this: we only request quotes
   // once the client has approved the product. Returns the approval label + the approved brand/option.
   const submittalFor = (itemId: string) => submittals.find((s) => s.itemId === itemId);
-  // CR-PR-03 — build the RFQ PDF and append each "Include Submittal Package?" item's current
-  // submittal package pages after it, so the vendor gets the RFQ + the specs in one document.
+  // CR-PR-03 — page 1 is the RFQ table; the FOLLOWING pages carry each item's supporting docs so
+  // the vendor knows exactly what's needed: the per-item "Upload Docs" files (specs / data sheet /
+  // drawings / picture) and, when "Include Submittal Package?" is ticked, the current submittal
+  // package. Each item is introduced by a labelled divider page.
   const buildRfqWithSubmittals = async (rfq: ApiRfq, vendor?: ApiVendor): Promise<Blob> => {
     const base = await buildRfqPdf(pdfRfq(rfq), vendor, projectInfo);
-    const includeItems = (rfq.lineItems || []).filter((li) => li.includeSubmittal);
-    if (!includeItems.length) return base;
+    const lines = rfq.lineItems || [];
+    const hasExtras = lines.some((li) => li.includeSubmittal || (li.attachments && li.attachments.length));
+    if (!hasExtras) return base;
     try {
       const merged = await PDFDocument.load(await base.arrayBuffer());
-      for (const li of includeItems) {
-        const sub = submittalFor(li.itemId);
-        const rev = sub?.revisions?.find((r) => r.isCurrent) || sub?.revisions?.[(sub?.revisions?.length || 1) - 1];
-        if (!sub || !rev) continue;
-        const { blob } = await buildSubmittalPackage(sub, rev);
-        const pkg = await PDFDocument.load(await blob.arrayBuffer());
-        (await merged.copyPages(pkg, pkg.getPageIndices())).forEach((p) => merged.addPage(p));
+      const font = await merged.embedFont(StandardFonts.Helvetica);
+      const bold = await merged.embedFont(StandardFonts.HelveticaBold);
+      const INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55), GREEN = rgb(0.06, 0.72, 0.51);
+      // A labelled A4 divider page announcing the item / document that follows.
+      const divider = (title: string, subtitle: string) => {
+        const p = merged.addPage([595.28, 841.89]);
+        p.drawRectangle({ x: 0, y: p.getHeight() - 8, width: p.getWidth(), height: 8, color: GREEN });
+        p.drawText(title.slice(0, 70), { x: 48, y: p.getHeight() - 120, size: 20, font: bold, color: INK });
+        if (subtitle) p.drawText(subtitle.slice(0, 90), { x: 48, y: p.getHeight() - 148, size: 11, font, color: MUTED });
+      };
+      // Fetch a file and append its pages (PDF) or a full-page image (png/jpg). Best-effort.
+      const appendFile = async (filePath: string, fileType: string, name: string) => {
+        try {
+          const ext = (fileType || name.split(".").pop() || "").toLowerCase();
+          const res = await fetch(attachmentUrl(filePath));
+          if (!res.ok) return;
+          const bytes = await res.arrayBuffer();
+          if (ext === "pdf") {
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            (await merged.copyPages(src, src.getPageIndices())).forEach((p) => merged.addPage(p));
+          } else if (["png", "jpg", "jpeg"].includes(ext)) {
+            const img = ext === "png" ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
+            const page = merged.addPage([595.28, 841.89]);
+            const m = 48, scale = Math.min((page.getWidth() - m * 2) / img.width, (page.getHeight() - m * 2) / img.height, 1);
+            page.drawImage(img, { x: (page.getWidth() - img.width * scale) / 2, y: (page.getHeight() - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+          }
+        } catch { /* skip unreadable file */ }
+      };
+      let n = 0;
+      for (const li of lines) {
+        n++;
+        const atts = li.attachments || [];
+        if (!atts.length && !li.includeSubmittal) continue;
+        divider(`Item ${n}: ${li.description || "Material"}`, [li.manufacturer, li.spec].filter(Boolean).join(" · "));
+        for (const a of atts) await appendFile(a.filePath, a.fileType, a.name);
+        if (li.includeSubmittal) {
+          const sub = submittalFor(li.itemId);
+          const rev = sub?.revisions?.find((r) => r.isCurrent) || sub?.revisions?.[(sub?.revisions?.length || 1) - 1];
+          if (sub && rev) {
+            const { blob } = await buildSubmittalPackage(sub, rev);
+            const pkg = await PDFDocument.load(await blob.arrayBuffer());
+            (await merged.copyPages(pkg, pkg.getPageIndices())).forEach((p) => merged.addPage(p));
+          }
+        }
       }
       return new Blob([await merged.save()], { type: "application/pdf" });
     } catch { return base; }
