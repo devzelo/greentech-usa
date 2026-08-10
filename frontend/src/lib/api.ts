@@ -2079,7 +2079,7 @@ export interface ApiCompany {
   createdByName?: string;
   createdAt?: string;
   registerToken?: string;
-  pendingUpdate?: { data: string; submittedAt: string } | null;
+  pendingUpdate?: { data: string; submittedAt: string; submittedBy?: string } | null;
 }
 export type CompanyInput = Partial<Omit<ApiCompany, "_id" | "createdByName" | "createdAt" | "registerToken" | "pendingUpdate">>;
 export interface PublicCompany { name: string; category: string; logoUrl: string; address: string; phone: string; email: string; website: string; contactPersons: ApiCompany["contactPersons"]; banking: ApiCompany["banking"]; tax: ApiCompany["tax"] }

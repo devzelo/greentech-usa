@@ -156,7 +156,16 @@ export default function Directory() {
               {/* CR-P-06d — a self-submitted update awaiting GT review. */}
               {c.pendingUpdate && (
                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-                  <span className="text-[11px] font-bold text-amber-700">Company submitted an update for review.</span>
+                  <span className="text-[11px] font-bold text-amber-700">
+                    Company submitted an update for review.
+                    {(c.pendingUpdate.submittedBy || c.pendingUpdate.submittedAt) && (
+                      <span className="block font-medium text-amber-600/80 mt-0.5">
+                        {c.pendingUpdate.submittedBy ? `By ${c.pendingUpdate.submittedBy}` : ""}
+                        {c.pendingUpdate.submittedBy && c.pendingUpdate.submittedAt ? " · " : ""}
+                        {c.pendingUpdate.submittedAt ? new Date(c.pendingUpdate.submittedAt).toLocaleString() : ""}
+                      </span>
+                    )}
+                  </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => resolvePending(c, "approve")} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600"><Check size={11} /> Approve</button>
                     <button onClick={() => resolvePending(c, "discard")} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-red-600"><X size={11} /> Discard</button>

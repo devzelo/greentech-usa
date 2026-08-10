@@ -124,7 +124,11 @@ publicCompanyRouter.patch("/:token", async (req: Request, res: Response, next: N
     if (!c) return res.status(404).json({ error: "This link is invalid or has expired." });
     const clean: Record<string, unknown> = {};
     for (const f of SELF_FIELDS) if (f in (req.body || {})) clean[f] = req.body[f];
-    c.pendingUpdate = { data: JSON.stringify(clean), submittedAt: new Date().toISOString() };
+    // CR-P-06d — record WHO submitted (from the primary contact they entered, or an explicit
+    // submittedBy field) alongside WHEN, so GT can audit sensitive (e.g. banking) changes.
+    const contacts = (clean.contactPersons as Array<{ name?: string; email?: string }> | undefined) || [];
+    const submittedBy = String(req.body?.submittedBy || contacts[0]?.name || contacts[0]?.email || clean.email || "").slice(0, 120);
+    c.pendingUpdate = { data: JSON.stringify(clean), submittedAt: new Date().toISOString(), submittedBy };
     await c.save();
     res.json({ ok: true });
   } catch (err) { next(err); }

@@ -28,7 +28,7 @@ export interface ICompany extends Document {
   // Vendor self-registration (CR-P-06d): a secret token for the public update form,
   // plus a pending-changes buffer that GT reviews before it replaces verified data.
   registerToken: string;
-  pendingUpdate: { data: string; submittedAt: string } | null;
+  pendingUpdate: { data: string; submittedAt: string; submittedBy?: string } | null;
 }
 
 const CompanySchema = new Schema<ICompany>(
@@ -53,7 +53,7 @@ const CompanySchema = new Schema<ICompany>(
     archived: { type: Boolean, default: false },
     createdByName: { type: String, default: "" },
     registerToken: { type: String, default: "", index: true },
-    pendingUpdate: { type: { data: String, submittedAt: String }, default: null },
+    pendingUpdate: { type: { data: String, submittedAt: String, submittedBy: String }, default: null },
   },
   { timestamps: true }
 );
