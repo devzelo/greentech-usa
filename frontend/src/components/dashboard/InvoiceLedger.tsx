@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye, Download } from "lucide-react";
 import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
@@ -196,6 +196,18 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const paid = rows.reduce((s, r) => s + invoicePaid(r), 0);
   const remaining = Math.max(0, total - paid);
 
+  // CR-I-01/T1 — export the ledger to CSV (opens in Excel). PDF export lives per-invoice in the builder.
+  const exportCsv = () => {
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = [numLabel, partyLabel, "Kind", dateLabel, "Amount", "Paid", "Remaining", "Status"];
+    const lines = rows.map((r) => [r.number, r.party, r.receiverKind || "", r.date, n(r.amount), invoicePaid(r), invoiceRemaining(r), r.status].map(esc).join(","));
+    const csv = [header.map(esc).join(","), ...lines].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `${heading.replace(/\s+/g, "_")}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // New invoice via a form popup (client request) — fill the fields, then it's added as a row.
   const openNew = () => {
     setDraft({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
@@ -262,6 +274,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
+          {rows.length > 0 && (
+            <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50" title="Export the ledger to CSV (opens in Excel)"><Download size={13} /> Export Excel</button>
+          )}
           {canEdit && !isSent && (
             <button onClick={() => setPoPicker(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"><Link2 size={13} /> From a purchase order</button>
           )}
