@@ -396,8 +396,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         const totalInvoiced = prevInvoiced + thisAmount;
         const balance = contract ? contract - totalInvoiced : 0;
         return (
-          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => { setBuilderId(null); setBDraft(null); }}>
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-6" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-6">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
                 <h3 className="text-base font-bold text-slate-900">{isSent ? "Invoice" : "Bill"} #{cur?.number} — builder</h3>
                 <button onClick={() => { setBuilderId(null); setBDraft(null); }} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>

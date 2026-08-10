@@ -366,7 +366,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
 
       {/* New request popup */}
       {creating && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setCreating(false)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
               <p className="text-sm font-bold text-slate-900">New request</p>

@@ -78,8 +78,10 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   };
 
   const toggleFinal = async (d: ApiSavedDocument) => {
+    const next = d.status === "final" ? "draft" : "final";
+    // CR-B-21 — confirm before finalizing (this is the revision filed / sent to the client).
+    if (next === "final" && !confirm(`Are you done with "${d.title}"? It will be saved as Final revision ${d.version} in this directory (the copy sent to the client).`)) return;
     try {
-      const next = d.status === "final" ? "draft" : "final";
       const upd = await update(d._id, { status: next });
       setList((p) => p.map((x) => (x._id === d._id ? upd : x)));
     } catch (err) { notify(err instanceof Error ? err.message : "Failed", "error"); }

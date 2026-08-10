@@ -762,7 +762,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
         const m = subs.find((s) => s._id === manageId);
         if (!m) return null;
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setManageId(null)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
                 <div className="min-w-0">

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, CloudOff } from "lucide-react";
 
 /**
@@ -25,6 +25,14 @@ export function useSaveStatus() {
       (e) => { pending.current = Math.max(0, pending.current - 1); setState("error"); throw e; },
     );
   };
+
+  // CR-B-20 — warn before leaving the page while a save is still in flight (unsaved work).
+  useEffect(() => {
+    if (state !== "saving") return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [state]);
 
   return { state, savedAt, track };
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMo
 import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Image as ImageIcon, Table as TableIcon, Loader2, Baseline, Highlighter,
-  Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X,
+  Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2,
 } from "lucide-react";
 
 /**
@@ -83,6 +83,7 @@ export default function RichTextEditor({
   const [menu, setMenu] = useState<null | "style" | "font" | "size" | "color" | "highlight" | "table">(null);
   const [selImg, setSelImg] = useState<HTMLImageElement | null>(null);
   const [tableDims, setTableDims] = useState({ rows: 3, cols: 3 });
+  const [fullscreen, setFullscreen] = useState(false); // CR-B-02 — bigger editing area
 
   // Sync external value in only when it differs, so typing doesn't reset the caret.
   useEffect(() => {
@@ -326,7 +327,7 @@ export default function RichTextEditor({
   );
 
   return (
-    <div className={`rounded-2xl border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""}`}>
+    <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[95] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
       {!disabled && (
         <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-white px-2 py-1.5">
           {/* Block style */}
@@ -430,6 +431,9 @@ export default function RichTextEditor({
               </div>
             </div>, 260, "Table")}
 
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          {btn("fullscreen", fullscreen ? "Exit full screen" : "Full screen (bigger editing area)", fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />, () => setFullscreen((v) => !v))}
+
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onImagePicked(e.target.files?.[0])} />
         </div>
       )}
@@ -460,8 +464,8 @@ export default function RichTextEditor({
         onMouseUp={onSurfaceMouse}
         onClick={onSurfaceMouse}
         data-placeholder={placeholder || "Start writing…"}
-        className="rte-surface px-4 py-3 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white transition-colors"
-        style={{ minHeight }}
+        className={`rte-surface px-4 py-3 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white transition-colors ${fullscreen ? "flex-grow overflow-y-auto bg-white" : ""}`}
+        style={{ minHeight: fullscreen ? undefined : minHeight }}
       />
     </div>
   );
