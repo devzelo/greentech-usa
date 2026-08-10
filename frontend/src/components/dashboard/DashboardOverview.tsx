@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { fetchProjects, getAuthUser, ApiProject } from "../../lib/api";
 import { statusMeta, statusMatches } from "../../lib/projectStatus";
+import { locationFlag } from "../../lib/countryFlag";
 import { useMeta } from "../../hooks/useMeta";
 
 export default function DashboardOverview() {
@@ -128,7 +129,11 @@ export default function DashboardOverview() {
                         <div className="flex items-center gap-4">
                           <div className={`w-1.5 h-9 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
                           <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">{project.name}</span>
+                            {/* CR-P-04 — country flag beside the project name, matching the My/All Projects tables. */}
+                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">
+                              {locationFlag(project.location) && <span className="mr-1 text-[1.15em] leading-none align-middle" title={project.location}>{locationFlag(project.location)}</span>}
+                              {project.name}
+                            </span>
                             {/* Internal project number + the client's contract number. */}
                             <span className="text-[10px] text-slate-400 font-medium">
                               No {project.id}{project.contractNo ? ` · Contract ${project.contractNo}` : ""}
