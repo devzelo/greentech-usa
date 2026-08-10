@@ -47,6 +47,8 @@ const STATUS_META: Record<ShipmentStatus, { label: string; cls: string }> = {
   Delivered:   { label: "Delivered",     cls: "bg-emerald-50 text-emerald-600" },
 };
 const STATUSES = Object.keys(STATUS_META) as ShipmentStatus[];
+// Journey progress by status — drives the route visual (CR-PR-08).
+const STATUS_PCT: Record<ShipmentStatus, number> = { Preparing: 0, Fabrication: 12, Transit: 55, Clearance: 80, Warehouse: 92, Delivered: 100 };
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
@@ -308,6 +310,23 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType, active.containerSize].filter(Boolean).join(" · ") || "—"}{active.openBed ? " · Open bed" : ""}</p></div>
                   {active.trackingUrl && <div className="col-span-2 sm:col-span-3 flex items-end"><a href={active.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline"><ExternalLink size={11} /> Track on carrier site</a></div>}
                 </div>
+
+                {/* CR-PR-08 — route visual: origin → destination with a progress marker (no external map). */}
+                {(active.fromLocation || active.toLocation) && (() => {
+                  const pct = STATUS_PCT[active.status || "Preparing"] ?? 0;
+                  return (
+                    <div className="rounded-2xl border border-slate-100 p-3">
+                      <div className="relative h-8 mx-2">
+                        <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2 bg-slate-200" />
+                        <div className="absolute top-1/2 left-0 h-0.5 -translate-y-1/2 bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                        <span className="absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-slate-400 ring-2 ring-white" />
+                        <span className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-slate-400 ring-2 ring-white" />
+                        <span className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-primary transition-all" style={{ left: `${pct}%` }}><Ship size={16} /></span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mt-1"><span className="truncate max-w-[35%]">{active.fromLocation || "Origin"}</span><span className="text-primary truncate max-w-[30%]">{active.currentLocation || STATUS_META[active.status || "Preparing"].label}</span><span className="truncate max-w-[35%] text-right">{active.toLocation || "Destination"}</span></div>
+                    </div>
+                  );
+                })()}
 
                 {/* CR-PR-09 — items in the shipment + shipping agency. */}
                 {((active.goods?.length || 0) > 0 || active.agencyName) && (
