@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus } from "lucide-react";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
   REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
+  uploadRequestSectionFile, deleteRequestSectionFile,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
   type RequestSection, type RequestSectionStatus,
 } from "../../lib/api";
@@ -121,6 +122,14 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "", locked: false });
     onSectionsChange(r._id, arr, true);
   };
+  // CR-B-18 — per-section file attachments.
+  const secUploadFile = async (r: ApiProjectRequest, i: number, file: File) => {
+    try { patch(await uploadRequestSectionFile(projectId, r._id, i, file)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+  };
+  const secDeleteFile = async (r: ApiProjectRequest, i: number, aid?: string) => {
+    if (!aid) return;
+    try { patch(await deleteRequestSectionFile(projectId, r._id, i, aid)); } catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
   const setStatus = (r: ApiProjectRequest, status: ProjectRequestStatus) => { patch({ ...r, status }); updateProjectRequest(projectId, r._id, { status }).then(patch).catch(() => {}); };
   const remove = async (r: ApiProjectRequest) => {
     if (!(await confirm({ title: "Delete request?", message: `${r.number} and its responses will be removed.`, confirmLabel: "Delete" }))) return;
@@ -227,15 +236,33 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                     <button onClick={() => secMove(r, i, -1)} disabled={i === 0} title="Move up" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronUp size={13} /></button>
                                     <button onClick={() => secMove(r, i, 1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
                                     <button onClick={() => secDup(r, i)} title="Duplicate section" className="p-1 rounded text-slate-300 hover:text-primary"><Copy size={13} /></button>
+                                    <button onClick={() => secUpdate(r, i, { hidden: !s.hidden }, true)} title={s.hidden ? "Show section" : "Hide section"} className={`p-1 rounded ${s.hidden ? "text-slate-500 bg-slate-100" : "text-slate-300 hover:text-slate-600"}`}>{s.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                                     <button onClick={() => secDel(r, i)} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
                                   </div>
                                 )}
                               </div>
-                              {secEditable
-                                ? <RichTextEditor value={s.body} onChange={(html) => secUpdate(r, i, { body: html }, false)} minHeight={110} placeholder="Section content…" onImageUpload={imageUpload} />
-                                : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />}
-                              {canEdit && !locked && (
-                                <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" defaultValue={s.notes || ""} onBlur={(e) => secUpdate(r, i, { notes: e.target.value }, true)} />
+                              {s.hidden ? (
+                                <p className="text-[11px] text-slate-400 italic bg-slate-50 rounded-lg px-2 py-1.5">Section hidden{s.assignedTo ? ` · assigned to ${s.assignedTo}` : ""} — use the eye icon to show it.</p>
+                              ) : (
+                                <>
+                                  {secEditable
+                                    ? <RichTextEditor value={s.body} onChange={(html) => secUpdate(r, i, { body: html }, false)} minHeight={110} placeholder="Section content…" onImageUpload={imageUpload} />
+                                    : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />}
+                                  {canEdit && !locked && (
+                                    <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" defaultValue={s.notes || ""} onBlur={(e) => secUpdate(r, i, { notes: e.target.value }, true)} />
+                                  )}
+                                  {/* CR-B-18/19a — per-section files + assign a colleague. */}
+                                  {canEdit && !locked && (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><UserPlus size={12} className="text-slate-400" /><input className={`${inp} text-[11px] w-40 py-1`} placeholder="Assign to (name)" defaultValue={s.assignedTo || ""} onBlur={(e) => secUpdate(r, i, { assignedTo: e.target.value }, true)} /></span>
+                                      {(s.attachments || []).map((a) => (
+                                        <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600"><Paperclip size={10} /><a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[10rem] truncate">{a.name}</a><button onClick={() => secDeleteFile(r, i, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button></span>
+                                      ))}
+                                      <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) secUploadFile(r, i, f); e.target.value = ""; }} /></label>
+                                    </div>
+                                  )}
+                                  {!canEdit && s.assignedTo && <p className="text-[10px] text-slate-400">Assigned to {s.assignedTo}</p>}
+                                </>
                               )}
                             </div>
                           );

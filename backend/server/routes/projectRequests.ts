@@ -24,20 +24,25 @@ const cleanLines = (v: unknown): Array<{ label: string; value: string }> =>
     : [];
 // Custom named rich-text sections (title + HTML body + per-section status/lock/notes).
 const SECTION_STATUSES = ["", "NotStarted", "InProgress", "WaitingInfo", "UnderReview", "Complete", "NeedsRevision"];
-const cleanSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; notes: string }> =>
+type CleanSection = { title: string; body: string; status: string; locked: boolean; notes: string; hidden: boolean; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string }> };
+const cleanSections = (v: unknown): CleanSection[] =>
   Array.isArray(v)
     ? v.map((s) => {
-        const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; notes?: unknown };
+        const o = s as Record<string, unknown>;
         const status = String(o?.status ?? "");
+        const atts = Array.isArray(o?.attachments) ? (o.attachments as Array<Record<string, unknown>>).map((a) => ({ name: String(a?.name ?? ""), filePath: String(a?.filePath ?? ""), fileType: String(a?.fileType ?? ""), size: String(a?.size ?? "") })).slice(0, 30) : [];
         return {
           title: String(o?.title ?? "").slice(0, 120),
           body: String(o?.body ?? "").slice(0, 20000),
           status: SECTION_STATUSES.includes(status) ? status : "",
           locked: Boolean(o?.locked),
           notes: String(o?.notes ?? "").slice(0, 4000),
+          hidden: Boolean(o?.hidden),
+          assignedTo: String(o?.assignedTo ?? "").slice(0, 120),
+          attachments: atts,
         };
       })
-       .filter((s) => s.title || s.body || s.status || s.notes).slice(0, 40)
+       .filter((s) => s.title || s.body || s.status || s.notes || s.attachments.length).slice(0, 40)
     : [];
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
@@ -165,6 +170,35 @@ router.delete("/:rid/files/:fid", async (req: AuthedRequest, res: Response, next
     const f = subs(doc.attachments).id(req.params.fid);
     if (f?.filePath) fs.unlink(path.resolve(f.filePath), () => {});
     if (f) f.deleteOne();
+    await doc.save();
+    res.json(doc);
+  } catch (err) { next(err); }
+});
+
+// CR-B-18 — a file on a specific custom section (by array index).
+router.post("/:rid/sections/:idx/files", upload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const doc = await ProjectRequest.findOne({ _id: req.params.rid, projectId: req.params.id });
+    const idx = Number(req.params.idx);
+    if (!doc || !doc.sections[idx]) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Section not found." }); }
+    doc.sections[idx].attachments = doc.sections[idx].attachments || [];
+    doc.sections[idx].attachments!.push(fileMeta(req.file));
+    doc.markModified("sections");
+    await doc.save();
+    res.status(201).json(doc);
+  } catch (err) { next(err); }
+});
+router.delete("/:rid/sections/:idx/files/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const doc = await ProjectRequest.findOne({ _id: req.params.rid, projectId: req.params.id });
+    const idx = Number(req.params.idx);
+    if (!doc || !doc.sections[idx]) return res.status(404).json({ error: "Section not found." });
+    const list = doc.sections[idx].attachments || [];
+    const f = list.find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
+    if (f?.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    doc.sections[idx].attachments = list.filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
+    doc.markModified("sections");
     await doc.save();
     res.json(doc);
   } catch (err) { next(err); }

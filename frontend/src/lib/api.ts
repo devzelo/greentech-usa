@@ -1658,7 +1658,18 @@ export interface ApiProjectRequest {
 }
 // A custom named section with per-section status / lock / notes (client CR-B-15/17/19).
 export type RequestSectionStatus = "" | "NotStarted" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
-export type RequestSection = { title: string; body: string; status?: RequestSectionStatus; locked?: boolean; notes?: string };
+export type RequestSectionFile = { _id?: string; name: string; filePath: string; fileType: string; size: string };
+export type RequestSection = { title: string; body: string; status?: RequestSectionStatus; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; attachments?: RequestSectionFile[] };
+export async function uploadRequestSectionFile(projectId: string, rid: string, idx: number, file: File): Promise<ApiProjectRequest> {
+  const fd = new FormData(); fd.append("file", file);
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${reqBase(projectId)}/${rid}/sections/${idx}/files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function deleteRequestSectionFile(projectId: string, rid: string, idx: number, aid: string): Promise<ApiProjectRequest> {
+  return request(`${reqBase(projectId)}/${rid}/sections/${idx}/files/${aid}`, { method: "DELETE" });
+}
 // The Contract-Administration request catalogue (must mirror the backend REQUEST_TYPES list).
 export const REQUEST_TYPES: string[] = [
   "Request for Information (RFI)", "Request for Clarification (RFC)", "Technical Clarification",
