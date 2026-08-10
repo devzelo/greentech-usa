@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock } from "lucide-react";
+import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText } from "lucide-react";
 import {
   fetchProcurementSections, addProcurementSection, updateProcurementSection, deleteProcurementSection,
   fetchProcurementItems, addProcurementItem, updateProcurementItem, cancelProcurementItem, restoreProcurementItem,
   deleteProcurementItem, bulkAddProcurementItems, fetchSubmittals, fetchProcurementItemRevisions,
-  createRfq, uploadDocument,
+  createRfq, uploadDocument, uploadProcurementItemFile, deleteProcurementItemFile, attachmentUrl,
   type ApiProcurementSection, type ApiProcurementItem, type ProcurementItemInput, type ApiSubmittal, type ApiProcurementItemRevision,
 } from "../../lib/api";
 import { buildRfqPdf } from "../../lib/rfqPdf";
@@ -261,6 +261,15 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     try { await Promise.all(targets.map((it) => updateProcurementItem(projectId, it._id, { locked }))); toast(locked ? "Category locked." : "Category unlocked.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not update the category lock.", "error"); }
   };
+  // CR-P-12 — per-item reference files.
+  const uploadItemFile = async (iid: string, file: File, kind: string) => {
+    try { const up = await uploadProcurementItemFile(projectId, iid, file, kind); setItems((p) => p.map((x) => (x._id === iid ? up : x))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+  };
+  const deleteItemFile = async (iid: string, aid: string) => {
+    try { const up = await deleteProcurementItemFile(projectId, iid, aid); setItems((p) => p.map((x) => (x._id === iid ? up : x))); }
+    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
   const editCell = (iid: string, field: keyof ProcurementItemInput, value: string) =>
     setItems((p) => p.map((it) => (it._id === iid ? { ...it, [field]: value } : it)));
   const saveCell = (iid: string, field: keyof ProcurementItemInput, value: string) => {
@@ -271,7 +280,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     }).catch(() => {});
   };
   // ── Manage modal: draft-based editing ────────────────────────────────
-  const M_FIELDS: (keyof ProcurementItemInput)[] = ["description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays"];
+  const M_FIELDS: (keyof ProcurementItemInput)[] = ["description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "remarks"];
   // Seed the draft each time a different item's Manage modal opens.
   useEffect(() => {
     if (!manageId) { setMDraft({}); return; }
@@ -924,6 +933,34 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                   {mField("Lead time (days)", "leadTimeDays")}
                 </div>
                 <p className="text-[11px] text-slate-500">Order-by date: <span className="font-bold text-slate-700">{orderByDate(mDraft.needOnSiteDate || m.needOnSiteDate, mDraft.leadTimeDays || m.leadTimeDays) || "—"}</span> · Status: <span className="font-bold text-slate-700">{statusLabel(m.status)}</span> · RV{m.revNo || 0}</p>
+
+                {/* CR-P-12 — remarks + per-item reference files (pictures, catalogue, data sheet, drawing). */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remarks</label>
+                  <textarea rows={2} value={mDraft.remarks ?? ""} disabled={!canEdit} onChange={(e) => setMDraft((p) => ({ ...p, remarks: e.target.value }))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-70 resize-y" placeholder="Notes on this item…" />
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-3 space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Files — picture, catalogue, data sheet, drawing</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(m.attachments || []).map((a) => (
+                      <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                        <FileText size={10} /> <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[10rem] truncate" title={`${a.kind}: ${a.name}`}>{a.name}</a>
+                        {a.kind && a.kind !== "other" && <span className="text-slate-300">· {a.kind}</span>}
+                        {canEdit && <button onClick={() => deleteItemFile(m._id, a._id)} className="text-slate-300 hover:text-red-500"><Plus size={11} className="rotate-45" /></button>}
+                      </span>
+                    ))}
+                    {(m.attachments || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No files yet.</span>}
+                  </div>
+                  {canEdit && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {["picture", "catalogue", "datasheet", "drawing", "other"].map((k) => (
+                        <label key={k} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:border-primary hover:text-primary cursor-pointer capitalize">
+                          <Upload size={10} /> {k}<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItemFile(m._id, f, k); e.target.value = ""; }} />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 {canEdit && (
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">

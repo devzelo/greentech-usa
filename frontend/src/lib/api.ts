@@ -1348,6 +1348,8 @@ export interface ApiProcurementItem {
   leadTimeDays: string;
   status: ProcurementStatus;
   locked?: boolean;
+  remarks?: string;
+  attachments?: Array<{ _id: string; name: string; filePath: string; fileType: string; size: string; kind: string }>;
   vendorName?: string;
   revNo: number;
   cancelledAt: string | null;
@@ -1387,6 +1389,17 @@ export async function addProcurementItem(projectId: string, body: ProcurementIte
 }
 export async function bulkAddProcurementItems(projectId: string, items: ProcurementItemInput[]): Promise<ApiProcurementItem[]> {
   return request(`${procBase(projectId)}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
+}
+// CR-P-12 — per-item reference files.
+export async function uploadProcurementItemFile(projectId: string, iid: string, file: File, kind = "other"): Promise<ApiProcurementItem> {
+  const fd = new FormData(); fd.append("file", file); fd.append("kind", kind);
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${procBase(projectId)}/items/${iid}/files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function deleteProcurementItemFile(projectId: string, iid: string, aid: string): Promise<ApiProcurementItem> {
+  return request(`${procBase(projectId)}/items/${iid}/files/${aid}`, { method: "DELETE" });
 }
 export async function updateProcurementItem(projectId: string, iid: string, body: ProcurementItemInput): Promise<ApiProcurementItem> {
   return request(`${procBase(projectId)}/items/${iid}`, { method: 'PATCH', body: JSON.stringify(body) });

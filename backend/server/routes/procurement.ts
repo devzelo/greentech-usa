@@ -8,6 +8,9 @@ import ProcurementPO from "../models/ProcurementPO";
 import ProcurementItemRevision from "../models/ProcurementItemRevision";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -112,7 +115,15 @@ router.post("/items/bulk", async (req: AuthedRequest, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
-const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked"] as const;
+const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked", "remarks"] as const;
+
+// Per-item file uploads (CR-P-12) — pictures, catalogue, data sheet, drawing.
+const itemHumanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
+const itemStorage = multer.diskStorage({
+  destination: (req: AuthedRequest, _file, cb) => { const dir = path.join("uploads", req.params.id, "boq-items", req.params.iid); fs.mkdirSync(dir, { recursive: true }); cb(null, dir); },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const itemUpload = multer({ storage: itemStorage, limits: { fileSize: 64 * 1024 * 1024 } });
 // I2 — editing any of these "content" fields snapshots the prior state as a revision.
 const TRACKED_FIELDS = ["description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays"] as const;
 
@@ -155,6 +166,29 @@ router.patch("/items/:iid", async (req: AuthedRequest, res: Response, next: Next
       }
     }
     res.json(row);
+  } catch (err) { next(err); }
+});
+
+// CR-P-12 — upload / remove a per-item reference file (picture, catalogue, data sheet, drawing).
+router.post("/items/:iid/files", itemUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const it = await ProcurementItem.findOne({ _id: req.params.iid, projectId: req.params.id });
+    if (!it) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Item not found." }); }
+    it.attachments.push({ name: req.file.originalname, filePath: req.file.path.replace(/\\/g, "/"), fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(), size: itemHumanSize(req.file.size), kind: String(req.body?.kind || "other") });
+    await it.save();
+    res.status(201).json(it);
+  } catch (err) { next(err); }
+});
+router.delete("/items/:iid/files/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const it = await ProcurementItem.findOne({ _id: req.params.iid, projectId: req.params.id });
+    if (!it) return res.status(404).json({ error: "Not found" });
+    const f = it.attachments.find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
+    if (f?.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    it.attachments = it.attachments.filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
+    await it.save();
+    res.json(it);
   } catch (err) { next(err); }
 });
 
