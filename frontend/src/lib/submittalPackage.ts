@@ -24,9 +24,12 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const skipped: string[] = [];
+  // CR-P-16 — A3 landscape (11"x17") for the generated pages so all content/columns are visible.
+  // A3-landscape height equals A4-portrait height (841.89), so the vertical layout is unchanged.
+  const PW = 1190.55, PH = 841.89;
 
   // ── Title page ──
-  const title = doc.addPage([595.28, 841.89]);
+  const title = doc.addPage([PW, PH]);
   const { width, height } = title.getSize();
   const draw = (text: string, y: number, size: number, f = font, color = rgb(0.06, 0.09, 0.16)) =>
     title.drawText(text, { x: 56, y, size, font: f, color });
@@ -65,7 +68,7 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
   // Draw a labeled divider page that announces the next component (e.g. "DRAWINGS"),
   // plus the source file name, so a reader always knows what they're looking at.
   const addDivider = (component: string, fileName: string) => {
-    const p = doc.addPage([595.28, 841.89]);
+    const p = doc.addPage([PW, PH]);
     const { width: w, height: h } = p.getSize();
     p.drawRectangle({ x: 0, y: h / 2 - 2, width: w, height: 4, color: rgb(0.06, 0.72, 0.51) });
     const label = (COMPONENT_LABEL[component] || component).toUpperCase();
@@ -93,7 +96,7 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
         copied.forEach((p) => doc.addPage(p));
       } else if (["png", "jpg", "jpeg"].includes(ext)) {
         const img = ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-        const page = doc.addPage([595.28, 841.89]);
+        const page = doc.addPage([PW, PH]);
         const m = 48;
         const scale = Math.min((page.getWidth() - m * 2) / img.width, (page.getHeight() - m * 2) / img.height, 1);
         const w = img.width * scale, h = img.height * scale;

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText } from "lucide-react";
+import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText, X } from "lucide-react";
 import {
   fetchProcurementSections, addProcurementSection, updateProcurementSection, deleteProcurementSection,
   fetchProcurementItems, addProcurementItem, updateProcurementItem, cancelProcurementItem, restoreProcurementItem,
@@ -225,7 +225,28 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   };
 
   // ── Items ─────────────────────────────────────────────────
-  // Adding a new item opens a local DRAFT row (nothing saved yet) — fill it in, then hit ✓ to save.
+  // CR-P-12 — a new BOQ item opens a POPUP (description, brand, qty, spec, remarks, dates) with
+  // Save / Save & docs / Cancel. Files (pictures, catalogue, data sheet, drawing, submittal) need
+  // the saved item's id, so "Save & docs" saves then opens Manage to attach them.
+  const [addFor, setAddFor] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState<DraftItem>(BLANK_DRAFT(""));
+  const openAddPopup = (sid: string) => { setAddForm(BLANK_DRAFT(sid)); setAddFor(sid); };
+  const setAddField = (field: keyof DraftItem, value: string) => setAddForm((f) => ({ ...f, [field]: value }));
+  const saveAddPopup = async (openDocs: boolean) => {
+    if (!addFor) return;
+    if (!addForm.description.trim()) { toast("Add a description before saving the item.", "error"); return; }
+    const nextNo = String(itemsIn(addFor).length + 1);
+    try {
+      const it = await addProcurementItem(projectId, {
+        sectionId: addFor, itemNo: nextNo, description: addForm.description, manufacturer: addForm.manufacturer,
+        modelNo: addForm.modelNo, qty: addForm.qty, unit: addForm.unit, spec: addForm.spec, needOnSiteDate: addForm.needOnSiteDate, leadTimeDays: addForm.leadTimeDays, remarks: addForm.remarks,
+      });
+      setItems((p) => [...p, it]);
+      setAddFor(null);
+      if (openDocs) setManageId(it._id); else toast("Item added.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not add item.", "error"); }
+  };
+  // Bulk import (Excel/PDF) still lands as inline review DRAFT rows so many can be verified then saved.
   const addItem = (sid: string) => setDrafts((p) => [...p, BLANK_DRAFT(sid)]);
   const draftsIn = (sid: string) => drafts.filter((d) => d.sectionId === sid);
   const editDraft = (tempId: string, field: keyof DraftItem, value: string) =>
@@ -850,7 +871,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                 )}
                 {canEdit && (
                   <div className="px-3 py-2 border-t border-slate-50 flex items-center gap-4">
-                    <button onClick={() => addItem(s._id)} className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add item</button>
+                    <button onClick={() => openAddPopup(s._id)} className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add item</button>
                     <button onClick={() => setImportModal({ mode: "section", sectionId: s._id })} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-primary" title={`Import Excel/CSV rows into "${s.name}"`}>
                       <Upload size={12} /> Import into this category
                     </button>
@@ -926,6 +947,43 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
           </div>
         );
       })()}
+      {/* CR-P-12 — new BOQ item popup. Backdrop does NOT close (CR-B-03) — only Cancel/Save do. */}
+      {addFor && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100">
+              <p className="text-sm font-bold text-slate-900">New BOQ item</p>
+              <button onClick={() => setAddFor(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="sm:col-span-2 text-[11px] font-bold text-slate-500">Description *
+                <input autoFocus className={`${cell} mt-1 w-full`} value={addForm.description} onChange={(e) => setAddField("description", e.target.value)} placeholder="e.g. PVC pipe 4in Schedule 40" /></label>
+              <label className="text-[11px] font-bold text-slate-500">Brand
+                <input className={`${cell} mt-1 w-full`} value={addForm.manufacturer} onChange={(e) => setAddField("manufacturer", e.target.value)} placeholder="Manufacturer / brand" /></label>
+              <label className="text-[11px] font-bold text-slate-500">Model / Part #
+                <input className={`${cell} mt-1 w-full`} value={addForm.modelNo} onChange={(e) => setAddField("modelNo", e.target.value)} /></label>
+              <label className="text-[11px] font-bold text-slate-500">Quantity
+                <input className={`${cell} mt-1 w-full`} value={addForm.qty} onChange={(e) => setAddField("qty", e.target.value)} /></label>
+              <label className="text-[11px] font-bold text-slate-500">Unit
+                <input className={`${cell} mt-1 w-full`} value={addForm.unit} onChange={(e) => setAddField("unit", e.target.value)} placeholder="pcs / m / kg" /></label>
+              <label className="sm:col-span-2 text-[11px] font-bold text-slate-500">Specs
+                <textarea rows={2} className={`${cell} mt-1 w-full resize-none`} value={addForm.spec} onChange={(e) => setAddField("spec", e.target.value)} placeholder="Technical specification" /></label>
+              <label className="sm:col-span-2 text-[11px] font-bold text-slate-500">Remarks
+                <input className={`${cell} mt-1 w-full`} value={addForm.remarks} onChange={(e) => setAddField("remarks", e.target.value)} placeholder="Notes / remarks" /></label>
+              <label className="text-[11px] font-bold text-slate-500">Need on site
+                <input type="date" className={`${cell} mt-1 w-full`} value={addForm.needOnSiteDate} onChange={(e) => setAddField("needOnSiteDate", e.target.value)} /></label>
+              <label className="text-[11px] font-bold text-slate-500">Lead time (days)
+                <input className={`${cell} mt-1 w-full`} value={addForm.leadTimeDays} onChange={(e) => setAddField("leadTimeDays", e.target.value)} /></label>
+              <p className="sm:col-span-2 text-[11px] text-slate-400">Pictures, catalogue, data sheet, drawing &amp; submittal package attach in the next step — use <strong>Save &amp; docs</strong>.</p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+              <button onClick={() => setAddFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
+              <button onClick={() => saveAddPopup(false)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary">Save</button>
+              <button onClick={() => saveAddPopup(true)} className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 inline-flex items-center gap-1.5"><FileText size={13} /> Save &amp; docs</button>
+            </div>
+          </div>
+        </div>
+      )}
       {dialogs}
       {showPreview && (
         <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, items, projectInfo)} onClose={() => setShowPreview(false)} />

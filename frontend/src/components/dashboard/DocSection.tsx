@@ -140,17 +140,15 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                   <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
                   <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}</p>
                 </button>
-                {/* CR-P-07 — description is hidden by default (kept the clean look the client
-                    wanted) but still available: it shows when set, and a subtle "+ note"
-                    opt-in appears on hover so RFP files can still be labelled (Appendix A/B/C). */}
-                {canEdit ? (
-                  d.description ? (
-                    <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-[11px] font-medium italic text-slate-500 hover:text-primary py-0.5 transition-colors">{d.description}</button>
+                {/* CR-P-07 — the per-file "Add description" line is removed (client didn't want it).
+                    A Preview button sits in front of each file instead. Any description already set
+                    still shows read-only (click to edit when editable) so no existing data is lost. */}
+                {d.description ? (
+                  canEdit ? (
+                    <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-[11px] font-medium italic text-slate-500 hover:text-primary py-0.5 transition-colors" title="Edit note">{d.description}</button>
                   ) : (
-                    <button onClick={() => setDescEdit({ doc: d, value: "" })} className="mt-0.5 text-left text-[10px] font-semibold text-slate-300 hover:text-primary py-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">+ note</button>
+                    <p className="mt-0.5 text-[11px] text-slate-500 font-medium italic">{d.description}</p>
                   )
-                ) : d.description ? (
-                  <p className="mt-0.5 text-[11px] text-slate-500 font-medium italic">{d.description}</p>
                 ) : null}
               </div>
             </div>

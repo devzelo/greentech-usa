@@ -36,7 +36,7 @@ const DECIDED: SubmittalDisposition[] = ["Approved", "ApprovedAsNoted", "Rejecte
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
-export default function ProcurementSubmittals({ projectId, canEdit, highlightItemId, onHighlightDone }: { projectId: string; canEdit: boolean; highlightItemId?: string; onHighlightDone?: () => void }) {
+export default function ProcurementSubmittals({ projectId, canEdit, projectName, clientName, highlightItemId, onHighlightDone }: { projectId: string; canEdit: boolean; projectName?: string; clientName?: string; highlightItemId?: string; onHighlightDone?: () => void }) {
   const [subs, setSubs] = useState<ApiSubmittal[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -441,6 +441,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
                           confirms who/what before uploading the client's reply. */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-[11px]">
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Submittal #</p><p className="font-bold text-slate-700">{subNo[sub._id]}{rev.revisionNo > 0 ? ` - RV${rev.revisionNo}` : ""}</p></div>
+                        <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Project</p><p className="font-bold text-slate-700 truncate">{projectName || "—"}</p></div>
+                        <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Client</p><p className="font-bold text-slate-700 truncate">{rev.clientName || clientName || "—"}</p></div>
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Material</p><p className="font-bold text-slate-700 truncate">{rev.optionLabel || sub.productName || sub.title || "—"}</p></div>
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Date submitted</p><p className="font-bold text-slate-700">{rev.sentToClientAt || "—"}</p></div>
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Submitted by</p><p className="font-bold text-slate-700 truncate">{rev.submittedBy || rev.createdByName || "—"}</p></div>
@@ -465,7 +467,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
                       </div>
                       {/* CR-P-20a — who was involved (client name + who submitted / received it). */}
                       <div className={`grid grid-cols-1 md:grid-cols-3 gap-2 ${roCls}`}>
-                        <label className="text-[11px] text-slate-500">Client name<input value={rev.clientName || ""} onChange={(e) => saveRevField(sub._id, rev._id, "clientName", e.target.value)} placeholder="Client company / person" className={`${inp} mt-1`} /></label>
+                        <label className="text-[11px] text-slate-500">Client name<input value={rev.clientName || ""} onChange={(e) => saveRevField(sub._id, rev._id, "clientName", e.target.value)} placeholder={clientName || "Client company / person"} className={`${inp} mt-1`} /></label>
                         <label className="text-[11px] text-slate-500">Submitted by (GT)<input value={rev.submittedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "submittedBy", e.target.value)} placeholder="Who submitted it" className={`${inp} mt-1`} /></label>
                         <label className="text-[11px] text-slate-500">Received by (client side)<input value={rev.receivedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "receivedBy", e.target.value)} placeholder="Who received / returned it" className={`${inp} mt-1`} /></label>
                       </div>
