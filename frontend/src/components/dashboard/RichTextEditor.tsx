@@ -268,6 +268,16 @@ export default function RichTextEditor({
     cell.style.background = color === "transparent" ? "" : color;
     emit();
   };
+  // CR-B-12 — set the table's border colour and line style on every cell.
+  const setTableBorder = (color: string, style: "solid" | "dashed" | "double" = "solid") => {
+    const t = selectedTable(); if (!t) return;
+    Array.from(t.rows).forEach((row) => Array.from(row.cells).forEach((cell) => {
+      cell.style.borderStyle = style;
+      cell.style.borderWidth = style === "double" ? "3px" : "1px";
+      cell.style.borderColor = color;
+    }));
+    emit();
+  };
 
   // ── Images ────────────────────────────────────────────────────────────────
   const pickImage = () => { if (!disabled) fileRef.current?.click(); };
@@ -435,6 +445,8 @@ export default function RichTextEditor({
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); deleteRow(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-rose-50 text-rose-600"><Trash2 size={13} /> Del row</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); deleteCol(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-rose-50 text-rose-600"><Trash2 size={13} /> Del column</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); toggleBorders(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-slate-100 text-slate-700"><TableIcon size={13} /> Borders</button>
+                  {/* CR-B-12 — insert a picture into the cell the caret is in. */}
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); if (ancestor("TD") || ancestor("TH")) pickImage(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-slate-100 text-slate-700"><ImageIcon size={13} /> Pic in cell</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); deleteTable(); closeMenu(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-rose-50 text-rose-600"><Trash2 size={13} /> Del table</button>
                 </div>
                 <div className="flex items-center gap-1.5 px-1 pt-1.5">
@@ -443,6 +455,16 @@ export default function RichTextEditor({
                     <button key={c} type="button" title={c === "transparent" ? "None" : c} onMouseDown={(e) => { e.preventDefault(); shadeCell(c); }}
                       className="w-5 h-5 rounded border border-slate-200" style={{ background: c === "transparent" ? "#fff" : c }} />
                   ))}
+                </div>
+                {/* CR-B-12 — border colour + line style for the whole table. */}
+                <div className="flex items-center gap-1.5 px-1 pt-1.5">
+                  <span className="text-[10px] text-slate-400">Border</span>
+                  {["#0f172a", "#94a3b8", "#3b82f6", "#ef4444", "#22c55e"].map((c) => (
+                    <button key={c} type="button" title={`Border ${c}`} onMouseDown={(e) => { e.preventDefault(); setTableBorder(c); }}
+                      className="w-5 h-5 rounded border-2" style={{ borderColor: c }} />
+                  ))}
+                  <button type="button" title="Dashed border" onMouseDown={(e) => { e.preventDefault(); setTableBorder("#94a3b8", "dashed"); }} className="px-1.5 py-0.5 rounded text-[10px] border border-dashed border-slate-400 text-slate-500 hover:bg-slate-100">Dashed</button>
+                  <button type="button" title="Double border" onMouseDown={(e) => { e.preventDefault(); setTableBorder("#0f172a", "double"); }} className="px-1.5 py-0.5 rounded text-[10px] border-double border-2 border-slate-500 text-slate-500 hover:bg-slate-100">Double</button>
                 </div>
               </div>
             </div>, 260, "Table")}
