@@ -100,7 +100,7 @@ export interface IProject extends Document {
     notes: string;
     fields?: Array<{ fieldId: string; label: string; type: string; options?: string[]; value?: string }>;
   }>;
-  tabAccess: Record<string, { employees: boolean }>;
+  tabAccess: Record<string, { employees: boolean; employeeIds?: string[] }>;
   // Public showcase
   gallery: Array<{ type: "image" | "video"; source: "upload" | "link"; url: string; caption?: string }>;
   showClientName: boolean;

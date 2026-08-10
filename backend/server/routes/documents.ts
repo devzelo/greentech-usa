@@ -18,7 +18,7 @@ async function sectionAccess(req: AuthedRequest, projectId: string, section: str
   const empId = (me as { empId?: string } | null)?.empId || "";
   const access = getProjectAccess(project, req.user!.userId, empId);
   const tabId = sectionToTabId(section);
-  const tabAccess = (project as { tabAccess?: Record<string, { employees?: boolean }> }).tabAccess;
+  const tabAccess = (project as { tabAccess?: Record<string, { employees?: boolean; employeeIds?: string[] }> }).tabAccess;
   return { canView: canViewTab(access, tabId, tabAccess), canEdit: access.role !== "none" && canEditTab(access, tabId) };
 }
 

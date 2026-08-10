@@ -6,9 +6,13 @@ import type { AuthedRequest } from "../middleware/auth";
 
 export type ProjectAccess =
   | { role: "owner" }
-  | { role: "employee" }
+  | { role: "employee"; empId: string }
   | { role: "subcontractor"; perms: Record<string, "view" | "edit"> }
   | { role: "none" };
+
+// Per-tab access config. `employees:false` hides the tab from ALL assigned employees;
+// a non-empty `employeeIds` allowlist restricts it to just those employees (CR-P-03).
+export type TabAccessConfig = { employees?: boolean; employeeIds?: string[] };
 
 interface ProjectLike {
   ownerId?: unknown;
@@ -20,7 +24,7 @@ interface ProjectLike {
 /** Determine how a user relates to a project. Expired subcontractor access is denied. */
 export function getProjectAccess(project: ProjectLike, userId: string, empId: string): ProjectAccess {
   if (project.ownerId && String(project.ownerId) === String(userId)) return { role: "owner" };
-  if (empId && (project.assignedEmployees || []).includes(empId)) return { role: "employee" };
+  if (empId && (project.assignedEmployees || []).includes(empId)) return { role: "employee", empId };
   const sub = (project.guests || []).find((g) => String(g.userId) === String(userId));
   if (sub) {
     // Access timeline: once the expiry passes, the subcontractor loses access automatically.
@@ -61,13 +65,22 @@ export function sectionToTabId(section: string): string | null {
 }
 
 /** Can this access level VIEW the given tab's content? */
-export function canViewTab(access: ProjectAccess, tabId: string | null, tabAccess?: Record<string, { employees?: boolean }>): boolean {
+export function canViewTab(access: ProjectAccess, tabId: string | null, tabAccess?: Record<string, TabAccessConfig>): boolean {
   switch (access.role) {
     case "owner":
       return true;
-    case "employee":
-      if (tabId && tabAccess && tabAccess[tabId]?.employees === false) return false;
+    case "employee": {
+      const cfg = tabId && tabAccess ? tabAccess[tabId] : undefined;
+      if (cfg) {
+        // A non-empty per-employee allowlist restricts the tab to just those employees (CR-P-03).
+        if (Array.isArray(cfg.employeeIds) && cfg.employeeIds.length > 0) {
+          return cfg.employeeIds.includes(access.empId);
+        }
+        // Otherwise fall back to the group toggle (backward compatible).
+        if (cfg.employees === false) return false;
+      }
       return true;
+    }
     case "subcontractor":
       if (!tabId) return false; // guests only see gated tab content, nothing loose
       return access.perms[tabId] === "view" || access.perms[tabId] === "edit";

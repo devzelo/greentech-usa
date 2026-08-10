@@ -298,14 +298,31 @@ export default function ProjectWorkspace() {
   const [tplFields, setTplFields] = useState<CustomField[]>([]);
   const [tplSaving, setTplSaving] = useState(false);
 
-  // Per-tab Access & Sharing Control (Employees visibility)
-  const [tabAccess, setTabAccess] = useState<Record<string, { employees: boolean }>>({});
+  // Per-tab Access & Sharing Control (Employees visibility).
+  // `employeeIds` (when non-empty) restricts the tab to just those specific employees (CR-P-03);
+  // otherwise the `employees` group toggle governs all assigned employees.
+  const [tabAccess, setTabAccess] = useState<Record<string, { employees: boolean; employeeIds?: string[] }>>({});
   const currentAccess = tabAccess[activeTab] ?? { employees: true };
   const toggleAccess = () =>
     setTabAccess((prev) => ({
       ...prev,
-      [activeTab]: { employees: !currentAccess.employees },
+      [activeTab]: { ...(prev[activeTab] ?? { employees: true }), employees: !currentAccess.employees },
     }));
+  // Toggle a single employee in/out of the active tab's per-employee allowlist.
+  const toggleTabEmployee = (empId: string) =>
+    setTabAccess((prev) => {
+      const cur = prev[activeTab] ?? { employees: true };
+      const list = cur.employeeIds ?? [];
+      const next = list.includes(empId) ? list.filter((e) => e !== empId) : [...list, empId];
+      return { ...prev, [activeTab]: { ...cur, employees: true, employeeIds: next } };
+    });
+  // Clear the allowlist for the active tab → revert to the group toggle (all assigned employees).
+  const clearTabEmployees = () =>
+    setTabAccess((prev) => {
+      const cur = prev[activeTab] ?? { employees: true };
+      return { ...prev, [activeTab]: { employees: cur.employees, employeeIds: [] } };
+    });
+  const restrictedToSpecific = (currentAccess.employeeIds?.length ?? 0) > 0;
 
   // Project Nature
   const [selectedNature, setSelectedNature] = useState<string[]>([]);
@@ -2099,7 +2116,13 @@ export default function ProjectWorkspace() {
     ? allTabsAll
     : isGuest
       ? allTabsAll.filter((t) => myGuestPerms[t.id] === "view" || myGuestPerms[t.id] === "edit" || (t.id === "procurement" && hasAnyProcPerm))
-      : allTabsAll.filter((t) => t.id !== "showcase" && (tabAccess[t.id]?.employees ?? true) !== false);
+      : allTabsAll.filter((t) => {
+          if (t.id === "showcase") return false;
+          const cfg = tabAccess[t.id];
+          // A per-employee allowlist (when set) wins: only listed employees see the tab.
+          if (cfg?.employeeIds && cfg.employeeIds.length > 0) return !!myEmpId && cfg.employeeIds.includes(myEmpId);
+          return (cfg?.employees ?? true) !== false;
+        });
 
   // Per-procurement-sub-tab access for the current viewer. Staff get full edit; a guest gets exactly
   // what was granted (sub-tab perm, falling back to the module-level "procurement" perm).
@@ -2579,47 +2602,120 @@ export default function ProjectWorkspace() {
 
       {/* ── Access & Sharing Control (per-tab) — owner only ── */}
       {isOwner && (
-      <div className="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm px-6 py-4 flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h4 className="text-sm font-bold text-slate-900">Access &amp; Sharing Control</h4>
-          <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-            Manage visibility for the{" "}
-            <span className="text-slate-700 font-bold">
-              {allTabs.find((t) => t.id === activeTab)?.label ?? "current"}
-            </span>{" "}
-            tab.
-          </p>
+      <div className="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm px-6 py-4 flex flex-col gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h4 className="text-sm font-bold text-slate-900">Access &amp; Sharing Control</h4>
+            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+              Manage visibility for the{" "}
+              <span className="text-slate-700 font-bold">
+                {allTabs.find((t) => t.id === activeTab)?.label ?? "current"}
+              </span>{" "}
+              tab.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => canEditIdentity && toggleAccess()}
+              disabled={!canEditIdentity || restrictedToSpecific}
+              title={restrictedToSpecific ? "Restricted to specific employees below." : (!canEditIdentity ? "Only the project owner can change this." : "")}
+              className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${
+                currentAccess.employees ? "bg-white border-slate-200 shadow-sm" : "bg-slate-50 border-slate-100"
+              } ${!canEditIdentity || restrictedToSpecific ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              <Users size={14} className={currentAccess.employees ? "text-indigo-500" : "text-slate-400"} />
+              <span className={`text-xs font-bold ${currentAccess.employees ? "text-slate-700" : "text-slate-400"}`}>
+                {restrictedToSpecific ? "Specific employees" : "All employees"}
+              </span>
+              <span
+                className={`relative w-9 h-5 rounded-full transition-colors duration-300 flex-shrink-0 ${
+                  currentAccess.employees ? "bg-indigo-500" : "bg-slate-200"
+                }`}
+              >
+                <motion.span
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md ${
+                    currentAccess.employees ? "left-[1.125rem]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => canEditIdentity && toggleAccess()}
-            disabled={!canEditIdentity}
-            title={!canEditIdentity ? "Only the project owner can change this." : ""}
-            className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${
-              currentAccess.employees ? "bg-white border-slate-200 shadow-sm" : "bg-slate-50 border-slate-100"
-            } ${!canEditIdentity ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <Users size={14} className={currentAccess.employees ? "text-indigo-500" : "text-slate-400"} />
-            <span className={`text-xs font-bold ${currentAccess.employees ? "text-slate-700" : "text-slate-400"}`}>
-              Employees
-            </span>
-            <span
-              className={`relative w-9 h-5 rounded-full transition-colors duration-300 flex-shrink-0 ${
-                currentAccess.employees ? "bg-indigo-500" : "bg-slate-200"
-              }`}
-            >
-              <motion.span
-                layout
-                transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md ${
-                  currentAccess.employees ? "left-[1.125rem]" : "left-0.5"
-                }`}
-              />
-            </span>
-          </button>
-        </div>
+        {/* Per-employee allowlist — restrict this tab to specific assigned employees (CR-P-03). */}
+        {canEditIdentity && (
+          <div className="border-t border-slate-50 pt-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Restrict to specific employees
+              </p>
+              {restrictedToSpecific && (
+                <button
+                  type="button"
+                  onClick={clearTabEmployees}
+                  className="text-[10px] font-bold text-primary hover:underline"
+                >
+                  Clear — show to all
+                </button>
+              )}
+            </div>
+            {assignedEmployees.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic mt-2">
+                No employees are assigned to this project yet. Assign them under{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("subs")}
+                  className="text-primary font-bold hover:underline"
+                >
+                  Subcontractors &amp; Employees
+                </button>
+                .
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {assignedEmployees.map((empIdStr) => {
+                  const emp = employeePool.find((e) => e.empId === empIdStr);
+                  const picked = currentAccess.employeeIds?.includes(empIdStr) ?? false;
+                  return (
+                    <button
+                      key={empIdStr}
+                      type="button"
+                      onClick={() => toggleTabEmployee(empIdStr)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                        picked
+                          ? "border-indigo-400 bg-indigo-50 text-indigo-600"
+                          : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300"
+                      }`}
+                    >
+                      {picked ? <Check size={12} /> : <Plus size={12} />}
+                      {emp?.name ?? empIdStr}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400 font-medium mt-2">
+              {restrictedToSpecific
+                ? "Only the selected employees can see this tab. All others (including unlisted assigned employees) are hidden."
+                : "Pick one or more to limit this tab to just those employees. Leave empty to use the toggle above for all assigned employees."}
+            </p>
+            <p className="text-[11px] text-slate-400 font-medium mt-2 pt-2 border-t border-slate-50">
+              Need to share with a subcontractor? Grant a scoped login from the{" "}
+              <button
+                type="button"
+                onClick={() => setActiveTab("subs")}
+                className="text-primary font-bold hover:underline"
+              >
+                Subcontractors &amp; Employees
+              </button>{" "}
+              tab — you control exactly which tabs they can view or edit.
+            </p>
+          </div>
+        )}
       </div>
       )}
 
