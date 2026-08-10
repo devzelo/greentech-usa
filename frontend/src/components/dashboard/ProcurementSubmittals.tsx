@@ -127,6 +127,10 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
   // Continuous 1..N item numbers (matches the BOQ), so you can tell which cable a submittal is for.
   const itemNo: Record<string, number> = {};
   { let k = 0; for (const s of sections) for (const it of items.filter((x) => x.sectionId === s._id)) itemNo[it._id] = ++k; }
+  // CR-P-19 — every submittal gets a unique number: BOQ-linked ones reuse the BOQ item number;
+  // manual/unlinked ones get a standalone "S" sequence so none is left un-numbered.
+  const subNo: Record<string, string> = {};
+  { let u = 0; for (const s of subs) subNo[s._id] = s.itemId && itemNo[s.itemId] != null ? String(itemNo[s.itemId]) : `S${++u}`; }
   const groups = sections
     .map((s) => ({ section: s, subs: visible.filter((v) => itemSectionId(v.itemId) === s._id) }))
     .filter((g) => g.subs.length > 0);
@@ -140,11 +144,14 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
     setDraft({ itemId, title: it.description || it.manufacturer || "", productName: it.description || "", manufacturer: it.manufacturer || "", modelNo: it.modelNo || "", specSection: it.spec || "" });
   };
 
-  const create = async () => {
+  // CR-P-18 — Save opens the new submittal to keep working; Save as Draft just files it in the
+  // list (a new submittal is inherently a draft until its package is built and sent).
+  const create = async (openAfter = true) => {
     if (!draft.title.trim() && !draft.productName.trim()) { toast("Pick a BOQ item, or give the package a title.", "error"); return; }
     try {
       const s = await createSubmittal(projectId, draft);
-      setSubs((p) => [...p, s]); setOpenId(s._id); setCreating(false); setDraft(emptyDraft); setPickerSearch(""); setPickerSection("all");
+      setSubs((p) => [...p, s]); if (openAfter) setOpenId(s._id); setCreating(false); setDraft(emptyDraft); setPickerSearch(""); setPickerSection("all");
+      if (!openAfter) toast("Saved as draft — open it from the list to finish the package.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
   };
   // CR-P-17 — "Upload submittal": the package is already made; create a shell and land straight
@@ -303,10 +310,9 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
           <div className={`rounded-2xl border p-4 ${rev.isCurrent ? "border-primary/20 bg-primary/5" : "border-slate-100 bg-slate-50/40 opacity-90"}`}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2 flex-wrap">
-                {/* CR-P-19 — unique submittal number, from the linked BOQ item; revisions read "· RV2". */}
-                {sub.itemId && itemNo[sub.itemId] != null && (
-                  <span className="text-sm font-extrabold text-primary">Submittal #{itemNo[sub.itemId]}{rev.revisionNo > 0 ? ` · RV${rev.revisionNo}` : ""}</span>
-                )}
+                {/* CR-P-19 — unique submittal number (BOQ item # when linked, else an S-sequence);
+                    revisions read " - RV2" per the client's format. */}
+                <span className="text-sm font-extrabold text-primary">Submittal #{subNo[sub._id]}{rev.revisionNo > 0 ? ` - RV${rev.revisionNo}` : ""}</span>
                 <span className="text-sm font-bold text-slate-800">Rev {rev.revisionNo}</span>
                 {rev.optionLabel && <span className="text-xs font-bold text-slate-500">· {rev.optionLabel}</span>}
                 {rev.isCurrent ? <span className="text-[10px] font-bold text-primary">CURRENT</span> : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400"><Lock size={10} /> Superseded (locked)</span>}
@@ -605,7 +611,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
           <input className={inp} placeholder="Spec Section" value={draft.specSection} onChange={(e) => setDraft({ ...draft, specSection: e.target.value })} />
           <div className="md:col-span-2 flex gap-2 justify-end">
             <button onClick={() => { setCreating(false); setDraft(emptyDraft); }} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-            <button onClick={create} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Create</button>
+            <button onClick={() => create(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:border-primary hover:text-primary">Save as Draft</button>
+            <button onClick={() => create(true)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Save</button>
           </div>
         </div>
       )}
