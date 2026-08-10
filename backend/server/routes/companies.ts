@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import Company from "../models/Company";
+import Invoice from "../models/Invoice";
+import Rfq from "../models/Rfq";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 // Fields a company may self-update via the public link. Banking/tax are "sensitive": changes go
@@ -53,6 +55,17 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
 router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try { await Company.findByIdAndDelete(req.params.id); res.json({ message: "Deleted" }); }
   catch (err) { next(err); }
+});
+
+// CR-PR-05 — records that reference this company (auto-linked into its profile).
+router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const [invoices, rfqs] = await Promise.all([
+      Invoice.find({ companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
+      Rfq.find({ "recipients.companyId": req.params.id }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
+    ]);
+    res.json({ invoices, rfqs });
+  } catch (err) { next(err); }
 });
 
 // CR-P-06d — generate (or reuse) the self-registration token for a company.

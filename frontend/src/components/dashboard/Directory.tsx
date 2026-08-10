@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
-  generateCompanyRegisterLink, resolveCompanyPending,
-  COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory,
+  generateCompanyRegisterLink, resolveCompanyPending, fetchCompanyLinks,
+  COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory, type CompanyLinks,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -32,6 +32,12 @@ export default function Directory() {
   const [showArchived, setShowArchived] = useState(false);
   const [editor, setEditor] = useState<{ id: string | null; draft: CompanyInput } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [linksFor, setLinksFor] = useState<ApiCompany | null>(null);   // CR-PR-05 — profile history
+  const [links, setLinks] = useState<CompanyLinks | null>(null);
+  const openLinks = async (c: ApiCompany) => {
+    setLinksFor(c); setLinks(null);
+    try { setLinks(await fetchCompanyLinks(c._id)); } catch { setLinks({ invoices: [], rfqs: [] }); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -140,6 +146,7 @@ export default function Directory() {
                   <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => openLinks(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="History — records linked to this company"><History size={15} /></button>
                   <button onClick={() => copyLink(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Copy self-registration link — the company fills in their own details"><Link2 size={15} /></button>
                   <button onClick={() => openEdit(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Edit"><Pencil size={15} /></button>
                   <button onClick={() => archive(c, !showArchived)} className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
@@ -234,6 +241,47 @@ export default function Directory() {
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
               <button onClick={() => setEditor(null)} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold disabled:opacity-50">Cancel</button>
               <button onClick={save} disabled={saving} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CR-PR-05 — company profile history (records that reference this company). */}
+      {linksFor && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setLinksFor(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 truncate">{linksFor.name} — history</h3>
+              <button onClick={() => setLinksFor(null)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {!links ? <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center"><Loader2 size={16} className="animate-spin" /> Loading…</div> : (
+                <>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Receipt size={12} /> Invoices ({links.invoices.length})</p>
+                    {links.invoices.length === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.invoices.map((iv) => (
+                        <div key={iv._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">#{iv.number} <span className="text-slate-400 font-medium">· {iv.type}</span></span>
+                          <span className="text-slate-500">{iv.amount} · {iv.status}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><FileText size={12} /> RFQs ({links.rfqs.length})</p>
+                    {links.rfqs.length === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.rfqs.map((r) => (
+                        <div key={r._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">RFQ #{r.rfqNo}</span>
+                          <span className="text-slate-500 truncate">{r.title || "—"} · {r.status}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400">Records auto-link here when this company is chosen as an invoice receiver or RFQ recipient. POs/submittals link by vendor and can be added next.</p>
+                </>
+              )}
             </div>
           </div>
         </div>

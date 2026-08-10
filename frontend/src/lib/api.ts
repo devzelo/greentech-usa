@@ -2090,6 +2090,11 @@ export async function generateCompanyRegisterLink(id: string): Promise<{ token: 
 export async function resolveCompanyPending(id: string, action: "approve" | "discard"): Promise<ApiCompany> {
   return request(`/companies/${id}/pending/${action}`, { method: "POST" });
 }
+export interface CompanyLinks {
+  invoices: Array<{ _id: string; number: string; type: string; party: string; amount: string; date: string; status: string; projectId: string }>;
+  rfqs: Array<{ _id: string; rfqNo: string; title: string; status: string; projectId: string; sentAt: string }>;
+}
+export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }
 export async function fetchPublicCompany(token: string): Promise<PublicCompany> {
   return request(`/public/companies/${token}`);
 }
