@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, ChevronUp, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare } from "lucide-react";
+import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, ChevronUp, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
+import ShareMenu from "./ShareMenu";
 import {
   fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
   addSubmittalRevision, updateSubmittalRevision, uploadSubmittalAttachment, deleteSubmittalAttachment,
@@ -271,6 +272,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
                 <div key={a._id} className="flex items-center gap-2 flex-wrap">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${ld.cls}`}>{ld.label}</span>
                   <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-primary max-w-[220px] truncate" title={a.name}><FileText size={11} />{a.name}</a>
+                  {/* CR-P-20a — the client response must be sharable (copy link / email / notify). */}
+                  <ShareMenu fileName={a.name} fileUrl={attachmentUrl(a.filePath)} size={12} />
                   {!locked && <button onClick={() => removeAtt(sub._id, rev._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={12} /></button>}
                 </div>
               );
@@ -473,16 +476,18 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
                           <span className="text-[11px] font-bold text-red-600">Client letter is missing — upload the signed “{dispoMeta(rev.disposition).label}” letter under “Client response” below.</span>
                         </div>
                       )}
-                      {/* Client comments + the client's signed reply, side by side */}
+                      {/* Client comments + the client's signed reply, side by side. The signed-letter
+                          upload stays active even when read-only — that's how a new response is filed. */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
+                        <div className={roCls}>
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client comments</label>
                           <textarea rows={4} value={rev.notes} onChange={(e) => saveRevField(sub._id, rev._id, "notes", e.target.value)} placeholder="Client comments (e.g. the reason they gave for rejection)…" className={`${inp} resize-none mt-1 h-[calc(100%-1.25rem)]`} />
                         </div>
                         {renderClientResponse(sub, rev, false)}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })()}
