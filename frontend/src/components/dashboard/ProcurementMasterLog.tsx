@@ -182,7 +182,7 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
   };
 
   // Printable report — opens a clean window honouring the current section/status filter + sort.
-  // Landscape @page so all columns fit one page (A5).
+  // A3 landscape @page (CR-P-16/T7) so every column and full text fits without truncation.
   const printReport = () => {
     const scope = sectionFilter === "all" ? "All categories" : sectionName(sectionFilter);
     const rows = sorted.map((it) => `
@@ -195,7 +195,7 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
         <td>${STATUS_META[it.status as Exclude<ProcurementStatus, "Cancelled">]?.label || it.status}</td>
       </tr>`).join("");
     const html = `<!doctype html><html><head><title>Procurement Status Report</title>
-      <style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{font-size:18px}p{color:#64748b;font-size:12px}
+      <style>@page{size:A3 landscape;margin:12mm}body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{font-size:18px}p{color:#64748b;font-size:12px}
       table{width:100%;border-collapse:collapse;margin-top:12px;font-size:11px;table-layout:fixed}
       td{word-wrap:break-word}
       th{background:#0f172a;color:#fff;text-align:left;padding:6px}td{border-bottom:1px solid #e7ebf0;padding:6px}</style></head>

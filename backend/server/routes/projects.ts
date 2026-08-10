@@ -34,15 +34,21 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
     if (!ids.length) return res.json({});
     const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
     const SubInvoice = (await import("../models/SubInvoice")).default;
-    const [expenses, subInvoices] = await Promise.all([
+    const Invoice = (await import("../models/Invoice")).default;
+    // Income = legacy subcontractor invoice tables + the "Invoice Sent" builder invoices
+    // (CR-I-06/09). Draft/Cancelled/Rejected sent invoices are not real billed revenue.
+    const NON_REVENUE = ["Draft", "Cancelled", "Canceled", "Rejected"];
+    const [expenses, subInvoices, sentInvoices] = await Promise.all([
       Expense.find({ projectId: { $in: ids } }).select("projectId qty amount").lean(),
-      // Income is the total of the subcontractor invoice tables.
       SubInvoice.find({ projectId: { $in: ids } }).select("projectId amount").lean(),
+      Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE } })
+        .select("projectId amount").lean(),
     ]);
     const map: Record<string, { income: number; expenses: number }> = {};
     const bucket = (pid: string) => (map[pid] ||= { income: 0, expenses: 0 });
     for (const e of expenses) bucket(e.projectId).expenses += (num(e.qty) || 1) * num(e.amount);
     for (const inv of subInvoices) bucket(inv.projectId).income += num(inv.amount);
+    for (const inv of sentInvoices) bucket(inv.projectId).income += num(inv.amount);
     res.json(map);
   } catch (err) { next(err); }
 });

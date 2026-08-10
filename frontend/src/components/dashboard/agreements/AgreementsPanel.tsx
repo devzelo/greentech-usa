@@ -424,7 +424,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
       {/* ── Sign dialog (recipient) ─────────────────────────────────────────── */}
       {signFor && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setSignFor(null)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <p className="text-sm font-bold text-slate-900">Sign "{signFor.name || signFor.agreementType}"</p>

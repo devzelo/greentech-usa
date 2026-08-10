@@ -18,6 +18,14 @@ router.use(procTabGuard(["proc-po"]));
 
 const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 
+// PO numbers: per-project, range starts at 8000. Use max-existing+1 (not count+1) so deleting a
+// PO never lets the next one reuse a number (CR-PR-06 durable uniqueness).
+async function nextPoNo(projectId: string): Promise<string> {
+  const existing = await ProcurementPO.find({ projectId }).select("poNo").lean();
+  const max = existing.reduce((m, p) => Math.max(m, parseInt(String((p as { poNo?: string }).poNo ?? "").replace(/[^0-9]/g, ""), 10) || 0), 8000);
+  return String(max + 1);
+}
+
 // E4 — placeholder standard Terms & Conditions pre-filled on new POs (editable per PO).
 // Replace with GreenTech's official T&C once provided.
 const DEFAULT_PO_TERMS = [
@@ -57,9 +65,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       return { itemId: li.itemId, description: li.description, qty: li.qty, unit: li.unit, unitPrice: ql?.unitPrice || "" };
     });
     const total = lineItems.reduce((s, l) => s + num(l.qty) * num(l.unitPrice), 0) + num(quote.shipping) + num(quote.tax);
-    const count = await ProcurementPO.countDocuments({ projectId: req.params.id });
-    // G — numbers-only, per-project, PO range starts at 8000.
-    const poNo = String(8000 + count + 1);
+    const poNo = await nextPoNo(req.params.id);
     // E5 — carry the shipping instruction over from the RFQ (method + address kept separate now).
     const po = await ProcurementPO.create({
       projectId: req.params.id, poNo, rfqId, quoteId, vendorId: quote.vendorId, vendorName: vendor?.name || "",
@@ -98,8 +104,7 @@ router.post("/from-items", async (req: AuthedRequest, res: Response, next: NextF
     const items = await ProcurementItem.find({ _id: { $in: ids }, projectId: req.params.id, status: { $ne: "Cancelled" } });
     if (!items.length) return res.status(400).json({ error: "No valid items selected." });
     const lineItems = items.map((it) => ({ itemId: String(it._id), description: it.description, qty: it.qty, unit: it.unit, unitPrice: "" }));
-    const count = await ProcurementPO.countDocuments({ projectId: req.params.id });
-    const poNo = String(8000 + count + 1);
+    const poNo = await nextPoNo(req.params.id);
     const po = await ProcurementPO.create({
       projectId: req.params.id, poNo, lineItems, total: "0", status: "Sent",
       terms: DEFAULT_PO_TERMS, addedByName: req.user!.name || "",
@@ -115,8 +120,7 @@ router.post("/from-items", async (req: AuthedRequest, res: Response, next: NextF
 router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (block(req, res)) return;
-    const count = await ProcurementPO.countDocuments({ projectId: req.params.id });
-    const poNo = String(8000 + count + 1);
+    const poNo = await nextPoNo(req.params.id);
     const po = await ProcurementPO.create({
       projectId: req.params.id, poNo, lineItems: [], total: "0",
       vendorName: String(req.body?.vendorName || ""), terms: DEFAULT_PO_TERMS, addedByName: req.user!.name || "",

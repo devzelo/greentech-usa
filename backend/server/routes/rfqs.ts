@@ -44,9 +44,11 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
   try {
     if (block(req, res)) return;
     const { title, lineItems, includesShipping, includesTax, notes, shipToLocation, deliveryMethod } = req.body || {};
-    const count = await Rfq.countDocuments({ projectId: req.params.id });
-    // G — numbers-only, per-project, RFQ range starts at 7000.
-    const rfqNo = String(7000 + count + 1);
+    // G — numbers-only, per-project, RFQ range starts at 7000. Use max-existing+1 (not count+1)
+    // so deleting an RFQ never lets the next one reuse a number (CR-PR-06 durable uniqueness).
+    const existingRfqs = await Rfq.find({ projectId: req.params.id }).select("rfqNo").lean();
+    const maxRfqNo = existingRfqs.reduce((m, r) => Math.max(m, parseInt(String((r as { rfqNo?: string }).rfqNo ?? "").replace(/[^0-9]/g, ""), 10) || 0), 7000);
+    const rfqNo = String(maxRfqNo + 1);
     const rfq = await Rfq.create({
       projectId: req.params.id, rfqNo, title: title || `RFQ ${rfqNo}`,
       lineItems: Array.isArray(lineItems) ? lineItems.slice(0, 500) : [],

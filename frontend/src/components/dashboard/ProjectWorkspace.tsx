@@ -44,6 +44,7 @@ import SavedVersionsPanel from "./SavedVersionsPanel";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
+import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchVendors, addVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
@@ -1052,6 +1053,7 @@ export default function ProjectWorkspace() {
   const [subInnerTab, setSubInnerTab] = useState<string>("info");
   const [subCustomSub, setSubCustomSub] = useState<string>(""); // active sub-tab within a custom main tab
   const [subInvoices, setSubInvoices] = useState<ApiSubInvoice[]>([]); // all invoice rows for this project
+  const [sentInvoices, setSentInvoices] = useState<ApiInvoice[]>([]); // "Invoice Sent" builder invoices (feed project income, CR-I-06/09)
   // When granting access from a subcontractor's tab, remember which one so we can link the login.
   const [grantingForSubIdx, setGrantingForSubIdx] = useState<number | null>(null);
   // The access modal is shared with the Partners tab — this flips its copy to say "Partner".
@@ -1064,7 +1066,12 @@ export default function ProjectWorkspace() {
   const reportFinancials = (() => {
     const n = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
     const expenses = expenseRows.reduce((sum, e) => sum + (n(e.qty) || 1) * n(e.amount), 0);
-    const income = subInvoices.reduce((sum, inv) => sum + n(inv.amount), 0);
+    // Income = legacy subcontractor invoice tables + "Invoice Sent" builder invoices (CR-I-06/09).
+    // Draft/Cancelled/Rejected sent invoices are not billed revenue (mirrors the backend endpoint).
+    const NON_REVENUE = ["Draft", "Cancelled", "Canceled", "Rejected"];
+    const income =
+      subInvoices.reduce((sum, inv) => sum + n(inv.amount), 0) +
+      sentInvoices.filter((inv) => !NON_REVENUE.includes(inv.status || "")).reduce((sum, inv) => sum + n(inv.amount), 0);
     return { income, expenses };
   })();
 
@@ -1783,9 +1790,11 @@ export default function ProjectWorkspace() {
       fetchExpenses(id),
       fetchPurchaseOrders(id),
       fetchSubInvoices(id).catch(() => [] as ApiSubInvoice[]),
+      fetchInvoices(id, "sent").catch(() => [] as ApiInvoice[]),
     ])
-      .then(async ([proj, emps, expenses, pos, subInv]) => {
+      .then(async ([proj, emps, expenses, pos, subInv, sentInv]) => {
         setSubInvoices(subInv as ApiSubInvoice[]);
+        setSentInvoices(sentInv as ApiInvoice[]);
         refreshTemplates();
         setProject(proj);
         setIsPublished(proj.published);
@@ -4292,7 +4301,7 @@ export default function ProjectWorkspace() {
               {procActive === "submittals" && id && <ProcurementSubmittals projectId={id} canEdit={procPermFor("submittals") === "edit"} highlightItemId={highlightSubItem} onHighlightDone={() => setHighlightSubItem(undefined)} />}
               {procActive === "rfqs" && id && <ProcurementRFQ projectId={id} canEdit={procPermFor("rfqs") === "edit"} projectInfo={projectPdfInfo(project)} onGoToPO={() => setProcSub("po")} openRfqId={openRfqId} onOpenedRfq={() => setOpenRfqId(undefined)} />}
               {procActive === "quotes" && id && <ProcurementQuotes projectId={id} canEdit={procPermFor("quotes") === "edit"} />}
-              {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} />}
+              {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} onGoToQuotes={() => setProcSub("quotes")} />}
               {procActive === "shipment" && id && <ProcurementShipment projectId={id} canEdit={procPermFor("shipment") === "edit"} projectInfo={projectPdfInfo(project)} />}
 
               {procActive === "legacy" && (
