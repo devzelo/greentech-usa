@@ -282,14 +282,33 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     try { const up = await deleteProcurementItemFile(projectId, iid, aid); setItems((p) => p.map((x) => (x._id === iid ? up : x))); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
-  const editCell = (iid: string, field: keyof ProcurementItemInput, value: string) =>
+  // CR-P-13 — edits to an existing line are held locally (dirty) and only persist when the user
+  // clicks Save on that row — NEVER on blur — so everything can be verified first. Revert discards.
+  const [dirtyRows, setDirtyRows] = useState<Record<string, Record<string, string>>>({});
+  const [origRows, setOrigRows] = useState<Record<string, Record<string, string>>>({});
+  const editCell = (iid: string, field: keyof ProcurementItemInput, value: string) => {
+    const f = field as string;
+    setOrigRows((o) => (o[iid] && f in o[iid] ? o : { ...o, [iid]: { ...o[iid], [f]: (items.find((x) => x._id === iid)?.[field as keyof ApiProcurementItem] as string) || "" } }));
     setItems((p) => p.map((it) => (it._id === iid ? { ...it, [field]: value } : it)));
-  const saveCell = (iid: string, field: keyof ProcurementItemInput, value: string) => {
-    updateProcurementItem(projectId, iid, { [field]: value }).then((row) => {
-      // Apply the server's new revNo (I2 bumps it when a tracked field changed).
+    setDirtyRows((d) => ({ ...d, [iid]: { ...d[iid], [f]: value } }));
+  };
+  const saveRow = async (iid: string) => {
+    const patch = dirtyRows[iid];
+    if (!patch || !Object.keys(patch).length) return;
+    try {
+      const row = await updateProcurementItem(projectId, iid, patch as ProcurementItemInput);
       setItems((p) => p.map((it) => (it._id === iid ? { ...it, revNo: row.revNo } : it)));
+      setDirtyRows((d) => { const n = { ...d }; delete n[iid]; return n; });
+      setOrigRows((o) => { const n = { ...o }; delete n[iid]; return n; });
       if (expanded[iid]) loadRevisions(iid); // refresh an open history
-    }).catch(() => {});
+      toast("Line saved.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
+  };
+  const revertRow = (iid: string) => {
+    const o = origRows[iid];
+    if (o) setItems((p) => p.map((it) => (it._id === iid ? { ...it, ...o } : it)));
+    setDirtyRows((d) => { const n = { ...d }; delete n[iid]; return n; });
+    setOrigRows((ov) => { const n = { ...ov }; delete n[iid]; return n; });
   };
   // ── Manage modal: draft-based editing ────────────────────────────────
   const M_FIELDS: (keyof ProcurementItemInput)[] = ["description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "remarks"];
@@ -675,7 +694,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                       const rowEdit = canEdit && !isCancelled && !isLocked;   // cancelled (I3) or locked (CR-P-13) rows are read-only
                       const strike = isCancelled ? "line-through text-red-400" : "";
                       const c = (field: keyof ProcurementItemInput, w = "") => (
-                        <td className="px-1 py-1 align-top"><input value={(it[field] as string) || ""} onChange={(e) => editCell(it._id, field, e.target.value)} onBlur={(e) => saveCell(it._id, field, e.target.value)} disabled={!rowEdit} className={`${cell} ${w} ${strike}`} /></td>
+                        <td className="px-1 py-1 align-top"><input value={(it[field] as string) || ""} onChange={(e) => editCell(it._id, field, e.target.value)} disabled={!rowEdit} className={`${cell} ${w} ${strike}`} /></td>
                       );
                       return (
                         <Fragment key={it._id}>
@@ -687,14 +706,14 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                               {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
                             </button>
                           ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} onBlur={(v) => saveCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[16rem] w-full align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[16rem] w-full align-top ${strike}`} /></td>
                           {c("manufacturer", "w-28")}
                           {c("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap" title="Accepted vendor — set automatically when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>
                           {c("qty", "w-14")}
                           {c("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} onBlur={(v) => saveCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[13rem] w-52 align-top ${strike}`} /></td>
-                          <td className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} onBlur={(e) => saveCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} className={`${cell} w-32`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[13rem] w-52 align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} className={`${cell} w-32`} /></td>
                           {c("leadTimeDays", "w-14")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}</td>
                           <td className="px-3 py-2 align-top whitespace-nowrap relative">{(() => {
@@ -730,6 +749,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                               <button onClick={() => restoreItem(it._id)} className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline whitespace-nowrap" title={it.cancellationReason ? `Reason: ${it.cancellationReason}` : "Restore this item"}><RotateCcw size={12} /> Restore</button>
                             ) : (
                               <div className="flex items-center gap-1">
+                                {/* CR-P-13 — unsaved inline edits: Save persists this row; Revert discards them. */}
+                                {dirtyRows[it._id] && (
+                                  <>
+                                    <button onClick={() => saveRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save changes to this line"><Check size={12} /> Save</button>
+                                    <button onClick={() => revertRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-red-500" title="Discard unsaved changes"><RotateCcw size={12} /> Revert</button>
+                                  </>
+                                )}
                                 <button onClick={() => setManageId(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — edit, submittal, duplicate, cancel"><Settings2 size={12} /> Manage</button>
                                 <button onClick={() => openLineExport(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Export / share this line as a PDF"><Download size={13} /></button>
                                 <button onClick={() => toggleLock(it)} className={`p-1.5 rounded ${isLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600 hover:bg-slate-50"}`} title={isLocked ? "Locked — click to unlock" : "Lock this item (prevents accidental edits/delete)"}>{isLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
