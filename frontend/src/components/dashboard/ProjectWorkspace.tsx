@@ -2309,13 +2309,9 @@ export default function ProjectWorkspace() {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
-                {/* CR-P-04 — country flag right beside the project name in the Overview header. */}
-                <h1 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
-                  {(flagForCountry(project.siteAddress?.country) || locationFlag(project.location)) && (
-                    <span className="text-[1.1em] leading-none" title={project.siteAddress?.country || project.location}>{flagForCountry(project.siteAddress?.country) || locationFlag(project.location)}</span>
-                  )}
-                  {project.name}
-                </h1>
+                {/* CR-P-04 — the country flag sits with the LOCATION line below (identical to the
+                    My/All Projects and Overview tables), not beside the title. */}
+                <h1 className="text-2xl font-display font-bold text-slate-900">{project.name}</h1>
                 {/* CR-B-16 — live presence: who else is in this project right now. */}
                 <PresenceBar users={presentUsers} />
                 {/* Colour-coded status — the same palette as the projects table's status key. */}

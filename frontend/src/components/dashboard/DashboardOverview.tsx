@@ -129,15 +129,14 @@ export default function DashboardOverview() {
                         <div className="flex items-center gap-4">
                           <div className={`w-1.5 h-9 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
                           <div className="flex flex-col min-w-0">
-                            {/* CR-P-04 — country flag beside the project name, matching the My/All Projects tables. */}
-                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">
-                              {locationFlag(project.location) && <span className="mr-1 text-[1.15em] leading-none align-middle" title={project.location}>{locationFlag(project.location)}</span>}
-                              {project.name}
-                            </span>
+                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">{project.name}</span>
                             {/* Internal project number + the client's contract number. */}
                             <span className="text-[10px] text-slate-400 font-medium">
                               No {project.id}{project.contractNo ? ` · Contract ${project.contractNo}` : ""}
                             </span>
+                            {/* CR-P-04 — country flag + location on a line under the name, identical to the
+                                My Projects / All Projects tables (ProjectList) for consistency. */}
+                            {project.location && <span className="text-[10px] text-slate-500 font-bold">{locationFlag(project.location) && <span className="text-[1.3em] leading-none align-middle mr-0.5">{locationFlag(project.location)}</span>}{project.location}</span>}
                           </div>
                         </div>
                       </td>
