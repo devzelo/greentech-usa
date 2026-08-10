@@ -52,6 +52,39 @@ const STATUS_PCT: Record<ShipmentStatus, number> = { Preparing: 0, Fabrication: 
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
+// CR-PR-08 — derive a live carrier tracking deep-link from the carrier name + tracking/container #,
+// so "Track on carrier site" opens the carrier's own live status page in one click without the user
+// pasting a URL. `{n}` is replaced with the tracking number. Unknown carriers fall back to a web
+// search for the number. A true server-side auto-fetch of status needs a paid tracking-aggregator
+// API (AfterShip/EasyPost/Project44) with keys + billing; this is the no-infra live-tracking path.
+const CARRIER_TRACK_TEMPLATES: Array<{ match: RegExp; url: string }> = [
+  { match: /maersk/i,                 url: "https://www.maersk.com/tracking/{n}" },
+  { match: /msc/i,                    url: "https://www.msc.com/track-a-shipment?agencyPath=msc&trackingNumber={n}" },
+  { match: /cma|cgm/i,                url: "https://www.cma-cgm.com/ebusiness/tracking/search?SearchBy=Container&Reference={n}" },
+  { match: /hapag/i,                  url: "https://www.hapag-lloyd.com/en/online-business/track/track-by-container-solution.html?container={n}" },
+  { match: /cosco/i,                  url: "https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number={n}" },
+  { match: /\bone\b|ocean network/i,  url: "https://ecomm.one-line.com/one-ecom/manage-shipment/cargo-tracking?trackingType=CONTAINER&t={n}" },
+  { match: /evergreen/i,              url: "https://www.evergreen-line.com/emodal/cs/CargoTracking.do?f_cmd=track&container_no={n}" },
+  { match: /hmm/i,                    url: "https://www.hmm21.com/company/tracking.do?number={n}" },
+  { match: /yang ?ming/i,             url: "https://www.yangming.com/e-service/Track_Trace/track_trace_cargo_tracking.aspx?container={n}" },
+  { match: /zim/i,                    url: "https://www.zim.com/tools/track-a-shipment?consnumber={n}" },
+  { match: /\bups\b/i,                url: "https://www.ups.com/track?tracknum={n}" },
+  { match: /fedex/i,                  url: "https://www.fedex.com/fedextrack/?trknbr={n}" },
+  { match: /usps/i,                   url: "https://tools.usps.com/go/TrackConfirmAction?tLabels={n}" },
+  { match: /dhl/i,                    url: "https://www.dhl.com/en/express/tracking.html?AWB={n}" },
+  { match: /\btnt\b/i,                url: "https://www.tnt.com/express/en_us/site/shipping-tools/tracking.html?searchType=con&cons={n}" },
+];
+function carrierTrackingUrl(carrier: string, trackingNo: string, manualUrl?: string): string {
+  // A manually pasted URL always wins (override).
+  if (manualUrl && manualUrl.trim()) return manualUrl.trim();
+  const n = (trackingNo || "").trim();
+  if (!n) return "";
+  const t = CARRIER_TRACK_TEMPLATES.find((c) => c.match.test(carrier || ""));
+  if (t) return t.url.replace("{n}", encodeURIComponent(n));
+  // Unknown carrier — best-effort web search for the tracking number.
+  return `https://www.google.com/search?q=${encodeURIComponent(`${carrier || ""} tracking ${n}`.trim())}`;
+}
+
 type ShipDraft = {
   name: string; fromLocation: string; toLocation: string; description: string;
   status: ShipmentStatus; deadline: string; poIds: string[];
@@ -308,7 +341,16 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Current location</p><p className="font-bold text-slate-800">{active.currentLocation || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</p><p className="font-bold text-slate-800">{active.etaDate || "—"}{active.etaDate && etaCountdown(active.etaDate) && <span className="text-primary"> ({etaCountdown(active.etaDate)})</span>}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType, active.containerSize].filter(Boolean).join(" · ") || "—"}{active.openBed ? " · Open bed" : ""}</p></div>
-                  {active.trackingUrl && <div className="col-span-2 sm:col-span-3 flex items-end"><a href={active.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline"><ExternalLink size={11} /> Track on carrier site</a></div>}
+                  {(() => {
+                    const url = carrierTrackingUrl(active.carrier, active.trackingNo, active.trackingUrl);
+                    return url ? (
+                      <div className="col-span-2 sm:col-span-3 flex items-end">
+                        <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline">
+                          <ExternalLink size={11} /> Track live on {active.carrier ? `${active.carrier} site` : "carrier site"}
+                        </a>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
 
                 {/* CR-PR-08 — route visual: origin → destination with a progress marker (no external map). */}
@@ -490,11 +532,11 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <input className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. 40' HC" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container size
                     <input className={`${inp} mt-1`} value={draft.containerSize} onChange={(e) => setDraft({ ...draft, containerSize: e.target.value })} placeholder="e.g. 40 ft" /></label>
-                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link
-                    <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="https://www.maersk.com/tracking/…" /></label>
+                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional — auto-derived)</span>
+                    <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="Leave blank to auto-link from carrier + number" /></label>
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
-                <p className="text-[10px] text-slate-400">Paste the latest status from the carrier's site — a live auto-fetch can be added later.</p>
+                <p className="text-[10px] text-slate-400">The <strong>Track live</strong> link is auto-generated from the carrier + tracking/container # for major lines (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, ONE, UPS, FedEx, DHL, USPS…). Paste a link above only to override. Fully automated status auto-fetch requires a paid carrier-tracking API.</p>
               </div>
 
               {/* CR-PR-09 — goods in the shipment + shipping agency / forwarder contact. */}
