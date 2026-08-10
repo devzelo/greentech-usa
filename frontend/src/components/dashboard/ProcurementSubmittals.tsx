@@ -147,6 +147,15 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
       setSubs((p) => [...p, s]); setOpenId(s._id); setCreating(false); setDraft(emptyDraft); setPickerSearch(""); setPickerSection("all");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
   };
+  // CR-P-17 — "Upload submittal": the package is already made; create a shell and land straight
+  // on the upload view so the user can drop the ready files (zip or separate docs).
+  const createUpload = async () => {
+    try {
+      const s = await createSubmittal(projectId, { ...emptyDraft, title: "Uploaded submittal", productName: "Uploaded submittal" });
+      setSubs((p) => [...p, s]); setManageId(s._id); setCreating(false);
+      toast("Submittal created — upload your ready package (cover, spec, catalog, drawings, or a combined PDF) below.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
+  };
   const removeSub = async (sid: string) => {
     if (!(await confirm({ title: "Delete submittal?", message: "This deletes the package and all its revisions.", confirmLabel: "Delete" }))) return;
     try { await deleteSubmittal(projectId, sid); setSubs((p) => p.filter((s) => s._id !== sid)); }
@@ -537,6 +546,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, highlightIte
         </div>
         <div className="flex items-center gap-2">
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
+          {canEdit && !showArchived && <button onClick={createUpload} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:border-primary hover:text-primary transition-all" title="Package already made — upload the ready files"><Upload size={13} /> Upload submittal</button>}
           {canEdit && !showArchived && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New submittal</button>}
         </div>
       </div>
