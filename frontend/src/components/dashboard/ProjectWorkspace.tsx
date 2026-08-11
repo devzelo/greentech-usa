@@ -27,6 +27,7 @@ import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import ProjectReportPDF from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
+import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
@@ -2192,7 +2193,9 @@ export default function ProjectWorkspace() {
   const COLOR_OPTIONS = Object.keys(TAB_COLOR_DOT);
 
   const [saving, setSaving] = useState(false);
-  const handleSave = async () => {
+  // CR-B-14b — autosave status indicator for the proposal/workspace builder.
+  const wsSave = useSaveStatus();
+  const handleSave = async (silent = false) => {
     if (!id || !project || !canEdit) return;
     setSaving(true);
     try {
@@ -2223,13 +2226,13 @@ export default function ProjectWorkspace() {
       payload.subcontractors = subcontractors;
       payload.proposals = proposals;
       payload.proposalContent = { cover, coverFinancial, coverLetter, backCover, letterhead, customLetterheadUrl, requirements, technical, financial } as ProposalContent;
-      const updated = await updateProject(id, payload);
+      const updated = await wsSave.track(updateProject(id, payload));
       setProject(updated);
       setDirty(false); // I5 — workspace is now saved
-      setClientLocked(true); // L1 — re-lock client info after a save
-      toast("Workspace saved.", "success");
+      if (!silent) setClientLocked(true); // L1 — re-lock client info after a MANUAL save
+      if (!silent) toast("Workspace saved.", "success");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Save failed.", "error");
+      if (!silent) toast(err instanceof Error ? err.message : "Save failed.", "error");
     } finally {
       setSaving(false);
     }
@@ -2245,6 +2248,13 @@ export default function ProjectWorkspace() {
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [dirty]);
+  // CR-B-14b — auto-save the workspace every 45s while there are unsaved changes (silent).
+  useEffect(() => {
+    if (!dirty || !canEdit) return;
+    const t = setInterval(() => { if (!saving) void handleSave(true); }, 45000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, canEdit, saving]);
   // Any edit on the Proposals tab (which persists only on "Save Workspace") marks the workspace dirty.
   useEffect(() => {
     if (activeTab !== "proposals" || !canEdit) return;
@@ -2501,7 +2511,7 @@ export default function ProjectWorkspace() {
 
               {(canManage || (isGuest && Object.values(myGuestPerms).includes("edit"))) && (
               <button
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={!canEdit || saving}
                 title={!canEdit ? "Switch to a tab you can edit to save." : ""}
                 className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
@@ -2897,7 +2907,7 @@ export default function ProjectWorkspace() {
                   <Edit2 size={13} /> {canEdit ? "Open builder" : "Open"}
                 </button>
                 <button
-                  onClick={() => setProposalPreview(which)}
+                  onClick={() => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); }}  /* CR-B-14b — autosave before preview */
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors"
                 >
                   <Eye size={13} /> Preview
@@ -2935,6 +2945,8 @@ export default function ProjectWorkspace() {
                 <span className={`${lbl} px-3 shrink-0`}>Proposal:</span>
                 {/* CR-B-01 — who else is in the Proposal builder right now. */}
                 <PresenceBar users={proposalPresent} />
+                {/* CR-B-14b — autosave status (Saving… / Saved / Last saved). */}
+                <SaveStatus {...wsSave} className="ml-1" />
                 {([
                   { k: "overview" as const, label: "Overview" },
                   { k: "technical" as const, label: "Technical Proposal" },
