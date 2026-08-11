@@ -12,6 +12,7 @@ import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSa
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import { buildPoPackage } from "../../lib/poPdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
@@ -624,6 +625,16 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                     {sent && <span className="inline-flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold text-emerald-600"><CheckCircle2 size={14} /> Sent to vendors{rfq.sentAt ? ` · ${rfq.sentAt}` : ""}</span>}
                     <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: `RFQ_${rfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(rfq) })} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Eye size={12} /> Preview (generic)</button>
                     <button onClick={() => downloadRfqPdf(rfq)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Download size={12} /> Generic PDF</button>
+                    {/* CR-B-14a / CR-PR-01 — Word export. */}
+                    <button onClick={() => {
+                      const li = pdfRfq(rfq).lineItems;
+                      const body = `<h1>Request for Quotation — ${escapeHtml(rfq.rfqNo)}</h1>`
+                        + (rfq.title ? `<p class="muted">${escapeHtml(rfq.title)}</p>` : "")
+                        + htmlTable(["#", "Description", "Brand", "Qty", "Unit", "Spec", "Need by"], li.map((l, i) => [String(i + 1), l.description || "", l.manufacturer || "", l.qty || "", l.unit || "", l.spec || "", l.needOnSiteDate || ""]), [3])
+                        + (rfq.notes ? `<h2>Notes</h2><p>${escapeHtml(rfq.notes)}</p>` : "")
+                        + `<p>Kindly provide your quotation and delivery lead time for the items above.</p>`;
+                      downloadHtmlAsWord(`RFQ ${rfq.rfqNo}`, body, `RFQ_${rfq.rfqNo}`);
+                    }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><FileText size={12} /> Word</button>
                     {canEdit && <button onClick={() => saveRfqToDocuments(rfq)} disabled={savingDoc === rfq._id} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50">{savingDoc === rfq._id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Save to documents</button>}
                   </div>
 

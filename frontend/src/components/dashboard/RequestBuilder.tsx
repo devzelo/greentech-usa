@@ -21,6 +21,7 @@ const SECTION_STATUS_OPTS: { v: RequestSectionStatus; label: string; cls: string
   { v: "NeedsRevision", label: "Needs Revision", cls: "bg-red-50 text-red-600" },
 ];
 import { buildRequestPdf } from "../../lib/requestPdf";
+import { downloadHtmlAsWord, escapeHtml } from "../../lib/wordExport";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
@@ -227,7 +228,15 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openPreview(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
-                          <button onClick={() => download(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Download"><Download size={14} /></button>
+                          <button onClick={() => download(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Download PDF"><Download size={14} /></button>
+                          {/* CR-B-14a — Word export (description + sections are HTML). */}
+                          <button onClick={() => {
+                            const body = `<h1>${escapeHtml(r.number || "")} — ${escapeHtml(r.title || r.type || "")}</h1>`
+                              + (r.date ? `<p class="muted">${escapeHtml(r.date)}</p>` : "")
+                              + (r.description || "")
+                              + (r.sections || []).filter((s) => !s.hidden).map((s) => `<h2>${escapeHtml(s.title || "Section")}</h2>${s.body || ""}`).join("");
+                            downloadHtmlAsWord(r.number || "Request", body, `${(r.number || "request").replace(/[^\w-]+/g, "_")}`);
+                          }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Export to Word"><FileText size={14} /></button>
                           {canEdit && <button onClick={() => archive(r, !r.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500" title={r.archived ? "Restore" : "Archive"}>{r.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                           {canEdit && <button onClick={() => remove(r)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                         </div>

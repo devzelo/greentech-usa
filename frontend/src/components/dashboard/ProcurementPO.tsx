@@ -10,6 +10,7 @@ import {
 } from "../../lib/api";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
+import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import { AddressPicker } from "./AddressPicker";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
@@ -505,6 +506,18 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: `PO_${po.poNo}.pdf`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors whitespace-nowrap"><Eye size={15} /> Preview</button>
               <button onClick={() => savePoToDocuments(po)} disabled={savingDoc === po._id} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap">{savingDoc === po._id ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Save to documents</button>
+              {/* CR-B-14a / CR-PR-01 — Word export. */}
+              <button onClick={() => {
+                const nn = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+                const fmt = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
+                const rows = (po.lineItems || []).map((l, i) => [String(i + 1), l.description || "", l.qty || "", l.unitPrice || "", fmt(nn(l.qty) * nn(l.unitPrice))]);
+                const body = `<h1>Purchase Order — ${escapeHtml(po.poNo)}</h1>`
+                  + `<p class="muted">Vendor: ${escapeHtml(po.vendorName || "")}</p>`
+                  + htmlTable(["#", "Description", "Qty", "Unit price", "Total"], rows, [2, 3, 4])
+                  + `<p class="right"><strong>Total: ${escapeHtml(fmt(nn(po.total)))}</strong></p>`
+                  + (po.terms ? `<h2>Terms &amp; Conditions</h2><p>${escapeHtml(po.terms)}</p>` : "");
+                downloadHtmlAsWord(`PO ${po.poNo}`, body, `PO_${po.poNo}`);
+              }} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors whitespace-nowrap"><FileText size={15} /> Word</button>
             </div>
             <p className="text-[10px] text-slate-400 text-center">Bundles the PO details, vendor quote, invoice &amp; other files — with the Terms &amp; Conditions added last.</p>
           </div>

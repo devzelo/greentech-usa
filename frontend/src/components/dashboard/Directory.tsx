@@ -299,6 +299,18 @@ export default function Directory() {
                       ))}</div>
                     )}
                   </div>
+                  {/* CR-PR-05 — received quotes from this vendor. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><FileText size={12} /> Quotes ({links.quotes?.length ?? 0})</p>
+                    {(links.quotes?.length ?? 0) === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.quotes!.map((q) => (
+                        <div key={q._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700">Quote{q.accepted ? " ✓" : ""}</span>
+                          <span className="text-slate-500">{q.total || "—"}{q.status ? ` · ${q.status}` : ""}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
                   {/* CR-P-06b — shipping/delivery records where this company is the logistics agency. */}
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Truck size={12} /> Shipments ({links.shipments?.length ?? 0})</p>

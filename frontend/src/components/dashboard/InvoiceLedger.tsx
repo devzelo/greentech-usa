@@ -9,6 +9,7 @@ import {
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
+import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { toast } from "../../lib/toast";
@@ -587,6 +588,20 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractTotal };
                     setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
+                  {/* CR-B-14a — Word export. */}
+                  <button onClick={() => {
+                    const lt = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(cur?.amount);
+                    const rows = (bDraft.mode === "build" ? bDraft.lineItems : []).map((it) => [it.date || "", it.description || "", it.qty || "", it.unitPrice || "", money(n(it.qty) * n(it.unitPrice)), it.remarks || ""]);
+                    const body = `<h1>${isSent ? "Invoice" : "Bill"} #${escapeHtml(cur?.number || "")}</h1>`
+                      + `<p class="muted">${escapeHtml(bDraft.receiverKind || "")} · ${escapeHtml(bDraft.party || "")} · ${escapeHtml(bDraft.date || "")}</p>`
+                      + (bDraft.description ? `<p>${escapeHtml(bDraft.description)}</p>` : "")
+                      + (rows.length ? htmlTable(["Date", "Description", "Qty", "Unit price", "Total", "Remarks"], rows, [2, 3, 4]) : "")
+                      + `<p class="right"><strong>Total: ${escapeHtml(money(lt))}</strong></p>`
+                      + (bDraft.terms ? `<h2>Terms</h2><p>${escapeHtml(bDraft.terms)}</p>` : "")
+                      + (bDraft.bank?.name ? `<h2>Bank information</h2><p>${escapeHtml(bDraft.bank.name)}<br/>${escapeHtml(bDraft.bank.accountName || "")} ${escapeHtml(bDraft.bank.accountNumber || "")}<br/>${escapeHtml(bDraft.bank.iban || "")} ${escapeHtml(bDraft.bank.swift || "")}</p>` : "")
+                      + (bDraft.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(bDraft.signerName)}${bDraft.signerTitle ? `, ${escapeHtml(bDraft.signerTitle)}` : ""}</p>` : "");
+                    downloadHtmlAsWord(`Invoice ${cur?.number || ""}`, body, `Invoice_${cur?.number || "draft"}`);
+                  }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><FileText size={13} /> Word</button>
                   <button onClick={() => { setBuilderId(null); setBDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
                   <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>
                   <button onClick={() => saveBuilder()} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>

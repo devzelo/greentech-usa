@@ -10,6 +10,7 @@ import {
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import ShareMenu from "../ShareMenu";
+import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
 import { downloadBlob } from "../../../lib/proposalExport";
 import { toast } from "../../../lib/toast";
@@ -346,6 +347,15 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     )}
                     <button onClick={() => { if (ag.documentMode === "uploaded" && ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; } setPreview({ title: ag.name || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) }); }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
                     <button onClick={() => download(ag)} className="p-1.5 rounded text-slate-400 hover:text-primary" title={ag.signedDocument ? "Open the signed copy" : "Download PDF"}><Download size={14} /></button>
+                    {/* CR-B-14a — Word export of the agreement text (sections are already HTML). */}
+                    <button onClick={() => {
+                      const secs = (ag.extraSections || []).filter((s) => !(s as { hidden?: boolean }).hidden);
+                      const body = `<h1>${escapeHtml(ag.name || "Agreement")}</h1>`
+                        + secs.map((s) => `<h2>${escapeHtml(s.title || "Section")}</h2>${s.body || ""}`).join("")
+                        + (ag.sections?.ndaEnabled && ag.sections.ndaText ? `<h2>Non-Disclosure Agreement</h2>${ag.sections.ndaText}` : "")
+                        + (ag.company?.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(ag.company.signerName)}${ag.company.signerTitle ? `, ${escapeHtml(ag.company.signerTitle)}` : ""}</p>` : "");
+                      downloadHtmlAsWord(ag.name || "Agreement", body, `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}`);
+                    }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Export to Word"><FileText size={14} /></button>
                     {/* CR-P-10 — Share the uploaded/signed agreement file (a hosted document). */}
                     {(ag.signedDocument?.filePath || ag.uploadedDocument?.filePath) && (
                       <ShareMenu fileName={`${ag.name || "agreement"}.pdf`} fileUrl={attachmentUrl((ag.signedDocument?.filePath || ag.uploadedDocument?.filePath || "").replace(/^\/+/, ""))} size={14} />
