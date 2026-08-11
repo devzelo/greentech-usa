@@ -2119,6 +2119,8 @@ export interface CompanyLinks {
   pos: Array<{ _id: string; poNo: string; vendorName: string; total: string; status: string; projectId: string }>;
   shipments?: Array<{ _id: string; name: string; status: string; etaDate: string; agencyName: string; projectId: string }>;
   quotes?: Array<{ _id: string; rfqId: string; total: string; status: string; accepted?: boolean; projectId: string }>;
+  agreements?: Array<{ _id: string; name: string; status: string; projectId: string }>;
+  submittals?: Array<{ _id: string; productName: string; manufacturer: string; status: string; projectId: string }>;
   projects?: Array<{ _id: string; projectId: string; name: string; status: string }>;
 }
 export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }

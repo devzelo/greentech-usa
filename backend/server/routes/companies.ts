@@ -70,9 +70,11 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const Shipment = (await import("../models/Shipment")).default;
     const Vendor = (await import("../models/Vendor")).default;
     const VendorQuote = (await import("../models/VendorQuote")).default;
+    const Agreement = (await import("../models/Agreement")).default;
+    const Submittal = (await import("../models/Submittal")).default;
     // CR-PR-05 — received quotes: project Vendors named like this company → their quotes.
     const vendorIds = nameRx ? (await Vendor.find({ name: nameRx }).select("_id").lean()).map((v) => String(v._id)) : [];
-    const [invoices, rfqs, pos, shipments, quotes] = await Promise.all([
+    const [invoices, rfqs, pos, shipments, quotes, agreements, submittals] = await Promise.all([
       // Invoices link by companyId (receiver picker) OR by matching party name.
       Invoice.find(nameRx ? { $or: [{ companyId: req.params.id }, { party: nameRx }] } : { companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
       Rfq.find({ "recipients.companyId": req.params.id }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
@@ -81,16 +83,20 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
       // CR-P-06b — shipping/delivery records: shipments whose logistics agency is this company.
       nameRx ? Shipment.find({ agencyName: nameRx }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
       vendorIds.length ? VendorQuote.find({ vendorId: { $in: vendorIds } }).select("rfqId total status accepted projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
+      // CR-P-06b — agreements/contracts with this company (matched on the counterparty name).
+      nameRx ? Agreement.find({ "partySnapshot.party2.name": nameRx }).select("name status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
+      // CR-P-06b — submittals for this company's products (matched on manufacturer/brand).
+      nameRx ? Submittal.find({ manufacturer: nameRx }).select("productName manufacturer status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     ]);
     // CR-P-06b — "projects they have been involved with": every project referenced by any of the
     // linked records above (invoices / RFQs / POs / shipments), resolved to name + status.
     const pidSet = new Set<string>();
-    for (const arr of [invoices, rfqs, pos, shipments, quotes] as Array<Array<{ projectId?: string }>>)
+    for (const arr of [invoices, rfqs, pos, shipments, quotes, agreements, submittals] as Array<Array<{ projectId?: string }>>)
       for (const r of arr) if (r.projectId) pidSet.add(r.projectId);
     const projects = pidSet.size
       ? await Project.find({ projectId: { $in: [...pidSet] } }).select("projectId name status").limit(200).lean()
       : [];
-    res.json({ invoices, rfqs, pos, shipments, quotes, projects });
+    res.json({ invoices, rfqs, pos, shipments, quotes, agreements, submittals, projects });
   } catch (err) { next(err); }
 });
 

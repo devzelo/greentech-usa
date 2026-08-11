@@ -323,6 +323,30 @@ export default function Directory() {
                       ))}</div>
                     )}
                   </div>
+                  {/* CR-P-06b — submittals for this company's products (matched on manufacturer). */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><FileText size={12} /> Submittals ({links.submittals?.length ?? 0})</p>
+                    {(links.submittals?.length ?? 0) === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.submittals!.map((s) => (
+                        <div key={s._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700 truncate">{s.productName || "Submittal"}</span>
+                          <span className="text-slate-500">{s.status || "—"}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                  {/* CR-P-06b — agreements/contracts with this company. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><FileText size={12} /> Agreements ({links.agreements?.length ?? 0})</p>
+                    {(links.agreements?.length ?? 0) === 0 ? <p className="text-xs text-slate-400 italic">None linked yet.</p> : (
+                      <div className="space-y-1">{links.agreements!.map((a) => (
+                        <div key={a._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                          <span className="font-bold text-slate-700 truncate">{a.name || "Agreement"}</span>
+                          <span className="text-slate-500">{a.status || "—"}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
                   {/* CR-P-06b — every project this company has been involved with (via any linked record). */}
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Building2 size={12} /> Projects involved ({links.projects?.length ?? 0})</p>
