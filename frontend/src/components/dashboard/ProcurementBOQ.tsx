@@ -984,7 +984,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               <p className="sm:col-span-2 text-[11px] text-slate-400">Pictures, catalogue, data sheet, drawing &amp; submittal package attach in the next step — use <strong>Save &amp; docs</strong>.</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
-              <button onClick={() => setAddFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
+              {/* CR-B-14a — Reset + Cancel (with confirmation) alongside Save / Save & docs. */}
+              <button onClick={() => setAddForm(BLANK_DRAFT(addFor || ""))} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50">Reset</button>
+              <button onClick={async () => { if (await confirm({ title: "Are you sure you want to cancel?", message: "Unsaved item details will be lost.", confirmLabel: "Discard & close", cancelLabel: "Keep editing", danger: true })) setAddFor(null); }} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
               <button onClick={() => saveAddPopup(false)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary">Save</button>
               <button onClick={() => saveAddPopup(true)} className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 inline-flex items-center gap-1.5"><FileText size={13} /> Save &amp; docs</button>
             </div>
