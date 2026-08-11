@@ -14,6 +14,7 @@ import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
 import PresenceBar from "./PresenceBar";
 import BuilderActions from "./BuilderActions";
+import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
@@ -203,7 +204,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     setSubs((p) => p.map((s) => s._id === sid ? { ...s, revisions: s.revisions.map((r) => r._id === rid ? { ...r, disposition } : r) } : s));
     subSave.track(updateSubmittalRevision(projectId, sid, rid, { disposition })).catch(() => {});
   };
-  const saveRevField = (sid: string, rid: string, field: "notes" | "sentToClientAt" | "respondedAt" | "optionLabel" | "clientName" | "submittedBy" | "receivedBy", value: string) => {
+  const saveRevField = (sid: string, rid: string, field: "notes" | "sentToClientAt" | "respondedAt" | "optionLabel" | "clientName" | "submittedBy" | "receivedBy" | "workflowStatus", value: string) => {
     setSubs((p) => p.map((s) => s._id === sid ? { ...s, revisions: s.revisions.map((r) => r._id === rid ? { ...r, [field]: value } : r) } : s));
     subSave.track(updateSubmittalRevision(projectId, sid, rid, { [field]: value })).catch(() => {});
   };
@@ -340,9 +341,18 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
             {rev.isCurrent && canEdit ? (
               <>
                 {/* Editable — current revision */}
-                <div className="mb-3">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Brand / option submitted</label>
-                  <input className={inp} value={rev.optionLabel || ""} onChange={(e) => saveRevField(sub._id, rev._id, "optionLabel", e.target.value)} placeholder="e.g. United PVC pipe" />
+                <div className="mb-3 flex flex-wrap items-end gap-3">
+                  <div className="flex-grow min-w-[12rem]">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Brand / option submitted</label>
+                    <input className={inp} value={rev.optionLabel || ""} onChange={(e) => saveRevField(sub._id, rev._id, "optionLabel", e.target.value)} placeholder="e.g. United PVC pipe" />
+                  </div>
+                  {/* CR-B-15 — internal prep status for this submittal (separate from the client decision). */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Prep status</label>
+                    <select value={rev.workflowStatus || ""} onChange={(e) => saveRevField(sub._id, rev._id, "workflowStatus", e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1.5 border-0 cursor-pointer mt-1 ${(SECTION_STATUS_OPTS.find((o) => o.v === (rev.workflowStatus || "")) || SECTION_STATUS_OPTS[0]).cls}`} title="Internal prep status">
+                      {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                    </select>
+                  </div>
                 </div>
               </>
             ) : (

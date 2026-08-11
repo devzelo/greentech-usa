@@ -14,7 +14,8 @@ export interface ISubmittalRevision extends Document {
   projectId: string;
   revisionNo: number;
   optionLabel: string;       // the brand / option submitted in this revision (e.g. "United PVC pipe")
-  disposition: SubmittalDisposition;
+  disposition: SubmittalDisposition;   // the CLIENT's decision
+  workflowStatus: string;    // CR-B-15 — GT's internal prep status (NotStarted/InProgress/UnderReview/Complete/…)
   notes: string;             // reviewer / client comments
   sentToClientAt: string;    // date string
   respondedAt: string;       // date string
@@ -50,6 +51,7 @@ const SubmittalRevisionSchema = new Schema<ISubmittalRevision>(
       enum: ["Pending", "Approved", "ApprovedAsNoted", "ReviseResubmit", "Rejected", "Superseded"],
       default: "Pending",
     },
+    workflowStatus: { type: String, default: "" },
     notes: { type: String, default: "" },
     sentToClientAt: { type: String, default: "" },
     respondedAt: { type: String, default: "" },

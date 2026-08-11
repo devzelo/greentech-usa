@@ -119,7 +119,7 @@ router.post("/:sid/revisions", async (req: AuthedRequest, res: Response, next: N
 });
 
 // Set disposition / notes / dates — ONLY on the current revision.
-const REV_FIELDS = ["disposition", "notes", "sentToClientAt", "respondedAt", "optionLabel", "clientName", "submittedBy", "receivedBy"] as const;
+const REV_FIELDS = ["disposition", "workflowStatus", "notes", "sentToClientAt", "respondedAt", "optionLabel", "clientName", "submittedBy", "receivedBy"] as const;
 router.patch("/:sid/revisions/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (blockSub(req, res)) return;
