@@ -7,6 +7,7 @@ export interface IProcurementSection extends Document {
   projectId: string;
   name: string;
   order: number;
+  assignedTo: string;   // CR-B-19 — colleague tagged to edit/review/verify this BOQ section
 }
 
 const ProcurementSectionSchema = new Schema<IProcurementSection>(
@@ -14,6 +15,7 @@ const ProcurementSectionSchema = new Schema<IProcurementSection>(
     projectId: { type: String, required: true, index: true },
     name: { type: String, default: "" },
     order: { type: Number, default: 0 },
+    assignedTo: { type: String, default: "" },
   },
   { timestamps: true }
 );

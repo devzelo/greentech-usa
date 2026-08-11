@@ -23,6 +23,7 @@ export interface ISubmittalRevision extends Document {
   clientName: string;        // the client company / person the submittal went to
   submittedBy: string;       // who at GreenTech submitted it
   receivedBy: string;        // who received/returned it on the client side
+  assignedTo: string;        // CR-B-19 — colleague tagged to edit/review/verify this revision
   attachments: ISubmittalAttachment[];
   isCurrent: boolean;
   createdByName: string;
@@ -58,6 +59,7 @@ const SubmittalRevisionSchema = new Schema<ISubmittalRevision>(
     clientName: { type: String, default: "" },
     submittedBy: { type: String, default: "" },
     receivedBy: { type: String, default: "" },
+    assignedTo: { type: String, default: "" },
     attachments: { type: [AttachmentSchema], default: [] },
     isCurrent: { type: Boolean, default: true },
     createdByName: { type: String, default: "" },

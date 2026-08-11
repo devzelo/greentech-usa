@@ -19,6 +19,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import { useBuilderPresence } from "../../lib/usePresence";
 import SavedVersionsPanel from "./SavedVersionsPanel";
+import AssignColleague from "./AssignColleague";
 
 const DEFAULT_SECTIONS = ["Electrical", "Civil", "Mechanical"];
 
@@ -220,6 +221,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   };
   const renameSection = (sid: string, name: string) => setSections((p) => p.map((s) => (s._id === sid ? { ...s, name } : s)));
   const saveSection = (sid: string, name: string) => { updateProcurementSection(projectId, sid, { name }).catch(() => {}); };
+  // CR-B-19 — tag a colleague to edit/review/verify this BOQ category.
+  const assignSection = (sid: string, name: string) => { setSections((p) => p.map((s) => (s._id === sid ? { ...s, assignedTo: name } : s))); updateProcurementSection(projectId, sid, { assignedTo: name }).catch(() => {}); };
   const removeSection = async (sid: string) => {
     const n = itemsIn(sid).length;
     if (!(await confirm({ title: "Delete category?", message: `This deletes the category${n ? ` and its ${n} item(s)` : ""}. Use Cancel on items you need to keep for claims.`, confirmLabel: "Delete category" }))) return;
@@ -692,6 +695,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                 const allLocked = active.length > 0 && active.every((it) => it.locked);
                 return <button onClick={() => lockSection(s._id, !allLocked)} disabled={!active.length} className={`p-1.5 rounded disabled:opacity-30 disabled:hover:bg-transparent ${allLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-700 hover:bg-white"}`} title={allLocked ? "Category locked — click to unlock all items" : "Lock all items in this category (prevents accidental changes)"}>{allLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>;
               })()}
+              {/* CR-B-19 — tag a colleague to edit/review/verify this category. */}
+              {canEdit && <AssignColleague value={s.assignedTo} onChange={(name) => assignSection(s._id, name)} notify={{ title: `Review BOQ category "${s.name || "Section"}"`, notes: "You were tagged to edit / review / verify this BOQ category.", projectId, projectName: projectInfo?.name }} />}
               {canEdit && <button onClick={() => removeSection(s._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete category"><Trash2 size={13} /></button>}
             </div>
 

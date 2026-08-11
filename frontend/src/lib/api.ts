@@ -1347,7 +1347,7 @@ export type ProcurementStatus =
   | "BOQ" | "RFQ_Sent" | "Quoted" | "PO_Sent" | "Invoiced"
   | "Ordered" | "Fabrication" | "Transit" | "OnSite" | "Complete" | "Cancelled";
 
-export interface ApiProcurementSection { _id: string; projectId: string; name: string; order: number }
+export interface ApiProcurementSection { _id: string; projectId: string; name: string; order: number; assignedTo?: string }
 export interface ApiProcurementItem {
   _id: string;
   projectId: string;
@@ -1388,7 +1388,7 @@ export async function fetchProcurementSections(projectId: string): Promise<ApiPr
 export async function addProcurementSection(projectId: string, name: string): Promise<ApiProcurementSection> {
   return request(`${procBase(projectId)}/sections`, { method: 'POST', body: JSON.stringify({ name }) });
 }
-export async function updateProcurementSection(projectId: string, sid: string, body: { name?: string; order?: number }): Promise<ApiProcurementSection> {
+export async function updateProcurementSection(projectId: string, sid: string, body: { name?: string; order?: number; assignedTo?: string }): Promise<ApiProcurementSection> {
   return request(`${procBase(projectId)}/sections/${sid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 export async function deleteProcurementSection(projectId: string, sid: string): Promise<void> {
@@ -1449,7 +1449,7 @@ export interface ApiSubmittalAttachment { _id: string; name: string; filePath: s
 export interface ApiSubmittalRevision {
   _id: string; submittalId: string; projectId: string; revisionNo: number;
   optionLabel: string; disposition: SubmittalDisposition; workflowStatus?: string; notes: string; sentToClientAt: string; respondedAt: string;
-  clientName?: string; submittedBy?: string; receivedBy?: string;
+  clientName?: string; submittedBy?: string; receivedBy?: string; assignedTo?: string;
   attachments: ApiSubmittalAttachment[]; isCurrent: boolean; createdByName: string;
 }
 export interface ApiSubmittal {
@@ -1477,7 +1477,7 @@ export async function deleteSubmittal(projectId: string, sid: string): Promise<v
 export async function addSubmittalRevision(projectId: string, sid: string, duplicate = false): Promise<ApiSubmittalRevision> {
   return request(`${subBase(projectId)}/${sid}/revisions`, { method: 'POST', body: JSON.stringify({ duplicate }) });
 }
-export async function updateSubmittalRevision(projectId: string, sid: string, rid: string, body: Partial<{ disposition: SubmittalDisposition; workflowStatus: string; notes: string; sentToClientAt: string; respondedAt: string; optionLabel: string; clientName: string; submittedBy: string; receivedBy: string }>): Promise<ApiSubmittalRevision> {
+export async function updateSubmittalRevision(projectId: string, sid: string, rid: string, body: Partial<{ disposition: SubmittalDisposition; workflowStatus: string; notes: string; sentToClientAt: string; respondedAt: string; optionLabel: string; clientName: string; submittedBy: string; receivedBy: string; assignedTo: string }>): Promise<ApiSubmittalRevision> {
   return request(`${subBase(projectId)}/${sid}/revisions/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 export async function uploadSubmittalAttachment(projectId: string, sid: string, rid: string, file: File, component: SubmittalComponent, decision = ''): Promise<ApiSubmittalRevision> {
@@ -1517,7 +1517,7 @@ export interface ApiRfq {
   recipients?: RfqRecipient[];
   uploadedDocument?: RfqLineFile | null;
   addedByName: string; quotes: ApiVendorQuote[];
-  archived?: boolean;
+  archived?: boolean; assignedTo?: string;
 }
 
 export async function fetchVendors(projectId: string): Promise<ApiVendor[]> { return request(`/projects/${projectId}/vendors`); }
@@ -1530,7 +1530,7 @@ export async function fetchRfqs(projectId: string, archived = false): Promise<Ap
 export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string }): Promise<ApiRfq> {
   return request(rfqBase(projectId), { method: 'POST', body: JSON.stringify(body) });
 }
-export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean }>): Promise<ApiRfq> {
+export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean; assignedTo: string }>): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 /** CR-PR-07 — archive or restore an RFQ (archived RFQs are hidden from the normal list). */
@@ -2001,11 +2001,12 @@ export interface ApiProcurementPO {
   // Signatures & stamps
   signerName?: string; signerEmail?: string; signerPhone?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string;
   partnerSignerName?: string; partnerSignerEmail?: string; partnerSignerPhone?: string; partnerSignatureUrl?: string; partnerStampUrl?: string;
+  assignedTo?: string;
 }
 export type PoPatch = Partial<Pick<ApiProcurementPO,
   "terms" | "termsMode" | "notes" | "shipTo" | "deliveryMethod" | "status" | "invoiceNo" | "invoiceAmount" | "invoiceDate" |
   "signerName" | "signerEmail" | "signerPhone" | "signerTitle" | "signatureUrl" | "stampUrl" |
-  "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "partnerSignatureUrl" | "partnerStampUrl">>;
+  "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "partnerSignatureUrl" | "partnerStampUrl" | "assignedTo">>;
 const poBase = (projectId: string) => `/projects/${projectId}/procurement-pos`;
 export async function fetchProcurementPOs(projectId: string, archived = false): Promise<ApiProcurementPO[]> { return request(`${poBase(projectId)}${archived ? "?archived=true" : ""}`); }
 export async function setProcurementPOArchived(projectId: string, pid: string, archived: boolean): Promise<ApiProcurementPO> {

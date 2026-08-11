@@ -26,6 +26,7 @@ export interface IRfq extends Document {
   // An already-made RFQ document uploaded instead of building on the platform (CR-PR-02).
   uploadedDocument: IRfqLineFile | null;
   notes: string;
+  assignedTo: string;       // CR-B-19 — colleague tagged to edit/review/verify this RFQ
   addedByName: string;
   archived: boolean;        // CR-PR-07 — archived RFQs are hidden from the normal list.
 }
@@ -51,6 +52,7 @@ const RfqSchema = new Schema<IRfq>(
     recipients: { type: [{ companyId: { type: String, default: "" }, name: { type: String, default: "" }, category: { type: String, default: "" } }], default: [] },
     uploadedDocument: { type: RfqLineFileSchema, default: null },
     notes: { type: String, default: "" },
+    assignedTo: { type: String, default: "" },
     addedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false },
   },

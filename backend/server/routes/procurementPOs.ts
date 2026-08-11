@@ -132,7 +132,7 @@ router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunct
 
 const PO_FIELDS = ["terms", "termsMode", "notes", "shipTo", "deliveryMethod", "status", "invoiceNo", "invoiceAmount", "invoiceDate",
   "signerName", "signerEmail", "signerPhone", "signerTitle", "signatureUrl", "stampUrl",
-  "partnerSignerName", "partnerSignerEmail", "partnerSignerPhone", "partnerSignatureUrl", "partnerStampUrl"] as const;
+  "partnerSignerName", "partnerSignerEmail", "partnerSignerPhone", "partnerSignatureUrl", "partnerStampUrl", "assignedTo"] as const;
 router.patch("/:pid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (block(req, res)) return;

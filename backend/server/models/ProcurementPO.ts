@@ -37,6 +37,7 @@ export interface IProcurementPO extends Document {
   stampUrl: string;
   partnerSignerName: string; partnerSignerEmail: string; partnerSignerPhone: string; partnerSignatureUrl: string;
   partnerStampUrl: string;
+  assignedTo: string;       // CR-B-19 — colleague tagged to edit/review/verify this PO
   addedByName: string;
 }
 
@@ -79,6 +80,7 @@ const ProcurementPOSchema = new Schema<IProcurementPO>(
     partnerSignerPhone: { type: String, default: "" },
     partnerSignatureUrl: { type: String, default: "" },
     partnerStampUrl: { type: String, default: "" },
+    assignedTo: { type: String, default: "" },
     addedByName: { type: String, default: "" },
   },
   { timestamps: true }

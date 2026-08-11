@@ -85,7 +85,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
   try {
     if (block(req, res)) return;
     const patch: Record<string, unknown> = {};
-    for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients", "archived"]) if (f in (req.body || {})) patch[f] = req.body[f];
+    for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients", "archived", "assignedTo"]) if (f in (req.body || {})) patch[f] = req.body[f];
     // Per-item docs (CR-PR-03) are uploaded separately, so a wholesale lineItems PATCH must NOT
     // wipe them — preserve each existing line's attachments by _id when the client omits them.
     if (Array.isArray(patch.lineItems)) {

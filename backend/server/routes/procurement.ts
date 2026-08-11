@@ -54,10 +54,11 @@ router.post("/sections", async (req: AuthedRequest, res: Response, next: NextFun
 
 router.patch("/sections/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, order } = req.body || {};
+    const { name, order, assignedTo } = req.body || {};
     const patch: Record<string, unknown> = {};
     if (typeof name === "string") patch.name = name;
     if (typeof order === "number") patch.order = order;
+    if (typeof assignedTo === "string") patch.assignedTo = assignedTo;
     const row = await ProcurementSection.findOneAndUpdate({ _id: req.params.sid, projectId: req.params.id }, patch, { new: true });
     if (!row) return res.status(404).json({ error: "Not found" });
     res.json(row);

@@ -20,6 +20,7 @@ import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
+import AssignColleague from "./AssignColleague";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -129,7 +130,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     try { const po = await createProcurementPO(projectId, rfqId, quoteId); setPOs((p) => [...p, po]); setOpenId(po._id); void autoSavePoDoc(po); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not create PO.", "error"); }
   };
-  const save = (pid: string, field: "terms" | "termsMode" | "notes" | "shipTo" | "deliveryMethod" | "status" | "invoiceNo" | "invoiceAmount" | "invoiceDate" | "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone", value: string) => {
+  const save = (pid: string, field: "terms" | "termsMode" | "notes" | "shipTo" | "deliveryMethod" | "status" | "invoiceNo" | "invoiceAmount" | "invoiceDate" | "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "assignedTo", value: string) => {
     updateProcurementPO(projectId, pid, { [field]: value }).then((po) => patch(pid, po)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
   };
   // Pick the GreenTech signer from staff who have a signature on file.
@@ -333,6 +334,13 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
         <div className="bg-slate-50 rounded-2xl p-4 space-y-1.5">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11} /> Notes &amp; description <span className="font-medium normal-case text-slate-400">— extra info for the vendor; shown after the table on the PO document</span></p>
           <textarea rows={3} className={`${inp} resize-y`} placeholder="e.g. Deliver in two lots; include mill certificates with each delivery…" value={po.notes || ""} disabled={!canEdit} onChange={(e) => patch(po._id, { notes: e.target.value })} onBlur={(e) => save(po._id, "notes", e.target.value)} />
+          {/* CR-B-19 — tag a colleague to edit/review/verify this PO (internal; not printed). */}
+          {canEdit && (
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assigned to</span>
+              <AssignColleague value={po.assignedTo} onChange={(name) => { patch(po._id, { assignedTo: name }); save(po._id, "assignedTo", name); }} notify={{ title: `Review PO ${po.poNo || ""}`.trim(), notes: "You were tagged to edit / review / verify this purchase order.", projectId, projectName: projectInfo?.name }} />
+            </div>
+          )}
         </div>
 
         {/* Terms & Conditions — constant text OR an uploaded file (always printed at the END of the PO) */}

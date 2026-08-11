@@ -23,6 +23,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import { AddressPicker } from "./AddressPicker";
+import AssignColleague from "./AssignColleague";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -295,6 +296,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // RFQ-level notes (custom info printed after the item table on the PDF).
   const setRfqNotes = (rid: string, value: string) => setRfqs((p) => p.map((r) => r._id === rid ? { ...r, notes: value } : r));
   const saveRfqNotes = (rid: string, value: string) => { updateRfq(projectId, rid, { notes: value }).catch(() => {}); };
+  // CR-B-19 — tag a colleague to edit/review/verify this RFQ.
+  const assignRfq = (rid: string, name: string) => { setRfqs((p) => p.map((r) => r._id === rid ? { ...r, assignedTo: name } : r)); updateRfq(projectId, rid, { assignedTo: name }).catch(() => {}); };
 
   // Add BOQ items to an existing RFQ (from the manage popup).
   const removeLineItem = async (rfq: ApiRfq, itemId: string) => {
@@ -545,6 +548,14 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={12} /> Notes &amp; description <span className="font-medium normal-case text-slate-400">— extra info for the vendor (specs, standards); shown after the table on the PDF</span></div>
                     <textarea rows={3} className={`${inp} resize-y`} placeholder="e.g. All items must comply with ASTM C591; submit mill certs with delivery…" value={rfq.notes || ""} disabled={!canEdit} onChange={(e) => setRfqNotes(rfq._id, e.target.value)} onBlur={(e) => saveRfqNotes(rfq._id, e.target.value)} />
                   </div>
+
+                  {/* CR-B-19 — tag a colleague to edit/review/verify this RFQ (internal; not printed). */}
+                  {canEdit && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assigned to</span>
+                      <AssignColleague value={rfq.assignedTo} onChange={(name) => assignRfq(rfq._id, name)} notify={{ title: `Review RFQ ${rfq.rfqNo || rfqDesc(rfq)}`, notes: "You were tagged to edit / review / verify this RFQ.", projectId, projectName: projectInfo?.name }} />
+                    </div>
+                  )}
 
                   {/* CR-PR-02 — an already-made RFQ document uploaded for this RFQ. */}
                   <div className="bg-slate-50 rounded-xl p-3 space-y-2">
