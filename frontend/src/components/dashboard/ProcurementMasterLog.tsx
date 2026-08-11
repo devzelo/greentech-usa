@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Printer, Download, AlertTriangle, CheckCircle2, Clock, Package, History, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Search } from "lucide-react";
+import { Loader2, Printer, Download, AlertTriangle, CheckCircle2, Clock, Package, History, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Search, FileDown } from "lucide-react";
 import {
   fetchProcurementSections, fetchProcurementItems, updateProcurementItem, fetchProcurementEvents, fetchSubmittals,
+  fetchProcurementItemRevisions,
   type ApiProcurementSection, type ApiProcurementItem, type ProcurementStatus, type ApiProcurementEvent,
   type ApiSubmittal, type SubmittalDisposition,
 } from "../../lib/api";
 import { projectInfoHtml, type ProjectPdfInfo } from "../../lib/pdfProjectHeader";
+import { buildBoqPdf } from "../../lib/boqPdf";
+import PdfPreviewModal from "./PdfPreviewModal";
+import { useDialogs } from "../../lib/useDialogs";
 
 const GUEST_STAGES: ProcurementStatus[] = ["Fabrication", "Transit", "OnSite"];
 
@@ -84,6 +88,19 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
   // Click a column header to sort/group by it (Reza: "click category → group electricals together").
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const canSetStatus = canEdit || guestLogistics;
+  const { confirm, dialogs } = useDialogs();
+  // CR-P-14 — per-line export from the Master Log; asks whether to include past revisions.
+  const [linePreview, setLinePreview] = useState<{ item: ApiProcurementItem; extras: ApiProcurementItem[] } | null>(null);
+  const openLineExport = async (it: ApiProcurementItem) => {
+    let extras: ApiProcurementItem[] = [];
+    try {
+      const revs = await fetchProcurementItemRevisions(projectId, it._id);
+      if (revs.length && await confirm({ title: "Include past revisions?", message: `This line has ${revs.length} earlier revision${revs.length === 1 ? "" : "s"}. Include the older versions in the export, or export the current version only?`, confirmLabel: "Include past", cancelLabel: "Current only" })) {
+        extras = revs.map((r) => ({ ...it, description: `${it.description || ""} (RV${r.revNo})`, manufacturer: r.manufacturer, modelNo: r.modelNo, qty: r.qty, unit: r.unit, spec: r.spec, needOnSiteDate: r.needOnSiteDate }));
+      }
+    } catch { /* proceed with current only */ }
+    setLinePreview({ item: it, extras });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -308,11 +325,12 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
                   </th>
                 );
               })}
+              <th className="text-left px-3 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">Export</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {sorted.length === 0 ? (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-slate-400 italic text-sm">No items match. Add items in the BOQ tab.</td></tr>
+              <tr><td colSpan={13} className="px-3 py-10 text-center text-slate-400 italic text-sm">No items match. Add items in the BOQ tab.</td></tr>
             ) : sorted.map((it) => {
               const meta = STATUS_META[it.status as Exclude<ProcurementStatus, "Cancelled">];
               const risk = isAtRisk(it);
@@ -343,12 +361,25 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
                       <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${meta?.cls || "bg-slate-100 text-slate-500"}`}>{meta?.label || it.status}</span>
                     )}
                   </td>
+                  {/* CR-P-14 — export just this line (asks whether to include past revisions). */}
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <button onClick={() => openLineExport(it)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 text-[10px] font-bold" title="Export this line (PDF)"><FileDown size={12} /> Line</button>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {linePreview && (
+        <PdfPreviewModal
+          title={`Master Log item #${boqNo[linePreview.item._id] ?? ""} — ${linePreview.item.description || "line"}${linePreview.extras.length ? " (+ past revisions)" : ""}`}
+          fileName={`MasterLog_item_${boqNo[linePreview.item._id] ?? ""}.pdf`}
+          build={() => buildBoqPdf(sections.filter((s) => s._id === linePreview.item.sectionId), [linePreview.item, ...linePreview.extras], projectInfo)}
+          onClose={() => setLinePreview(null)}
+        />
+      )}
+      {dialogs}
 
       {/* Activity timeline (append-only audit) */}
       <div className="border border-slate-100 rounded-2xl overflow-hidden">
