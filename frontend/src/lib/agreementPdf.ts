@@ -229,6 +229,7 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
 
   // Custom named sections added by the user (title + rich-text body) — before the NDA.
   for (const s of ag.extraSections || []) {
+    if ((s as { hidden?: boolean }).hidden) continue; // CR-B-17 — hidden sections aren't printed
     if (!s.title && !s.body?.trim()) continue;
     await renderSection(s.title || "Section", s.body || "");
   }

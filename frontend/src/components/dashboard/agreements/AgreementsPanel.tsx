@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, History, Ban, CheckCircle2, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw } from "lucide-react";
 import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
@@ -8,6 +8,7 @@ import {
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile,
 } from "../../../lib/api";
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
+import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { GREENTECH } from "../../../lib/poPdf";
 import { downloadBlob } from "../../../lib/proposalExport";
 import { toast } from "../../../lib/toast";
@@ -56,7 +57,7 @@ type Draft = {
   party2: ApiAgreementParty;
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
-  extraSections: Array<{ title: string; body: string }>;
+  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string }>;
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
 
@@ -150,7 +151,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       party2: { ...BLANK_PARTY, ...(ag.partySnapshot?.party2 || {}) },
       contextLines: (ag.partySnapshot?.contextLines || []).map((l) => ({ ...l })),
       sections: { ...BLANK_SECTIONS, ...(ag.sections || {}) },
-      extraSections: (ag.extraSections || []).map((s) => ({ ...s })),
+      extraSections: (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
     });
     setEditor({ aid: ag._id });
@@ -577,15 +578,47 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
               {/* Custom named sections — CR-B-04: these live BEFORE the NDA; the NDA is always
                   the last section before the signature. Each is a titled rich-text block. */}
-              {draft.extraSections.map((s, i) => (
-                <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
-                  <div className="flex items-center gap-2">
-                    <input className={`${inp} font-bold`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
-                    <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
+              {draft.extraSections.map((s, i) => {
+                const count = draft.extraSections.length;
+                const locked = !!s.locked;
+                // Per-section update / reorder / duplicate helpers (CR-B-15/17) on the draft.
+                const upd = (patch: Partial<typeof s>) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+                const move = (dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= count) return; const arr = [...draft.extraSections]; [arr[i], arr[j]] = [arr[j], arr[i]]; setDraft({ ...draft, extraSections: arr }); };
+                const dup = () => { const arr = [...draft.extraSections]; arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "" }); setDraft({ ...draft, extraSections: arr }); };
+                const st = SECTION_STATUS_OPTS.find((o) => o.v === (s.status || "")) || SECTION_STATUS_OPTS[0];
+                return (
+                <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {locked
+                      ? <p className="text-xs font-bold text-slate-700 flex-grow min-w-[8rem]">{s.title || "Untitled section"}<Lock size={11} className="inline ml-1 text-amber-500" /></p>
+                      : <input className={`${inp} font-bold flex-grow min-w-[8rem]`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => upd({ title: e.target.value })} />}
+                    {/* CR-B-15 — colour-coded per-section status. */}
+                    <select value={s.status || ""} onChange={(e) => upd({ status: e.target.value as SectionStatus })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+                      {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                    </select>
+                    {/* CR-B-17 — section actions. */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button onClick={() => upd({ locked: !locked })} title={locked ? "Unlock section" : "Lock section"} className={`p-1 rounded ${locked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+                      <button onClick={() => move(-1)} disabled={i === 0} title="Move up" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronUp size={13} /></button>
+                      <button onClick={() => move(1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
+                      <button onClick={dup} title="Duplicate section" className="p-1 rounded text-slate-300 hover:text-primary"><Copy size={13} /></button>
+                      <button onClick={() => upd({ hidden: !s.hidden })} title={s.hidden ? "Show section" : "Hide section"} className={`p-1 rounded ${s.hidden ? "text-slate-500 bg-slate-100" : "text-slate-300 hover:text-slate-600"}`}>{s.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                      <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
+                    </div>
                   </div>
-                  <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />
+                  {s.hidden ? (
+                    <p className="text-[11px] text-slate-400 italic bg-slate-50 rounded-lg px-2 py-1.5">Section hidden — use the eye icon to show it.</p>
+                  ) : (
+                    <>
+                      {locked
+                        ? <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />
+                        : <RichTextEditor value={s.body} onChange={(html) => upd({ body: html })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />}
+                      {!locked && <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" value={s.notes || ""} onChange={(e) => upd({ notes: e.target.value })} />}
+                    </>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
 
               {/* NDA — always the last section before the signature (CR-B-04). */}
