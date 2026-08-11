@@ -28,6 +28,7 @@ import ProjectReportPDF from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
+import BuilderActions from "./BuilderActions";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
@@ -2195,6 +2196,8 @@ export default function ProjectWorkspace() {
   const [saving, setSaving] = useState(false);
   // CR-B-14b — autosave status indicator for the proposal/workspace builder.
   const wsSave = useSaveStatus();
+  // Confirm wrapper for the shared BuilderActions bar (this component uses window.confirm).
+  const dlgConfirm = async (o: { title: string; message?: string }) => window.confirm(o.message ? `${o.title}\n\n${o.message}` : o.title);
   const handleSave = async (silent = false) => {
     if (!id || !project || !canEdit) return;
     setSaving(true);
@@ -2935,6 +2938,22 @@ export default function ProjectWorkspace() {
                 >
                   <FileText size={13} /> {proposalDownloading === `${which}-docx` ? "Preparing…" : "Word (.docx)"}
                 </button>
+                {/* CR-B-14a — the rest of the standard action set for the Proposal builder.
+                    (Preview/PDF/Word are the buttons above; Save/Duplicate/Print/Mark-complete/
+                    Discard/Reset come from the shared bar, with confirmations.) */}
+                {canEdit && (
+                  <BuilderActions
+                    confirm={dlgConfirm}
+                    saving={saving}
+                    dirty={dirty}
+                    onSave={() => handleSave()}
+                    onDuplicate={() => saveRevision(false)}
+                    onPrint={() => { if (dirty) void handleSave(true); setProposalPreview(which); }}
+                    onMarkComplete={async () => { if (!id) return; try { await createProposalRevision(id, { label: revLabel.trim() || "Final (submitted)", content: currentProposalSnapshot(), archived: true }); toast("Marked as final — version archived.", "success"); await loadRevisions(); } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); } }}
+                    onDiscard={() => { applyProposalSnapshot((project?.proposalContent as Record<string, unknown>) || {}); setDirty(false); }}
+                    onReset={() => { applyProposalSnapshot({}); }}
+                  />
+                )}
               </div>
             );
 
