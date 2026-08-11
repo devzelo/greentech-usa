@@ -12,6 +12,7 @@ import { buildAgreementPdf } from "../../../lib/agreementPdf";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { useSectionPresence } from "../../../lib/usePresence";
 import PresenceBar from "../PresenceBar";
+import BuilderActions from "../BuilderActions";
 import ShareMenu from "../ShareMenu";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
@@ -761,11 +762,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     setPreview({ title: previewAg.name || "Agreement", fileName: "agreement.pdf", build: () => buildAgreementPdf(previewAg) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5"><Eye size={13} /> Preview</button>
                 )}
-                <button onClick={() => { setEditor(null); setDraft(null); }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Cancel</button>
-                {/* CR-P-11 — Save and Send are separate. Save here; then Send from the row
-                    action (which asks for confirmation), never a combined "Save & send". */}
-                <button onClick={() => saveDraft(false)} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save as draft</button>
-                <button onClick={() => saveDraft(false)} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
+                {/* CR-B-14a — standard action set (Save/Save as Draft/Export/Reset/Cancel-with-confirm).
+                    Send stays a separate row action (CR-P-11). */}
+                <BuilderActions
+                  confirm={confirm}
+                  saving={saving}
+                  dirty
+                  onExportPdf={async () => {
+                    const cur = list.find((a) => a._id === editor.aid);
+                    const ag = { ...(cur || {}), ...draftBody(), status: (cur?.status || "Draft"), signatures: { company: draft.company, recipient: cur?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
+                    downloadBlob(await buildAgreementPdf(ag), `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
+                  }}
+                  onReset={() => applyTemplate("")}
+                  onCancel={() => { setEditor(null); setDraft(null); }}
+                  onSaveDraft={() => saveDraft(false)}
+                  onSave={() => saveDraft(false)}
+                />
               </div>
             </div>
           </div>
