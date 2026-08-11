@@ -1074,7 +1074,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         if (!rfq) return null;
         const avail = items.filter((it) => !rfq.lineItems.some((l) => l.itemId === it._id));
         return (
-          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setAddItemsFor(null)}>
+          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-10" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <p className="text-sm font-bold text-slate-900">Add items to RFQ {rfq.rfqNo}</p>
@@ -1105,7 +1105,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         const v = vendors.find((x) => x._id === vendorEditId);
         if (!v) return null;
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setVendorEditId(null)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-10" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2 min-w-0"><Building2 size={16} className="text-primary shrink-0" /><p className="text-sm font-bold text-slate-900 truncate">{v.name || "Vendor"}</p></div>
@@ -1144,7 +1144,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         const m = rfqs.find((r) => r._id === manageId);
         if (!m) return null;
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setManageId(null)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-8" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
                 <div className="min-w-0">

@@ -907,7 +907,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
           ["Spec", "Black, 0.6/1kV"],
         ];
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setImportModal(null)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl w-full max-w-lg mt-10 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between p-6 pb-4 border-b border-slate-100">
                 <div>
@@ -1014,7 +1014,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
           </div>
         );
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={closeManage}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <div className="min-w-0">
@@ -1106,7 +1106,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
 
       {/* BOQ → RFQ confirmation: review the detailed item rows, remove any, then create + open the RFQ */}
       {rfqDraft && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setRfqDraft(null)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div>
