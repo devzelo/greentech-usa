@@ -28,7 +28,7 @@ type Ctx = "user" | "project" | "general";
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
 const today = () => new Date().toISOString().slice(0, 10);
 // Custom named rich-text sections on an agreement (title + HTML body).
-const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string }> =>
+const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }> }> =>
   Array.isArray(v)
     ? v.map((s) => {
         const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; hidden?: unknown; notes?: unknown };
@@ -40,6 +40,12 @@ const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; st
           hidden: !!o?.hidden,
           notes: String(o?.notes ?? "").slice(0, 500),
           assignedTo: String((o as { assignedTo?: unknown })?.assignedTo ?? "").slice(0, 120),
+          // CR-B-18 — carry per-section attachments through a whole-draft save (uploaded separately).
+          attachments: Array.isArray((o as { attachments?: unknown })?.attachments)
+            ? ((o as { attachments: Array<Record<string, unknown>> }).attachments).slice(0, 50).map((a) => ({
+                name: String(a?.name ?? ""), filePath: String(a?.filePath ?? ""), fileType: String(a?.fileType ?? ""), size: String(a?.size ?? ""), kind: String(a?.kind ?? "other"),
+              }))
+            : [],
         };
       })
        .filter((s) => s.title || s.body).slice(0, 20)
@@ -414,6 +420,36 @@ function buildAgreementRouter(ctx: Ctx): Router {
       act(ag, req.user!.name || "", "document-uploaded", req.file.originalname);
       await ag.save();
       res.status(201).json(ag);
+    } catch (err) { next(err); }
+  });
+
+  // CR-B-18 — attach a pre-made file (resume/excel/pdf/picture) to a specific agreement section.
+  router.post("/:aid/sections/:idx/files", upload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+      if (!permsOf(req).staff) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: "Only staff can attach section files." }); }
+      const ag = await findAg(req);
+      const idx = parseInt(req.params.idx, 10);
+      if (!ag || !ag.extraSections[idx]) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Section not found." }); }
+      if (ag.status === "Signed") { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: "A signed agreement is locked." }); }
+      ag.extraSections[idx].attachments = ag.extraSections[idx].attachments || [];
+      ag.extraSections[idx].attachments!.push(fileMeta(req.file));
+      await ag.save();
+      res.status(201).json(ag);
+    } catch (err) { next(err); }
+  });
+  router.delete("/:aid/sections/:idx/files/:fid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can remove section files." });
+      const ag = await findAg(req);
+      const idx = parseInt(req.params.idx, 10);
+      if (!ag || !ag.extraSections[idx]) return res.status(404).json({ error: "Section not found." });
+      const list = ag.extraSections[idx].attachments || [];
+      const gone = list.find((a) => String((a as { _id?: unknown })._id) === req.params.fid);
+      if (gone?.filePath) fs.unlink(path.resolve(gone.filePath), () => {});
+      ag.extraSections[idx].attachments = list.filter((a) => String((a as { _id?: unknown })._id) !== req.params.fid);
+      await ag.save();
+      res.json(ag);
     } catch (err) { next(err); }
   });
 

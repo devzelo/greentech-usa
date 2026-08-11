@@ -4,7 +4,7 @@ import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchMe, attachmentUrl, companyFileUrl,
-  fetchUsers, createReminder,
+  fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile,
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
@@ -60,7 +60,7 @@ type Draft = {
   party2: ApiAgreementParty;
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
-  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
+  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
 
@@ -603,6 +603,17 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 const upd = (patch: Partial<typeof s>) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
                 const move = (dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= count) return; const arr = [...draft.extraSections]; [arr[i], arr[j]] = [arr[j], arr[i]]; setDraft({ ...draft, extraSections: arr }); };
                 const dup = () => { const arr = [...draft.extraSections]; arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "" }); setDraft({ ...draft, extraSections: arr }); };
+                // CR-B-18 — attach/remove a pre-made file on this section (needs the agreement saved first).
+                const uploadFile = async (file: File) => {
+                  if (!editor?.aid) { toast("Save the agreement first, then attach files to a section.", "info"); return; }
+                  try { const ag = await uploadAgreementSectionFile(ctx, editor.aid, i, file); upd({ attachments: (ag.extraSections?.[i]?.attachments || []) as typeof s.attachments }); toast("File attached.", "success"); }
+                  catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+                };
+                const removeFile = async (fid?: string) => {
+                  if (!editor?.aid || !fid) return;
+                  try { const ag = await deleteAgreementSectionFile(ctx, editor.aid, i, fid); upd({ attachments: (ag.extraSections?.[i]?.attachments || []) as typeof s.attachments }); }
+                  catch { /* ignore */ }
+                };
                 const st = SECTION_STATUS_OPTS.find((o) => o.v === (s.status || "")) || SECTION_STATUS_OPTS[0];
                 return (
                 <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
@@ -642,6 +653,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                         ? <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />
                         : <RichTextEditor value={s.body} onChange={(html) => upd({ body: html })} minHeight={110} placeholder="Section content — tables, pictures, lists…" />}
                       {!locked && <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" value={s.notes || ""} onChange={(e) => upd({ notes: e.target.value })} />}
+                      {/* CR-B-18 — per-section file upload (resume/excel/pdf/picture). */}
+                      {!locked && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(s.attachments || []).map((a) => (
+                            <span key={a._id || a.filePath} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
+                              <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
+                              <button onClick={() => removeFile(a._id)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                            </span>
+                          ))}
+                          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title={editor?.aid ? "Attach a file to this section" : "Save the agreement first"}>
+                            <Upload size={11} /> Upload
+                            <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); e.target.value = ""; }} />
+                          </label>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

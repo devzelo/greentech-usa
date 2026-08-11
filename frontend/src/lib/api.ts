@@ -1885,7 +1885,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1930,7 +1930,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
 }
@@ -1971,6 +1971,14 @@ export async function freezeAgreementPdf(ctx: AgreementCtx, aid: string, file: F
 export async function uploadAgreementDocument(ctx: AgreementCtx, aid: string, file: File): Promise<ApiAgreement> {
   const fd = new FormData(); fd.append("file", file);
   return agrMultipart(`${agrBase(ctx)}/${aid}/document`, fd);
+}
+// CR-B-18 — attach / remove a pre-made file on a specific agreement section.
+export async function uploadAgreementSectionFile(ctx: AgreementCtx, aid: string, idx: number, file: File): Promise<ApiAgreement> {
+  const fd = new FormData(); fd.append("file", file);
+  return agrMultipart(`${agrBase(ctx)}/${aid}/sections/${idx}/files`, fd);
+}
+export async function deleteAgreementSectionFile(ctx: AgreementCtx, aid: string, idx: number, fid: string): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}/sections/${idx}/files/${fid}`, { method: "DELETE" });
 }
 // Staff uploads the counter-signed copy received outside the platform (vendor flow).
 export async function uploadSignedAgreement(ctx: AgreementCtx, aid: string, file: File, signerName = ""): Promise<ApiAgreement> {
