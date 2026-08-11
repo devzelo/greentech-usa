@@ -224,6 +224,7 @@ const IDENTITY_FIELDS = new Set([
   // POs and agreements — owner-only, like the rest of the project identity.
   "jointVenture",
   "assignedEmployees", "tabAccess", "gallery", "showClientName",
+  "financialProposalLocked",  // CR-B-19b — restrict the Financial Proposal to the owner
 ]);
 
 // PUT /api/projects/:id â€” owner: full edit; assignee: tab-content only; else 403.

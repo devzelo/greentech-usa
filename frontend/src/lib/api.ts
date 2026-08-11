@@ -114,6 +114,7 @@ export interface ApiProject {
   ownerId?: string | null;
   image?: string;
   published: boolean;
+  financialProposalLocked?: boolean;
   progress: number;
   location: string;
   // Structured project site address; `location` is kept as a short "City, Country" mirror.

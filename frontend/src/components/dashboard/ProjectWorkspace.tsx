@@ -8,7 +8,7 @@ import {
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, ShoppingCart, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
-  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock,
+  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock,
 } from "lucide-react";
 import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
 fetchSubAgreements, createSubAgreement, deleteSubAgreement, uploadSubAgreementFile, deleteSubAgreementFile, type ApiSubAgreement, type SubAgreementDocKind, fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
@@ -216,6 +216,7 @@ export default function ProjectWorkspace() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [financialLocked, setFinancialLocked] = useState(false); // CR-B-19b — Financial Proposal owner-only
   const [showReport, setShowReport] = useState(false);   // CR-P-01 — Quick Report popup preview
   const presentUsers = usePresence(id ? `project:${id}` : null);   // CR-B-16 — who else is in this project
 
@@ -491,6 +492,12 @@ export default function ProjectWorkspace() {
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
   const [proposalSub, setProposalSub] = useState<"overview" | "technical" | "financial">("overview");
+  // CR-B-19b — if the Financial Proposal is locked and the viewer isn't the owner, never leave them on it.
+  useEffect(() => {
+    const cu = getAuthUser();
+    const owner = !!(project && cu && (project as ApiProject & { ownerId?: string }).ownerId === cu.id);
+    if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
+  }, [financialLocked, project, proposalSub]);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "builder" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
@@ -1798,6 +1805,7 @@ export default function ProjectWorkspace() {
         refreshTemplates();
         setProject(proj);
         setIsPublished(proj.published);
+        setFinancialLocked(!!proj.financialProposalLocked);
         setSelectedNature(proj.projectNature?.selected ?? []);
         setCustomNatureTypes(proj.projectNature?.custom ?? []);
         setAssignedEmployees(proj.assignedEmployees ?? []);
@@ -2181,6 +2189,7 @@ export default function ProjectWorkspace() {
       const payload: Partial<ApiProject> = {};
       if (canEditIdentity) {
         payload.published = isPublished;
+        payload.financialProposalLocked = financialLocked;
         payload.projectNature = { selected: selectedNature, custom: customNatureTypes };
         payload.assignedEmployees = assignedEmployees;
         payload.tabAccess = tabAccess;
@@ -2918,17 +2927,34 @@ export default function ProjectWorkspace() {
                   { k: "overview" as const, label: "Overview" },
                   { k: "technical" as const, label: "Technical Proposal" },
                   { k: "financial" as const, label: "Financial Proposal" },
-                ]).map((t) => (
+                ]).map((t) => {
+                  // CR-B-19b — when locked, only the owner may open the Financial Proposal.
+                  const finBlocked = t.k === "financial" && financialLocked && !isOwner;
+                  return (
                   <button
                     key={t.k}
-                    onClick={() => setProposalSub(t.k)}
-                    className={`px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${
+                    onClick={() => { if (!finBlocked) setProposalSub(t.k); }}
+                    disabled={finBlocked}
+                    title={finBlocked ? "Financial Proposal is locked by the project owner." : ""}
+                    className={`px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap inline-flex items-center gap-1 ${
                       proposalSub === t.k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"
-                    }`}
+                    } ${finBlocked ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
+                    {t.k === "financial" && financialLocked && <Lock size={10} className="text-amber-500" />}
                     {t.label}
                   </button>
-                ))}
+                  );
+                })}
+                {/* Owner toggle: lock/unlock the Financial Proposal (CR-B-19b). */}
+                {isOwner && (
+                  <button
+                    onClick={() => setFinancialLocked((v) => !v)}
+                    title={financialLocked ? "Financial Proposal is locked — click to unlock (remember to Save)" : "Lock the Financial Proposal to the owner (remember to Save)"}
+                    className={`ml-auto shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${financialLocked ? "bg-amber-500 text-white" : "bg-white text-slate-500 border border-slate-200 hover:text-slate-900"}`}
+                  >
+                    {financialLocked ? <Lock size={11} /> : <Unlock size={11} />} {financialLocked ? "Financial Locked" : "Lock Financial"}
+                  </button>
+                )}
               </div>
 
               {/* OVERVIEW */}

@@ -27,6 +27,7 @@ export interface IProject extends Document {
   ownerId: mongoose.Types.ObjectId | null;
   image: string;
   published: boolean;
+  financialProposalLocked: boolean;  // CR-B-19b — Financial Proposal is owner-only when true
   progress: number;
   fiscal: string;
   compliance: string;
@@ -152,6 +153,7 @@ const ProjectSchema = new Schema<IProject>(
     ownerId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     image: { type: String, default: "" },
     published: { type: Boolean, default: false },
+    financialProposalLocked: { type: Boolean, default: false },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     fiscal: { type: String, default: "" },
     compliance: { type: String, default: "" },
