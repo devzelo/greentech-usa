@@ -28,7 +28,7 @@ type Ctx = "user" | "project" | "general";
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
 const today = () => new Date().toISOString().slice(0, 10);
 // Custom named rich-text sections on an agreement (title + HTML body).
-const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string }> =>
+const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string }> =>
   Array.isArray(v)
     ? v.map((s) => {
         const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; hidden?: unknown; notes?: unknown };
@@ -39,6 +39,7 @@ const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; st
           locked: !!o?.locked,
           hidden: !!o?.hidden,
           notes: String(o?.notes ?? "").slice(0, 500),
+          assignedTo: String((o as { assignedTo?: unknown })?.assignedTo ?? "").slice(0, 120),
         };
       })
        .filter((s) => s.title || s.body).slice(0, 20)

@@ -189,6 +189,7 @@ export interface ProposalSectionMeta {
   status?: string;                        // CR-B-15 — per-section status (colour-coded)
   locked?: boolean;                       // CR-B-17 — locked sections aren't reordered/edited
   notes?: string;                         // CR-B-17 — internal notes (not printed)
+  assignedTo?: string;                    // CR-B-19a — colleague tagged to review this section
 }
 
 export interface TechnicalProposalContent {
@@ -1884,7 +1885,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1929,7 +1930,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
 }

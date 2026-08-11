@@ -8,7 +8,7 @@ const KIND_BADGE: Record<string, string> = {
 };
 
 export default function ProposalSectionManager({
-  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed,
+  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign,
 }: {
   layout: ProposalSectionMeta[];
   onLayoutChange: (next: ProposalSectionMeta[]) => void;
@@ -19,6 +19,8 @@ export default function ProposalSectionManager({
   canEdit: boolean;
   collapsed?: boolean;          // when true the reorder list is hidden (the header + Add stay visible)
   onToggleCollapsed?: () => void;
+  users?: Array<{ id: string; name: string }>;   // CR-B-19a — colleagues to tag on a section
+  onAssign?: (index: number, userId: string, name: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -90,6 +92,13 @@ export default function ProposalSectionManager({
             {canEdit && (
               <select value={m.status || ""} onChange={(e) => patch(i, { status: e.target.value })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                 {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+              </select>
+            )}
+            {/* CR-B-19a — tag a colleague to review this section. */}
+            {canEdit && users && users.length > 0 && (
+              <select value={m.assignedTo || ""} disabled={locked} onChange={(e) => { const u = users.find((x) => x.id === e.target.value); patch(i, { assignedTo: u?.name || "" }); if (u && onAssign) onAssign(i, u.id, u.name); }} className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer disabled:opacity-60" title="Tag a colleague to review this section">
+                <option value="">{m.assignedTo ? `👤 ${m.assignedTo}` : "Tag…"}</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             )}
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 ${m.kind === "custom" ? "bg-indigo-50 text-indigo-500" : "bg-slate-100 text-slate-400"}`}>{KIND_BADGE[m.kind] || m.kind}</span>

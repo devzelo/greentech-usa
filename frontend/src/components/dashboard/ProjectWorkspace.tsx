@@ -45,6 +45,7 @@ import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSa
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
+import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
 import { fetchVendors, addVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
@@ -659,6 +660,14 @@ export default function ProjectWorkspace() {
 
   // ── Section engine (order / visibility / titles) ─────────────────────────────
   const setLayout = (next: ProposalSectionMeta[]) => setTech("layout", next);
+  // CR-B-19a — colleagues that can be tagged on a proposal section (notified via a reminder).
+  const [projUsers, setProjUsers] = useState<AdminUser[]>([]);
+  useEffect(() => { fetchUsers().then(setProjUsers).catch(() => {}); }, []);
+  const assignLayoutSection = (index: number, userId: string, name: string) => {
+    const secTitle = resolveProposalLayout(technical)[index]?.title || "Section";
+    createReminder({ userId, title: `Review proposal section "${secTitle}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: id ? `/dashboard/projects/${id}` : "/dashboard", projectId: id || undefined, projectName: project?.name || "Proposal" })
+      .then(() => toast(`${name} was notified.`, "success")).catch(() => {});
+  };
   // Reorder a section by index against the *resolved* layout (used by the on-box arrows).
   const moveProposalSection = (index: number, dir: -1 | 1) => {
     const cur = resolveProposalLayout(technical);
@@ -3167,6 +3176,8 @@ export default function ProjectWorkspace() {
                     canEdit={canEdit}
                     collapsed={!showSectionList}
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
+                    users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
+                    onAssign={assignLayoutSection}
                   />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}

@@ -4,8 +4,9 @@ import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchMe, attachmentUrl, companyFileUrl,
+  fetchUsers, createReminder,
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
-  type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile,
+  type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
@@ -59,7 +60,7 @@ type Draft = {
   party2: ApiAgreementParty;
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
-  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string }>;
+  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string }>;
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
 
@@ -70,6 +71,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<ApiAgreementTemplate[]>([]);
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]); // CR-B-19a — colleagues to tag on a section
+  useEffect(() => { fetchUsers().then(setUsers).catch(() => {}); }, []);
   const [ndaFiles, setNdaFiles] = useState<CompanyFile[]>([]);
   const [ndaPicker, setNdaPicker] = useState(false);
   const [editor, setEditor] = useState<{ aid: string | null } | null>(null); // null aid = creating
@@ -610,6 +613,16 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     {/* CR-B-15 — colour-coded per-section status. */}
                     <select value={s.status || ""} onChange={(e) => upd({ status: e.target.value as SectionStatus })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                       {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                    </select>
+                    {/* CR-B-19a — tag a colleague to review/verify this section (notifies them). */}
+                    <select value={s.assignedTo || ""} disabled={locked} onChange={(e) => {
+                      const u = users.find((x) => x.id === e.target.value);
+                      upd({ assignedTo: u?.name || "" });
+                      const pid = ctx.kind === "project" ? ctx.projectId : "";
+                      if (u) createReminder({ userId: u.id, title: `Review agreement section "${s.title || "Untitled"}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: pid ? `/dashboard/projects/${pid}` : "/dashboard", projectId: pid || undefined, projectName: draft?.name || "Agreement" }).then(() => toast(`${u.name} was notified.`, "success")).catch(() => {});
+                    }} className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer disabled:opacity-60" title="Tag a colleague to review this section">
+                      <option value="">{s.assignedTo ? `👤 ${s.assignedTo}` : "Tag colleague…"}</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                     {/* CR-B-17 — section actions. */}
                     <div className="flex items-center gap-0.5 shrink-0">
