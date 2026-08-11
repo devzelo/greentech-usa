@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw } from "lucide-react";
 import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
@@ -11,6 +11,7 @@ import {
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { useSectionPresence } from "../../../lib/usePresence";
+import PresenceBar from "../PresenceBar";
 import ShareMenu from "../ShareMenu";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
@@ -81,6 +82,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // CR-B-16 — live "who is in this section" while the agreement editor is open.
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const sectionPeers = useSectionPresence(editor ? `agreements:${ctx.kind === "project" ? ctx.projectId : ctx.kind}:${editor.aid || "new"}` : null, activeSection);
+  // CR-B-1 — notify when a new colleague joins this agreement editor.
+  const prevPeers = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const now = new Set(sectionPeers.map((u) => u.userId));
+    for (const u of sectionPeers) if (!prevPeers.current.has(u.userId) && prevPeers.current.size > 0) toast(`${u.name} joined this agreement.`, "info");
+    prevPeers.current = now;
+  }, [sectionPeers]);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); // agreement id with an action running
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
@@ -477,9 +485,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8">
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
-              <div>
-                <p className="text-sm font-bold text-slate-900">{editor.aid ? "Manage agreement" : "New agreement"}</p>
-                <p className="text-[10px] text-slate-400">{ctx.kind === "user" ? "Employee agreement — details auto-fill from the user profile" : ctx.kind === "general" ? "General agreement — GreenTech’s details are filled in; add the other party below" : `${ctx.entityType} agreement — details auto-fill from the project record`}</p>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900">{editor.aid ? "Manage agreement" : "New agreement"}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{ctx.kind === "user" ? "Employee agreement — details auto-fill from the user profile" : ctx.kind === "general" ? "General agreement — GreenTech’s details are filled in; add the other party below" : `${ctx.entityType} agreement — details auto-fill from the project record`}</p>
+                </div>
+                {/* CR-B-1 — who else is in this agreement right now (names). */}
+                <PresenceBar users={sectionPeers} />
               </div>
               <button onClick={() => { setEditor(null); setDraft(null); }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>
