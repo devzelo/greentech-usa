@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, SeparatorHorizontal, FileX, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, FileX, ChevronDown, ChevronRight } from "lucide-react";
 import { PROPOSAL_STANDARD_SECTIONS, type ProposalSectionMeta } from "../../lib/api";
+import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
 
 const KIND_BADGE: Record<string, string> = {
   description: "Built-in", personnel: "Built-in", pastPerformance: "Built-in", timeline: "Built-in", custom: "Custom", blank: "Blank",
@@ -68,34 +69,51 @@ export default function ProposalSectionManager({
 
       {!collapsed && (
       <div className="space-y-1.5">
-        {layout.map((m, i) => (
-          <div key={m.id} className={`flex items-center gap-2 p-2 rounded-xl border transition-colors ${m.hidden ? "bg-slate-50/60 border-slate-100 opacity-60" : "bg-white border-slate-100"}`}>
+        {layout.map((m, i) => {
+          const locked = !!m.locked;
+          const st = SECTION_STATUS_OPTS.find((o) => o.v === (m.status || "")) || SECTION_STATUS_OPTS[0];
+          return (
+          <div key={m.id} className={`rounded-xl border transition-colors ${m.hidden ? "bg-slate-50/60 border-slate-100 opacity-60" : locked ? "bg-white border-amber-200" : "bg-white border-slate-100"}`}>
+          <div className="flex flex-wrap items-center gap-2 p-2">
             <GripVertical size={14} className="text-slate-300 flex-shrink-0" />
             <div className="flex flex-col">
-              <button disabled={!canEdit || i === 0} onClick={() => move(i, -1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={12} /></button>
-              <button disabled={!canEdit || i === layout.length - 1} onClick={() => move(i, 1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={12} /></button>
+              <button disabled={!canEdit || locked || i === 0} onClick={() => move(i, -1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={12} /></button>
+              <button disabled={!canEdit || locked || i === layout.length - 1} onClick={() => move(i, 1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={12} /></button>
             </div>
             <input
               value={m.title}
               onChange={(e) => patch(i, { title: e.target.value })}
-              disabled={!canEdit}
-              className="flex-grow bg-transparent text-xs font-bold text-slate-700 outline-none border-b border-transparent focus:border-primary/30 py-1"
+              disabled={!canEdit || locked}
+              className="flex-grow min-w-[8rem] bg-transparent text-xs font-bold text-slate-700 outline-none border-b border-transparent focus:border-primary/30 py-1"
             />
+            {/* CR-B-15 — colour-coded per-section status. */}
+            {canEdit && (
+              <select value={m.status || ""} onChange={(e) => patch(i, { status: e.target.value })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+                {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+              </select>
+            )}
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 ${m.kind === "custom" ? "bg-indigo-50 text-indigo-500" : "bg-slate-100 text-slate-400"}`}>{KIND_BADGE[m.kind] || m.kind}</span>
             {canEdit && (
               <div className="flex items-center gap-0.5 shrink-0">
+                {/* CR-B-17 — lock the section (blocks reorder/rename/edit). */}
+                <button onClick={() => patch(i, { locked: !locked })} title={locked ? "Unlock section" : "Lock section"} className={`p-1.5 rounded hover:bg-slate-100 ${locked ? "text-amber-600" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                 {m.kind !== "blank" && (
-                  <button onClick={() => patch(i, { divider: !m.divider })} title="Divider page before this section" className={`p-1.5 rounded hover:bg-slate-100 ${m.divider ? "text-primary" : "text-slate-300 hover:text-slate-600"}`}><SeparatorHorizontal size={13} /></button>
+                  <button onClick={() => patch(i, { divider: !m.divider })} disabled={locked} title="Divider page before this section" className={`p-1.5 rounded hover:bg-slate-100 disabled:opacity-30 ${m.divider ? "text-primary" : "text-slate-300 hover:text-slate-600"}`}><SeparatorHorizontal size={13} /></button>
                 )}
                 <button onClick={() => patch(i, { hidden: !m.hidden })} title={m.hidden ? "Show" : "Hide"} className="p-1.5 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100">{m.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                 {m.kind === "custom" && <button onClick={() => onDuplicate(m)} title="Duplicate" className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-slate-100"><Copy size={13} /></button>}
                 {m.kind === "custom" || m.kind === "blank"
-                  ? <button onClick={() => onRemove(m)} title="Delete" className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
-                  : <span className="p-1.5 text-slate-200" title="Built-in section (hide to exclude)"><Lock size={13} /></span>}
+                  ? <button onClick={() => onRemove(m)} disabled={locked} title="Delete" className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30"><Trash2 size={13} /></button>
+                  : null}
               </div>
             )}
           </div>
-        ))}
+          {canEdit && !m.hidden && (
+            <input value={m.notes || ""} onChange={(e) => patch(i, { notes: e.target.value })} disabled={locked} placeholder="+ Internal notes for this section (not printed)" className="w-full bg-transparent text-[11px] text-slate-500 outline-none border-t border-slate-50 px-3 py-1.5 disabled:opacity-60" />
+          )}
+          </div>
+          );
+        })}
       </div>
       )}
     </div>

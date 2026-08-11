@@ -186,6 +186,9 @@ export interface ProposalSectionMeta {
   letterhead?: ProposalSectionLetterhead; // per-section letterhead override
   divider?: boolean;                      // render a divider title page before this section
   pageBreakBefore?: boolean;              // force this section to start on a new page
+  status?: string;                        // CR-B-15 — per-section status (colour-coded)
+  locked?: boolean;                       // CR-B-17 — locked sections aren't reordered/edited
+  notes?: string;                         // CR-B-17 — internal notes (not printed)
 }
 
 export interface TechnicalProposalContent {
