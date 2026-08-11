@@ -13,6 +13,7 @@ import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionSta
 import { useSectionPresence } from "../../../lib/usePresence";
 import PresenceBar from "../PresenceBar";
 import BuilderActions from "../BuilderActions";
+import SaveStatus, { useSaveStatus } from "../SaveStatus";
 import ShareMenu from "../ShareMenu";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
@@ -247,6 +248,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save the agreement.", "error"); }
     finally { setSaving(false); }
   };
+
+  // CR-B-14b — silent autosave every 45s while the editor is open (existing, unsigned agreements
+  // only — a brand-new one is created on the first manual Save, then autosaves from there).
+  const agSave = useSaveStatus();
+  const autoSaveRef = useRef<() => void>(() => {});
+  autoSaveRef.current = () => {
+    if (!draft || !editor?.aid || saving) return;
+    const cur = list.find((a) => a._id === editor.aid);
+    if (cur?.status === "Signed") return; // locked once signed
+    void agSave.track(updateAgreement(ctx, editor.aid, draftBody((cur?.status || "Draft") === "Draft"))).then((ag) => patch(ag)).catch(() => {});
+  };
+  useEffect(() => {
+    if (!editor?.aid) return;
+    const t = setInterval(() => autoSaveRef.current(), 45000);
+    return () => clearInterval(t);
+  }, [editor?.aid]);
 
   const send = async (ag: ApiAgreement) => {
     if (!(await confirm({ title: "Send agreement?", message: `This locks the party details and marks "${ag.name || ag.agreementType}" as Sent. The recipient will be notified if they have a login.`, confirmLabel: "Send", danger: false }))) return;
@@ -493,6 +510,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 </div>
                 {/* CR-B-1 — who else is in this agreement right now (names). */}
                 <PresenceBar users={sectionPeers} />
+                {/* CR-B-14b — autosave status (existing agreements). */}
+                <SaveStatus {...agSave} className="ml-1" />
               </div>
               <button onClick={() => { setEditor(null); setDraft(null); }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>

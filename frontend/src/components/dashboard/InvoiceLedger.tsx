@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye, Download } from "lucide-react";
 import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
@@ -10,6 +10,7 @@ import {
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
+import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { toast } from "../../lib/toast";
@@ -120,23 +121,40 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     });
   };
   const setB = (p: Partial<BuilderDraft>) => setBDraft((d) => (d ? { ...d, ...p } : d));
+  // Build the update payload from the current builder draft (shared by manual save + autosave).
+  const invoiceBody = (d: BuilderDraft): InvoiceInput => {
+    const body: InvoiceInput = {
+      receiverKind: d.receiverKind, party: d.party.trim(), companyId: d.companyId,
+      date: d.date, description: d.description,
+      lineItems: d.mode === "build" ? d.lineItems : [],
+      bank: d.bank, terms: d.terms, sections: d.sections, rfqId: d.rfqId,
+      signerName: d.signerName, signerTitle: d.signerTitle, signatureUrl: d.signatureUrl,
+      contractTotal: d.contractTotal,
+    };
+    if (d.mode === "build") body.amount = String(lineTotal(d.lineItems));
+    return body;
+  };
   const saveBuilder = async (status?: string) => {
     if (!builderId || !bDraft) return;
     setSaving(true);
-    const body: InvoiceInput = {
-      receiverKind: bDraft.receiverKind, party: bDraft.party.trim(), companyId: bDraft.companyId,
-      date: bDraft.date, description: bDraft.description,
-      lineItems: bDraft.mode === "build" ? bDraft.lineItems : [],
-      bank: bDraft.bank, terms: bDraft.terms, sections: bDraft.sections, rfqId: bDraft.rfqId,
-      signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl,
-      contractTotal: bDraft.contractTotal,
-    };
-    if (bDraft.mode === "build") body.amount = String(lineTotal(bDraft.lineItems));
+    const body = invoiceBody(bDraft);
     if (status) body.status = status;   // CR-I-01 — Save as Draft / Send set the status
     try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast(status === "Sent" ? "Invoice sent." : "Invoice saved.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
     finally { setSaving(false); }
   };
+  // CR-B-14b — silent autosave of the invoice builder every 45s while it's open, with a status badge.
+  const invSave = useSaveStatus();
+  const autoSaveInvRef = useRef<() => void>(() => {});
+  autoSaveInvRef.current = () => {
+    if (!builderId || !bDraft || saving) return;
+    void invSave.track(updateInvoice(projectId, builderId, invoiceBody(bDraft))).then((srv) => patch(srv)).catch(() => {});
+  };
+  useEffect(() => {
+    if (!builderId) return;
+    const t = setInterval(() => autoSaveInvRef.current(), 45000);
+    return () => clearInterval(t);
+  }, [builderId]);
   const duplicateInvoice = async (inv: ApiInvoice) => {
     try {
       const row = await addInvoice(projectId, {
@@ -441,7 +459,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
           <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-6">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
-                <h3 className="text-base font-bold text-slate-900">{isSent ? "Invoice" : "Bill"} #{cur?.number} — builder</h3>
+                <div className="flex items-center gap-3 min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 truncate">{isSent ? "Invoice" : "Bill"} #{cur?.number} — builder</h3>
+                  {/* CR-B-14b — autosave status. */}
+                  <SaveStatus {...invSave} />
+                </div>
                 <button onClick={() => { setBuilderId(null); setBDraft(null); }} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
               </div>
               <div className="p-6 space-y-4">

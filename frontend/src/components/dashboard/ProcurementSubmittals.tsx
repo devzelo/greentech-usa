@@ -14,6 +14,7 @@ import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
 import PresenceBar from "./PresenceBar";
 import BuilderActions from "./BuilderActions";
+import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -71,6 +72,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   // Folder-drill inside the project-documents picker: tab → section group.
   const [pickerNav, setPickerNav] = useState<{ tabId?: string; group?: string }>({});
   const { confirm, dialogs } = useDialogs();
+  const subSave = useSaveStatus(); // CR-B-14b — status for the submittal's save-on-change editing
   // Partners & subcontractors don't get the "Choose from project documents" option — employees only.
   const isGuest = getAuthUser()?.role === "subcontractor";
 
@@ -199,11 +201,11 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   };
   const setDispo = (sid: string, rid: string, disposition: SubmittalDisposition) => {
     setSubs((p) => p.map((s) => s._id === sid ? { ...s, revisions: s.revisions.map((r) => r._id === rid ? { ...r, disposition } : r) } : s));
-    updateSubmittalRevision(projectId, sid, rid, { disposition }).catch(() => {});
+    subSave.track(updateSubmittalRevision(projectId, sid, rid, { disposition })).catch(() => {});
   };
   const saveRevField = (sid: string, rid: string, field: "notes" | "sentToClientAt" | "respondedAt" | "optionLabel" | "clientName" | "submittedBy" | "receivedBy", value: string) => {
     setSubs((p) => p.map((s) => s._id === sid ? { ...s, revisions: s.revisions.map((r) => r._id === rid ? { ...r, [field]: value } : r) } : s));
-    updateSubmittalRevision(projectId, sid, rid, { [field]: value }).catch(() => {});
+    subSave.track(updateSubmittalRevision(projectId, sid, rid, { [field]: value })).catch(() => {});
   };
   // Committing a "sent to client" date saves the Combined PDF into the project documents
   // (Procurement → Submittals) — same as RFQ/PO documents. Runs on COMMIT (blur), not on every
@@ -588,7 +590,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">Submittals</h3><PresenceBar users={present} /></div>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">Submittals</h3><PresenceBar users={present} /><SaveStatus {...subSave} /></div>
           <p className="text-xs font-medium text-slate-400 mt-1">One package per product. Each revision is kept (locked once superseded). Internal — the client never sees this table.</p>
         </div>
         <div className="flex items-center gap-2">
