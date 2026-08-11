@@ -170,7 +170,7 @@ export interface ApiProject {
 export interface ProposalEmployee { id: string; name: string; role: string; resumeName?: string; empId?: string; userId?: string }
 export interface ProposalSimilarProject { id: string; name: string; client: string; value: string; year: string; summary: string }
 export interface ProposalTimelinePhase { phase: string; start: string; end: string }
-export interface ProposalSection { id: string; heading: string; body: string } // body is HTML
+export interface ProposalSection { id: string; heading: string; body: string; attachments?: Array<{ name: string; url: string }> } // body is HTML; CR-B-18 per-section files
 
 // Section engine: an ordered list controlling which blocks appear, their order,
 // visibility, heading, and (reserved) per-section letterhead.

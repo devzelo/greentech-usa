@@ -660,6 +660,18 @@ export default function ProjectWorkspace() {
 
   const updateSectionRow = (sid: string, field: "heading" | "body", value: string) =>
     setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, [field]: value } : s)));
+  // CR-B-18 — attach / remove pre-made files (resume/excel/pdf/picture) on a proposal section.
+  const setSectionAttachments = (sid: string, atts: Array<{ name: string; url: string }>) =>
+    setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, attachments: atts } : s)));
+  const uploadSectionDoc = async (sid: string, file: File) => {
+    if (!id) return;
+    try {
+      const { url } = await uploadProposalAsset(id, file);
+      const s = technical.sections.find((x) => x.id === sid);
+      setSectionAttachments(sid, [...(s?.attachments || []), { name: file.name, url }]);
+      toast("File attached — remember to Save Workspace.", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
+  };
 
   // ── Section engine (order / visibility / titles) ─────────────────────────────
   const setLayout = (next: ProposalSectionMeta[]) => setTech("layout", next);
@@ -3175,6 +3187,21 @@ export default function ProjectWorkspace() {
                   return (
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
                       <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
+                      {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
+                      {canEdit && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {(s.attachments || []).map((a, ai) => (
+                            <span key={ai} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
+                              <a href={assetSrc(a.url)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
+                              <button onClick={() => setSectionAttachments(s.id, (s.attachments || []).filter((_, j) => j !== ai))} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                            </span>
+                          ))}
+                          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title="Attach a pre-made file to this section">
+                            <Upload size={11} /> Upload
+                            <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSectionDoc(s.id, f); e.target.value = ""; }} />
+                          </label>
+                        </div>
+                      )}
                     </div>
                   );
                 };
