@@ -190,6 +190,7 @@ export interface ProposalSectionMeta {
   locked?: boolean;                       // CR-B-17 — locked sections aren't reordered/edited
   notes?: string;                         // CR-B-17 — internal notes (not printed)
   assignedTo?: string;                    // CR-B-19a — colleague tagged to review this section
+  history?: Array<{ at: string; by: string; text: string }>; // CR-B-17 — per-section change log
 }
 
 export interface TechnicalProposalContent {
@@ -1885,7 +1886,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1930,7 +1931,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
 }

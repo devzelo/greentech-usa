@@ -3212,6 +3212,7 @@ export default function ProjectWorkspace() {
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
                     users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
                     onAssign={assignLayoutSection}
+                    userName={getAuthUser()?.name}
                   />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}

@@ -4,7 +4,7 @@ import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchMe, attachmentUrl, companyFileUrl,
-  fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile,
+  fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile, getAuthUser,
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
@@ -64,7 +64,7 @@ type Draft = {
   party2: ApiAgreementParty;
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
-  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> }>;
+  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
 
@@ -81,6 +81,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [ndaPicker, setNdaPicker] = useState(false);
   const [editor, setEditor] = useState<{ aid: string | null } | null>(null); // null aid = creating
   const [draft, setDraft] = useState<Draft | null>(null);
+  // CR-B-17 — which section's change-history panel is open.
+  const [secHistFor, setSecHistFor] = useState<number | null>(null);
   // CR-B-16 — live "who is in this section" while the agreement editor is open.
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const sectionPeers = useSectionPresence(editor ? `agreements:${ctx.kind === "project" ? ctx.projectId : ctx.kind}:${editor.aid || "new"}` : null, activeSection);
@@ -664,8 +666,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{peers.map((u) => u.name).join(", ")}
                       </span>
                     )}
-                    {/* CR-B-15 — colour-coded per-section status. */}
-                    <select value={s.status || ""} onChange={(e) => upd({ status: e.target.value as SectionStatus })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+                    {/* CR-B-15 — colour-coded per-section status (logs a history entry, CR-B-17). */}
+                    <select value={s.status || ""} onChange={(e) => { const v = e.target.value as SectionStatus; const label = SECTION_STATUS_OPTS.find((o) => o.v === v)?.label || "No status"; upd({ status: v, history: [...(s.history || []), { at: new Date().toISOString(), by: getAuthUser()?.name || "Someone", text: `Status → ${label}` }] }); }} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                       {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
                     </select>
                     {/* CR-B-19a — tag a colleague to review/verify this section (notifies them). */}
@@ -680,6 +682,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     </select>
                     {/* CR-B-17 — section actions. */}
                     <div className="flex items-center gap-0.5 shrink-0">
+                      {(s.history?.length || 0) > 0 && <button onClick={() => setSecHistFor(secHistFor === i ? null : i)} title="View history" className="p-1 rounded text-slate-300 hover:text-slate-600"><History size={13} /></button>}
                       <button onClick={() => upd({ locked: !locked })} title={locked ? "Unlock section" : "Lock section"} className={`p-1 rounded ${locked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                       <button onClick={() => move(-1)} disabled={i === 0} title="Move up" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronUp size={13} /></button>
                       <button onClick={() => move(1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
@@ -688,6 +691,15 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                       <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
                     </div>
                   </div>
+                  {/* CR-B-17 — per-section change history. */}
+                  {secHistFor === i && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 space-y-1">
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><History size={10} /> Section history</p>
+                      {(s.history || []).slice().reverse().map((h, k) => (
+                        <p key={k} className="text-[11px] text-slate-500"><span className="text-slate-400">{h.at ? new Date(h.at).toLocaleString() : ""}</span> · <strong className="text-slate-600">{h.by}</strong> — {h.text}</p>
+                      ))}
+                    </div>
+                  )}
                   {s.hidden ? (
                     <p className="text-[11px] text-slate-400 italic bg-slate-50 rounded-lg px-2 py-1.5">Section hidden — use the eye icon to show it.</p>
                   ) : (

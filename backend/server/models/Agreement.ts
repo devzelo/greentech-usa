@@ -58,7 +58,7 @@ export interface IAgreement extends Document {
     ndaText: string;
     ndaFile: { name: string; url: string } | null;  // the attached NDA (from classified NDA Files)
   };
-  extraSections: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
+  extraSections: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string }>; history?: Array<{ at: string; by: string; text: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
 
   signatures: {
     company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
@@ -120,7 +120,7 @@ const AgreementSchema = new Schema<IAgreement>(
       ndaText: { type: String, default: "" },
       ndaFile: { type: { name: String, url: String }, default: null },
     },
-    extraSections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, hidden: { type: Boolean, default: false }, notes: { type: String, default: "" }, assignedTo: { type: String, default: "" }, attachments: { type: [FileSchema], default: [] } }], default: [] },
+    extraSections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, hidden: { type: Boolean, default: false }, notes: { type: String, default: "" }, assignedTo: { type: String, default: "" }, attachments: { type: [FileSchema], default: [] }, history: { type: [{ at: String, by: String, text: String }], default: [] } }], default: [] },
 
     signatures: {
       company: {

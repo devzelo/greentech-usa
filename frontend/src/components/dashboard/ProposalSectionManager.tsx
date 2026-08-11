@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, FileX, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, FileX, ChevronDown, ChevronRight, History } from "lucide-react";
 import { PROPOSAL_STANDARD_SECTIONS, type ProposalSectionMeta } from "../../lib/api";
 import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
 
@@ -8,7 +8,7 @@ const KIND_BADGE: Record<string, string> = {
 };
 
 export default function ProposalSectionManager({
-  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign,
+  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, userName,
 }: {
   layout: ProposalSectionMeta[];
   onLayoutChange: (next: ProposalSectionMeta[]) => void;
@@ -21,8 +21,10 @@ export default function ProposalSectionManager({
   onToggleCollapsed?: () => void;
   users?: Array<{ id: string; name: string }>;   // CR-B-19a — colleagues to tag on a section
   onAssign?: (index: number, userId: string, name: string) => void;
+  userName?: string;                              // CR-B-17 — actor recorded in section history
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [histOpen, setHistOpen] = useState<number | null>(null); // CR-B-17 — which section's history is shown
 
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
@@ -90,7 +92,7 @@ export default function ProposalSectionManager({
             />
             {/* CR-B-15 — colour-coded per-section status. */}
             {canEdit && (
-              <select value={m.status || ""} onChange={(e) => patch(i, { status: e.target.value })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
+              <select value={m.status || ""} onChange={(e) => { const label = SECTION_STATUS_OPTS.find((o) => o.v === e.target.value)?.label || "No status"; patch(i, { status: e.target.value, history: [...(m.history || []), { at: new Date().toISOString(), by: userName || "Someone", text: `Status → ${label}` }] }); }} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                 {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
             )}
@@ -104,6 +106,8 @@ export default function ProposalSectionManager({
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 ${m.kind === "custom" ? "bg-indigo-50 text-indigo-500" : "bg-slate-100 text-slate-400"}`}>{KIND_BADGE[m.kind] || m.kind}</span>
             {canEdit && (
               <div className="flex items-center gap-0.5 shrink-0">
+                {/* CR-B-17 — View History for this section. */}
+                {(m.history?.length || 0) > 0 && <button onClick={() => setHistOpen(histOpen === i ? null : i)} title="View history" className="p-1.5 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100"><History size={13} /></button>}
                 {/* CR-B-17 — lock the section (blocks reorder/rename/edit). */}
                 <button onClick={() => patch(i, { locked: !locked })} title={locked ? "Unlock section" : "Lock section"} className={`p-1.5 rounded hover:bg-slate-100 ${locked ? "text-amber-600" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                 {m.kind !== "blank" && (
@@ -119,6 +123,15 @@ export default function ProposalSectionManager({
           </div>
           {canEdit && !m.hidden && (
             <input value={m.notes || ""} onChange={(e) => patch(i, { notes: e.target.value })} disabled={locked} placeholder="+ Internal notes for this section (not printed)" className="w-full bg-transparent text-[11px] text-slate-500 outline-none border-t border-slate-50 px-3 py-1.5 disabled:opacity-60" />
+          )}
+          {/* CR-B-17 — per-section change history. */}
+          {histOpen === i && (
+            <div className="border-t border-slate-50 px-3 py-2 space-y-1 bg-slate-50/60">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><History size={10} /> Section history</p>
+              {(m.history || []).slice().reverse().map((h, k) => (
+                <p key={k} className="text-[11px] text-slate-500"><span className="text-slate-400">{h.at ? new Date(h.at).toLocaleString() : ""}</span> · <strong className="text-slate-600">{h.by}</strong> — {h.text}</p>
+              ))}
+            </div>
           )}
           </div>
           );

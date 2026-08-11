@@ -28,7 +28,7 @@ type Ctx = "user" | "project" | "general";
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
 const today = () => new Date().toISOString().slice(0, 10);
 // Custom named rich-text sections on an agreement (title + HTML body).
-const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }> }> =>
+const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>; history: Array<{ at: string; by: string; text: string }> }> =>
   Array.isArray(v)
     ? v.map((s) => {
         const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; hidden?: unknown; notes?: unknown };
@@ -44,6 +44,12 @@ const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; st
           attachments: Array.isArray((o as { attachments?: unknown })?.attachments)
             ? ((o as { attachments: Array<Record<string, unknown>> }).attachments).slice(0, 50).map((a) => ({
                 name: String(a?.name ?? ""), filePath: String(a?.filePath ?? ""), fileType: String(a?.fileType ?? ""), size: String(a?.size ?? ""), kind: String(a?.kind ?? "other"),
+              }))
+            : [],
+          // CR-B-17 — carry the per-section change history (View History).
+          history: Array.isArray((o as { history?: unknown })?.history)
+            ? ((o as { history: Array<Record<string, unknown>> }).history).slice(-50).map((h) => ({
+                at: String(h?.at ?? ""), by: String(h?.by ?? "").slice(0, 80), text: String(h?.text ?? "").slice(0, 200),
               }))
             : [],
         };
