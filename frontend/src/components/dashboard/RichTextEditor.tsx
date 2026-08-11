@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Image as ImageIcon, Table as TableIcon, Loader2, Baseline, Highlighter,
@@ -352,8 +353,10 @@ export default function RichTextEditor({
     </div>
   );
 
-  return (
-    <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[95] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
+  const editorNode = (
+    // CR-B-02 — full screen covers the ENTIRE viewport (portaled to <body>, z above the side nav
+    // z-[110]) so it never sits behind the platform's side navigation or inside a modal's clip.
+    <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[130] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
       {!disabled && (
         <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-white px-2 py-1.5">
           {/* Block style */}
@@ -518,4 +521,6 @@ export default function RichTextEditor({
       />
     </div>
   );
+  // When full screen, render into <body> so no ancestor (modal, side nav) can clip or overlap it.
+  return fullscreen ? createPortal(editorNode, document.body) : editorNode;
 }
