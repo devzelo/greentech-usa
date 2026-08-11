@@ -10,6 +10,7 @@ import {
 } from "../../../lib/api";
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
+import { useSectionPresence } from "../../../lib/usePresence";
 import ShareMenu from "../ShareMenu";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
@@ -77,6 +78,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [ndaPicker, setNdaPicker] = useState(false);
   const [editor, setEditor] = useState<{ aid: string | null } | null>(null); // null aid = creating
   const [draft, setDraft] = useState<Draft | null>(null);
+  // CR-B-16 — live "who is in this section" while the agreement editor is open.
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const sectionPeers = useSectionPresence(editor ? `agreements:${ctx.kind === "project" ? ctx.projectId : ctx.kind}:${editor.aid || "new"}` : null, activeSection);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); // agreement id with an action running
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
@@ -615,12 +619,19 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   catch { /* ignore */ }
                 };
                 const st = SECTION_STATUS_OPTS.find((o) => o.v === (s.status || "")) || SECTION_STATUS_OPTS[0];
+                const peers = sectionPeers.filter((u) => u.section === String(i));
                 return (
-                <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
+                <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`} onFocusCapture={() => setActiveSection(String(i))}>
                   <div className="flex flex-wrap items-center gap-2">
                     {locked
                       ? <p className="text-xs font-bold text-slate-700 flex-grow min-w-[8rem]">{s.title || "Untitled section"}<Lock size={11} className="inline ml-1 text-amber-500" /></p>
                       : <input className={`${inp} font-bold flex-grow min-w-[8rem]`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => upd({ title: e.target.value })} />}
+                    {/* CR-B-16 — live: who else is in this section right now. */}
+                    {peers.length > 0 && (
+                      <span className="inline-flex items-center gap-1 shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5" title={`${peers.map((u) => u.name).join(", ")} editing this section`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{peers.map((u) => u.name).join(", ")}
+                      </span>
+                    )}
                     {/* CR-B-15 — colour-coded per-section status. */}
                     <select value={s.status || ""} onChange={(e) => upd({ status: e.target.value as SectionStatus })} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                       {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
