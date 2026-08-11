@@ -3356,7 +3356,7 @@ export default function ProjectWorkspace() {
 
               {/* Import-from-team picker */}
               {showEmployeePicker && (
-                <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEmployeePicker(false)}>
+                <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                   <div className="bg-white rounded-3xl p-6 w-full max-w-md max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-display font-bold text-slate-900">Add team members</h3>
@@ -3378,7 +3378,7 @@ export default function ProjectWorkspace() {
 
               {/* Import past-performance project picker */}
               {showSimilarPicker && (
-                <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSimilarPicker(false)}>
+                <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                   <div className="bg-white rounded-3xl p-6 w-full max-w-lg max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-display font-bold text-slate-900">Import a past project</h3>
@@ -5414,7 +5414,7 @@ export default function ProjectWorkspace() {
           </div>
         );
         return (
-          <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => !agrSaving && setAgreementModal(null)}>
+          <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-10" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <p className="text-sm font-bold text-slate-900">Create agreement</p>

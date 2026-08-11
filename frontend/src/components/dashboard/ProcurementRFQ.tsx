@@ -1039,7 +1039,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         const q = recvSearch.trim().toLowerCase();
         const list = companies.filter((c) => !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q));
         return (
-          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setReceiverFor(null)}>
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
                 <h3 className="text-base font-bold text-slate-900">Choose receivers{rfq.rfqNo ? ` — RFQ #${rfq.rfqNo}` : ""}</h3>

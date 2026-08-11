@@ -428,7 +428,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
       {/* NDA file picker — the reusable NDAs from Classified Documents → NDA Files. */}
       {ndaPicker && draft && (
-        <div className="fixed inset-0 z-[75] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setNdaPicker(false)}>
+        <div className="fixed inset-0 z-[75] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <p className="text-sm font-bold text-slate-900">Choose an NDA file</p>

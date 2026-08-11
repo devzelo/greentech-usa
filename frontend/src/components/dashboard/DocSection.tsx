@@ -204,7 +204,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
 
       {/* Description popup — explicit Save / Remove (client request, v2). */}
       {descEdit && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setDescEdit(null)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-3">
               <div className="min-w-0">

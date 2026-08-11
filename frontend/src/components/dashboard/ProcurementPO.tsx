@@ -695,7 +695,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
         const list = (partnerPicker.target === "signature" ? projectInfo?.partner?.signatures : projectInfo?.partner?.stamps) || [];
         const label = partnerPicker.target === "signature" ? "signature" : "stamp";
         return (
-          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPartnerPicker(null)}>
+          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">{partnerPicker.target === "signature" ? <PenLine size={16} className="text-primary" /> : <Stamp size={16} className="text-primary" />}<p className="text-sm font-bold text-slate-900">Choose {projectInfo?.partner?.name || "partner"}'s {label}</p></div>
@@ -726,7 +726,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
 
       {/* Stamp picker — company stamps from the classified Stamps tab */}
       {stampPickerFor && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setStampPickerFor(null)}>
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div className="flex items-center gap-2"><Stamp size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">Choose a company stamp</p></div>

@@ -752,7 +752,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
         const tabLabel = tabFolders.find((t) => t.id === pickerNav.tabId)?.label;
         const groupName = groupFolders.find((g) => g.key === pickerNav.group)?.label;
         return (
-          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setDocPicker(null)}>
+          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl my-10" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2"><FolderOpen size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">Add from project documents</p></div>

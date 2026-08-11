@@ -186,7 +186,7 @@ export default function Directory() {
 
       {/* Editor modal */}
       {editor && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => !saving && setEditor(null)}>
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
               <h3 className="text-base font-bold text-slate-900">{editor.id ? "Edit company" : "New company"}</h3>

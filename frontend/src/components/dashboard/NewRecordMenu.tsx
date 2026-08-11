@@ -120,7 +120,7 @@ export default function NewRecordMenu() {
 
       {/* "Which kind?" step — e.g. an agreement can be general, employee, sub, vendor or partner */}
       {chooser && chooser.scope === "choose" && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setChooser(null)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div>
@@ -150,7 +150,7 @@ export default function NewRecordMenu() {
 
       {/* Project picker for project-scoped records */}
       {picker && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPicker(null)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div><p className="text-sm font-bold text-slate-900">{picker.label}</p><p className="text-[10px] text-slate-400">Select the project this record belongs to.</p></div>

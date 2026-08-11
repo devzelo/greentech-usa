@@ -635,7 +635,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
       {/* New invoice — a form popup instead of a blank inline row */}
       {newOpen && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setNewOpen(false)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <p className="text-sm font-bold text-slate-900">{isSent ? "New invoice" : "Log invoice"}</p>
@@ -673,7 +673,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
       {/* Record a payment */}
       {payFor && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPayFor(null)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div>
@@ -711,7 +711,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
       {/* Pull a vendor invoice in from a purchase order */}
       {poPicker && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setPoPicker(false)}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div>
