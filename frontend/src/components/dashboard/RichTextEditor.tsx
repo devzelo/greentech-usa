@@ -87,6 +87,8 @@ export default function RichTextEditor({
   const [selImg, setSelImg] = useState<HTMLImageElement | null>(null);
   const [tableDims, setTableDims] = useState({ rows: 3, cols: 3 });
   const [fullscreen, setFullscreen] = useState(false); // CR-B-02 — bigger editing area
+  // Active formatting under the caret — drives the toolbar's "what's selected" highlighting.
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, strike: false, ul: false, ol: false, block: "P", font: "" });
   const [localDraft, setLocalDraft] = useState<string | null>(null); // CR-B-14b — recovered offline draft
 
   // Sync external value in only when it differs, so typing doesn't reset the caret.
@@ -126,11 +128,39 @@ export default function RichTextEditor({
   const focusEditor = () => { ref.current?.focus(); restoreSelection(); };
 
   // execCommand without CSS styling (structural: bold/italic/lists/blocks).
+  // Read the formatting under the caret so the toolbar can show what's active (bold/italic/…,
+  // current paragraph style, current font). Only runs when the caret is inside THIS editor.
+  const refreshFmt = () => {
+    const el = ref.current;
+    const sel = window.getSelection();
+    if (!el || !sel || !sel.anchorNode || !el.contains(sel.anchorNode)) return;
+    try {
+      let block = String(document.queryCommandValue("formatBlock") || "").toUpperCase();
+      if (!block || block === "DIV") block = "P";
+      const font = String(document.queryCommandValue("fontName") || "").replace(/['"]/g, "").toLowerCase();
+      setFmt({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        strike: document.queryCommandState("strikeThrough"),
+        ul: document.queryCommandState("insertUnorderedList"),
+        ol: document.queryCommandState("insertOrderedList"),
+        block, font,
+      });
+    } catch { /* queryCommand* can throw in odd selection states */ }
+  };
+  useEffect(() => {
+    document.addEventListener("selectionchange", refreshFmt);
+    return () => document.removeEventListener("selectionchange", refreshFmt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const exec = (command: string, arg?: string) => {
     if (disabled) return;
     focusEditor();
     document.execCommand(command, false, arg);
     emit();
+    refreshFmt();
   };
   // execCommand with CSS styling (color/highlight/font-family → inline style spans).
   const execCss = (command: string, arg?: string) => {
@@ -140,6 +170,7 @@ export default function RichTextEditor({
     document.execCommand(command, false, arg);
     try { document.execCommand("styleWithCSS", false, "false"); } catch { /* noop */ }
     emit();
+    refreshFmt();
   };
   const insertHtml = (html: string) => {
     if (disabled) return;
@@ -359,22 +390,25 @@ export default function RichTextEditor({
     <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[130] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
       {!disabled && (
         <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-white px-2 py-1.5">
-          {/* Block style */}
-          {popover("style", <span>Style</span>,
+          {/* Block style — trigger shows the caret's current style. */}
+          {popover("style", <span className="min-w-[52px] text-left">{BLOCKS.find((b) => b.tag === fmt.block)?.label || "Normal"}</span>,
             <div className="flex flex-col">
               {BLOCKS.map((b) => (
                 <button key={b.tag} type="button" onMouseDown={(e) => { e.preventDefault(); setBlock(b.tag); closeMenu(); }}
-                  className="text-left px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 text-slate-700">{b.label}</button>
+                  className={`text-left px-2 py-1.5 rounded-lg text-sm ${fmt.block === b.tag ? "bg-slate-900 text-white" : "hover:bg-slate-100 text-slate-700"}`}>{b.label}</button>
               ))}
             </div>, 170, "Paragraph style")}
 
-          {/* Font family */}
-          {popover("font", <Type size={14} />,
+          {/* Font family — trigger shows the caret's current font. */}
+          {popover("font", <span className="inline-flex items-center gap-1"><Type size={14} /><span className="max-w-[72px] truncate">{FONTS.find((f) => fmt.font && (f.label.toLowerCase() === fmt.font || fmt.font.includes(f.label.toLowerCase())))?.label || ""}</span></span>,
             <div className="flex flex-col max-h-64 overflow-y-auto">
-              {FONTS.map((f) => (
-                <button key={f.label} type="button" onMouseDown={(e) => { e.preventDefault(); setFont(f.stack); closeMenu(); }}
-                  style={{ fontFamily: f.stack }} className="text-left px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 text-slate-700">{f.label}</button>
-              ))}
+              {FONTS.map((f) => {
+                const on = !!fmt.font && (f.label.toLowerCase() === fmt.font || fmt.font.includes(f.label.toLowerCase()));
+                return (
+                  <button key={f.label} type="button" onMouseDown={(e) => { e.preventDefault(); setFont(f.stack); closeMenu(); }}
+                    style={{ fontFamily: f.stack }} className={`text-left px-2 py-1.5 rounded-lg text-sm ${on ? "bg-slate-900 text-white" : "hover:bg-slate-100 text-slate-700"}`}>{f.label}</button>
+                );
+              })}
             </div>, 190, "Font")}
 
           {/* Font size */}
@@ -389,10 +423,10 @@ export default function RichTextEditor({
 
           <span className="w-px h-5 bg-slate-200 mx-1" />
 
-          {btn("bold", "Bold", <Bold size={15} />, () => exec("bold"))}
-          {btn("italic", "Italic", <Italic size={15} />, () => exec("italic"))}
-          {btn("underline", "Underline", <Underline size={15} />, () => exec("underline"))}
-          {btn("strike", "Strikethrough", <Strikethrough size={15} />, () => exec("strikeThrough"))}
+          {btn("bold", "Bold", <Bold size={15} />, () => exec("bold"), fmt.bold)}
+          {btn("italic", "Italic", <Italic size={15} />, () => exec("italic"), fmt.italic)}
+          {btn("underline", "Underline", <Underline size={15} />, () => exec("underline"), fmt.underline)}
+          {btn("strike", "Strikethrough", <Strikethrough size={15} />, () => exec("strikeThrough"), fmt.strike)}
 
           {/* Text color */}
           {popover("color", <Baseline size={15} />,
@@ -416,8 +450,8 @@ export default function RichTextEditor({
 
           <span className="w-px h-5 bg-slate-200 mx-1" />
 
-          {btn("ul", "Bullet list", <List size={15} />, () => exec("insertUnorderedList"))}
-          {btn("ol", "Numbered list", <ListOrdered size={15} />, () => exec("insertOrderedList"))}
+          {btn("ul", "Bullet list", <List size={15} />, () => exec("insertUnorderedList"), fmt.ul)}
+          {btn("ol", "Numbered list", <ListOrdered size={15} />, () => exec("insertOrderedList"), fmt.ol)}
           {btn("footnote", "Insert footnote", <Superscript size={15} />, insertFootnote)}
 
           <span className="w-px h-5 bg-slate-200 mx-1" />
