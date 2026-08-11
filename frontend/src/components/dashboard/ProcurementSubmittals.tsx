@@ -13,6 +13,7 @@ import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
 import PresenceBar from "./PresenceBar";
+import BuilderActions from "./BuilderActions";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -650,9 +651,15 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
           <input className={inp} placeholder="Model / Part No." value={draft.modelNo} onChange={(e) => setDraft({ ...draft, modelNo: e.target.value })} />
           <input className={inp} placeholder="Spec Section" value={draft.specSection} onChange={(e) => setDraft({ ...draft, specSection: e.target.value })} />
           <div className="md:col-span-2 flex gap-2 justify-end">
-            <button onClick={() => { setCreating(false); setDraft(emptyDraft); }} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-            <button onClick={() => create(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:border-primary hover:text-primary">Save as Draft</button>
-            <button onClick={() => create(true)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Save</button>
+            {/* CR-B-14a — standard actions with confirmations. */}
+            <BuilderActions
+              confirm={confirm}
+              dirty
+              onReset={() => setDraft(emptyDraft)}
+              onCancel={() => { setCreating(false); setDraft(emptyDraft); }}
+              onSaveDraft={() => create(false)}
+              onSave={() => create(true)}
+            />
           </div>
         </div>
       )}
