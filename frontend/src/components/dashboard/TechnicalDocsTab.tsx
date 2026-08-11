@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   fetchTechnicalDocs, createTechnicalDoc, updateTechnicalDoc, reviseTechnicalDoc, deleteTechnicalDoc,
-  uploadTechnicalDocFile, updateTechnicalDocFile, deleteTechnicalDocFile, createTechDocFolder, deleteTechDocFolder,
+  uploadTechnicalDocFile, deleteTechnicalDocFile, createTechDocFolder, deleteTechDocFolder,
   uploadTechnicalDocClientFile, deleteTechnicalDocClientFile, exportTechnicalDocsZip, techDocFileUrl,
   SUBMITTAL_STAGES, DRAWING_CATEGORIES,
   type ApiTechnicalDoc, type ApiTechDocFile, type TechDocStatus,
@@ -429,18 +429,19 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
 }
 
 // One editable file row (remarks / share / download / delete).
-function FileRow({ f, canEdit, projectName, onSaveRemark, onRemove }: { f: ApiTechDocFile; canEdit: boolean; projectName?: string; onSaveRemark: (fid: string, v: string) => void; onRemove: (f: ApiTechDocFile) => void }) {
+function FileRow({ f, canEdit, projectName, onRemove }: { f: ApiTechDocFile; canEdit: boolean; projectName?: string; onRemove: (f: ApiTechDocFile) => void }) {
   return (
     <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
       <FileText size={15} className="text-slate-400 shrink-0" />
       <div className="min-w-0 flex-1">
+        {/* CR-P-07 — no per-file "Add remarks/description" line; any existing remark shows read-only. */}
         <p className="text-xs font-semibold text-slate-700 truncate">{f.name}</p>
-        {canEdit
-          ? <input defaultValue={f.remarks} placeholder="Add remarks…" onBlur={(e) => { if (e.target.value !== f.remarks) onSaveRemark(f._id, e.target.value); }} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px]" />
-          : f.remarks && <p className="text-[11px] text-slate-500">{f.remarks}</p>}
+        {f.remarks && <p className="text-[11px] text-slate-500 italic">{f.remarks}</p>}
       </div>
+      {/* CR-P-07 — a Preview button in front of each file. */}
+      <a href={techDocFileUrl(f)} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></a>
       <ShareMenu fileName={f.name} fileUrl={techDocFileUrl(f)} projectName={projectName} />
-      <a href={techDocFileUrl(f)} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
+      <a href={techDocFileUrl(f)} download={f.name} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
       {canEdit && <button onClick={() => onRemove(f)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>}
     </div>
   );
@@ -473,7 +474,6 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
     catch { /* ignore */ } finally { setUploading(false); setTarget(""); if (fileRef.current) fileRef.current.value = ""; }
   };
   const pickInto = (folder: string) => { setTarget(folder); setTimeout(() => fileRef.current?.click(), 0); };
-  const saveRemark = async (fid: string, value: string) => { try { onChange(await updateTechnicalDocFile(projectId, doc._id, fid, value)); } catch { /* ignore */ } };
   const remove = async (f: ApiTechDocFile) => {
     if (!(await confirm({ title: "Delete file?", message: `Permanently delete "${f.name}"?`, confirmLabel: "Delete", danger: true }))) return;
     try { onChange(await deleteTechnicalDocFile(projectId, doc._id, f._id)); } catch { /* ignore */ }
@@ -497,7 +497,13 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {label}
           <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-500">{files.length}</span>
         </button>
-        {files.length > 0 && <button onClick={() => onPreview(`${label} — ${titleFor}`, files)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview all"><Eye size={14} /></button>}
+        {files.length > 0 && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => onPreview(`${label} — ${titleFor}`, files)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview all"><Eye size={14} /></button>
+            {/* CR-P-09 — download every file in this category at once. */}
+            <button onClick={() => files.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download all in this category"><Download size={14} /></button>
+          </div>
+        )}
       </div>
       {open && (
         <div className="px-3 pb-3 space-y-2">
@@ -505,7 +511,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
           {canEdit && <input ref={fileRef} type="file" multiple onChange={(e) => upload(e.target.files)} className="hidden" />}
 
           {/* Root files */}
-          {rootFiles.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onSaveRemark={saveRemark} onRemove={remove} /></Fragment>)}
+          {rootFiles.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} /></Fragment>)}
 
           {/* Subfolders */}
           {folderNames.map((name) => {
@@ -527,7 +533,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                 </div>
                 {isOpen && (
                   <div className="px-2.5 pb-2.5 space-y-1.5">
-                    {ff.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onSaveRemark={saveRemark} onRemove={remove} /></Fragment>)}
+                    {ff.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} /></Fragment>)}
                     {ff.length === 0 && <p className="text-[11px] text-slate-300 text-center py-1">Empty folder.</p>}
                   </div>
                 )}
