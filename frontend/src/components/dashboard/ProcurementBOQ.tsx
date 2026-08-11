@@ -16,6 +16,8 @@ import { buildBoqPdf } from "../../lib/boqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
+import PresenceBar from "./PresenceBar";
+import { useBuilderPresence } from "../../lib/usePresence";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 
 const DEFAULT_SECTIONS = ["Electrical", "Civil", "Mechanical"];
@@ -81,6 +83,7 @@ const DISPO_CLS: Record<string, string> = {
 const DISPO_LABEL: Record<string, string> = { Pending: "Pending", Approved: "Approved", ApprovedAsNoted: "Appr. as Noted", ReviseResubmit: "Revise", Rejected: "Rejected" };
 
 export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoToSubmittals, onGoToRFQ }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToSubmittals?: (itemId?: string) => void; onGoToRFQ?: (rfqId?: string) => void; onGoToPO?: () => void }) {
+  const present = useBuilderPresence(projectId ? `boq:${projectId}` : null, "the BOQ"); // CR-B-01
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   // New items are entered as local DRAFTS first — filled in, then saved once with the ✓ button.
@@ -586,7 +589,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">Bill of Quantity (BOQ)</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-display font-bold text-slate-900">Bill of Quantity (BOQ)</h3>
+            {/* CR-B-01 — who else is in the BOQ right now. */}
+            <PresenceBar users={present} />
+          </div>
           <p className="text-xs font-medium text-slate-400 mt-1">{active.length} active item{active.length === 1 ? "" : "s"} across {sections.length} categor{sections.length === 1 ? "y" : "ies"}. Cancelled items are kept for claims.</p>
         </div>
         <div className="flex gap-2 flex-wrap">

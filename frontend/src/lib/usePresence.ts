@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { presenceBeat, presenceLeave, getAuthUser, type PresenceUser } from "./api";
+import { toast } from "./toast";
 
 /**
  * Lightweight live presence (client CR-B-16). Heartbeats every 12s and returns the OTHER users
@@ -20,6 +21,22 @@ export function usePresence(resource: string | null): PresenceUser[] {
     const id = setInterval(beat, 12_000);
     return () => { active = false; clearInterval(id); void presenceLeave(resource); };
   }, [resource]);
+  return users;
+}
+
+/**
+ * Builder presence + join-notification (client CR-B-01) in one line, for every builder.
+ * Returns the OTHER users in the same builder room and toasts "<name> joined <label>" when a
+ * new colleague appears. Pass null to disable (e.g. before the id is known).
+ */
+export function useBuilderPresence(resource: string | null, label = "this builder"): PresenceUser[] {
+  const users = usePresence(resource);
+  const prev = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const now = new Set(users.map((u) => u.userId));
+    for (const u of users) if (!prev.current.has(u.userId) && prev.current.size > 0) toast(`${u.name} joined ${label}.`, "info");
+    prev.current = now;
+  }, [users, label]);
   return users;
 }
 

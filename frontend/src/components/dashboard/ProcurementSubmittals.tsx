@@ -12,6 +12,8 @@ import { Folder } from "lucide-react";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
+import PresenceBar from "./PresenceBar";
+import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 
@@ -37,6 +39,7 @@ const DECIDED: SubmittalDisposition[] = ["Approved", "ApprovedAsNoted", "Rejecte
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
 export default function ProcurementSubmittals({ projectId, canEdit, projectName, clientName, highlightItemId, onHighlightDone }: { projectId: string; canEdit: boolean; projectName?: string; clientName?: string; highlightItemId?: string; onHighlightDone?: () => void }) {
+  const present = useBuilderPresence(projectId ? `submittals:${projectId}` : null, "Submittals"); // CR-B-01
   const [subs, setSubs] = useState<ApiSubmittal[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -584,7 +587,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">Submittals</h3>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">Submittals</h3><PresenceBar users={present} /></div>
           <p className="text-xs font-medium text-slate-400 mt-1">One package per product. Each revision is kept (locked once superseded). Internal — the client never sees this table.</p>
         </div>
         <div className="flex items-center gap-2">

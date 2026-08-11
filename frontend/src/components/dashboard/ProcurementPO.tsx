@@ -15,6 +15,8 @@ import { AddressPicker } from "./AddressPicker";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
+import PresenceBar from "./PresenceBar";
+import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
@@ -26,6 +28,7 @@ const STATUSES = ["Sent", "Confirmed", "InvoiceReceived", "Paid"] as const;
 const statusCls: Record<string, string> = { Sent: "bg-amber-50 text-amber-600", Confirmed: "bg-blue-50 text-blue-600", InvoiceReceived: "bg-indigo-50 text-indigo-600", Paid: "bg-emerald-50 text-emerald-600" };
 
 export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void }) {
+  const present = useBuilderPresence(projectId ? `po:${projectId}` : null, "Purchase Orders"); // CR-B-01
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
@@ -563,7 +566,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3><PresenceBar users={present} /></div>
           <p className="text-xs font-medium text-slate-400 mt-1">Create a PO from an accepted quote, link the vendor invoice, and it auto-posts to the project expenses.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -17,6 +17,8 @@ import { buildPoPackage } from "../../lib/poPdf";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
+import PresenceBar from "./PresenceBar";
+import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
@@ -42,6 +44,7 @@ function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
 }
 
 export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: () => void; openRfqId?: string; onOpenedRfq?: () => void }) {
+  const present = useBuilderPresence(projectId ? `rfq:${projectId}` : null, "RFQs"); // CR-B-01
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
   const [openDocs, setOpenDocs] = useState<Set<string>>(new Set()); // CR-PR-03 — expanded per-item doc panels
@@ -885,7 +888,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">RFQs &amp; Bid Leveling</h3>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">RFQs &amp; Bid Leveling</h3><PresenceBar users={present} /></div>
           <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>
         </div>
         {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`} title={showArchived ? "Show active RFQs" : "Show archived RFQs"}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}

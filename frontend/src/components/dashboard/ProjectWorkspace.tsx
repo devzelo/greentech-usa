@@ -27,7 +27,7 @@ import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import ProjectReportPDF from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
-import { usePresence } from "../../lib/usePresence";
+import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
@@ -220,6 +220,7 @@ export default function ProjectWorkspace() {
   const [financialLocked, setFinancialLocked] = useState(false); // CR-B-19b — Financial Proposal owner-only
   const [showReport, setShowReport] = useState(false);   // CR-P-01 — Quick Report popup preview
   const presentUsers = usePresence(id ? `project:${id}` : null);   // CR-B-16 — who else is in this project
+  const proposalPresent = useBuilderPresence(id ? `proposal:${id}` : null, "the Proposal builder"); // CR-B-01
 
   // Tabs
   const [activeTab, setActiveTab] = useState("nature");
@@ -2932,6 +2933,8 @@ export default function ProjectWorkspace() {
               {/* Sub-tab bar */}
               <div className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 flex items-center gap-1 overflow-x-auto no-scrollbar">
                 <span className={`${lbl} px-3 shrink-0`}>Proposal:</span>
+                {/* CR-B-01 — who else is in the Proposal builder right now. */}
+                <PresenceBar users={proposalPresent} />
                 {([
                   { k: "overview" as const, label: "Overview" },
                   { k: "technical" as const, label: "Technical Proposal" },
