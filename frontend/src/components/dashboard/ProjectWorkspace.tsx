@@ -3019,11 +3019,24 @@ export default function ProjectWorkspace() {
                   {([
                     { which: "technical" as const, title: "Technical Proposal", section: "proposals-technical" },
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
-                  ]).map((p) => (
+                  ]).map((p) => {
+                    // CR-B-19b — when the Financial Proposal is locked, non-owners get a placeholder
+                    // here too (no status, no Preview/Download, no attachments) — not just a disabled tab.
+                    const finBlocked = p.which === "financial" && financialLocked && !isOwner;
+                    if (finBlocked) return (
+                      <div key={p.which} className="space-y-4">
+                        <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center gap-3 min-h-[220px]">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center"><Lock size={20} className="text-amber-500" /></div>
+                          <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
+                          <p className="text-xs text-slate-400 max-w-[16rem]">This section is locked by the project owner. Contact <strong className="text-slate-600">{project.owner || "the owner"}</strong> for access.</p>
+                        </div>
+                      </div>
+                    );
+                    return (
                     <div key={p.which} className="space-y-4">
                       <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
+                          <h4 className="font-display font-bold text-slate-900 text-lg flex items-center gap-2">{p.title}{p.which === "financial" && financialLocked && <Lock size={13} className="text-amber-500" />}</h4>
                           <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${PROPOSAL_STATUS_COLOR[proposals[p.which].status] || "bg-slate-100 text-slate-500"}`}>
                             {proposals[p.which].status || "Draft"}
                           </span>
@@ -3045,7 +3058,8 @@ export default function ProjectWorkspace() {
                       </div>
                       <DocSection projectId={id} section={p.section} title={`${p.title} — Attachments`} canEdit={canEdit} canPublish={isOwner} />
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 </div>
               )}
