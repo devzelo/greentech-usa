@@ -129,6 +129,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   // the PATCH so we don't hit the API on every keystroke.
   const descTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const onDescChange = (rid: string, html: string) => {
+    saveStatus.markDirty(); // CR-B-20 — typed but not yet saved (debounced): warn on leave
     setRows((p) => p.map((x) => (x._id === rid ? { ...x, description: html } : x)));
     clearTimeout(descTimers.current[rid]);
     descTimers.current[rid] = setTimeout(() => { saveStatus.track(updateProjectRequest(projectId, rid, { description: html })).catch(() => {}); }, 700);

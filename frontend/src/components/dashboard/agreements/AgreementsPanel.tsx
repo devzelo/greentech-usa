@@ -22,6 +22,7 @@ import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import PdfPreviewModal from "../PdfPreviewModal";
 import RichTextEditor from "../RichTextEditor";
+import { useUnsavedGuard } from "../../../lib/useUnsavedGuard";
 
 // The one shared Agreements surface — mounted on the employee profile (user context) and on
 // partner / subcontractor / vendor records inside a project (project context). Staff create,
@@ -80,6 +81,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [ndaFiles, setNdaFiles] = useState<CompanyFile[]>([]);
   const [ndaPicker, setNdaPicker] = useState(false);
   const [editor, setEditor] = useState<{ aid: string | null } | null>(null); // null aid = creating
+  // CR-B-20 — while an agreement editor is open, warn before closing the window / leaving the site.
+  useUnsavedGuard(!!editor);
   const [draft, setDraft] = useState<Draft | null>(null);
   // CR-B-17 — which section's change-history panel is open.
   const [secHistFor, setSecHistFor] = useState<number | null>(null);

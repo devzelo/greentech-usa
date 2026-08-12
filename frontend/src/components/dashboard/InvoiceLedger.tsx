@@ -15,6 +15,7 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 // Invoice Sent / Invoice Received with real payments.
 //   · Every invoice tracks its total, what's been paid, and what's left.
@@ -77,6 +78,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // ── Invoice builder (CR-I-03/04/07) ─────────────────────────────────────────
   const [builderId, setBuilderId] = useState<string | null>(null);
   const [bDraft, setBDraft] = useState<BuilderDraft | null>(null);
+  // CR-B-20 — while the invoice builder is open, warn before closing the window / leaving the site.
+  useUnsavedGuard(!!builderId);
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
   const [rfqList, setRfqList] = useState<ApiRfq[]>([]);

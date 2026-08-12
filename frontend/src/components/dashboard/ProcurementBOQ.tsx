@@ -20,6 +20,7 @@ import PresenceBar from "./PresenceBar";
 import { useBuilderPresence } from "../../lib/usePresence";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import AssignColleague from "./AssignColleague";
+import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 const DEFAULT_SECTIONS = ["Electrical", "Civil", "Mechanical"];
 
@@ -317,6 +318,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   // clicks Save on that row — NEVER on blur — so everything can be verified first. Revert discards.
   const [dirtyRows, setDirtyRows] = useState<Record<string, Record<string, string>>>({});
   const [origRows, setOrigRows] = useState<Record<string, Record<string, string>>>({});
+  // CR-B-20 — held-back row edits are unsaved: warn before leaving the page while any exist.
+  useUnsavedGuard(Object.keys(dirtyRows).length > 0);
   const editCell = (iid: string, field: keyof ProcurementItemInput, value: string) => {
     const f = field as string;
     setOrigRows((o) => (o[iid] && f in o[iid] ? o : { ...o, [iid]: { ...o[iid], [f]: (items.find((x) => x._id === iid)?.[field as keyof ApiProcurementItem] as string) || "" } }));

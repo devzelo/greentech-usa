@@ -15,26 +15,32 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
 export function useSaveStatus() {
   const [state, setState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // CR-B-20 — `dirty` = the user has typed/changed something that isn't persisted yet (e.g. a
+  // field edited but not yet blurred/autosaved). Set it via markDirty() on edit; a completed save
+  // clears it. We warn on unload while dirty OR while a save is still in flight.
+  const [dirty, setDirty] = useState(false);
   const pending = useRef(0);
+  const markDirty = () => setDirty(true);
 
   const track = <T,>(p: Promise<T>): Promise<T> => {
     pending.current += 1;
     setState("saving");
     return p.then(
-      (r) => { pending.current -= 1; if (pending.current <= 0) { pending.current = 0; setState("saved"); setSavedAt(new Date()); } return r; },
+      (r) => { pending.current -= 1; if (pending.current <= 0) { pending.current = 0; setState("saved"); setSavedAt(new Date()); setDirty(false); } return r; },
       (e) => { pending.current = Math.max(0, pending.current - 1); setState("error"); throw e; },
     );
   };
 
-  // CR-B-20 — warn before leaving the page while a save is still in flight (unsaved work).
+  // CR-B-20 — warn before leaving the page (close window / reload / different site) while there
+  // are unsaved edits or a save is still in flight.
   useEffect(() => {
-    if (state !== "saving") return;
+    if (!dirty && state !== "saving") return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [state]);
+  }, [dirty, state]);
 
-  return { state, savedAt, track };
+  return { state, savedAt, dirty, markDirty, track };
 }
 
 export default function SaveStatus({ state, savedAt, className = "" }: { state: SaveState; savedAt: Date | null; className?: string }) {

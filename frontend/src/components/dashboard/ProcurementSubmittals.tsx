@@ -206,6 +206,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     subSave.track(updateSubmittalRevision(projectId, sid, rid, { disposition })).catch(() => {});
   };
   const saveRevField = (sid: string, rid: string, field: "notes" | "sentToClientAt" | "respondedAt" | "optionLabel" | "clientName" | "submittedBy" | "receivedBy" | "workflowStatus" | "assignedTo", value: string) => {
+    subSave.markDirty(); // CR-B-20 — unsaved edit until the PATCH resolves; warn on leave
     setSubs((p) => p.map((s) => s._id === sid ? { ...s, revisions: s.revisions.map((r) => r._id === rid ? { ...r, [field]: value } : r) } : s));
     subSave.track(updateSubmittalRevision(projectId, sid, rid, { [field]: value })).catch(() => {});
   };

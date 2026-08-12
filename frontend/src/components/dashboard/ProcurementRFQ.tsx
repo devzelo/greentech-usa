@@ -24,6 +24,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import { AddressPicker } from "./AddressPicker";
 import AssignColleague from "./AssignColleague";
+import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -289,13 +290,17 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
 
+  // CR-B-20 — a text field was typed but not yet saved (blur/commit persists it). Warn on leave.
+  const [dirty, setDirty] = useState(false);
+  useUnsavedGuard(dirty);
+
   // Edit an RFQ's shipping fields (D5).
-  const setRfqShip = (rid: string, field: "shipToLocation" | "deliveryMethod", value: string) => setRfqs((p) => p.map((r) => r._id === rid ? { ...r, [field]: value } : r));
-  const saveRfqShip = (rid: string, field: "shipToLocation" | "deliveryMethod", value: string) => { updateRfq(projectId, rid, { [field]: value }).catch(() => {}); };
+  const setRfqShip = (rid: string, field: "shipToLocation" | "deliveryMethod", value: string) => { setDirty(true); setRfqs((p) => p.map((r) => r._id === rid ? { ...r, [field]: value } : r)); };
+  const saveRfqShip = (rid: string, field: "shipToLocation" | "deliveryMethod", value: string) => { updateRfq(projectId, rid, { [field]: value }).then(() => setDirty(false)).catch(() => {}); };
 
   // RFQ-level notes (custom info printed after the item table on the PDF).
-  const setRfqNotes = (rid: string, value: string) => setRfqs((p) => p.map((r) => r._id === rid ? { ...r, notes: value } : r));
-  const saveRfqNotes = (rid: string, value: string) => { updateRfq(projectId, rid, { notes: value }).catch(() => {}); };
+  const setRfqNotes = (rid: string, value: string) => { setDirty(true); setRfqs((p) => p.map((r) => r._id === rid ? { ...r, notes: value } : r)); };
+  const saveRfqNotes = (rid: string, value: string) => { updateRfq(projectId, rid, { notes: value }).then(() => setDirty(false)).catch(() => {}); };
   // CR-B-19 — tag a colleague to edit/review/verify this RFQ.
   const assignRfq = (rid: string, name: string) => { setRfqs((p) => p.map((r) => r._id === rid ? { ...r, assignedTo: name } : r)); updateRfq(projectId, rid, { assignedTo: name }).catch(() => {}); };
 
