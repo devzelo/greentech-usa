@@ -43,6 +43,7 @@ import ReminderButton from "./ReminderButton";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
+import { useDialogs } from "../../lib/useDialogs";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
@@ -2209,7 +2210,9 @@ export default function ProjectWorkspace() {
   // CR-B-14b — autosave status indicator for the proposal/workspace builder.
   const wsSave = useSaveStatus();
   // Confirm wrapper for the shared BuilderActions bar (this component uses window.confirm).
-  const dlgConfirm = async (o: { title: string; message?: string }) => window.confirm(o.message ? `${o.title}\n\n${o.message}` : o.title);
+  // CR-B-21 — branded confirm modal (was window.confirm). Render {wsDialogs} once near the root.
+  const { confirm: brandedConfirm, dialogs: wsDialogs } = useDialogs();
+  const dlgConfirm = (o: { title: string; message?: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean }) => brandedConfirm({ ...o, message: o.message || "" });
   const handleSave = async (silent = false) => {
     if (!id || !project || !canEdit) return;
     setSaving(true);
@@ -2337,6 +2340,7 @@ export default function ProjectWorkspace() {
 
   return (
     <div className="space-y-6 pb-20">
+      {wsDialogs}
       {/* ── Header ── */}
       <div className="flex flex-col gap-5">
         <button

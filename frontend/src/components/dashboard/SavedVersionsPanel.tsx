@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Eye, Printer, Download, Trash2, Lock, CheckCircle2, Clock, History } from "lucide-react";
 import { attachmentUrl, type ApiSavedDocument } from "../../lib/api";
+import { useDialogs } from "../../lib/useDialogs";
 
 // One way to produce the current document (e.g. "PDF" or "Excel").
 export interface SaveFormat {
@@ -53,6 +54,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   const [title, setTitle] = useState("");
   const [isFinal, setIsFinal] = useState(false);
   const [busy, setBusy] = useState(false);
+  // CR-B-21 — branded confirm modal (replaces window.confirm for finalize / delete).
+  const { confirm: dlgConfirm, dialogs } = useDialogs();
 
   const notify = (m: string, t?: string) => { if (toast) toast(m, t); };
 
@@ -69,7 +72,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
 
   const handleSave = async (fmt: SaveFormat) => {
     // CR-B-21 — finalizing files the frozen copy into this directory; confirm & name the revision.
-    if (isFinal && !confirm(`Are you sure you're done with this? It will be saved as Final revision ${nextVersion} in this directory (Saved Versions) — a frozen copy you can preview, print, or download. It won't change when you keep editing.`)) return;
+    if (isFinal && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you sure you're done with this? It will be saved as Final revision ${nextVersion} in this directory (Saved Versions) — a frozen copy you can preview, print, or download. It won't change when you keep editing.`, confirmLabel: "Save as Final", cancelLabel: "Keep editing", danger: false }))) return;
     setBusy(true);
     try {
       const blob = await fmt.build();
@@ -86,7 +89,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   const toggleFinal = async (d: ApiSavedDocument) => {
     const next = d.status === "final" ? "draft" : "final";
     // CR-B-21 — confirm before finalizing (this is the revision filed / sent to the client).
-    if (next === "final" && !confirm(`Are you done with "${d.title}"? It will be saved as Final revision ${d.version} in this directory (the copy sent to the client).`)) return;
+    if (next === "final" && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you done with "${d.title}"? It will be saved as Final revision ${d.version} in this directory (the copy sent to the client).`, confirmLabel: "Mark as Final", cancelLabel: "Not yet", danger: false }))) return;
     try {
       const upd = await update(d._id, { status: next });
       setList((p) => p.map((x) => (x._id === d._id ? upd : x)));
@@ -94,13 +97,14 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   };
 
   const del = async (d: ApiSavedDocument) => {
-    if (!confirm(`Delete "${d.title}" (v${d.version})? This removes the stored file.`)) return;
+    if (!(await dlgConfirm({ title: "Delete this version?", message: `Delete "${d.title}" (v${d.version})? This removes the stored file.`, confirmLabel: "Delete", cancelLabel: "Cancel", danger: true }))) return;
     try { await remove(d._id); setList((p) => p.filter((x) => x._id !== d._id)); }
     catch (err) { notify(err instanceof Error ? err.message : "Failed", "error"); }
   };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 p-5">
+      {dialogs}
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2">
           <History size={16} className="text-primary" />
