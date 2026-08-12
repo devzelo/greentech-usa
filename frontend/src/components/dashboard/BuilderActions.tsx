@@ -19,6 +19,9 @@ export interface BuilderActionsProps {
   onDuplicate?: () => void;
   onPrint?: () => void;
   onMarkComplete?: () => void;
+  markCompleteTitle?: string;      // CR-B-21 — override the "Mark as complete?" dialog copy
+  markCompleteMessage?: string;    // e.g. "…It will be saved as revision 2 in this directory."
+  markCompleteLabel?: string;      // the button + confirm label (default "Mark complete")
   onDiscard?: () => void;          // revert unsaved edits back to the last saved state
   onReset?: () => void;            // clear the form to blank
   onCancel?: () => void;           // close; confirms when there are unsaved changes
@@ -46,7 +49,7 @@ export default function BuilderActions(p: BuilderActionsProps) {
   };
   const markComplete = async () => {
     if (!p.onMarkComplete) return;
-    if (await confirm({ title: "Mark as complete?", message: "Mark this document as complete/final?", confirmLabel: "Mark complete" })) p.onMarkComplete();
+    if (await confirm({ title: p.markCompleteTitle || "Mark as complete?", message: p.markCompleteMessage || "Mark this document as complete/final?", confirmLabel: p.markCompleteLabel || "Mark complete" })) p.onMarkComplete();
   };
 
   return (
@@ -62,7 +65,7 @@ export default function BuilderActions(p: BuilderActionsProps) {
       {p.onDiscard && <button type="button" onClick={discard} disabled={!p.dirty} className={ghost} title="Discard unsaved changes"><RotateCcw size={13} /> Discard</button>}
       {p.onCancel && <button type="button" onClick={cancel} className={`${base} border border-slate-200 text-slate-500 hover:bg-slate-50`} title="Cancel"><X size={13} /> Cancel</button>}
       {p.onClose && <button type="button" onClick={p.onClose} className={`${base} border border-slate-200 text-slate-500 hover:bg-slate-50`} title="Close"><X size={13} /> Close</button>}
-      {p.onMarkComplete && <button type="button" onClick={markComplete} className={`${base} border border-emerald-200 text-emerald-700 hover:bg-emerald-50`} title="Mark as complete"><CheckCircle2 size={13} /> Mark complete</button>}
+      {p.onMarkComplete && <button type="button" onClick={markComplete} className={`${base} border border-emerald-200 text-emerald-700 hover:bg-emerald-50`} title={p.markCompleteLabel || "Mark as complete"}><CheckCircle2 size={13} /> {p.markCompleteLabel || "Mark complete"}</button>}
       {p.onSaveDraft && <button type="button" onClick={p.onSaveDraft} disabled={p.saving} className={ghost} title="Save without marking complete"><FileEdit size={13} /> Save as Draft</button>}
       {p.onSave && <button type="button" onClick={p.onSave} disabled={p.saving} className={`${base} bg-slate-900 text-white hover:bg-primary`} title="Save the latest changes">{p.saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save</button>}
     </div>

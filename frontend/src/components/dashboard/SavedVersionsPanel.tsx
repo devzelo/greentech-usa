@@ -63,7 +63,13 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The revision number this save will become (versions are newest-first; server assigns the real
+  // number, this predicts it for the confirmation message).
+  const nextVersion = list.reduce((m, d) => Math.max(m, d.version || 0), 0) + 1;
+
   const handleSave = async (fmt: SaveFormat) => {
+    // CR-B-21 — finalizing files the frozen copy into this directory; confirm & name the revision.
+    if (isFinal && !confirm(`Are you sure you're done with this? It will be saved as Final revision ${nextVersion} in this directory (Saved Versions) — a frozen copy you can preview, print, or download. It won't change when you keep editing.`)) return;
     setBusy(true);
     try {
       const blob = await fmt.build();

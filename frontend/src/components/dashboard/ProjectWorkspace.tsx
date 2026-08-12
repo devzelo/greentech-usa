@@ -2961,7 +2961,10 @@ export default function ProjectWorkspace() {
                     onSave={() => handleSave()}
                     onDuplicate={() => saveRevision(false)}
                     onPrint={() => { if (dirty) void handleSave(true); setProposalPreview(which); }}
-                    onMarkComplete={async () => { if (!id) return; try { await createProposalRevision(id, { label: revLabel.trim() || "Final (submitted)", content: currentProposalSnapshot(), archived: true }); toast("Marked as final — version archived.", "success"); await loadRevisions(); } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); } }}
+                    markCompleteLabel="Mark as Final"
+                    markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
+                    markCompleteMessage={`Are you sure you're done with this? It will be saved as revision ${revisions.length + 1} — an archived, locked copy kept in this project's proposal history. You can keep editing afterwards; this frozen copy won't change.`}
+                    onMarkComplete={async () => { if (!id) return; try { await createProposalRevision(id, { label: revLabel.trim() || `Final — ${which === "financial" ? "Financial" : "Technical"} (rev ${revisions.length + 1})`, content: currentProposalSnapshot(), archived: true }); toast("Marked as final — version archived.", "success"); await loadRevisions(); } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); } }}
                     onDiscard={() => { applyProposalSnapshot((project?.proposalContent as Record<string, unknown>) || {}); setDirty(false); }}
                     onReset={() => { applyProposalSnapshot({}); }}
                   />
