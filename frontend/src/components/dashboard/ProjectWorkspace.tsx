@@ -543,6 +543,20 @@ export default function ProjectWorkspace() {
   const [revisions, setRevisions] = useState<ApiProposalRevision[]>([]);
   const [revLabel, setRevLabel] = useState("");
   const [revBusy, setRevBusy] = useState(false);
+  // CR-B-21 — the NEXT Saved-Versions revision number per document, so "Mark as Final" can name it
+  // in the confirmation. Both "Mark as Final" entry points file into the same SavedDocument stream.
+  const [nextFinalVer, setNextFinalVer] = useState<{ technical: number; financial: number }>({ technical: 1, financial: 1 });
+  const loadNextFinalVer = async () => {
+    if (!id) return;
+    try {
+      const [t, f] = await Promise.all([
+        fetchSavedDocuments(id, "proposal", "technical"),
+        fetchSavedDocuments(id, "proposal", "financial"),
+      ]);
+      setNextFinalVer({ technical: ((t[0]?.version) || 0) + 1, financial: ((f[0]?.version) || 0) + 1 });
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { void loadNextFinalVer(); /* eslint-disable-next-line */ }, [id]);
   const [expenseSearch, setExpenseSearch] = useState(""); // per-tab search within the Expense Log
   // Preview modal: which proposal's PDF to render full-screen.
   const [proposalPreview, setProposalPreview] = useState<"technical" | "financial" | null>(null);
@@ -2967,8 +2981,17 @@ export default function ProjectWorkspace() {
                     onPrint={() => { if (dirty) void handleSave(true); setProposalPreview(which); }}
                     markCompleteLabel="Mark as Final"
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
-                    markCompleteMessage={`Are you sure you're done with this? It will be saved as revision ${revisions.length + 1} — an archived, locked copy kept in this project's proposal history. You can keep editing afterwards; this frozen copy won't change.`}
-                    onMarkComplete={async () => { if (!id) return; try { await createProposalRevision(id, { label: revLabel.trim() || `Final — ${which === "financial" ? "Financial" : "Technical"} (rev ${revisions.length + 1})`, content: currentProposalSnapshot(), archived: true }); toast("Marked as final — version archived.", "success"); await loadRevisions(); } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); } }}
+                    markCompleteMessage={`Are you sure you're done with this? It will be saved as Final revision ${nextFinalVer[which]} in this document's Saved Versions — a frozen PDF you can preview, print, or download. You can keep editing afterwards; this copy won't change.`}
+                    onMarkComplete={async () => {
+                      if (!id) return;
+                      try {
+                        const blob = await buildProposalBlob(which, true);
+                        const safe = `${project.name || "project"}_${which === "financial" ? "Financial" : "Technical"}_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
+                        const doc = await saveDocumentVersion(id, { kind: "proposal", refId: which, title: revLabel.trim() || `Final — ${which === "financial" ? "Financial" : "Technical"}`, status: "final" }, blob, `${safe}.pdf`);
+                        toast(`Marked as Final — saved as v${doc.version} in Saved Versions.`, "success");
+                        await loadNextFinalVer();
+                      } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); }
+                    }}
                     onDiscard={() => { applyProposalSnapshot((project?.proposalContent as Record<string, unknown>) || {}); setDirty(false); }}
                     onReset={() => { applyProposalSnapshot({}); }}
                   />
