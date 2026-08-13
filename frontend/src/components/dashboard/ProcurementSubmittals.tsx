@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, ChevronUp, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
+import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Check, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
 import FileActions from "./FileActions";
 import {
   fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
@@ -56,8 +56,9 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
   const [building, setBuilding] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
-  const [openResp, setOpenResp] = useState<Set<string>>(new Set()); // CR-P-20 — revealed "Client Response" panels
+  const [openResp, setOpenResp] = useState<Set<string>>(new Set()); // CR-P-20 — the "Client Response" popup (which revision it's open for)
   const [respEdit, setRespEdit] = useState<Set<string>>(new Set()); // CR-P-20a — revisions whose filed response is unlocked for editing
+  const [commentOpen, setCommentOpen] = useState<Set<string>>(new Set()); // CR-P-20 — "Add client comments" box revealed
   const toggleRespEdit = (rid: string) => setRespEdit((s) => { const n = new Set(s); if (n.has(rid)) n.delete(rid); else n.add(rid); return n; });
   const [search, setSearch] = useState("");
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -454,17 +455,23 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
               return (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <button onClick={() => setOpenResp((s) => { const n = new Set(s); if (n.has(rev._id)) n.delete(rev._id); else n.add(rev._id); return n; })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold ${missingLetter ? "bg-red-50 text-red-600 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
-                    <MessageSquare size={12} /> Client Response ({respCount}) {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    <MessageSquare size={12} /> Client Response ({respCount})
                   </button>
+                  {/* CR-P-20 — Client Response opens in a POPUP (auto-filled, upload any file, add
+                      comments, save/close; read-only after save until Edit; count = filed letters). */}
                   {open && (() => {
-                    // CR-P-20a — once a signed client letter is filed, the response is READ-ONLY until
-                    // the user clicks Edit (so a saved record isn't changed by accident).
                     const readOnly = respCount > 0 && !respEdit.has(rev._id);
                     const roCls = readOnly ? "opacity-70 pointer-events-none" : "";
+                    const showComment = commentOpen.has(rev._id) || !!rev.notes;
                     return (
-                    <div className="mt-3 space-y-3">
-                      {/* CR-P-20a — auto-filled context (from the submittal record) so the user just
-                          confirms who/what before uploading the client's reply. */}
+                    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setOpenResp((s) => { const n = new Set(s); n.delete(rev._id); return n; })}>
+                      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><MessageSquare size={16} className="text-primary" /> Client Response — Submittal #{subNo[sub._id]}{rev.revisionNo > 0 ? ` - RV${rev.revisionNo}` : ""}</h3>
+                          <button onClick={() => setOpenResp((s) => { const n = new Set(s); n.delete(rev._id); return n; })} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                      {/* Auto-filled context from the submittal record. */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-[11px]">
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Submittal #</p><p className="font-bold text-slate-700">{subNo[sub._id]}{rev.revisionNo > 0 ? ` - RV${rev.revisionNo}` : ""}</p></div>
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Project</p><p className="font-bold text-slate-700 truncate">{projectName || "—"}</p></div>
@@ -473,7 +480,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Date submitted</p><p className="font-bold text-slate-700">{rev.sentToClientAt || "—"}</p></div>
                         <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Submitted by</p><p className="font-bold text-slate-700 truncate">{rev.submittedBy || rev.createdByName || "—"}</p></div>
                       </div>
-                      {/* CR-P-20a — the "Edit" affordance on a filed (read-only) response. */}
+                      {/* Edit affordance on a filed (read-only) response. */}
                       {respCount > 0 && (
                         <div className="flex justify-end">
                           <button onClick={() => toggleRespEdit(rev._id)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${readOnly ? "bg-slate-900 text-white hover:bg-primary" : "border border-slate-200 text-slate-500"}`}>
@@ -491,27 +498,33 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                           <label className="flex items-center gap-2 text-[11px] text-slate-500">Returned <input type="date" value={rev.respondedAt} onChange={(e) => saveRevField(sub._id, rev._id, "respondedAt", e.target.value)} className={inp} /></label>
                         </div>
                       </div>
-                      {/* CR-P-20a — who was involved (client name + who submitted / received it). */}
                       <div className={`grid grid-cols-1 md:grid-cols-3 gap-2 ${roCls}`}>
                         <label className="text-[11px] text-slate-500">Client name<input value={rev.clientName || ""} onChange={(e) => saveRevField(sub._id, rev._id, "clientName", e.target.value)} placeholder={clientName || "Client company / person"} className={`${inp} mt-1`} /></label>
                         <label className="text-[11px] text-slate-500">Submitted by (GT)<input value={rev.submittedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "submittedBy", e.target.value)} placeholder="Who submitted it" className={`${inp} mt-1`} /></label>
                         <label className="text-[11px] text-slate-500">Received by (client side)<input value={rev.receivedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "receivedBy", e.target.value)} placeholder="Who received / returned it" className={`${inp} mt-1`} /></label>
                       </div>
-                      {/* C7 — once the client has decided, their signed letter is mandatory */}
                       {missingLetter && (
                         <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
                           <AlertTriangle size={13} className="text-red-500 shrink-0" />
-                          <span className="text-[11px] font-bold text-red-600">Client letter is missing — upload the signed “{dispoMeta(rev.disposition).label}” letter under “Client response” below.</span>
+                          <span className="text-[11px] font-bold text-red-600">Client letter is missing — upload the signed “{dispoMeta(rev.disposition).label}” letter below.</span>
                         </div>
                       )}
-                      {/* Client comments + the client's signed reply, side by side. The signed-letter
-                          upload stays active even when read-only — that's how a new response is filed. */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Upload the client's reply (any file type) — each is shareable/downloadable. */}
+                      {renderClientResponse(sub, rev, false)}
+                      {/* CR-P-20 — comments are added on demand via "Add client comments". */}
+                      {showComment ? (
                         <div className={roCls}>
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client comments</label>
-                          <textarea rows={4} value={rev.notes} onChange={(e) => saveRevField(sub._id, rev._id, "notes", e.target.value)} placeholder="Client comments (e.g. the reason they gave for rejection)…" className={`${inp} resize-none mt-1 h-[calc(100%-1.25rem)]`} />
+                          <textarea rows={4} value={rev.notes} onChange={(e) => saveRevField(sub._id, rev._id, "notes", e.target.value)} placeholder="Write or paste the client's comments…" className={`${inp} resize-y mt-1`} />
                         </div>
-                        {renderClientResponse(sub, rev, false)}
+                      ) : (
+                        <button onClick={() => setCommentOpen((s) => new Set(s).add(rev._id))} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 text-[11px] font-bold hover:border-primary hover:text-primary"><Plus size={12} /> Add client comments</button>
+                      )}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-3xl">
+                          <button onClick={() => setOpenResp((s) => { const n = new Set(s); n.delete(rev._id); return n; })} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold hover:bg-slate-100">Cancel</button>
+                          <button onClick={() => { setRespEdit((s) => { const n = new Set(s); n.delete(rev._id); return n; }); setOpenResp((s) => { const n = new Set(s); n.delete(rev._id); return n; }); toast("Client response saved.", "success"); }} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary inline-flex items-center gap-1.5"><Check size={13} /> Save &amp; close</button>
+                        </div>
                       </div>
                     </div>
                     );
