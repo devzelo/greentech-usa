@@ -276,7 +276,11 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
 // ── Preview modal: a table of documents; click a row to preview it in-platform (PDF/Excel/images)
 //    or download it (DWG/other). Every file has a share button. ────────────────────────────────
 function PreviewModal({ title, files, projectName, onClose }: { title: string; files: ApiTechDocFile[]; projectName?: string; onClose: () => void }) {
-  const [view, setView] = useState<ApiTechDocFile | null>(null);
+  // Single file (a per-file Preview click) → open the in-platform viewer straight away; when it
+  // closes, dismiss the whole thing so the user never sees a one-row table.
+  const single = files.length === 1;
+  const [view, setView] = useState<ApiTechDocFile | null>(single ? files[0] : null);
+  if (single) return view ? <DocumentViewer doc={toViewable(view)} onClose={onClose} /> : null;
   return (
     <>
       <Modal title={title} onClose={onClose} wide>
@@ -429,17 +433,17 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
 }
 
 // One editable file row (remarks / share / download / delete).
-function FileRow({ f, canEdit, projectName, onRemove }: { f: ApiTechDocFile; canEdit: boolean; projectName?: string; onRemove: (f: ApiTechDocFile) => void }) {
+function FileRow({ f, canEdit, projectName, onRemove, onPreview }: { f: ApiTechDocFile; canEdit: boolean; projectName?: string; onRemove: (f: ApiTechDocFile) => void; onPreview: (title: string, files: ApiTechDocFile[]) => void }) {
   return (
     <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
       <FileText size={15} className="text-slate-400 shrink-0" />
       <div className="min-w-0 flex-1">
         {/* CR-P-07 — no per-file "Add remarks/description" line; any existing remark shows read-only. */}
-        <p className="text-xs font-semibold text-slate-700 truncate">{f.name}</p>
+        <button onClick={() => onPreview(f.name, [f])} className="text-xs font-semibold text-slate-700 truncate hover:text-primary text-left w-full" title="Preview in the platform">{f.name}</button>
         {f.remarks && <p className="text-[11px] text-slate-500 italic">{f.remarks}</p>}
       </div>
-      {/* CR-P-07 — a Preview button in front of each file. */}
-      <a href={techDocFileUrl(f)} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></a>
+      {/* CR-P-07 — Preview opens the in-platform document viewer (no new browser tab). */}
+      <button onClick={() => onPreview(f.name, [f])} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview in the platform"><Eye size={14} /></button>
       <ShareMenu fileName={f.name} fileUrl={techDocFileUrl(f)} projectName={projectName} />
       <a href={techDocFileUrl(f)} download={f.name} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
       {canEdit && <button onClick={() => onRemove(f)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>}
@@ -511,7 +515,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
           {canEdit && <input ref={fileRef} type="file" multiple onChange={(e) => upload(e.target.files)} className="hidden" />}
 
           {/* Root files */}
-          {rootFiles.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} /></Fragment>)}
+          {rootFiles.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} onPreview={onPreview} /></Fragment>)}
 
           {/* Subfolders */}
           {folderNames.map((name) => {
@@ -534,7 +538,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                 </div>
                 {isOpen && (
                   <div className="px-2.5 pb-2.5 space-y-1.5">
-                    {ff.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} /></Fragment>)}
+                    {ff.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} onPreview={onPreview} /></Fragment>)}
                     {ff.length === 0 && <p className="text-[11px] text-slate-300 text-center py-1">Empty folder.</p>}
                     {/* CR-P-08 — prominent full-width green upload inside the open folder. */}
                     {canEdit && <button disabled={uploading} onClick={() => pickInto(name)} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 disabled:opacity-40 shadow-sm shadow-emerald-500/20">{uploading && target === name ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload files into “{name}”</button>}
