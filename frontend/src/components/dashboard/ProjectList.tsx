@@ -6,8 +6,9 @@ import {
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchProjects, fetchProjectFinancials, getAuthUser, ApiProject, ProjectFinancials } from "../../lib/api";
-import { PDFDownloadLink } from "@react-pdf/renderer";
+import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
+import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
@@ -38,6 +39,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
   const [loading, setLoading] = useState(true);
+  const [showReport, setShowReport] = useState(false); // CR-P-01 — Quick Report popup PDF preview
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -122,25 +124,11 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         </div>
 
         <div className="flex items-center gap-3 flex-wrap md:justify-end shrink-0">
+          {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
           {filtered.length > 0 && mode !== "drafts" && !isGuest && (
-            <PDFDownloadLink
-              document={
-                <PortfolioReportPDF
-                  projects={filtered}
-                  financials={financials}
-                  logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
-                  title={mode === "my" ? "My Projects — Portfolio Report" : "All Projects — Portfolio Report"}
-                />
-              }
-              fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
-            >
-              {({ loading }) => (
-                <span className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
-                  <FileText size={13} />
-                  {loading ? "Preparing…" : "Portfolio Report"}
-                </span>
-              )}
-            </PDFDownloadLink>
+            <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+              <FileText size={13} /> Quick Report
+            </button>
           )}
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 group-hover:text-primary transition-colors" size={16} />
@@ -409,6 +397,23 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             </div>
           )}
         </>
+      )}
+
+      {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
+      {showReport && (
+        <PdfPreviewModal
+          title={mode === "my" ? "My Projects — Quick Report" : "All Projects — Quick Report"}
+          fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
+          build={() => pdf(
+            <PortfolioReportPDF
+              projects={filtered}
+              financials={financials}
+              logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
+              title={mode === "my" ? "My Projects — Portfolio Report" : "All Projects — Portfolio Report"}
+            />
+          ).toBlob()}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   );
