@@ -524,6 +524,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     if (!n) return;
     if (!(await confirm({ title: "Discard drafts?", message: `Remove ${n} unsaved draft row${n === 1 ? "" : "s"} from this category? They have not been saved.`, confirmLabel: "Discard", danger: true }))) return;
     setDrafts((p) => p.filter((d) => d.sectionId !== sid));
+    // CR-P-13 — an import creates the category up front; if you discard its rows and it's left
+    // empty, offer to remove the empty category too so nothing lingers unverified.
+    if (itemsIn(sid).length === 0) {
+      if (await confirm({ title: "Delete empty category?", message: "This category has no saved items. Delete it too?", confirmLabel: "Delete category", cancelLabel: "Keep it", danger: true })) {
+        try { await deleteProcurementSection(projectId, sid); setSections((p) => p.filter((s) => s._id !== sid)); } catch { /* ignore */ }
+      }
+    }
   };
 
   // Rows grouped by category, numbered continuously (C5) — shared by CSV + Excel export.
