@@ -15,6 +15,7 @@ import PresenceBar from "../PresenceBar";
 import BuilderActions from "../BuilderActions";
 import SaveStatus, { useSaveStatus } from "../SaveStatus";
 import ShareMenu from "../ShareMenu";
+import FileActions from "../FileActions";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
 import { downloadBlob } from "../../../lib/proposalExport";
@@ -716,8 +717,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                         <div className="flex flex-wrap items-center gap-2">
                           {(s.attachments || []).map((a) => (
                             <span key={a._id || a.filePath} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
-                              <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
-                              <button onClick={() => removeFile(a._id)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                              <span className="max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</span>
+                              <FileActions name={a.name} url={attachmentUrl(a.filePath)} size={11} onDelete={() => removeFile(a._id)} />
                             </span>
                           ))}
                           <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title={editor?.aid ? "Attach a file to this section" : "Save the agreement first"}>

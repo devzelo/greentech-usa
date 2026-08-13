@@ -27,6 +27,7 @@ import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import ShareMenu from "./ShareMenu";
+import FileActions from "./FileActions";
 import RichTextEditor from "./RichTextEditor";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import PresenceBar from "./PresenceBar";
@@ -323,7 +324,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                         )}
                                       </span>
                                       {(s.attachments || []).map((a) => (
-                                        <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600"><Paperclip size={10} /><a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[10rem] truncate">{a.name}</a><button onClick={() => secDeleteFile(r, i, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button></span>
+                                        <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600"><Paperclip size={10} /><span className="max-w-[10rem] truncate" title={a.name}>{a.name}</span><FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={clientName} size={11} onDelete={() => secDeleteFile(r, i, a._id)} /></span>
                                       ))}
                                       <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) secUploadFile(r, i, f); e.target.value = ""; }} /></label>
                                     </div>

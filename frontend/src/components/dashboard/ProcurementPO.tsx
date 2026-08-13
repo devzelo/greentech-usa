@@ -21,6 +21,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import AssignColleague from "./AssignColleague";
+import FileActions from "./FileActions";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
@@ -365,8 +366,8 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
             <div className="flex flex-wrap items-center gap-2">
               {att("terms").map((a) => (
                 <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-white border border-slate-100 text-[10px] font-bold text-slate-600">
-                  <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
-                  {canEdit && <button onClick={() => removeAtt(po._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>}
+                  <span className="max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</span>
+                  <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={12} onDelete={canEdit ? () => removeAtt(po._id, a._id) : undefined} />
                 </span>
               ))}
               {att("terms").length === 0 && <span className="text-[11px] text-slate-400 italic">No T&amp;C file uploaded.</span>}
@@ -410,8 +411,8 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-28 shrink-0">{label}{kind === "quote" ? " · auto" : ""}</span>
               {att(kind).map((a) => (
                 <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-white border border-slate-100 text-[10px] font-bold text-slate-600">
-                  <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
-                  {canEdit && <button onClick={() => removeAtt(po._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>}
+                  <span className="max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</span>
+                  <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={12} onDelete={canEdit ? () => removeAtt(po._id, a._id) : undefined} />
                 </span>
               ))}
               {att(kind).length === 0 && <span className="text-[11px] text-slate-400 italic">{kind === "quote" ? "none — auto-carried only if a quotation was uploaded on the RFQ" : "none"}</span>}

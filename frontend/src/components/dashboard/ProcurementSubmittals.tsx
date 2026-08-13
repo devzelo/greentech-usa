@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, ChevronUp, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
-import ShareMenu from "./ShareMenu";
+import FileActions from "./FileActions";
 import {
   fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
   addSubmittalRevision, updateSubmittalRevision, uploadSubmittalAttachment, deleteSubmittalAttachment,
@@ -280,10 +280,9 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
               return (
                 <div key={a._id} className="flex items-center gap-2 flex-wrap">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${ld.cls}`}>{ld.label}</span>
-                  <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-primary max-w-[220px] truncate" title={a.name}><FileText size={11} />{a.name}</a>
-                  {/* CR-P-20a — the client response must be sharable (copy link / email / notify). */}
-                  <ShareMenu fileName={a.name} fileUrl={attachmentUrl(a.filePath)} size={12} />
-                  {!locked && <button onClick={() => removeAtt(sub._id, rev._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={12} /></button>}
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 max-w-[220px] truncate" title={a.name}><FileText size={11} />{a.name}</span>
+                  {/* CR-P-10 — preview / share / download / delete on the client response file. */}
+                  <FileActions name={a.name} url={attachmentUrl(a.filePath)} size={12} onDelete={!locked ? () => removeAtt(sub._id, rev._id, a._id) : undefined} />
                 </div>
               );
             })}
@@ -411,8 +410,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-32 shrink-0">{c.label}</span>
                     {files.map((a) => (
                       <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
-                        <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
-                        {!locked && <button onClick={() => removeAtt(sub._id, rev._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>}
+                        <span className="max-w-[140px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</span>
+                        <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectName} size={11} onDelete={!locked ? () => removeAtt(sub._id, rev._id, a._id) : undefined} />
                       </span>
                     ))}
                     {!locked && (() => {

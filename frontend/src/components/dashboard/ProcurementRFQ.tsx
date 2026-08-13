@@ -24,6 +24,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import { AddressPicker } from "./AddressPicker";
 import AssignColleague from "./AssignColleague";
+import FileActions from "./FileActions";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
@@ -527,8 +528,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                                   <span className="w-px h-4 bg-slate-200" />
                                   {(li0.attachments || []).map((a) => (
                                     <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
-                                      <FileText size={10} /> <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[12rem] truncate">{a.name}</a>
-                                      {canEdit && <button onClick={() => deleteLineDoc(rfq, li0, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
+                                      <FileText size={10} /> <span className="max-w-[12rem] truncate" title={a.name}>{a.name}</span>
+                                      <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} onDelete={canEdit ? () => deleteLineDoc(rfq, li0, a._id) : undefined} />
                                     </span>
                                   ))}
                                   {canEdit && <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> Upload Docs<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLineDoc(rfq, li0, f); e.target.value = ""; }} /></label>}
@@ -762,8 +763,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                             <div className="flex flex-col gap-1">
                               {(q.attachments || []).map((a) => (
                                 <span key={a._id} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600">
-                                  <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-primary max-w-[120px] truncate" title={a.name}><FileText size={10} />{a.name}</a>
-                                  {canEdit && <button onClick={() => removeQuoteDoc(rfq._id, q._id, a._id)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
+                                  <span className="inline-flex items-center gap-1 max-w-[120px] truncate" title={a.name}><FileText size={10} />{a.name}</span>
+                                  <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} onDelete={canEdit ? () => removeQuoteDoc(rfq._id, q._id, a._id) : undefined} />
                                 </span>
                               ))}
                               {canEdit && (
