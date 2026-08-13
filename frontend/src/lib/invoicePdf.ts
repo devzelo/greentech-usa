@@ -130,7 +130,9 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
       ["Previously invoiced", money(prevInvoiced)],
       ["This invoice", money(total)],
       ["Total invoiced to date", money(totalInvoiced)],
+      ["Percent invoiced", `${Math.round((totalInvoiced / contract) * 100)}%`],
       ["Balance to finish", money(contract - totalInvoiced)],
+      ["Invoices to date", String(all.length || 1)],
     ];
     for (const [k, v] of rows) {
       const strong = k === "Total invoiced to date" || k === "Balance to finish";
