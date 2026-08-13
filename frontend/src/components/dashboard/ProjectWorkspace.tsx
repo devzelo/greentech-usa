@@ -1078,6 +1078,7 @@ export default function ProjectWorkspace() {
   const [projVendors, setProjVendors] = useState<ApiVendor[]>([]);
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null);
   const [newVendorName, setNewVendorName] = useState("");
+  const [editVendorOpen, setEditVendorOpen] = useState(false); // CR-P-05 — vendor edit modal
   // CR-P-05 — add a vendor straight from the project (same shared supplier list as RFQ → Vendors).
   const addNewVendor = async () => {
     const name = newVendorName.trim();
@@ -3835,7 +3836,8 @@ export default function ProjectWorkspace() {
                       );
                       return (
                         <div className="space-y-4">
-                          <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl space-y-4">
+                          {/* CR-P-05 — read-only preview; Edit opens a modal. */}
+                          <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl space-y-3">
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="flex items-center gap-2">
                                 <Building2 size={15} className="text-slate-400" />
@@ -3843,21 +3845,59 @@ export default function ProjectWorkspace() {
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">· synced with Procurement → RFQs</span>
                               </div>
                               {vEditable && (
-                                <button onClick={() => removeVendor(v)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={12} /> Delete vendor</button>
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => setEditVendorOpen(true)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 bg-white border border-slate-200 hover:text-primary"><Edit2 size={12} /> Edit</button>
+                                  <button onClick={() => removeVendor(v)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={12} /> Delete</button>
+                                </div>
                               )}
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="sm:col-span-2">{vField("name", "Vendor name", { placeholder: "Vendor / supplier name" })}</div>
-                              {vField("contactName", "Contact person", { placeholder: "Attn." })}
-                              {vField("email", "Email", { type: "email", placeholder: "name@company.com" })}
-                              {vField("phone", "Phone", { placeholder: "+1 …" })}
-                              {vField("city", "City")}
-                              {vField("country", "Country")}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                              {[
+                                ["Vendor name", v.name],
+                                ["Contact person", v.contactName],
+                                ["Email", v.email],
+                                ["Phone", v.phone],
+                                ["City", v.city],
+                                ["Country", v.country],
+                              ].map(([label, val]) => (
+                                <div key={label} className="flex flex-col">
+                                  <span className={vLbl}>{label}</span>
+                                  <span className="text-xs font-medium text-slate-700">{val || <span className="text-slate-300">—</span>}</span>
+                                </div>
+                              ))}
                             </div>
-                            {!vEditable && ![v.contactName, v.email, v.phone, v.city, v.country].some(Boolean) && (
-                              <p className="text-xs text-slate-400 italic">No contact details yet.</p>
-                            )}
                           </div>
+
+                          {/* CR-P-05 — vendor edit modal (edits the shared RFQ vendor record). */}
+                          {vEditable && editVendorOpen && (
+                            <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+                              <div onClick={() => setEditVendorOpen(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+                              <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+                                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <Building2 size={16} className="text-primary" />
+                                    <h3 className="text-base font-display font-bold text-slate-900">Edit vendor</h3>
+                                  </div>
+                                  <button onClick={() => setEditVendorOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
+                                </div>
+                                <div className="p-5 space-y-3">
+                                  <p className="text-[11px] text-slate-400">Changes save automatically to the <strong>shared</strong> vendor used in Procurement → RFQs.</p>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="sm:col-span-2">{vField("name", "Vendor name", { placeholder: "Vendor / supplier name" })}</div>
+                                    {vField("contactName", "Contact person", { placeholder: "Attn." })}
+                                    {vField("email", "Email", { type: "email", placeholder: "name@company.com" })}
+                                    {vField("phone", "Phone", { placeholder: "+1 …" })}
+                                    {vField("city", "City")}
+                                    {vField("country", "Country")}
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/60">
+                                  <button onClick={() => removeVendor(v).then(() => setEditVendorOpen(false))} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50 mr-auto"><Trash2 size={12} /> Delete vendor</button>
+                                  <button onClick={() => setEditVendorOpen(false)} className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary">Done</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <AgreementsPanel
                             ctx={{ kind: "project", projectId: id, entityType: "vendor", entityId: v._id }}
                             canManage={canEdit && !isGuest}
