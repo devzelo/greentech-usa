@@ -49,7 +49,7 @@ import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
-import { fetchVendors, addVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
+import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry, COUNTRIES } from "../../lib/countryFlag";
@@ -1088,6 +1088,22 @@ export default function ProjectWorkspace() {
       setActiveVendorId(v._id);
       setNewVendorName("");
     } catch { /* ignore — surfaced by the empty state otherwise */ }
+  };
+  // CR-P-05 — edit a vendor's details in-place (the SAME shared record used in Procurement → RFQs).
+  const patchVendorLocal = (vid: string, field: keyof ApiVendor, value: string) =>
+    setProjVendors((p) => p.map((v) => (v._id === vid ? { ...v, [field]: value } : v)));
+  const saveVendorField = (vid: string, field: keyof ApiVendor, value: string) => {
+    if (!id) return;
+    updateVendor(id, vid, { [field]: value } as Partial<ApiVendor>).catch((e) => toast(e instanceof Error ? e.message : "Could not save vendor.", "error"));
+  };
+  const removeVendor = async (v: ApiVendor) => {
+    if (!id) return;
+    if (!(await dlgConfirm({ title: "Delete this vendor?", message: `Remove "${v.name || "vendor"}" from the shared supplier list? It disappears from Procurement → RFQs too. Existing RFQs/POs already sent keep their snapshot.`, confirmLabel: "Delete vendor", cancelLabel: "Cancel", danger: true }))) return;
+    try {
+      await deleteVendor(id, v._id);
+      setProjVendors((p) => { const next = p.filter((x) => x._id !== v._id); setActiveVendorId((cur) => (cur === v._id ? next[0]?._id || null : cur)); return next; });
+      toast("Vendor deleted.", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not delete vendor.", "error"); }
   };
   useEffect(() => {
     if (subsSubTab !== "vendors" || !id) return;
@@ -3806,11 +3822,41 @@ export default function ProjectWorkspace() {
                     {(() => {
                       const v = projVendors.find((x) => x._id === activeVendorId);
                       if (!v || !id) return null;
+                      // CR-P-05 — preview + edit the vendor's details in-place. This is the SAME shared
+                      // Vendor record used in Procurement → RFQs, so edits sync both ways.
+                      const vInp = "w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
+                      const vLbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
+                      const vEditable = canEdit && !isGuest;
+                      const vField = (field: keyof ApiVendor, label: string, opts?: { type?: string; placeholder?: string }) => (
+                        <div className="space-y-1">
+                          <label className={vLbl}>{label}</label>
+                          <input className={vInp} type={opts?.type || "text"} value={(v[field] as string) || ""} disabled={!vEditable} placeholder={opts?.placeholder || ""} onChange={(e) => patchVendorLocal(v._id, field, e.target.value)} onBlur={(e) => saveVendorField(v._id, field, e.target.value)} />
+                        </div>
+                      );
                       return (
                         <div className="space-y-4">
-                          <div className="p-4 bg-slate-50 rounded-2xl">
-                            <p className="text-sm font-bold text-slate-900">{v.name}</p>
-                            <p className="text-xs text-slate-500 mt-1">{[[v.city, v.country].filter(Boolean).join(", "), v.contactName && `Attn: ${v.contactName}`, v.email, v.phone].filter(Boolean).join(" · ") || "No contact details yet — edit the vendor in Procurement → RFQs."}</p>
+                          <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl space-y-4">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <Building2 size={15} className="text-slate-400" />
+                                <h4 className="text-sm font-bold text-slate-900">Vendor details</h4>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">· synced with Procurement → RFQs</span>
+                              </div>
+                              {vEditable && (
+                                <button onClick={() => removeVendor(v)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={12} /> Delete vendor</button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="sm:col-span-2">{vField("name", "Vendor name", { placeholder: "Vendor / supplier name" })}</div>
+                              {vField("contactName", "Contact person", { placeholder: "Attn." })}
+                              {vField("email", "Email", { type: "email", placeholder: "name@company.com" })}
+                              {vField("phone", "Phone", { placeholder: "+1 …" })}
+                              {vField("city", "City")}
+                              {vField("country", "Country")}
+                            </div>
+                            {!vEditable && ![v.contactName, v.email, v.phone, v.city, v.country].some(Boolean) && (
+                              <p className="text-xs text-slate-400 italic">No contact details yet.</p>
+                            )}
                           </div>
                           <AgreementsPanel
                             ctx={{ kind: "project", projectId: id, entityType: "vendor", entityId: v._id }}
