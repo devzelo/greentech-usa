@@ -12,7 +12,7 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const page = doc.addPage([595.28, 841.89]);
+  const page = doc.addPage([1190.55, 841.89]); // CR-PR-01 — A3 landscape so all columns + full text fit
   const { width, height } = page.getSize();
   const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
   const M = 48;
@@ -56,14 +56,15 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
 
   // Table header — this RFQ is a DESCRIPTION of the items we want quoted. No prices/totals appear
   // here; the vendor returns their own quotation separately.
+  // CR-PR-01 — A3-landscape column layout: the extra width goes to Description & Spec (full text).
   const cols = [
     { label: "#", x: M, max: 4 },
-    { label: "Description", x: M + 22, max: 37 },
-    { label: "Brand", x: M + 187, max: 20 },
-    { label: "Qty", x: M + 277, max: 8 },
-    { label: "Unit", x: M + 315, max: 8 },
-    { label: "Spec", x: M + 353, max: 22 },
-    { label: "Need by", x: M + 453, max: 11 },
+    { label: "Description", x: M + 22, max: 90 },
+    { label: "Brand", x: M + 422, max: 32 },
+    { label: "Qty", x: M + 572, max: 8 },
+    { label: "Unit", x: M + 617, max: 8 },
+    { label: "Spec", x: M + 662, max: 64 },
+    { label: "Need by", x: M + 962, max: 14 },
   ];
   const drawRowLine = (yy: number) => page.drawLine({ start: { x: M, y: yy }, end: { x: width - M, y: yy }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
   page.drawRectangle({ x: M, y: y - 4, width: width - M * 2, height: 18, color: INK });

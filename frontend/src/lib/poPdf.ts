@@ -6,7 +6,7 @@ import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
-const PAGE_W = 595.28, PAGE_H = 841.89, M = 48;
+const PAGE_W = 1190.55, PAGE_H = 841.89, M = 48; // CR-PR-01 — A3 landscape (all columns + full text fit)
 const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
 
 // GreenTech's own company details (constant — the "our company" side of the PO & RFQ).
@@ -95,9 +95,10 @@ async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: A
   y = Math.min(vEnd, shipEnd) - 10;
 
   // 3) Item table.
+  // CR-PR-01 — A3-landscape columns: the extra width goes to Description (full text).
   const cols = [
-    { label: "#", x: M, w: 22 }, { label: "Description", x: M + 22, w: 210 }, { label: "Qty", x: M + 232, w: 40 },
-    { label: "Unit", x: M + 272, w: 40 }, { label: "Unit Price", x: M + 360, w: 60 }, { label: "Amount", x: M + 440, w: 60 },
+    { label: "#", x: M, w: 22 }, { label: "Description", x: M + 22, w: 560 }, { label: "Qty", x: M + 582, w: 48 },
+    { label: "Unit", x: M + 632, w: 48 }, { label: "Unit Price", x: M + 700, w: 110 }, { label: "Amount", x: M + 830, w: 120 },
   ];
   // The signature & stamp block always occupies y ≈ 232 downward on whichever page it lands on,
   // so nothing above it may cross that line. Long orders continue onto extra pages instead of
@@ -130,10 +131,11 @@ async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: A
   if (y - 10 - totalsRows * 16 - notesH < SIG_TOP) nextPage();
 
   y -= 10;
+  // CR-PR-01 — totals right-anchored to the page so they stay on the right at A3 width.
   const rowR = (label: string, value: string, b = false) => {
-    page.drawText(label, { x: M + 350, y, size: b ? 10 : 9, font: b ? bold : font, color: b ? INK : MUTED });
-    const v = fitOneLine(font, value, b ? 10 : 9, PAGE_W - M - (M + 435));
-    page.drawText(v, { x: M + 435, y, size: b ? 10 : 9, font: b ? bold : font, color: INK });
+    page.drawText(label, { x: PAGE_W - M - 250, y, size: b ? 10 : 9, font: b ? bold : font, color: b ? INK : MUTED });
+    const v = fitOneLine(font, value, b ? 10 : 9, 120);
+    page.drawText(v, { x: PAGE_W - M - 120, y, size: b ? 10 : 9, font: b ? bold : font, color: INK });
     y -= 16;
   };
   if (n(po.shipping)) rowR("Shipping", money(n(po.shipping)));
