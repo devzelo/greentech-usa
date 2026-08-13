@@ -49,6 +49,10 @@ export function withFileToken(url: string): string {
 }
 
 /** Mint a signed single-file link (7-day expiry) safe to share outside the app. */
+// CR-P-11 — email a stored document to someone outside the org (real send via the server mailer).
+export async function emailDocument(body: { path: string; to: string; docName: string; note?: string }): Promise<{ ok: boolean }> {
+  return request('/files/email', { method: 'POST', body: JSON.stringify(body) });
+}
 export async function createShareLink(fileUrl: string): Promise<string> {
   const { url } = await request<{ url: string }>('/files/share-link', {
     method: 'POST',

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Share2, Link2, Check, Send, Loader2, X, Mail } from "lucide-react";
-import { fetchEmployees, shareDocumentWithEmployee, createShareLink, ApiEmployee } from "../../lib/api";
+import { fetchEmployees, shareDocumentWithEmployee, createShareLink, emailDocument, ApiEmployee } from "../../lib/api";
 import { toast } from "../../lib/toast";
 
 interface Props {
@@ -80,10 +80,10 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
     if (!isValidEmail(addr)) { toast("Enter a valid email address.", "error"); return; }
     setEmailing(true);
     try {
-      await new Promise((r) => setTimeout(r, 700));
-      toast(`Document sent to ${addr}.`, "success");
+      await emailDocument({ path: fileUrl.split("?")[0], to: addr, docName: fileName, note: projectName ? `Project: ${projectName}` : "" });
+      toast(`Document emailed to ${addr}.`, "success");
       setEmail(""); setOpen(false);
-    } catch { toast("Could not send the email.", "error"); }
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not send the email.", "error"); }
     finally { setEmailing(false); }
   };
 
