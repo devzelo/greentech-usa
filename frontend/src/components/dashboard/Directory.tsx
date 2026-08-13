@@ -32,7 +32,6 @@ export default function Directory() {
   const [showArchived, setShowArchived] = useState(false);
   const [editor, setEditor] = useState<{ id: string | null; draft: CompanyInput } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);   // CR-P-06c — backfill from projects
   const [linksFor, setLinksFor] = useState<ApiCompany | null>(null);   // CR-PR-05 — profile history
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const openLinks = async (c: ApiCompany) => {
@@ -47,6 +46,13 @@ export default function Directory() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [cat, showArchived]);
+  // CR-P-06c — keep the Directory in sync with the platform automatically: on open, silently pull
+  // in any clients / subcontractors / partners / vendors / manufacturers that exist in projects but
+  // aren't in the Directory yet (idempotent — only adds what's missing), then refresh if it added any.
+  useEffect(() => {
+    syncCompaniesFromProjects().then(({ added }) => { if (added) load(); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -56,17 +62,6 @@ export default function Directory() {
         .join(" ").toLowerCase().includes(q));
   }, [companies, search]);
 
-  // CR-P-06c — pull clients / partners / subcontractors / vendors / manufacturers that already
-  // exist across the platform into the Directory (idempotent; only adds names not present yet).
-  const syncFromProjects = async () => {
-    setSyncing(true);
-    try {
-      const { added } = await syncCompaniesFromProjects();
-      toast(added ? `Added ${added} ${added === 1 ? "profile" : "profiles"} from your projects.` : "Directory already up to date — nothing new to import.", added ? "success" : "info");
-      if (added) await load();
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not sync from projects.", "error"); }
-    finally { setSyncing(false); }
-  };
   const openNew = () => setEditor({ id: null, draft: { ...BLANK, category: cat === "all" ? "vendor" : cat } });
   const openEdit = (c: ApiCompany) => setEditor({ id: c._id, draft: { ...c } });
   const setDraft = (patch: Partial<CompanyInput>) => setEditor((e) => (e ? { ...e, draft: { ...e.draft, ...patch } } : e));
@@ -119,10 +114,6 @@ export default function Directory() {
           <p className="text-sm text-slate-500 mt-1">Master list of vendors, subcontractors, clients, manufacturers, consultants and partners.</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* CR-P-06c — pull existing clients / subcontractors / partners / vendors / manufacturers from projects. */}
-          <button onClick={syncFromProjects} disabled={syncing} title="Import companies that already exist in your projects (clients, subcontractors, partners, vendors, manufacturers)" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border bg-white text-slate-600 border-slate-200 hover:text-primary disabled:opacity-50">
-            {syncing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} {syncing ? "Importing…" : "Sync from projects"}
-          </button>
           <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={13} /> {showArchived ? "Active" : "Archived"}</button>
           <button onClick={openNew} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gt-gradient text-white text-sm font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-transform"><Plus size={16} /> New company</button>
         </div>
