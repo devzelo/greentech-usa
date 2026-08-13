@@ -13,6 +13,7 @@ import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport"
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
+import FileActions from "./FileActions";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
@@ -394,7 +395,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                                   {p.expenseId && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wider">In Expenses</span>}
                                   <div className="flex items-center gap-1.5 ml-auto">
                                     {p.attachments.map((a) => (
-                                      <a key={a._id} href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline max-w-[10rem] truncate" title={a.name}><FileText size={10} />{a.name}</a>
+                                      <span key={a._id} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600">
+                                        <span className="inline-flex items-center gap-1 max-w-[10rem] truncate" title={a.name}><FileText size={10} />{a.name}</span>
+                                        <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} />
+                                      </span>
                                     ))}
                                     {canEdit && (
                                       <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200" title="Upload the receipt / proof">
@@ -414,8 +418,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoice document</span>
                           {row.attachments.map((a) => (
                             <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-white border border-slate-100 text-[10px] font-bold text-slate-600">
-                              <a href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[12rem] truncate inline-flex items-center gap-1" title={a.name}><FileText size={10} />{a.name}</a>
-                              {canEdit && <button onClick={async () => { try { patch(await deleteInvoiceFile(projectId, row._id, a._id)); } catch { /* ignore */ } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>}
+                              <span className="max-w-[12rem] truncate inline-flex items-center gap-1" title={a.name}><FileText size={10} />{a.name}</span>
+                              <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} onDelete={canEdit ? async () => { try { patch(await deleteInvoiceFile(projectId, row._id, a._id)); } catch { /* ignore */ } } : undefined} />
                             </span>
                           ))}
                           {row.attachments.length === 0 && <span className="text-[11px] text-slate-400 italic">none</span>}
@@ -527,7 +531,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     <p className="text-[11px] font-bold text-slate-500">Uploaded invoice file(s)</p>
                     <div className="flex flex-wrap items-center gap-2">
                       {(cur?.attachments || []).map((a) => (
-                        <a key={a._id} href={attachmentUrl(a.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:text-primary"><FileText size={10} /> {a.name}</a>
+                        <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                          <span className="inline-flex items-center gap-1 max-w-[12rem] truncate" title={a.name}><FileText size={10} /> {a.name}</span>
+                          <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} onDelete={canEdit && cur ? async () => { try { patch(await deleteInvoiceFile(projectId, cur._id, a._id)); } catch { /* ignore */ } } : undefined} />
+                        </span>
                       ))}
                       {(cur?.attachments || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No file yet.</span>}
                       <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f && cur) { try { const srv = await uploadInvoiceFile(projectId, cur._id, f); patch(srv); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} /></label>
