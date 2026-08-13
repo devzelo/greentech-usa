@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye, Download } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye, Download, Send } from "lucide-react";
 import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
-  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs,
+  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
   type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
@@ -74,7 +74,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // New-invoice popup (Invoice Sent) — the client asked for a form instead of an inline blank row.
   const [newOpen, setNewOpen] = useState(false);
   const [draft, setDraft] = useState({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
-  const { confirm, dialogs } = useDialogs();
+  const { confirm, prompt, dialogs } = useDialogs();
 
   // ── Invoice builder (CR-I-03/04/07) ─────────────────────────────────────────
   const [builderId, setBuilderId] = useState<string | null>(null);
@@ -145,6 +145,24 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     if (status) body.status = status;   // CR-I-01 — Save as Draft / Send set the status
     try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast(status === "Sent" ? "Invoice sent." : "Invoice saved.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
+    finally { setSaving(false); }
+  };
+  // CR-I-01 — Send: save + mark Sent, then email the invoice PDF to a recipient.
+  const sendInvoiceEmail = async () => {
+    if (!builderId || !bDraft) return;
+    const to = await prompt({ title: "Send invoice", label: "Recipient email", placeholder: "name@company.com", confirmLabel: "Send" });
+    if (to === null) return;
+    const addr = to.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { toast("Enter a valid email address.", "error"); return; }
+    setSaving(true);
+    try {
+      const body = invoiceBody(bDraft); body.status = "Sent";
+      const srv = await updateInvoice(projectId, builderId, body); patch(srv);
+      const blob = await buildInvoicePdf(srv, { projectInfo, allInvoices: rows });
+      await emailFileAttachment(blob, `Invoice_${srv.number}.pdf`, addr, `Invoice #${srv.number}`);
+      toast(`Invoice #${srv.number} emailed to ${addr}.`, "success");
+      setBuilderId(null); setBDraft(null);
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not send the invoice.", "error"); }
     finally { setSaving(false); }
   };
   // CR-B-14b — silent autosave of the invoice builder every 45s while it's open, with a status badge.
@@ -638,7 +656,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <button onClick={async () => { if (await confirm({ title: "Are you sure you want to close?", message: "Any unsaved changes to this invoice will be lost.", confirmLabel: "Close", cancelLabel: "Keep editing", danger: true })) { setBuilderId(null); setBDraft(null); } }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
                   <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>
                   <button onClick={() => saveBuilder()} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
-                  {isSent && <button onClick={() => saveBuilder("Sent")} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 disabled:opacity-50">Send</button>}
+                  {isSent && <button onClick={sendInvoiceEmail} disabled={saving} title="Save, mark Sent, and email the invoice PDF" className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Send</button>}
                 </div>
               </div>
 
