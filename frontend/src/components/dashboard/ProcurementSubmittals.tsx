@@ -50,6 +50,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   const [flashId, setFlashId] = useState<string | null>(null); // §C9 — submittal id to flash
   const [manageId, setManageId] = useState<string | null>(null); // action modal target (§A1 — tasks via popup)
   const [creating, setCreating] = useState(false);
+  const [chooseNew, setChooseNew] = useState(false); // CR-P-17 — "New submittal" choice popup
   const [draft, setDraft] = useState({ title: "", productName: "", manufacturer: "", modelNo: "", specSection: "", itemId: "" });
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
@@ -611,8 +612,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
         </div>
         <div className="flex items-center gap-2">
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
-          {canEdit && !showArchived && <button onClick={createUpload} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:border-primary hover:text-primary transition-all" title="Package already made — upload the ready files"><Upload size={13} /> Upload submittal</button>}
-          {canEdit && !showArchived && <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New submittal</button>}
+          {canEdit && !showArchived && <button onClick={() => setChooseNew(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New submittal</button>}
         </div>
       </div>
 
@@ -620,6 +620,30 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
       <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600 leading-relaxed">
         <strong>How it works:</strong> You (GreenTech) build the package and upload the docs (cover · spec · catalog · drawings · photos), then <strong>Combined PDF</strong> to send to the client on <em>their</em> portal. The client doesn't log in here — when they reply, you record their verdict under <strong>Client decision</strong>. Each <strong>revision</strong> = one brand/option you submitted: if it's rejected, click <strong>Submit a new option</strong> to add the next revision — the rejected one stays locked as a record.
       </div>
+
+      {/* CR-P-17 — New submittal: choose how to create it. */}
+      {chooseNew && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setChooseNew(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">New submittal</h3>
+              <button onClick={() => setChooseNew(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button onClick={() => { setChooseNew(false); setDraft(emptyDraft); setCreating(true); }} className="text-left p-4 rounded-2xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2"><FileCheck2 size={18} className="text-primary" /></div>
+                <p className="text-sm font-bold text-slate-900">Choose from BOQ</p>
+                <p className="text-[11px] text-slate-500 mt-1">Link a BOQ item (auto-fills), then build the package here — cover, spec, catalog, drawings, photos.</p>
+              </button>
+              <button onClick={() => { setChooseNew(false); void createUpload(); }} className="text-left p-4 rounded-2xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-2"><Upload size={18} className="text-emerald-600" /></div>
+                <p className="text-sm font-bold text-slate-900">Upload submittal</p>
+                <p className="text-[11px] text-slate-500 mt-1">The package is already made. Upload the ready files — a combined PDF, or the separate docs (spec, catalog, data sheet, drawings).</p>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {creating && (
         <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
