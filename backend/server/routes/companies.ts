@@ -1,11 +1,22 @@
 import { Router, Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import Company from "../models/Company";
+import CompanyFile from "../models/CompanyFile";
 import Invoice from "../models/Invoice";
 import Rfq from "../models/Rfq";
 import ProcurementPO from "../models/ProcurementPO";
 import Project from "../models/Project";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+
+const humanFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+const PROFILE_DOC_TYPES = ["catalogue", "certification", "document", "other"];
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -102,6 +113,56 @@ router.post("/sync-from-projects", async (req: AuthedRequest, res: Response, nex
     for (const s of submittals as Array<{ manufacturer?: string }>) if (s.manufacturer) add(s.manufacturer, "manufacturer");
     if (toCreate.length) await Company.insertMany(toCreate);
     res.json({ added: toCreate.length, byCategory: added });
+  } catch (err) { next(err); }
+});
+
+// ── CR-P-07 — per-company profile documents (catalogues / certifications / docs) ──────────────
+const profileStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const cid = String(req.params.id || "").replace(/[^\w-]/g, "");
+    const dir = path.join("uploads", "company", "profile", cid || "misc");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const profileUpload = multer({ storage: profileStorage, limits: { fileSize: 64 * 1024 * 1024 } });
+
+router.get("/:id/files", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const files = await CompanyFile.find({ kind: "profile", companyId: req.params.id }).sort({ createdAt: -1 }).lean();
+    res.json(files);
+  } catch (err) { next(err); }
+});
+
+router.post("/:id/files", profileUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const company = await Company.exists({ _id: req.params.id });
+    if (!company) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Company not found." }); }
+    const docType = PROFILE_DOC_TYPES.includes(String(req.body.docType)) ? String(req.body.docType) : "document";
+    const file = await CompanyFile.create({
+      kind: "profile",
+      companyId: req.params.id,
+      docType,
+      name: req.file.originalname,
+      fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(),
+      size: humanFileSize(req.file.size),
+      filePath: req.file.path.replace(/\\/g, "/"),
+      description: String(req.body.description || ""),
+      uploadedByName: req.user!.name || "",
+    });
+    res.status(201).json(file);
+  } catch (err) { next(err); }
+});
+
+router.delete("/:id/files/:fid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const file = await CompanyFile.findOne({ _id: req.params.fid, kind: "profile", companyId: req.params.id });
+    if (!file) return res.status(404).json({ error: "File not found." });
+    await file.deleteOne();
+    if (file.filePath) fs.unlink(path.resolve(file.filePath), () => {});
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText, Truck } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText, Truck, Upload, Download, Eye, Award, BookOpen } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, fetchCompanyLinks, syncCompaniesFromProjects,
-  COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory, type CompanyLinks,
+  fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile, companyFileUrl,
+  COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory, type CompanyLinks, type CompanyFile,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -34,8 +35,29 @@ export default function Directory() {
   const [saving, setSaving] = useState(false);
   const [linksFor, setLinksFor] = useState<ApiCompany | null>(null);   // CR-PR-05 — profile history
   const [links, setLinks] = useState<CompanyLinks | null>(null);
+  // CR-P-07 — per-company documents / catalogues / certifications.
+  const [profileFiles, setProfileFiles] = useState<CompanyFile[]>([]);
+  const [docType, setDocType] = useState("catalogue");
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const loadProfileFiles = async (cid: string) => {
+    try { setProfileFiles(await fetchCompanyProfileFiles(cid)); } catch { setProfileFiles([]); }
+  };
+  const uploadDoc = async (file: File) => {
+    if (!linksFor) return;
+    setUploadingDoc(true);
+    try { await uploadCompanyProfileFile(linksFor._id, file, docType); await loadProfileFiles(linksFor._id); toast("Document uploaded.", "success"); }
+    catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
+    finally { setUploadingDoc(false); }
+  };
+  const removeDoc = async (f: CompanyFile) => {
+    if (!linksFor || !(await confirm({ title: "Delete document?", message: `Remove "${f.name}" from this company profile?`, confirmLabel: "Delete", cancelLabel: "Cancel", danger: true }))) return;
+    try { await deleteCompanyProfileFile(linksFor._id, f._id); setProfileFiles((p) => p.filter((x) => x._id !== f._id)); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
+  };
+  const docIcon = (t?: string) => t === "catalogue" ? <BookOpen size={13} className="text-amber-500 shrink-0" /> : t === "certification" ? <Award size={13} className="text-emerald-500 shrink-0" /> : <FileText size={13} className="text-slate-400 shrink-0" />;
   const openLinks = async (c: ApiCompany) => {
-    setLinksFor(c); setLinks(null);
+    setLinksFor(c); setLinks(null); setProfileFiles([]);
+    void loadProfileFiles(c._id);
     try { setLinks(await fetchCompanyLinks(c._id)); } catch { setLinks({ invoices: [], rfqs: [], pos: [], shipments: [], projects: [] }); }
   };
 
@@ -267,10 +289,45 @@ export default function Directory() {
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setLinksFor(null)}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 truncate">{linksFor.name} — history</h3>
+              <h3 className="text-base font-bold text-slate-900 truncate">{linksFor.name} — profile</h3>
               <button onClick={() => setLinksFor(null)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">
+              {/* CR-P-07 — documents, catalogues & certifications for this company. */}
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={12} /> Documents, catalogues &amp; certifications ({profileFiles.length})</p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <select value={docType} onChange={(e) => setDocType(e.target.value)} className="text-[10px] font-bold rounded-lg border border-slate-200 px-2 py-1 bg-white text-slate-600 cursor-pointer" title="What kind of document is this?">
+                      <option value="catalogue">Catalogue</option>
+                      <option value="certification">Certification</option>
+                      <option value="document">Document</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer">
+                      {uploadingDoc ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Upload
+                      <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); e.target.value = ""; }} />
+                    </label>
+                  </div>
+                </div>
+                {profileFiles.length === 0 ? <p className="text-xs text-slate-400 italic">No documents yet — upload catalogues, certifications, or other company documents.</p> : (
+                  <div className="space-y-1">{profileFiles.map((f) => (
+                    <div key={f._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        {docIcon(f.docType)}
+                        <span className="font-bold text-slate-700 truncate" title={f.name}>{f.name}</span>
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold uppercase tracking-wide">{f.docType}</span>
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <a href={companyFileUrl(f)} target="_blank" rel="noreferrer" className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></a>
+                        <a href={companyFileUrl(f)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
+                        <button onClick={() => removeDoc(f)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+                      </span>
+                    </div>
+                  ))}</div>
+                )}
+              </div>
+              <div className="border-t border-slate-100" />
               {!links ? <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center"><Loader2 size={16} className="animate-spin" /> Loading…</div> : (
                 <>
                   <div>

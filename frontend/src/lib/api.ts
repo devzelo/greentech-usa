@@ -891,11 +891,11 @@ export interface ApiSavedDocument {
 }
 interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: "draft" | "final" }
 
-async function postMultipart(url: string, fd: FormData): Promise<ApiSavedDocument> {
+async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): Promise<T> {
   const token = getAuthToken();
   const res = await fetch(url, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
-  return res.json() as Promise<ApiSavedDocument>;
+  return res.json() as Promise<T>;
 }
 
 export async function fetchSavedDocuments(projectId: string, kind: SavedDocKind, refId = '') {
@@ -2348,8 +2348,10 @@ export interface CompanyTab {
 
 export interface CompanyFile {
   _id: string;
-  kind: "company" | "classified";
+  kind: "company" | "classified" | "profile";
   tabId: string;
+  companyId?: string;   // profile files (CR-P-07)
+  docType?: string;     // catalogue | certification | document | other
   name: string;
   fileType: string;
   size: string;
@@ -2358,6 +2360,20 @@ export interface CompanyFile {
   description: string;
   uploadedByName: string;
   createdAt: string;
+}
+
+// CR-P-07 — per-company profile documents (catalogues / certifications / company docs).
+export async function fetchCompanyProfileFiles(companyId: string): Promise<CompanyFile[]> {
+  return request(`/companies/${companyId}/files`);
+}
+export async function uploadCompanyProfileFile(companyId: string, file: File, docType: string): Promise<CompanyFile> {
+  const fd = new FormData();
+  fd.append("docType", docType);
+  fd.append("file", file);
+  return postMultipart<CompanyFile>(`/api/companies/${companyId}/files`, fd);
+}
+export async function deleteCompanyProfileFile(companyId: string, fid: string): Promise<void> {
+  await request(`/companies/${companyId}/files/${fid}`, { method: "DELETE" });
 }
 
 export async function fetchCompanyTabs(kind: "company" | "classified" = "company"): Promise<CompanyTab[]> {

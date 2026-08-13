@@ -4,8 +4,10 @@ import mongoose, { Schema, Document } from "mongoose";
 // CompanyTab) or the Classified Documents area (kind "classified", flat list).
 // Uploaded files set `filePath`; seeded dummy files reference a public `url`.
 export interface ICompanyFile extends Document {
-  kind: "company" | "classified";
+  kind: "company" | "classified" | "profile";
   tabId: string; // company only — which CompanyTab it belongs to
+  companyId: string; // profile only (CR-P-07) — the Directory Company this file belongs to
+  docType: string;   // profile only — catalogue | certification | document | other
   name: string;
   fileType: string;
   size: string;
@@ -17,8 +19,10 @@ export interface ICompanyFile extends Document {
 
 const CompanyFileSchema = new Schema<ICompanyFile>(
   {
-    kind: { type: String, enum: ["company", "classified"], default: "company" },
+    kind: { type: String, enum: ["company", "classified", "profile"], default: "company" },
     tabId: { type: String, default: "" },
+    companyId: { type: String, default: "", index: true },
+    docType: { type: String, default: "document" },
     name: { type: String, required: true },
     fileType: { type: String, default: "" },
     size: { type: String, default: "" },
