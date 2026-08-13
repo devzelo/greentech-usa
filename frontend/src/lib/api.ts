@@ -2134,6 +2134,11 @@ export interface CompanyLinks {
   projects?: Array<{ _id: string; projectId: string; name: string; status: string }>;
 }
 export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }
+// CR-P-06c — backfill the Directory from real project data (clients, partners, subcontractors,
+// vendors, manufacturers). Idempotent; returns how many profiles were created.
+export async function syncCompaniesFromProjects(): Promise<{ added: number; byCategory: Record<string, number> }> {
+  return request(`/companies/sync-from-projects`, { method: "POST" });
+}
 export async function fetchPublicCompany(token: string): Promise<PublicCompany> {
   return request(`/public/companies/${token}`);
 }

@@ -61,6 +61,50 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
   catch (err) { next(err); }
 });
 
+// CR-P-06c — populate the Directory from real data already in the platform: every project's
+// client (clientInfo), JV partner, and subcontractors, plus existing vendors and product
+// manufacturers (from the BOQ / submittals). Idempotent — only creates a profile for a name that
+// isn't in the Directory yet, so it can be run repeatedly. Returns the count added per category.
+router.post("/sync-from-projects", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const Vendor = (await import("../models/Vendor")).default;
+    const ProcurementItem = (await import("../models/ProcurementItem")).default;
+    const Submittal = (await import("../models/Submittal")).default;
+    const [projects, vendors, existing, items, submittals] = await Promise.all([
+      Project.find({}).select("clientInfo jointVenture subcontractors").lean(),
+      Vendor.find({}).select("name email phone city country contactName").lean(),
+      Company.find({}).select("name").lean(),
+      ProcurementItem.find({ manufacturer: { $nin: ["", null] } }).select("manufacturer").lean(),
+      Submittal.find({ manufacturer: { $nin: ["", null] } }).select("manufacturer").lean(),
+    ]);
+    const key = (s: string) => s.trim().toLowerCase();
+    const seen = new Set<string>((existing as Array<{ name?: string }>).map((c) => key(String(c.name || ""))).filter(Boolean));
+    const toCreate: Array<Record<string, unknown>> = [];
+    const added: Record<string, number> = { client: 0, partner: 0, subcontractor: 0, vendor: 0, manufacturer: 0 };
+    const person = (name?: string, email?: string, phone?: string) =>
+      name ? [{ name, role: "", email: email || "", phone: phone || "" }] : [];
+    const add = (name: string, category: keyof typeof added, extra: Record<string, unknown> = {}) => {
+      const n = (name || "").trim();
+      if (!n || seen.has(key(n))) return;
+      seen.add(key(n));
+      toCreate.push({ name: n, category, createdByName: req.user?.name || "Sync", ...extra });
+      added[category] += 1;
+    };
+    for (const p of projects as Array<Record<string, any>>) {
+      const ci = p.clientInfo || {};
+      if (ci.name) add(ci.name, "client", { email: ci.email || "", phone: ci.phone || "", address: [ci.address, ci.country].filter(Boolean).join(", "), notes: ci.notes || "", contactPersons: person(ci.contactName, ci.email, ci.phone) });
+      const jv = p.jointVenture || {};
+      if (jv.enabled && jv.partnerName) add(jv.partnerName, "partner", { address: jv.partnerAddress || "", email: jv.email || "", phone: jv.phone || "", notes: jv.notes || "", contactPersons: person(jv.contactName, jv.email, jv.phone) });
+      for (const s of (p.subcontractors || []) as Array<Record<string, string>>) if (s.name) add(s.name, "subcontractor", { email: s.email || "", phone: s.phone || "", notes: s.notes || "", contactPersons: person(s.contact, s.email, s.phone) });
+    }
+    for (const v of vendors as Array<Record<string, any>>) add(v.name, "vendor", { email: v.email || "", phone: v.phone || "", address: [v.city, v.country].filter(Boolean).join(", "), contactPersons: person(v.contactName, v.email, v.phone) });
+    for (const it of items as Array<{ manufacturer?: string }>) if (it.manufacturer) add(it.manufacturer, "manufacturer");
+    for (const s of submittals as Array<{ manufacturer?: string }>) if (s.manufacturer) add(s.manufacturer, "manufacturer");
+    if (toCreate.length) await Company.insertMany(toCreate);
+    res.json({ added: toCreate.length, byCategory: added });
+  } catch (err) { next(err); }
+});
+
 // CR-PR-05 — records that reference this company (auto-linked into its profile).
 router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
