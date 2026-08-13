@@ -22,6 +22,7 @@ export interface IProcurementItem extends Document {
   needOnSiteDate: string;   // required-on-site deadline (date string)
   leadTimeDays: string;     // procurement lead time (days) — order-by date = need − lead
   status: ProcurementStatus;
+  draft: boolean;           // CR-P-12 — saved-but-incomplete item; shows as "Draft" to finish later
   locked: boolean;          // CR-P-13 — locked items can't be edited/deleted until unlocked
   // Per-item reference files (client CR-P-12): pictures, catalogue, data sheet, drawing, other.
   attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>;
@@ -54,6 +55,7 @@ const ProcurementItemSchema = new Schema<IProcurementItem>(
       enum: ["BOQ", "RFQ_Sent", "Quoted", "PO_Sent", "Invoiced", "Ordered", "Fabrication", "Transit", "OnSite", "Complete", "Cancelled"],
       default: "BOQ",
     },
+    draft: { type: Boolean, default: false },
     locked: { type: Boolean, default: false },
     attachments: { type: [{ name: String, filePath: String, fileType: String, size: String, kind: { type: String, default: "other" } }], default: [] },
     remarks: { type: String, default: "" },

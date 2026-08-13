@@ -239,7 +239,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   const [addForm, setAddForm] = useState<DraftItem>(BLANK_DRAFT(""));
   const openAddPopup = (sid: string) => { setAddForm(BLANK_DRAFT(sid)); setAddFor(sid); };
   const setAddField = (field: keyof DraftItem, value: string) => setAddForm((f) => ({ ...f, [field]: value }));
-  const saveAddPopup = async (openDocs: boolean) => {
+  const saveAddPopup = async (openDocs: boolean, draft = false) => {
     if (!addFor) return;
     if (!addForm.description.trim()) { toast("Add a description before saving the item.", "error"); return; }
     const nextNo = String(itemsIn(addFor).length + 1);
@@ -247,10 +247,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       const it = await addProcurementItem(projectId, {
         sectionId: addFor, itemNo: nextNo, description: addForm.description, manufacturer: addForm.manufacturer,
         modelNo: addForm.modelNo, qty: addForm.qty, unit: addForm.unit, spec: addForm.spec, needOnSiteDate: addForm.needOnSiteDate, leadTimeDays: addForm.leadTimeDays, remarks: addForm.remarks,
+        draft,
       });
       setItems((p) => [...p, it]);
       setAddFor(null);
-      if (openDocs) setManageId(it._id); else toast("Item added.", "success");
+      if (openDocs) setManageId(it._id); else toast(draft ? "Saved as draft — complete it later." : "Item added.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not add item.", "error"); }
   };
   // Bulk import (Excel/PDF) still lands as inline review DRAFT rows so many can be verified then saved.
@@ -740,7 +741,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                         <Fragment key={it._id}>
                         <tr className={isCancelled ? "bg-red-50/50" : (selected[it._id] ? "bg-primary/5" : "hover:bg-slate-50/40")}>
                           {selCol && <td className="px-3 py-2 align-top w-8">{!isCancelled && <input type="checkbox" checked={!!selected[it._id]} onChange={() => toggleSelect(it._id)} />}</td>}
-                          <td className="px-3 py-2 align-top w-12 font-bold text-slate-400 whitespace-nowrap">{isCancelled ? "—" : displayNo[it._id]}</td>
+                          <td className="px-3 py-2 align-top w-12 font-bold text-slate-400 whitespace-nowrap">{isCancelled ? "—" : displayNo[it._id]}{it.draft && <span className="block mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-bold uppercase tracking-wide" title="Draft — complete it via Manage">Draft</span>}</td>
                           <td className="px-2 py-2 align-top">{it.revNo > 0 ? (
                             <button onClick={() => toggleRevisions(it._id)} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary" title="Show change history">
                               {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
@@ -995,6 +996,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               {/* CR-B-14a — Reset + Cancel (with confirmation) alongside Save / Save & docs. */}
               <button onClick={() => setAddForm(BLANK_DRAFT(addFor || ""))} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50">Reset</button>
               <button onClick={async () => { if (await confirm({ title: "Are you sure you want to cancel?", message: "Unsaved item details will be lost.", confirmLabel: "Discard & close", cancelLabel: "Keep editing", danger: true })) setAddFor(null); }} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
+              {/* CR-P-12 — Save as Draft: a saved-but-incomplete item, shown as Draft to finish later. */}
+              <button onClick={() => saveAddPopup(false, true)} className="px-4 py-2 rounded-xl border border-amber-300 text-amber-700 bg-amber-50 text-xs font-bold hover:bg-amber-100">Save as Draft</button>
               <button onClick={() => saveAddPopup(false)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary">Save</button>
               <button onClick={() => saveAddPopup(true)} className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 inline-flex items-center gap-1.5"><FileText size={13} /> Save &amp; docs</button>
             </div>
@@ -1110,6 +1113,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               </div>
               {canEdit && (
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-3xl">
+                  {/* CR-P-12 — clear the Draft flag once the item is complete. */}
+                  {m.draft && <button onClick={async () => { try { await updateProcurementItem(projectId, m._id, { draft: false }); setItems((p) => p.map((x) => (x._id === m._id ? { ...x, draft: false } : x))); toast("Draft finalized.", "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not finalize.", "error"); } }} className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-[12px] font-bold hover:bg-emerald-600 inline-flex items-center gap-1.5 mr-auto"><Check size={13} /> Finalize draft</button>}
                   <button onClick={closeManage} className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-[12px] font-bold hover:bg-slate-100">Cancel</button>
                   <button onClick={saveManage} disabled={!mDirty || mSaving} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-[12px] font-bold hover:bg-primary/90 disabled:opacity-40">
                     {mSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save changes

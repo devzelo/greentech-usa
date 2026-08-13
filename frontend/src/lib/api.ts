@@ -1366,6 +1366,7 @@ export interface ApiProcurementItem {
   needOnSiteDate: string;
   leadTimeDays: string;
   status: ProcurementStatus;
+  draft?: boolean;          // CR-P-12 — saved-but-incomplete item
   locked?: boolean;
   remarks?: string;
   attachments?: Array<{ _id: string; name: string; filePath: string; fileType: string; size: string; kind: string }>;

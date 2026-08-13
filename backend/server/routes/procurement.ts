@@ -88,11 +88,11 @@ const stamp = (req: AuthedRequest) => ({ addedById: req.user!.userId, addedByNam
 
 router.post("/items", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { sectionId, itemNo, description, manufacturer, modelNo, qty, unit, spec, needOnSiteDate, leadTimeDays } = req.body || {};
+    const { sectionId, itemNo, description, manufacturer, modelNo, qty, unit, spec, needOnSiteDate, leadTimeDays, draft } = req.body || {};
     const row = await ProcurementItem.create({
       projectId: req.params.id, sectionId: sectionId || "", itemNo: itemNo || "", description: description || "",
       manufacturer: manufacturer || "", modelNo: modelNo || "", qty: qty || "", unit: unit || "", spec: spec || "",
-      needOnSiteDate: needOnSiteDate || "", leadTimeDays: leadTimeDays || "", status: "BOQ", ...stamp(req),
+      needOnSiteDate: needOnSiteDate || "", leadTimeDays: leadTimeDays || "", draft: !!draft, status: "BOQ", ...stamp(req),
     });
     await logEvent(req, { entityId: String(row._id), action: "created", toValue: row.description });
     res.status(201).json(row);
@@ -116,7 +116,7 @@ router.post("/items/bulk", async (req: AuthedRequest, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
-const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked", "remarks"] as const;
+const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked", "remarks", "draft"] as const;
 
 // Per-item file uploads (CR-P-12) — pictures, catalogue, data sheet, drawing.
 const itemHumanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
