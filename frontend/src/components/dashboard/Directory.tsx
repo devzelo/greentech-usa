@@ -4,6 +4,7 @@ import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, fetchCompanyLinks, syncCompaniesFromProjects,
   fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile, companyFileUrl,
+  uploadCompanyLogo, withFileToken,
   COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory, type CompanyLinks, type CompanyFile,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -55,6 +56,14 @@ export default function Directory() {
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
   const docIcon = (t?: string) => t === "catalogue" ? <BookOpen size={13} className="text-amber-500 shrink-0" /> : t === "certification" ? <Award size={13} className="text-emerald-500 shrink-0" /> : <FileText size={13} className="text-slate-400 shrink-0" />;
+  // CR-P-07 — company logo upload (returns a public URL stored in the draft's logoUrl).
+  const [logoUploading, setLogoUploading] = useState(false);
+  const uploadLogo = async (file: File) => {
+    setLogoUploading(true);
+    try { const { url } = await uploadCompanyLogo(file); setDraft({ logoUrl: url }); }
+    catch (e) { toast(e instanceof Error ? e.message : "Logo upload failed.", "error"); }
+    finally { setLogoUploading(false); }
+  };
   const openLinks = async (c: ApiCompany) => {
     setLinksFor(c); setLinks(null); setProfileFiles([]);
     void loadProfileFiles(c._id);
@@ -170,9 +179,14 @@ export default function Directory() {
           {filtered.map((c) => (
             <div key={c._id} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all p-5 flex flex-col gap-3 group">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 truncate">{c.name}</p>
-                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span>
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                    {c.logoUrl ? <img src={withFileToken(c.logoUrl)} alt="" className="w-full h-full object-contain" /> : <Building2 size={16} className="text-slate-300" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 truncate">{c.name}</p>
+                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => openLinks(c)} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="History — records linked to this company"><History size={15} /></button>
@@ -222,6 +236,19 @@ export default function Directory() {
               <button onClick={() => setEditor(null)} disabled={saving} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
+              {/* CR-P-07 — company logo. */}
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                  {editor.draft.logoUrl ? <img src={withFileToken(editor.draft.logoUrl)} alt="Logo" className="w-full h-full object-contain" /> : <Building2 size={22} className="text-slate-300" />}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary cursor-pointer">
+                    {logoUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {editor.draft.logoUrl ? "Change logo" : "Upload logo"}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadLogo(f); e.target.value = ""; }} />
+                  </label>
+                  {editor.draft.logoUrl && <button onClick={() => setDraft({ logoUrl: "" })} className="text-[11px] font-bold text-slate-400 hover:text-red-500">Remove</button>}
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2"><label className={label}>Company name *</label><input className={inp} value={editor.draft.name || ""} onChange={(e) => setDraft({ name: e.target.value })} placeholder="e.g. Nexans Cables" /></div>
                 <div><label className={label}>Category</label>
@@ -289,7 +316,12 @@ export default function Directory() {
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setLinksFor(null)}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 truncate">{linksFor.name} — profile</h3>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                  {linksFor.logoUrl ? <img src={withFileToken(linksFor.logoUrl)} alt="" className="w-full h-full object-contain" /> : <Building2 size={15} className="text-slate-300" />}
+                </div>
+                <h3 className="text-base font-bold text-slate-900 truncate">{linksFor.name} — profile</h3>
+              </div>
               <button onClick={() => setLinksFor(null)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">

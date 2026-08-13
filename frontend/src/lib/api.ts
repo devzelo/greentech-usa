@@ -2375,6 +2375,12 @@ export async function uploadCompanyProfileFile(companyId: string, file: File, do
 export async function deleteCompanyProfileFile(companyId: string, fid: string): Promise<void> {
   await request(`/companies/${companyId}/files/${fid}`, { method: "DELETE" });
 }
+// CR-P-07 — upload a company logo image; returns a public URL to store in the company's logoUrl.
+export async function uploadCompanyLogo(file: File): Promise<{ url: string }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return postMultipart<{ url: string }>(`/api/companies/logo`, fd);
+}
 
 export async function fetchCompanyTabs(kind: "company" | "classified" = "company"): Promise<CompanyTab[]> {
   return request(`/company/tabs?kind=${kind}`);

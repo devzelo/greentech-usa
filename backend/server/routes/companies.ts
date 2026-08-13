@@ -116,6 +116,24 @@ router.post("/sync-from-projects", async (req: AuthedRequest, res: Response, nex
   } catch (err) { next(err); }
 });
 
+// CR-P-07 — upload a company logo image (stateless: returns a public URL the editor stores in
+// logoUrl, so it works before the company is even created). Images are served publicly.
+const logoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => { const dir = path.join("uploads", "company", "logos"); fs.mkdirSync(dir, { recursive: true }); cb(null, dir); },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const logoUpload = multer({
+  storage: logoStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+router.post("/logo", logoUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Please choose an image file." });
+    res.status(201).json({ url: `/${req.file.path.replace(/\\/g, "/")}` });
+  } catch (err) { next(err); }
+});
+
 // ── CR-P-07 — per-company profile documents (catalogues / certifications / docs) ──────────────
 const profileStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
