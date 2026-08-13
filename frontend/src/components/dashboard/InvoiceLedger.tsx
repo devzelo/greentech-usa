@@ -4,7 +4,7 @@ import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
-  invoicePaid, invoiceRemaining, fetchCompanies, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
+  invoicePaid, invoiceRemaining, fetchCompanies, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
   type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
@@ -85,6 +85,17 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
   const [rfqList, setRfqList] = useState<ApiRfq[]>([]);
   const [receiverPickerOpen, setReceiverPickerOpen] = useState(false);
+  const [recvAdd, setRecvAdd] = useState<{ name: string; category: string } | null>(null); // CR-I-03 — add a receiver on the spot
+  const addReceiver = async () => {
+    if (!recvAdd || !recvAdd.name.trim()) { toast("Enter the receiver's name.", "error"); return; }
+    try {
+      const c = await createCompany({ name: recvAdd.name.trim(), category: recvAdd.category as ApiCompany["category"] });
+      setCompanies((p) => [...p, c]);
+      setRecvAdd(null);
+      pickReceiver(c);
+      toast(`${c.name} added to the Directory.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not add receiver.", "error"); }
+  };
   const [recvSearch, setRecvSearch] = useState("");
   useEffect(() => {
     fetchCompanies().then(setCompanies).catch(() => {});
@@ -666,8 +677,25 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-6" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100"><h4 className="text-sm font-bold text-slate-900">Choose from Directory</h4><button onClick={() => setReceiverPickerOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={16} /></button></div>
                     <div className="p-3 space-y-2">
-                      <input value={recvSearch} onChange={(e) => setRecvSearch(e.target.value)} placeholder="Search…" className={finp} />
-                      {companies.length === 0 && <p className="text-xs text-slate-400 italic">No companies yet — add them under Directory in the left menu.</p>}
+                      <div className="flex items-center gap-1.5">
+                        <input value={recvSearch} onChange={(e) => setRecvSearch(e.target.value)} placeholder="Search…" className={finp} />
+                        {/* CR-I-03 — not in the list? Add the receiver on the spot (saved to the Directory). */}
+                        <button onClick={() => setRecvAdd({ name: recvSearch.trim(), category: "client" })} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold hover:opacity-90"><Plus size={11} /> Add</button>
+                      </div>
+                      {recvAdd && (
+                        <div className="rounded-xl border border-primary/30 bg-primary/5 p-2.5 space-y-2">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Add a new receiver</p>
+                          <input autoFocus value={recvAdd.name} onChange={(e) => setRecvAdd({ ...recvAdd, name: e.target.value })} placeholder="Company / person name" className={finp} />
+                          <div className="flex items-center gap-1.5">
+                            <select value={recvAdd.category} onChange={(e) => setRecvAdd({ ...recvAdd, category: e.target.value })} className={`${finp} font-bold`}>
+                              {COMPANY_CATEGORIES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
+                            </select>
+                            <button onClick={addReceiver} className="shrink-0 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary">Add &amp; select</button>
+                            <button onClick={() => setRecvAdd(null)} className="shrink-0 px-2 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold">Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {companies.length === 0 && !recvAdd && <p className="text-xs text-slate-400 italic">No companies yet — use <strong>Add</strong> above, or add them under Directory in the left menu.</p>}
                       <div className="max-h-72 overflow-y-auto space-y-1">
                         {companies.filter((c) => { const q = recvSearch.trim().toLowerCase(); return !q || `${c.name} ${c.category}`.toLowerCase().includes(q); }).map((c) => (
                           <button key={c._id} onClick={() => pickReceiver(c)} className="w-full text-left px-3 py-2 rounded-xl border border-slate-100 hover:bg-slate-50">
