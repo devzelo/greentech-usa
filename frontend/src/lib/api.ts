@@ -53,6 +53,15 @@ export function withFileToken(url: string): string {
 export async function emailDocument(body: { path: string; to: string; docName: string; note?: string }): Promise<{ ok: boolean }> {
   return request('/files/email', { method: 'POST', body: JSON.stringify(body) });
 }
+// CR-P-14 — email a freshly-generated document (BOQ line PDF, list export, …) as an attachment.
+export async function emailFileAttachment(file: Blob, fileName: string, to: string, docName: string, note = ""): Promise<{ ok: boolean }> {
+  const fd = new FormData();
+  fd.append("to", to);
+  fd.append("docName", docName);
+  fd.append("note", note);
+  fd.append("file", file, fileName);
+  return postMultipart<{ ok: boolean }>(`/api/files/email-attachment`, fd);
+}
 export async function createShareLink(fileUrl: string): Promise<string> {
   const { url } = await request<{ url: string }>('/files/share-link', {
     method: 'POST',
