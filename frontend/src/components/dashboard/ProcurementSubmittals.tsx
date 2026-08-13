@@ -337,6 +337,9 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                 <button onClick={() => buildPackage(sub, rev)} disabled={building === rev._id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">
                   {building === rev._id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Combined PDF
                 </button>
+                {/* CR-P-18 — Archive + Delete the whole submittal (Export/Share/Send come from Preview + Combined PDF). */}
+                {canEdit && rev.isCurrent && <button onClick={() => archiveSub(sub._id, !showArchived)} title={showArchived ? "Restore" : "Archive submittal"} className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-amber-600 hover:bg-amber-50">{showArchived ? <RotateCcw size={14} /> : <Archive size={14} />}</button>}
+                {canEdit && rev.isCurrent && <button onClick={() => removeSub(sub._id)} title="Delete submittal" className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>}
               </div>
             </div>
 
@@ -645,8 +648,15 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
         </div>
       )}
 
+      {/* CR-P-18 — the "Choose from BOQ" create form is a popup with Save / Save as Draft / Cancel. */}
       {creating && (
-        <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => { setCreating(false); setDraft(emptyDraft); }}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">New submittal — choose from BOQ</h3>
+              <button onClick={() => { setCreating(false); setDraft(emptyDraft); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="md:col-span-2 space-y-2">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Link a BOQ item (auto-fills the package)</label>
             {draft.itemId ? (
@@ -702,6 +712,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
               onSaveDraft={() => create(false)}
               onSave={() => create(true)}
             />
+          </div>
+        </div>
           </div>
         </div>
       )}
