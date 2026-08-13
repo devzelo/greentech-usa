@@ -527,7 +527,8 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                   <div className="flex items-center gap-1">
                     {ff.length > 0 && <button onClick={() => onPreview(`${label} / ${name} — ${titleFor}`, ff)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview folder"><Eye size={13} /></button>}
                     {ff.length > 0 && <button onClick={() => ff.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Download all files in this folder"><Download size={13} /></button>}
-                    {canEdit && <button onClick={() => pickInto(name)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 shrink-0" title="Upload into this folder"><Upload size={13} /> Upload</button>}
+                    {/* CR-P-08 — bigger, clearly-green Upload button so it's easy to find. */}
+                    {canEdit && <button onClick={() => pickInto(name)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 shadow-sm shadow-emerald-500/20 shrink-0" title="Upload into this folder"><Upload size={15} /> Upload here</button>}
                     {canEdit && <button onClick={() => removeFolder(name)} className="p-1 rounded hover:bg-rose-50 text-rose-400" title="Delete folder"><Trash2 size={13} /></button>}
                   </div>
                 </div>
@@ -535,6 +536,8 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                   <div className="px-2.5 pb-2.5 space-y-1.5">
                     {ff.map((f) => <Fragment key={f._id}><FileRow f={f} canEdit={canEdit} projectName={projectName} onRemove={remove} /></Fragment>)}
                     {ff.length === 0 && <p className="text-[11px] text-slate-300 text-center py-1">Empty folder.</p>}
+                    {/* CR-P-08 — prominent full-width green upload inside the open folder. */}
+                    {canEdit && <button disabled={uploading} onClick={() => pickInto(name)} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 disabled:opacity-40 shadow-sm shadow-emerald-500/20">{uploading && target === name ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload files into “{name}”</button>}
                   </div>
                 )}
               </div>
