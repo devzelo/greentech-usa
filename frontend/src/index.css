@@ -9,6 +9,17 @@
 }
 
 @layer base {
+  /*
+   * CR-P-02 — platform-wide density. Tailwind's spacing/text/rounded utilities are rem-based,
+   * so trimming the root font size shrinks buttons, tabs, padding, gaps and text everywhere at
+   * once (proportionally) — freeing vertical room without touching thousands of class names.
+   * Breakpoints stay px-based (layout unchanged) and the mobile 44px touch-target rule still wins.
+   * 15px ≈ 6% smaller than the 16px default; drop toward 14px for a denser feel.
+   */
+  html {
+    font-size: 15px;
+  }
+
   body {
     @apply font-sans text-slate-900 bg-white antialiased;
   }
