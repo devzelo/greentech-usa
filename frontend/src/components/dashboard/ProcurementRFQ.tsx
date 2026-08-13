@@ -55,6 +55,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
   const [receiverFor, setReceiverFor] = useState<string | null>(null); // rfq id whose receiver picker is open
   const [recvSearch, setRecvSearch] = useState("");
+  const [recvCat, setRecvCat] = useState("all"); // CR-PR-04 — receiver-picker category filter
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [submittals, setSubmittals] = useState<ApiSubmittal[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
@@ -1078,7 +1079,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         const rfq = rfqs.find((r) => r._id === receiverFor);
         if (!rfq) return null;
         const q = recvSearch.trim().toLowerCase();
-        const list = companies.filter((c) => !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q));
+        const list = companies.filter((c) => (recvCat === "all" || c.category === recvCat) && (!q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q)));
         return (
           <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
@@ -1090,6 +1091,14 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                 <div className="relative">
                   <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                   <input value={recvSearch} onChange={(e) => setRecvSearch(e.target.value)} placeholder="Search vendors, subs, manufacturers…" className={`${inp} pl-9`} />
+                </div>
+                {/* CR-PR-04 — filter the Directory by category (vendors / subs / partners / manufacturers / consultants / …). */}
+                <div className="flex flex-wrap gap-1">
+                  {(["all", ...COMPANY_CATEGORIES.map((x) => x.v)] as const).map((v) => (
+                    <button key={v} onClick={() => setRecvCat(v)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${recvCat === v ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 hover:text-slate-900"}`}>
+                      {v === "all" ? "All" : COMPANY_CATEGORIES.find((x) => x.v === v)?.label || v}
+                    </button>
+                  ))}
                 </div>
                 {companies.length === 0 && <p className="text-sm text-slate-400 italic">No companies in the Directory yet — add them under <strong>Directory</strong> in the left menu.</p>}
                 <div className="max-h-80 overflow-y-auto space-y-1">
