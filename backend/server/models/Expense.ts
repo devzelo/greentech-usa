@@ -15,6 +15,7 @@ export interface IExpense extends Document {
   amount: string; // unit price
   remarks: string; // replaces the old "category"
   subId: string; // optional subcontractor this expense is attributed to
+  invoiceId: string; // set when this expense is a received-invoice payment (excluded from P&L to avoid double-count)
   // Approval workflow: pending by default. Only employees/owners can change it.
   approval: "pending" | "approved" | "rejected";
   attachments: IExpenseAttachment[];
@@ -44,6 +45,7 @@ const ExpenseSchema = new Schema<IExpense>(
     amount: { type: String, default: "$0.00" },
     remarks: { type: String, default: "" },
     subId: { type: String, default: "" },
+    invoiceId: { type: String, default: "" },
     approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     attachments: { type: [AttachmentSchema], default: [] },
     addedById: { type: Schema.Types.ObjectId, ref: "User", default: null },

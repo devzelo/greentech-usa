@@ -139,6 +139,7 @@ router.post("/:iid/payments", async (req: AuthedRequest, res: Response, next: Ne
         const exp = await Expense.create({
           projectId: req.params.id,
           description: `Payment — invoice ${inv.number || ""} ${inv.party ? `· ${inv.party}` : ""}`.trim(),
+          invoiceId: String(inv._id),  // links this cash payment to its received invoice (excluded from accrual P&L)
           date: added.date,
           qty: "1",
           amount: added.amount,

@@ -38,17 +38,26 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
     // Income = legacy subcontractor invoice tables + the "Invoice Sent" builder invoices
     // (CR-I-06/09). Draft/Cancelled/Rejected sent invoices are not real billed revenue.
     const NON_REVENUE = ["Draft", "Cancelled", "Canceled", "Rejected"];
-    const [expenses, subInvoices, sentInvoices] = await Promise.all([
-      Expense.find({ projectId: { $in: ids } }).select("projectId qty amount").lean(),
+    const [expenses, subInvoices, sentInvoices, receivedInvoices] = await Promise.all([
+      Expense.find({ projectId: { $in: ids } }).select("projectId qty amount invoiceId description").lean(),
       SubInvoice.find({ projectId: { $in: ids } }).select("projectId amount").lean(),
       Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE } })
+        .select("projectId amount").lean(),
+      // CR-I-10 — received invoices (vendor/sub bills) are a project cost (accrual), regardless of payment.
+      Invoice.find({ projectId: { $in: ids }, type: "received", status: { $nin: NON_REVENUE } })
         .select("projectId amount").lean(),
     ]);
     const map: Record<string, { income: number; expenses: number }> = {};
     const bucket = (pid: string) => (map[pid] ||= { income: 0, expenses: 0 });
-    for (const e of expenses) bucket(e.projectId).expenses += (num(e.qty) || 1) * num(e.amount);
+    // Direct expenses only — a received-invoice PAYMENT is skipped here and counted once via the
+    // received invoice itself below, so a paid bill isn't double-counted.
+    for (const e of expenses) {
+      const isInvoicePayment = !!(e as { invoiceId?: string }).invoiceId || String((e as { description?: string }).description || "").startsWith("Payment — invoice");
+      if (!isInvoicePayment) bucket(e.projectId).expenses += (num(e.qty) || 1) * num(e.amount);
+    }
     for (const inv of subInvoices) bucket(inv.projectId).income += num(inv.amount);
     for (const inv of sentInvoices) bucket(inv.projectId).income += num(inv.amount);
+    for (const inv of receivedInvoices) bucket(inv.projectId).expenses += num(inv.amount);
     res.json(map);
   } catch (err) { next(err); }
 });
