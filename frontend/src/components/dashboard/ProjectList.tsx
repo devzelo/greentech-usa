@@ -269,7 +269,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                         <div className="flex items-center gap-4">
                           <div className={`w-1.5 h-10 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
                           <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">{p.name}</span>
+                            <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left font-bold text-slate-900 group-hover:text-primary hover:text-primary hover:underline transition-colors truncate cursor-pointer" title="Open project">{p.name}</button>
                             {/* Both numbers: our internal project number and the client's contract number. */}
                             <span className="text-[10px] text-slate-400 font-medium">
                               No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""} · Lead: {p.owner}
@@ -345,7 +345,9 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                       <MoreHorizontal size={20} />
                     </button>
                   </div>
-                  <h3 className="text-xl font-display font-bold text-slate-900 mb-1 group-hover:text-primary transition-colors line-clamp-1">{p.name}</h3>
+                  <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left w-full cursor-pointer" title="Open project">
+                    <h3 className="text-xl font-display font-bold text-slate-900 mb-1 group-hover:text-primary hover:text-primary hover:underline transition-colors line-clamp-1">{p.name}</h3>
+                  </button>
                   {/* Both numbers, same as the list view. */}
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">
                     No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}
