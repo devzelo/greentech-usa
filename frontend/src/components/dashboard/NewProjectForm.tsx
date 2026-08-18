@@ -8,7 +8,8 @@ import { toast } from "../../lib/toast";
 import { SERVICE_CATEGORIES } from "../../data/services";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
-import { COUNTRIES } from "../../lib/countryFlag";
+import CountrySelect from "./CountrySelect";
+import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import {
   Upload, Download, Eye, FileText, FileImage, FileCode,
@@ -177,6 +178,7 @@ export default function NewProjectForm() {
   const [category, setCategory] = useState("");
   const [contractNo, setContractNo] = useState("");
   const [contractYear, setContractYear] = useState(String(new Date().getFullYear()));
+  const [contractDate, setContractDate] = useState("");
   const [status, setStatus] = useState("Proposal");
   const [desc, setDesc] = useState("");
   const [siteAddr, setSiteAddr] = useState<SiteAddress>(EMPTY_SITE_ADDRESS);
@@ -324,6 +326,8 @@ export default function NewProjectForm() {
   );
 
   const [creating, setCreating] = useState(false);
+  // CR-P-12 — warn before leaving (browser + in-app) once the user has started entering a project.
+  useUnsavedGuard(!creating && (!!title.trim() || !!clientName.trim() || !!desc.trim()));
   // asDraft — the "Save as draft" action files the project under Drafts regardless of the
   // status picked in the form, so half-finished projects never look live.
   const handleCreate = async (asDraft = false) => {
@@ -334,6 +338,7 @@ export default function NewProjectForm() {
         category,
         contractNo,
         contractYear,
+        contractDate,
         status: (asDraft ? "Draft" : status) as ApiProject["status"],
         location: shortLocation(siteAddr),
         siteAddress: siteAddr,
@@ -404,8 +409,8 @@ export default function NewProjectForm() {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      {/* ── Header (sticky action bar — Cancel / Save as draft / Create stay visible on scroll) ── */}
+      <div className="sticky top-0 z-30 flex items-center justify-between gap-3 flex-wrap bg-slate-50/95 backdrop-blur-sm border-b border-slate-100 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 mb-1">Register New Project</h1>
           <p className="text-sm text-slate-400 font-medium">Fill in the sections below — all fields are optional except the project title.</p>
@@ -524,6 +529,16 @@ export default function NewProjectForm() {
             />
             <p className="text-[10px] text-slate-400">Also sets the year in the internal project number.</p>
           </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>
+            <input
+              type="date"
+              value={contractDate}
+              onChange={(e) => setContractDate(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+            />
+            <p className="text-[10px] text-slate-400">The exact date the contract was signed / awarded.</p>
+          </div>
           {/* The signed contract document — uploaded as soon as the project is created. */}
           <div className="space-y-2 md:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Document</label>
@@ -556,21 +571,8 @@ export default function NewProjectForm() {
             </select>
           </div>
           {/* Project site address — structured so RFQ/PO delivery and the project header can reuse it. */}
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Country</label>
-            <select
-              value={siteAddr.country}
-              onChange={(e) => setAddr("country", e.target.value)}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white outline-none appearance-none"
-            >
-              <option value="">Select a country…</option>
-              {siteAddr.country && !COUNTRIES.some((c) => c.name === siteAddr.country) && (
-                <option value={siteAddr.country}>{siteAddr.country} (current)</option>
-              )}
-              {COUNTRIES.map((c) => (
-                <option key={c.iso} value={c.name}>{c.flag} {c.name}</option>
-              ))}
-            </select>
+          <div className="md:col-span-2">
+            <CountrySelect label="Country" value={siteAddr.country} onChange={(v) => setAddr("country", v)} />
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">State / Province</label>

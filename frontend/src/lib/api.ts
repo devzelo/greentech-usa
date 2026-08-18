@@ -135,6 +135,7 @@ export interface ApiProject {
   category: string;
   contractNo: string;
   contractYear: string;
+  contractDate?: string;
   contractFile?: { name: string; filePath: string; fileType: string; size: string } | null;
   description: string;
   reportNotes?: string; // rich-text HTML narrative for the project report PDF

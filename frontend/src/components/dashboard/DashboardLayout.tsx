@@ -1,10 +1,9 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import {
   LayoutDashboard,
   Briefcase,
   FolderSearch,
-  PlusCircle,
   FileEdit,
   FileText,
   User,
@@ -21,6 +20,8 @@ import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
 import { clearAuthToken, getAuthUser, fetchReminders } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { isAppDirty, clearAppDirty } from "../../lib/dirtyState";
+import { useDialogs } from "../../lib/useDialogs";
 import GlobalSearch from "./GlobalSearch";
 import GlobalEscClose from "./GlobalEscClose";
 import Toaster from "./Toaster";
@@ -29,10 +30,10 @@ import NewRecordMenu from "./NewRecordMenu";
 
 const allSidebarLinks = [
   { name: "Overview", icon: LayoutDashboard, path: "/dashboard" },
-  { name: "My Projects", icon: Briefcase, path: "/dashboard/my-projects" },
+  // All Projects sits above My Projects; it is admin-only (see filtering below).
   { name: "All Projects", icon: FolderSearch, path: "/dashboard/all-projects" },
+  { name: "My Projects", icon: Briefcase, path: "/dashboard/my-projects" },
   { name: "Drafts", icon: FileEdit, path: "/dashboard/drafts" },
-  { name: "New Project", icon: PlusCircle, path: "/dashboard/new-project" },
   { name: "Documents", icon: FileText, path: "/dashboard/documents" },
   { name: "Directory", icon: Building2, path: "/dashboard/directory" },
   { name: "General Agreements", icon: Handshake, path: "/dashboard/agreements" },
@@ -76,6 +77,23 @@ export default function DashboardLayout() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  const { confirm, dialogs } = useDialogs();
+  // CR-P-12 — warn before in-app navigation (sidebar / logo) when a builder has unsaved work.
+  // beforeunload covers refresh / browser-back / close; this covers clicks inside the app.
+  const guardedGo = async (e: ReactMouseEvent, to: string) => {
+    if (isMobile) setIsSidebarOpen(false);
+    if (!isAppDirty()) return;                 // no unsaved work — let the <Link> navigate normally
+    e.preventDefault();
+    const ok = await confirm({
+      title: "Leave without saving?",
+      message: "You have unsaved changes on this page. If you leave now they'll be lost — save (or save as draft) first to keep them.",
+      confirmLabel: "Leave", cancelLabel: "Stay", danger: true,
+    });
+    if (!ok) return;
+    clearAppDirty();
+    navigate(to);
+  };
+
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const handleLogout = () => {
     clearAuthToken();
@@ -90,7 +108,9 @@ export default function DashboardLayout() {
   const baseLinks = isAdmin
     ? [...allSidebarLinks, { name: "Users", icon: Users, path: "/dashboard/users" }]
     : allSidebarLinks;
-  const sidebarLinks = isGuest ? baseLinks.filter((l) => GUEST_LINKS.has(l.name)) : baseLinks;
+  // All Projects is admin-only; everyone else works from My Projects.
+  const roleLinks = isAdmin ? baseLinks : baseLinks.filter((l) => l.name !== "All Projects");
+  const sidebarLinks = isGuest ? roleLinks.filter((l) => GUEST_LINKS.has(l.name)) : roleLinks;
   const userInitial = (me?.name || me?.email || "?").charAt(0).toUpperCase();
 
   // Breadcrumb: "Overview" is the root (→ /dashboard). On the overview page itself it shows just
@@ -104,6 +124,7 @@ export default function DashboardLayout() {
     <div className="h-screen overflow-hidden bg-slate-50 flex">
       <GlobalEscClose />
       <Toaster />
+      {dialogs}
 
       {/* Logout confirm modal */}
       <AnimatePresence>
@@ -173,7 +194,7 @@ export default function DashboardLayout() {
         <div className={`h-20 flex items-center bg-slate-900 ${isSidebarOpen ? "px-5 justify-between" : "justify-center px-2"}`}>
           {isSidebarOpen ? (
             <>
-              <Link to="/dashboard" onClick={() => { if (isMobile) setIsSidebarOpen(false); }} className="min-w-0 flex-shrink" aria-label="Go to Overview">
+              <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="min-w-0 flex-shrink" aria-label="Go to Overview">
                 <img
                   src="/gt-logo-horizontal.png"
                   alt="GreenTech USA"
@@ -190,7 +211,7 @@ export default function DashboardLayout() {
               </button>
             </>
           ) : (
-            <Link to="/dashboard" className="flex-shrink-0" aria-label="Go to Overview">
+            <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="flex-shrink-0" aria-label="Go to Overview">
               <img
                 src={gtFavicon}
                 alt="GreenTech USA"
@@ -207,7 +228,7 @@ export default function DashboardLayout() {
               <Link
                 key={link.name}
                 to={link.path}
-                onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
+                onClick={(e) => guardedGo(e, link.path)}
                 title={!isSidebarOpen ? link.name : undefined}
                 className={`flex items-center gap-3 rounded-lg transition-all group ${isSidebarOpen ? "px-3 py-2.5" : "justify-center px-0 py-2.5"} ${
                   location.pathname === link.path
@@ -228,7 +249,7 @@ export default function DashboardLayout() {
                   <Link
                     key={link.name}
                     to={link.path}
-                    onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
+                    onClick={(e) => guardedGo(e, link.path)}
                     title={!isSidebarOpen ? link.name : undefined}
                     className={`flex items-center gap-3 rounded-lg transition-all group ${isSidebarOpen ? "px-3 py-2.5" : "justify-center px-0 py-2.5"} ${
                       location.pathname === link.path
@@ -265,6 +286,7 @@ export default function DashboardLayout() {
         {isSidebarOpen && me && (
           <Link
             to="/dashboard/profile"
+            onClick={(e) => guardedGo(e, "/dashboard/profile")}
             className="p-4 bg-slate-50 mt-auto block hover:bg-slate-100 transition-colors"
           >
             <div className="flex items-center gap-3">

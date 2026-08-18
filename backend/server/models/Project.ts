@@ -8,6 +8,7 @@ export interface IProject extends Document {
   category: string;
   contractNo: string;    // the contract number — shown in place of a project number
   contractYear: string;  // the year the project started (shown as the table's Year column)
+  contractDate: string;  // the exact contract date (ISO yyyy-mm-dd), parallel to contractYear
   // The signed contract document itself — uploaded on the project identity and previewable
   // wherever the project is shown.
   contractFile: { name: string; filePath: string; fileType: string; size: string } | null;
@@ -134,6 +135,7 @@ const ProjectSchema = new Schema<IProject>(
     category: { type: String, default: "" },
     contractNo: { type: String, default: "" },
     contractYear: { type: String, default: "" },
+    contractDate: { type: String, default: "" },   // exact contract date (parallel to contractYear)
     contractFile: { type: { name: String, filePath: String, fileType: String, size: String }, default: null },
     location: { type: String, default: "" },
     siteAddress: {

@@ -52,7 +52,8 @@ import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
 import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
-import { locationFlag, flagForCountry, COUNTRIES } from "../../lib/countryFlag";
+import { locationFlag, flagForCountry } from "../../lib/countryFlag";
+import CountrySelect from "./CountrySelect";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import type { ProjectStatus } from "../../lib/api";
 import AgreementsPanel from "./agreements/AgreementsPanel";
@@ -907,13 +908,13 @@ export default function ProjectWorkspace() {
     name: string; clientName: string; status: string; category: string; siteAddress: SiteAddress;
     description: string; reportNotes: string; fiscal: string; compliance: string; value: string;
     startDate: string; endDate: string; progress: number;
-    disciplines: string; contractNo: string; contractYear: string;
+    disciplines: string; contractNo: string; contractYear: string; contractDate: string;
   };
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState<IdentityForm>({
     name: "", clientName: "", status: "Planning", category: "", siteAddress: EMPTY_SITE_ADDRESS,
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
-    startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "",
+    startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
   });
   const setAddr = <K extends keyof SiteAddress>(k: K, v: SiteAddress[K]) =>
     setIdentityForm((f) => ({ ...f, siteAddress: { ...f.siteAddress, [k]: v } }));
@@ -962,6 +963,7 @@ export default function ProjectWorkspace() {
       disciplines: (project.disciplines || []).join(", "),
       contractNo: project.contractNo || "",
       contractYear: project.contractYear || "",
+      contractDate: project.contractDate || "",
     });
     // The JV editor writes straight into the shared jvInfo state, so snapshot it — Cancel must
     // discard partner edits (including removed stamps/signatures) just like the other fields.
@@ -997,6 +999,7 @@ export default function ProjectWorkspace() {
         disciplines: identityForm.disciplines.split(",").map((d) => d.trim()).filter(Boolean),
         contractNo: identityForm.contractNo,
         contractYear: identityForm.contractYear,
+        contractDate: identityForm.contractDate,
         jointVenture: jvInfo, // §M — JV now lives in Project Identity
       });
       setProject(updated);
@@ -2460,6 +2463,12 @@ export default function ProjectWorkspace() {
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year: {project.contractYear}</span>
+                  </>
+                )}
+                {project.contractDate && (
+                  <>
+                    <span className="text-xs font-bold text-slate-300">·</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract: {project.contractDate}</span>
                   </>
                 )}
                 {project.endDate && (
@@ -5257,6 +5266,17 @@ export default function ProjectWorkspace() {
                   />
                   <p className="text-[10px] text-slate-400">Drives the Year column on My Projects / All Projects.</p>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>
+                  <input
+                    type="date"
+                    value={identityForm.contractDate}
+                    onChange={(e) => setIdentityForm({ ...identityForm, contractDate: e.target.value })}
+                    disabled={!isOwner}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                  <p className="text-[10px] text-slate-400">The exact date the contract was signed / awarded.</p>
+                </div>
                 {/* The signed contract document */}
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Document</label>
@@ -5299,22 +5319,8 @@ export default function ProjectWorkspace() {
                   </select>
                 </div>
                 {/* Project site address — feeds RFQ/PO delivery and the "City, Country 🇬🇭" header. */}
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Country</label>
-                  <select
-                    value={identityForm.siteAddress.country}
-                    onChange={(e) => setAddr("country", e.target.value)}
-                    disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed appearance-none"
-                  >
-                    <option value="">Select a country…</option>
-                    {identityForm.siteAddress.country && !COUNTRIES.some((c) => c.name === identityForm.siteAddress.country) && (
-                      <option value={identityForm.siteAddress.country}>{identityForm.siteAddress.country} (current)</option>
-                    )}
-                    {COUNTRIES.map((c) => (
-                      <option key={c.iso} value={c.name}>{c.flag} {c.name}</option>
-                    ))}
-                  </select>
+                <div className="md:col-span-2">
+                  <CountrySelect label="Country" value={identityForm.siteAddress.country} onChange={(v) => setAddr("country", v)} disabled={!isOwner} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">State / Province</label>

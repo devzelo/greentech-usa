@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, CloudOff } from "lucide-react";
+import { markDirty as markAppDirty } from "../../lib/dirtyState";
 
 /**
  * Reusable autosave status indicator (client request CR-B-14b): shows
@@ -32,13 +33,18 @@ export function useSaveStatus() {
   };
 
   // CR-B-20 — warn before leaving the page (close window / reload / different site) while there
-  // are unsaved edits or a save is still in flight.
+  // are unsaved edits or a save is still in flight. CR-P-12 — also raise the global app-dirty flag
+  // so in-app navigation (sidebar / logo) warns too.
+  const appPrev = useRef(false);
+  const active = dirty || state === "saving";
+  useEffect(() => { appPrev.current = markAppDirty(active, appPrev.current); }, [active]);
+  useEffect(() => () => { appPrev.current = markAppDirty(false, appPrev.current); }, []);
   useEffect(() => {
-    if (!dirty && state !== "saving") return;
+    if (!active) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty, state]);
+  }, [active]);
 
   return { state, savedAt, dirty, markDirty, track };
 }

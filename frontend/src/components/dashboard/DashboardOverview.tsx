@@ -45,8 +45,11 @@ export default function DashboardOverview() {
   useMeta({ title: "Overview", description: "Your project dashboard — track ongoing work, activity, drafts and finances." });
   const navigate = useNavigate();
   const user = getAuthUser();
+  const isAdmin = user?.role === "admin";
   const isStaff = user?.role === "admin" || user?.role === "employee";
   const firstName = (user?.name || "there").split(" ")[0];
+  // Only admins have the All Projects page; everyone else stays in My Projects.
+  const projectsBase = isAdmin ? "/dashboard/all-projects" : "/dashboard/my-projects";
 
   const [mine, setMine] = useState<ApiProject[]>([]);
   const [all, setAll] = useState<ApiProject[]>([]);
@@ -74,9 +77,9 @@ export default function DashboardOverview() {
   const count = (filter: string) => all.filter((p) => statusMatches(filter, p.status)).length;
   const cards = [
     { label: "My Projects", value: mine.length, accent: "blue", icon: Briefcase, trend: "Owned or assigned", onClick: () => navigate("/dashboard/my-projects") },
-    { label: "Active / Ongoing", value: count("Active"), accent: "emerald", icon: Clock, trend: "In progress", onClick: () => navigate("/dashboard/all-projects?status=Active") },
-    { label: "Proposal / Opportunity", value: count("Proposal"), accent: "yellow", icon: Lightbulb, trend: "Pipeline", onClick: () => navigate("/dashboard/all-projects?status=Proposal") },
-    { label: "Completed / Closed", value: count("Closed"), accent: "slate", icon: CheckCircle2, trend: "Delivered", onClick: () => navigate("/dashboard/all-projects?status=Closed") },
+    { label: "Active / Ongoing", value: count("Active"), accent: "emerald", icon: Clock, trend: "In progress", onClick: () => navigate(`${projectsBase}?status=Active`) },
+    { label: "Proposal / Opportunity", value: count("Proposal"), accent: "yellow", icon: Lightbulb, trend: "Pipeline", onClick: () => navigate(`${projectsBase}?status=Proposal`) },
+    { label: "Completed / Closed", value: count("Closed"), accent: "slate", icon: CheckCircle2, trend: "Delivered", onClick: () => navigate(`${projectsBase}?status=Closed`) },
     { label: "Drafts", value: drafts.length, accent: "violet", icon: FileEdit, trend: "Unfinished", onClick: () => setTab("drafts") },
   ];
 
@@ -92,7 +95,7 @@ export default function DashboardOverview() {
     { label: "New Reminder", icon: AlarmClock, to: "/dashboard/reminders" },
     { label: "Directory", icon: Building2, to: "/dashboard/directory" },
     { label: "Documents", icon: FileText, to: "/dashboard/documents" },
-    { label: "All Projects", icon: Briefcase, to: "/dashboard/all-projects" },
+    { label: isAdmin ? "All Projects" : "My Projects", icon: Briefcase, to: projectsBase },
   ];
 
   const overdue = (p: ApiProject) => !!p.endDate && p.endDate < todayStr() && !["Closed", "Completed", "Lost"].includes(p.status);
@@ -161,7 +164,7 @@ export default function DashboardOverview() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">General information · Finances</h2>
-            <button onClick={() => navigate("/dashboard/all-projects")} className="text-xs font-bold text-primary hover:underline">Full portfolio</button>
+            <button onClick={() => navigate(projectsBase)} className="text-xs font-bold text-primary hover:underline">Full portfolio</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
@@ -200,7 +203,7 @@ export default function DashboardOverview() {
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-lg font-display font-bold text-slate-900">Recent Projects</h2>
-              <button onClick={() => navigate("/dashboard/all-projects")} className="text-sm font-bold text-primary hover:underline">View all projects</button>
+              <button onClick={() => navigate(projectsBase)} className="text-sm font-bold text-primary hover:underline">View all projects</button>
             </div>
             <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
               {loading ? (
