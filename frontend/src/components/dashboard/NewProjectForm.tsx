@@ -1290,7 +1290,7 @@ export default function NewProjectForm() {
       <AnimatePresence>
         {showAddTab && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAddTab(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-xl font-display font-bold text-slate-900">Add Custom Tab</h3>
@@ -1321,7 +1321,7 @@ export default function NewProjectForm() {
       <AnimatePresence>
         {showConfirm && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowConfirm(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-lg shadow-2xl">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-display font-bold text-slate-900">Create Project?</h3>
@@ -1360,7 +1360,7 @@ export default function NewProjectForm() {
         {/* Cancel — discards everything typed so far */}
         {showCancelConfirm && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCancelConfirm(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
               <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Discard this project?</h3>
               <p className="text-sm text-slate-500 mb-6">Nothing has been saved yet. Everything you've filled in will be lost — use <strong>Save as draft</strong> if you want to finish it later.</p>

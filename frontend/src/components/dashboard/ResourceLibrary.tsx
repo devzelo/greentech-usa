@@ -68,7 +68,7 @@ export default function ResourceLibrary({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-      <div onClick={onClose} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
       <div className="relative bg-white rounded-[2rem] p-8 w-full max-w-3xl shadow-2xl max-h-[88vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-display font-bold text-slate-900 flex items-center gap-2"><Library size={18} className="text-primary" /> Resource Library</h3>

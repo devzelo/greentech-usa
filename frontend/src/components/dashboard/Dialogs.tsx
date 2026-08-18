@@ -27,7 +27,8 @@ export function PromptDialog({
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onCancel} className={overlay} />
+          {/* Backdrop is intentionally NOT click-to-close — only the X / Cancel dismisses it. */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={overlay} />
           <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className={panel}>
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-display font-bold text-slate-900">{title}</h3>
@@ -73,16 +74,18 @@ export function ConfirmDialog({
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onCancel} className={overlay} />
+          {/* Backdrop is intentionally NOT click-to-close — only the X / Cancel dismisses it. */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={overlay} />
           <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className={panel}>
             <div className="flex items-start gap-4 mb-6">
               <span className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${danger ? "bg-red-50 text-red-500" : "bg-slate-100 text-slate-500"}`}>
                 <AlertTriangle size={20} />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-grow">
                 <h3 className="text-lg font-display font-bold text-slate-900">{title}</h3>
                 <p className="text-sm text-slate-500 mt-1">{message}</p>
               </div>
+              <button onClick={onCancel} className="p-2 -mt-1 -mr-1 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors shrink-0"><X size={18} /></button>
             </div>
             <div className="flex gap-3">
               <button onClick={onCancel} className="flex-1 py-3 rounded-2xl border border-slate-200 font-bold text-sm text-slate-500 hover:bg-slate-50">{cancelLabel}</button>

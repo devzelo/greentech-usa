@@ -206,7 +206,7 @@ export default function UserManagement() {
       <AnimatePresence>
         {editorOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditorOpen(false)} className={overlay} />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={overlay} />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className={panel}>
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-display font-bold text-slate-900">{editingId ? "Edit User" : "Add User"}</h3>
@@ -260,7 +260,7 @@ export default function UserManagement() {
       <AnimatePresence>
         {pwTarget && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPwTarget(null)} className={overlay} />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={overlay} />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
               <div className="flex items-start gap-4 mb-6">
                 <span className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><KeyRound size={20} /></span>
@@ -294,7 +294,7 @@ export default function UserManagement() {
       <AnimatePresence>
         {agreementsFor && (
           <div className="fixed inset-0 z-[200] flex items-start justify-center p-6 overflow-y-auto">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAgreementsFor(null)} className={overlay} />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={overlay} />
             <motion.div initial={{ scale: 0.97, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.97, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-8 w-full max-w-3xl shadow-2xl my-6">
               <div className="flex items-center justify-between mb-5">
                 <div>

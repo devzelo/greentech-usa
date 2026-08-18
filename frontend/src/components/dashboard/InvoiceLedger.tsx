@@ -673,7 +673,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
               {/* Receiver picker (Directory) */}
               {receiverPickerOpen && (
-                <div className="absolute inset-0 z-30 flex items-start justify-center bg-slate-900/40 rounded-3xl p-4 overflow-y-auto" onClick={() => setReceiverPickerOpen(false)}>
+                <div className="absolute inset-0 z-30 flex items-start justify-center bg-slate-900/40 rounded-3xl p-4 overflow-y-auto">
                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-6" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100"><h4 className="text-sm font-bold text-slate-900">Choose from Directory</h4><button onClick={() => setReceiverPickerOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={16} /></button></div>
                     <div className="p-3 space-y-2">

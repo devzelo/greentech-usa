@@ -171,7 +171,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
       {/* Editor */}
       {editorOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-          <div onClick={() => setEditorOpen(false)} className={overlay} />
+          <div className={overlay} />
           <div className="relative bg-white rounded-[2rem] p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-display font-bold text-slate-900">{editingId ? "Edit resume" : "New resume"} <span className="text-slate-400 font-medium">· {subcontractorName}</span></h3>
@@ -305,7 +305,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
       {/* Reuse-from-library picker */}
       {libOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-          <div onClick={() => setLibOpen(false)} className={overlay} />
+          <div className={overlay} />
           <div className="relative bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-display font-bold text-slate-900">Reuse a resume</h3>
@@ -348,7 +348,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
       {/* Preview modal — renders the in-progress draft */}
       {previewDraft && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-6">
-          <div onClick={() => setPreviewDraft(false)} className={overlay} />
+          <div className={overlay} />
           <div className="relative bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-display font-bold text-slate-900">Resume Preview</h3>

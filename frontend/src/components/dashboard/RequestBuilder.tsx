@@ -537,7 +537,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
         const sec = (histFor.r.sections || [])[histFor.i];
         const hist = sec?.history || [];
         return (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setHistFor(null)}>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
                 <h3 className="text-sm font-bold text-slate-900 truncate">History — {sec?.title || "Section"}</h3>

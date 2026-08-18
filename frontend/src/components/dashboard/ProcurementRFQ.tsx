@@ -943,7 +943,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
 
       {/* CR-PR-02 — New RFQ: build on the platform, or upload an already-made RFQ. */}
       {chooseNew && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setChooseNew(false)}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900">New RFQ</h3>

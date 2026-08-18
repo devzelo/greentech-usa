@@ -18,14 +18,16 @@ const COLORS: Record<ToastKind, string> = {
 export default function Toaster() {
   const [items, setItems] = useState<ToastEventDetail[]>([]);
 
+  const dismiss = (id: number) => setItems((prev) => prev.filter((t) => t.id !== id));
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<ToastEventDetail>).detail;
       if (!detail) return;
       setItems((prev) => [...prev, detail]);
-      setTimeout(() => {
-        setItems((prev) => prev.filter((t) => t.id !== detail.id));
-      }, 3500);
+      // Action toasts (Undo) linger so the user has time to click.
+      const ttl = detail.duration ?? (detail.action ? 7000 : 3500);
+      setTimeout(() => dismiss(detail.id), ttl);
     };
     window.addEventListener("app-toast", handler as EventListener);
     return () => window.removeEventListener("app-toast", handler as EventListener);
@@ -46,9 +48,17 @@ export default function Toaster() {
             >
               <Icon size={18} className="flex-shrink-0" />
               <span className="text-sm font-bold flex-grow">{t.msg}</span>
+              {t.action && (
+                <button
+                  onClick={() => { t.action!.onClick(); dismiss(t.id); }}
+                  className="text-xs font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 flex-shrink-0"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button
-                onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-                className="opacity-70 hover:opacity-100"
+                onClick={() => dismiss(t.id)}
+                className="opacity-70 hover:opacity-100 flex-shrink-0"
               >
                 <X size={14} />
               </button>

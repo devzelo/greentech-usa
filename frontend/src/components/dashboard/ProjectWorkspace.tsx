@@ -3871,7 +3871,7 @@ export default function ProjectWorkspace() {
                           {/* CR-P-05 — vendor edit modal (edits the shared RFQ vendor record). */}
                           {vEditable && editVendorOpen && (
                             <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-                              <div onClick={() => setEditVendorOpen(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+                              <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
                               <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
                                 <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
                                   <div className="flex items-center gap-2">
@@ -4807,7 +4807,6 @@ export default function ProjectWorkspace() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={closeAddTab}
               className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
             />
             <motion.div
@@ -5043,7 +5042,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {renamingTab && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRenamingTab(null)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-xl font-display font-bold text-slate-900">Rename Tab</h3>
@@ -5070,7 +5069,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showSaveTemplate && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSaveTemplate(null)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-lg shadow-2xl">
               <div className="flex items-center justify-between mb-8">
                 <div>
@@ -5138,7 +5137,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showEditIdentity && project && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={cancelEditIdentity} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2rem] p-8 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -5498,7 +5497,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showSubModal && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSubModal(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-xl shadow-2xl">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-xl font-display font-bold text-slate-900">
@@ -5660,7 +5659,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showTemplatesModal && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowTemplatesModal(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-2xl shadow-2xl max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -5709,7 +5708,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {editingTemplate && (
           <div className="fixed inset-0 z-[210] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeEditTemplate} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-2xl shadow-2xl max-h-[88vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -5834,7 +5833,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showShowcaseModal && isOwner && id && project && (
           <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 sm:p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowShowcaseModal(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div
               initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -5995,7 +5994,7 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showGuestModal && (
           <div className="fixed inset-0 z-[210] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeGuestModal} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-2xl shadow-2xl max-h-[88vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>

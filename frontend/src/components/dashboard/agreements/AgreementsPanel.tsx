@@ -115,8 +115,19 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     try { setList(await fetchAgreements(ctx, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx), showArchived]);
+  const undoArchive = async (ag: ApiAgreement) => {
+    try { await setAgreementArchived(ctx, ag._id, false); toast("Agreement restored.", "success"); await load(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not restore.", "error"); }
+  };
   const archive = async (ag: ApiAgreement, next: boolean) => {
-    try { patch(await setAgreementArchived(ctx, ag._id, next)); if (next !== showArchived) setList((p) => p.filter((x) => x._id !== ag._id)); toast(next ? "Agreement archived." : "Agreement restored.", "success"); }
+    // Archiving asks first (delete/cancel already confirm); restoring is safe and immediate.
+    if (next && !(await confirm({ title: "Archive agreement?", message: `"${ag.name || ag.agreementType}" will be moved to the archive. You can restore it anytime from the Archived view.`, confirmLabel: "Archive", danger: false }))) return;
+    try {
+      patch(await setAgreementArchived(ctx, ag._id, next));
+      if (next !== showArchived) setList((p) => p.filter((x) => x._id !== ag._id));
+      if (next) toast("Agreement archived.", "success", { action: { label: "Undo", onClick: () => void undoArchive(ag) } });
+      else toast("Agreement restored.", "success");
+    }
     catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
   };
 

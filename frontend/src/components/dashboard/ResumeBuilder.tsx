@@ -347,7 +347,7 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
       {/* Preview modal */}
       {showPreview && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-          <div onClick={() => setShowPreview(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
           <div className="relative bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-display font-bold text-slate-900">Resume Preview</h3>

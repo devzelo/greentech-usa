@@ -66,7 +66,7 @@ function AddressModal({ projectSite, initial, onClose, onSave }: {
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-10" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
           <div className="flex items-center gap-2"><MapPin size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">Delivery address</p></div>

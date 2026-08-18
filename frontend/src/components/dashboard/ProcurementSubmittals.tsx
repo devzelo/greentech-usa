@@ -464,7 +464,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                     const roCls = readOnly ? "opacity-70 pointer-events-none" : "";
                     const showComment = commentOpen.has(rev._id) || !!rev.notes;
                     return (
-                    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => setOpenResp((s) => { const n = new Set(s); n.delete(rev._id); return n; })}>
+                    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
                       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><MessageSquare size={16} className="text-primary" /> Client Response — Submittal #{subNo[sub._id]}{rev.revisionNo > 0 ? ` - RV${rev.revisionNo}` : ""}</h3>
@@ -639,7 +639,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
 
       {/* CR-P-17 — New submittal: choose how to create it. */}
       {chooseNew && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setChooseNew(false)}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900">New submittal</h3>
@@ -663,7 +663,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
 
       {/* CR-P-18 — the "Choose from BOQ" create form is a popup with Save / Save as Draft / Cancel. */}
       {creating && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={() => { setCreating(false); setDraft(emptyDraft); }}>
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900">New submittal — choose from BOQ</h3>

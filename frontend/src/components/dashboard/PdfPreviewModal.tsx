@@ -62,7 +62,7 @@ export default function PdfPreviewModal({ title, fileName, build, onClose }: {
 
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-      <div onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
       <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h3 className="text-base font-display font-bold text-slate-900 truncate">{title}</h3>

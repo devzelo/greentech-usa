@@ -108,7 +108,6 @@ export default function DashboardLayout() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowLogoutConfirm(false)}
               className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
             />
             <motion.div
