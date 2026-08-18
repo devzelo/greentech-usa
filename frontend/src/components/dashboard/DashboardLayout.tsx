@@ -93,7 +93,12 @@ export default function DashboardLayout() {
   const sidebarLinks = isGuest ? baseLinks.filter((l) => GUEST_LINKS.has(l.name)) : baseLinks;
   const userInitial = (me?.name || me?.email || "?").charAt(0).toUpperCase();
 
-  const activeLink = [...sidebarLinks, ...secondaryLinks].find(link => link.path === location.pathname)?.name || "Dashboard";
+  // Breadcrumb: "Overview" is the root (→ /dashboard). On the overview page itself it shows just
+  // once; on any other page it reads "Overview › <Page>", both crumbs clickable.
+  const isOverview = location.pathname === "/dashboard";
+  const activeNav = [...sidebarLinks, ...secondaryLinks].find(link => link.path === location.pathname);
+  const seg = location.pathname.replace(/^\/dashboard\/?/, "").split("/")[0];
+  const activeLink = activeNav?.name || (seg ? seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " ") : "Overview");
 
   return (
     <div className="h-screen overflow-hidden bg-slate-50 flex">
@@ -300,9 +305,15 @@ export default function DashboardLayout() {
               </button>
             )}
             <div className="hidden sm:flex items-center gap-2 text-sm">
-                <span className="text-slate-400 font-medium">Dashboard</span>
-                <ChevronRight size={14} className="text-slate-300" />
-                <span className="text-slate-900 font-bold tracking-tight">{activeLink}</span>
+                {isOverview ? (
+                  <Link to="/dashboard" className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">Overview</Link>
+                ) : (
+                  <>
+                    <Link to="/dashboard" className="text-slate-400 font-medium hover:text-primary transition-colors">Overview</Link>
+                    <ChevronRight size={14} className="text-slate-300" />
+                    <Link to={location.pathname} className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">{activeLink}</Link>
+                  </>
+                )}
             </div>
           </div>
 
