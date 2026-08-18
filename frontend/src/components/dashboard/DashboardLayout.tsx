@@ -20,7 +20,7 @@ import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
 import { clearAuthToken, getAuthUser, fetchReminders } from "../../lib/api";
 import { toast } from "../../lib/toast";
-import { isAppDirty, clearAppDirty } from "../../lib/dirtyState";
+import { isAppDirty, clearAppDirty, subscribeDirty } from "../../lib/dirtyState";
 import { useDialogs } from "../../lib/useDialogs";
 import GlobalSearch from "./GlobalSearch";
 import GlobalEscClose from "./GlobalEscClose";
@@ -93,6 +93,31 @@ export default function DashboardLayout() {
     clearAppDirty();
     navigate(to);
   };
+
+  // CR-P-12 — guard the browser BACK button too. beforeunload can't catch in-app (SPA) back
+  // navigation, so while there are unsaved changes we keep a history "sentinel" and, when Back is
+  // pressed, ask first — staying put on Cancel, going back for real on confirm.
+  useEffect(() => {
+    let armed = false;
+    const arm = () => {
+      if (isAppDirty() && !armed) { window.history.pushState(null, "", window.location.href); armed = true; }
+      else if (!isAppDirty()) armed = false;
+    };
+    const unsub = subscribeDirty(arm);
+    arm();
+    const onPop = async () => {
+      if (!isAppDirty()) return;            // nothing unsaved — allow the back normally
+      const ok = await confirm({
+        title: "Leave without saving?",
+        message: "You have unsaved changes on this page. If you leave now they'll be lost — save (or save as draft) first to keep them.",
+        confirmLabel: "Leave", cancelLabel: "Stay", danger: true,
+      });
+      if (ok) { clearAppDirty(); window.history.back(); }        // go back for real
+      else { window.history.pushState(null, "", window.location.href); armed = true; }  // re-arm, stay put
+    };
+    window.addEventListener("popstate", onPop);
+    return () => { window.removeEventListener("popstate", onPop); unsub(); };
+  }, [confirm]);
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const handleLogout = () => {
@@ -328,10 +353,10 @@ export default function DashboardLayout() {
             )}
             <div className="hidden sm:flex items-center gap-2 text-sm">
                 {isOverview ? (
-                  <Link to="/dashboard" className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">Overview</Link>
+                  <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">Overview</Link>
                 ) : (
                   <>
-                    <Link to="/dashboard" className="text-slate-400 font-medium hover:text-primary transition-colors">Overview</Link>
+                    <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="text-slate-400 font-medium hover:text-primary transition-colors">Overview</Link>
                     <ChevronRight size={14} className="text-slate-300" />
                     <Link to={location.pathname} className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">{activeLink}</Link>
                   </>

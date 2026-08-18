@@ -326,8 +326,11 @@ export default function NewProjectForm() {
   );
 
   const [creating, setCreating] = useState(false);
-  // CR-P-12 — warn before leaving (browser + in-app) once the user has started entering a project.
-  useUnsavedGuard(!creating && (!!title.trim() || !!clientName.trim() || !!desc.trim()));
+  // CR-P-12 — warn before leaving (browser + in-app) once the user has touched ANY field. `touched`
+  // flips true on the first input/change anywhere in the form (see the root onChange/onInput).
+  const [touched, setTouched] = useState(false);
+  const markTouched = () => setTouched(true);
+  useUnsavedGuard(!creating && touched);
   // asDraft — the "Save as draft" action files the project under Drafts regardless of the
   // status picked in the form, so half-finished projects never look live.
   const handleCreate = async (asDraft = false) => {
@@ -408,7 +411,7 @@ export default function NewProjectForm() {
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20" onChangeCapture={markTouched} onInput={markTouched}>
       {/* ── Header (sticky action bar — Cancel / Save as draft / Create stay visible on scroll) ── */}
       <div className="sticky top-0 z-30 flex items-center justify-between gap-3 flex-wrap bg-slate-50/95 backdrop-blur-sm border-b border-slate-100 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3">
         <div>
