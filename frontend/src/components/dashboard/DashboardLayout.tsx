@@ -169,11 +169,11 @@ export default function DashboardLayout() {
         <div className={`h-20 flex items-center bg-slate-900 ${isSidebarOpen ? "px-5 justify-between" : "justify-center px-2"}`}>
           {isSidebarOpen ? (
             <>
-              <Link to="/dashboard" onClick={() => { if (isMobile) setIsSidebarOpen(false); }} className="flex-shrink-0" aria-label="Go to Overview">
+              <Link to="/dashboard" onClick={() => { if (isMobile) setIsSidebarOpen(false); }} className="min-w-0 flex-shrink" aria-label="Go to Overview">
                 <img
                   src="/gt-logo-horizontal.png"
                   alt="GreenTech USA"
-                  className="h-9 w-auto object-contain"
+                  className="h-7 w-auto max-w-full object-contain"
                 />
               </Link>
               <button
@@ -190,7 +190,7 @@ export default function DashboardLayout() {
               <img
                 src={gtFavicon}
                 alt="GreenTech USA"
-                className="h-10 w-10 object-contain"
+                className="h-8 w-8 object-contain"
               />
             </Link>
           )}
@@ -289,13 +289,17 @@ export default function DashboardLayout() {
         {/* Top Header */}
         <header className="h-16 sm:h-20 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 lg:px-10 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
-              aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-            >
-              <Menu size={20} />
-            </button>
+            {/* Only shown to REOPEN a collapsed panel (or open it on mobile); when the panel is
+                open the toggle lives inside the sidebar next to the logo. */}
+            {(!isSidebarOpen || isMobile) && (
+              <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+                aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                <Menu size={20} />
+              </button>
+            )}
             <div className="hidden sm:flex items-center gap-2 text-sm">
                 <span className="text-slate-400 font-medium">Dashboard</span>
                 <ChevronRight size={14} className="text-slate-300" />
