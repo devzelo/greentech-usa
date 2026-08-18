@@ -12,6 +12,8 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
+import FinanceStrip from "./FinanceStrip";
+import { fiveFromFinancials, sumFive } from "../../lib/projectFinance";
 
 // The colour-coded status key IS the filter (client request): "All" first, then one chip per
 // status. Legacy values saved before the palette existed fold into their modern equivalent so
@@ -110,6 +112,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     return { total, jv, gt: total - jv };
   })();
   const showValues = mode === "all" && isStaff;
+  // CR-P-15 — five-number financial overview totalled across the shown projects.
+  const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
   return (
     <div className="space-y-6">
@@ -176,6 +180,11 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">JV projects value</span>
           </span>
         </div>
+      )}
+
+      {/* CR-P-15 — five-number financial overview across all shown projects (same names as each project). */}
+      {showValues && !loading && (
+        <FinanceStrip five={fiveTotals} />
       )}
 
       {/* Status filters — their own row under the header. The colour key IS the filter. */}

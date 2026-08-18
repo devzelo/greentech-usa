@@ -33,31 +33,51 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
     const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!ids.length) return res.json({});
     const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invTotal = (inv: any) => (Array.isArray(inv.lineItems) && inv.lineItems.length
+      ? inv.lineItems.reduce((s: number, it: { qty?: string; unitPrice?: string }) => s + num(it.qty) * num(it.unitPrice), 0)
+      : num(inv.amount));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invPaid = (inv: any) => (inv.payments || []).reduce((s: number, p: { amount?: string }) => s + num(p.amount), 0);
     const SubInvoice = (await import("../models/SubInvoice")).default;
     const Invoice = (await import("../models/Invoice")).default;
     // Income = legacy subcontractor invoice tables + the "Invoice Sent" builder invoices
     // (CR-I-06/09). Draft/Cancelled/Rejected sent invoices are not real billed revenue.
     const NON_REVENUE = ["Draft", "Cancelled", "Canceled", "Rejected"];
     const [expenses, subInvoices, sentInvoices, receivedInvoices] = await Promise.all([
-      Expense.find({ projectId: { $in: ids } }).select("projectId qty amount invoiceId description").lean(),
+      Expense.find({ projectId: { $in: ids } }).select("projectId qty amount invoiceId description approval").lean(),
       SubInvoice.find({ projectId: { $in: ids } }).select("projectId amount").lean(),
       Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE } })
-        .select("projectId amount").lean(),
+        .select("projectId amount lineItems payments").lean(),
       // CR-I-10 — received invoices (vendor/sub bills) are a project cost (accrual), regardless of payment.
       Invoice.find({ projectId: { $in: ids }, type: "received", status: { $nin: NON_REVENUE } })
-        .select("projectId amount").lean(),
+        .select("projectId amount lineItems").lean(),
     ]);
-    const map: Record<string, { income: number; expenses: number }> = {};
-    const bucket = (pid: string) => (map[pid] ||= { income: 0, expenses: 0 });
-    // Direct expenses only — a received-invoice PAYMENT is skipped here and counted once via the
-    // received invoice itself below, so a paid bill isn't double-counted.
+    // CR-P-15 — per-project 5-number overview + the legacy income/expenses (accrual) fields.
+    type Fin = { income: number; expenses: number; approvedExpenses: number; pendingExpenses: number; incomeReceived: number; totalInvoiced: number; remainingIncome: number };
+    const map: Record<string, Fin> = {};
+    const bucket = (pid: string): Fin => (map[pid] ||= { income: 0, expenses: 0, approvedExpenses: 0, pendingExpenses: 0, incomeReceived: 0, totalInvoiced: 0, remainingIncome: 0 });
     for (const e of expenses) {
+      const val = (num(e.qty) || 1) * num(e.amount);
+      const b = bucket(e.projectId);
+      // Accrual expenses (legacy field): direct expenses only — a received-invoice PAYMENT is
+      // skipped here and counted once via the received invoice itself below.
       const isInvoicePayment = !!(e as { invoiceId?: string }).invoiceId || String((e as { description?: string }).description || "").startsWith("Payment — invoice");
-      if (!isInvoicePayment) bucket(e.projectId).expenses += (num(e.qty) || 1) * num(e.amount);
+      if (!isInvoicePayment) b.expenses += val;
+      // Expenses-tab totals: every expense row, split by approval status.
+      const approval = (e as { approval?: string }).approval;
+      if (approval === "approved") b.approvedExpenses += val;
+      else if (approval !== "rejected") b.pendingExpenses += val;   // pending (default) — rejected ignored
     }
     for (const inv of subInvoices) bucket(inv.projectId).income += num(inv.amount);
-    for (const inv of sentInvoices) bucket(inv.projectId).income += num(inv.amount);
-    for (const inv of receivedInvoices) bucket(inv.projectId).expenses += num(inv.amount);
+    for (const inv of sentInvoices) {
+      const b = bucket(inv.projectId);
+      b.income += num(inv.amount);
+      b.totalInvoiced += invTotal(inv);
+      b.incomeReceived += invPaid(inv);
+    }
+    for (const inv of receivedInvoices) bucket(inv.projectId).expenses += invTotal(inv);
+    for (const b of Object.values(map)) b.remainingIncome = Math.max(0, b.totalInvoiced - b.incomeReceived);
     res.json(map);
   } catch (err) { next(err); }
 });

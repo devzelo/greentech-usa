@@ -54,6 +54,8 @@ import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
 import CountrySelect from "./CountrySelect";
+import FinanceStrip from "./FinanceStrip";
+import { fiveFromRaw } from "../../lib/projectFinance";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import type { ProjectStatus } from "../../lib/api";
 import AgreementsPanel from "./agreements/AgreementsPanel";
@@ -1140,6 +1142,9 @@ export default function ProjectWorkspace() {
       sentInvoices.filter((inv) => !NON_REVENUE.includes(inv.status || "")).reduce((sum, inv) => sum + n(inv.amount), 0);
     return { income, expenses };
   })();
+
+  // CR-P-15 — the 5-number financial overview shown on the project header + Expenses tab.
+  const projectFive = fiveFromRaw(expenseRows, sentInvoices);
 
   const refreshSubDocs = async () => {
     if (!id) return;
@@ -2604,6 +2609,12 @@ export default function ProjectWorkspace() {
             )}
           </div>
         </div>
+        {/* CR-P-15 — five-number financial overview of this project */}
+        {!isGuest && (
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <FinanceStrip five={projectFive} />
+          </div>
+        )}
       </div>
 
       {/* ── Tab Bar (top-level) ── */}
@@ -4324,6 +4335,21 @@ export default function ProjectWorkspace() {
                     </button>
                   )}
                 </div>
+              </div>
+              {/* CR-P-15 — approved / pending expense totals on top of the Expense Log. */}
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
+                  <span className="text-lg font-display font-bold text-emerald-600 leading-none">{fmtMoney(projectFive.approvedExpenses)}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approved Expenses</span>
+                </span>
+                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-amber-50 border border-amber-100">
+                  <span className="text-lg font-display font-bold text-amber-600 leading-none">{fmtMoney(projectFive.pendingExpenses)}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pending Expenses</span>
+                </span>
+                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-lg font-display font-bold text-slate-700 leading-none">{fmtMoney(projectFive.approvedExpenses + projectFive.pendingExpenses)}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Expenses</span>
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[920px] text-xs">

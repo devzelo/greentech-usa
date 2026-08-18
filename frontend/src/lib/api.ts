@@ -845,7 +845,12 @@ export async function fetchMyExpenses(): Promise<MyExpense[]> {
 }
 
 /** Per-project income (sent invoices) & expenses (qty x unit price) for report PDFs. */
-export interface ProjectFinancials { income: number; expenses: number }
+export interface ProjectFinancials {
+  income: number; expenses: number;
+  // CR-P-15 — 5-number overview breakdown.
+  approvedExpenses?: number; pendingExpenses?: number;
+  incomeReceived?: number; totalInvoiced?: number; remainingIncome?: number;
+}
 export async function fetchProjectFinancials(ids: string[]): Promise<Record<string, ProjectFinancials>> {
   if (!ids.length) return {};
   return request(`/projects/financials?ids=${encodeURIComponent(ids.join(","))}`);
