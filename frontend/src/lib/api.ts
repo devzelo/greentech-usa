@@ -2100,8 +2100,8 @@ export interface ApiDraft {
   link: string;
   updatedAt: string;
 }
-export async function fetchDrafts(): Promise<ApiDraft[]> {
-  return request(`/drafts`);
+export async function fetchDrafts(scope?: "mine"): Promise<ApiDraft[]> {
+  return request(`/drafts${scope ? `?scope=${scope}` : ""}`);
 }
 
 // ── Announcements (public hero banner; admin-managed) ────────────────────────

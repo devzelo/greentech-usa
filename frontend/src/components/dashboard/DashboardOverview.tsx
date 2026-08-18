@@ -63,7 +63,7 @@ export default function DashboardOverview() {
   useEffect(() => {
     Promise.all([
       fetchProjects("mine").catch(() => [] as ApiProject[]),
-      fetchDrafts().catch(() => [] as ApiDraft[]),
+      fetchDrafts("mine").catch(() => [] as ApiDraft[]),
       fetchReminders().catch(() => [] as ApiReminder[]),
       fetchNotifications(true).catch(() => ({ items: [] as ApiNotification[], unread: 0 })),
     ]).then(([m, d, r, n]) => {

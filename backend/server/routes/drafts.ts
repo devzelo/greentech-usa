@@ -29,10 +29,20 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const userId = req.user!.userId;
     const me = await User.findById(userId).lean();
     const role = (me as { role?: string } | null)?.role || req.user!.role;
+    const empId = (me as { empId?: string } | null)?.empId || "";
     const isGuest = role === "subcontractor";
+    // CR-P-18 — ?scope=mine limits drafts to the user's OWN projects (owned/assigned), for the
+    // Overview card. Default = everything they can access (staff: all; guest: assigned).
+    const mineOnly = req.query.scope === "mine";
 
     // Projects this user can see (and the name lookup for every draft's badge).
-    const projectFilter = isGuest ? { "guests.userId": userId } : {};
+    let projectFilter: Record<string, unknown>;
+    if (isGuest) projectFilter = { "guests.userId": userId };
+    else if (mineOnly) {
+      const or: Record<string, unknown>[] = [{ ownerId: userId }];
+      if (empId) or.push({ assignedEmployees: empId });
+      projectFilter = { $or: or };
+    } else projectFilter = {};
     const projects = await Project.find({ ...projectFilter, archived: { $ne: true } })
       .select("projectId name status ownerId updatedAt").lean();
     const nameById: Record<string, string> = {};
@@ -52,9 +62,12 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       }
     }
 
-    // 2. Draft agreements — staff only (guests sign, they don't draft).
+    // 2. Draft agreements — staff only (guests sign, they don't draft). In "mine" scope, only the
+    // agreements that belong to one of my projects (general/employee agreements aren't project-tied).
     if (!isGuest) {
-      const ags = await Agreement.find({ status: "Draft", archived: { $ne: true } })
+      const agFilter: Record<string, unknown> = { status: "Draft", archived: { $ne: true } };
+      if (mineOnly) { agFilter.ownerContextType = "project"; agFilter.ownerProjectId = { $in: projectIds }; }
+      const ags = await Agreement.find(agFilter)
         .select("name agreementType ownerContextType ownerProjectId ownerEntityType updatedAt").sort({ updatedAt: -1 }).limit(100).lean();
       for (const a of ags) {
         const ctx = a.ownerContextType;
