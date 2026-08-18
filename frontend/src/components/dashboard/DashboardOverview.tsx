@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Briefcase, Clock, CheckCircle2, FileEdit, Lightbulb, ArrowUpRight, Loader2,
   Bell, AlarmClock, TrendingUp, TrendingDown, DollarSign, FolderPlus, Handshake,
-  Building2, FileText, ClipboardList, Package, ChevronRight, AlertTriangle, Share2, FolderOpen,
+  Building2, FileText, ClipboardList, Package, ChevronRight, Share2,
 } from "lucide-react";
 import {
   fetchProjects, fetchProjectFinancials, fetchDrafts, fetchReminders, fetchNotifications,
@@ -58,7 +58,6 @@ export default function DashboardOverview() {
   const [notifs, setNotifs] = useState<ApiNotification[]>([]);
   const [drafts, setDrafts] = useState<ApiDraft[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"projects" | "activity" | "drafts">("projects");
 
   useEffect(() => {
     Promise.all([
@@ -80,7 +79,7 @@ export default function DashboardOverview() {
     { label: "Active / Ongoing", value: count("Active"), accent: "emerald", icon: Clock, trend: "In progress", onClick: () => navigate(`${projectsBase}?status=Active`) },
     { label: "Proposal / Opportunity", value: count("Proposal"), accent: "yellow", icon: Lightbulb, trend: "Pipeline", onClick: () => navigate(`${projectsBase}?status=Proposal`) },
     { label: "Completed / Closed", value: count("Closed"), accent: "slate", icon: CheckCircle2, trend: "Delivered", onClick: () => navigate(`${projectsBase}?status=Closed`) },
-    { label: "Drafts", value: drafts.length, accent: "violet", icon: FileEdit, trend: "Unfinished", onClick: () => setTab("drafts") },
+    { label: "Drafts", value: drafts.length, accent: "violet", icon: FileEdit, trend: "Unfinished", onClick: () => document.getElementById("overview-drafts")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
   ];
 
   const fin = (Object.values(financials) as ProjectFinancials[]).reduce(
@@ -98,8 +97,7 @@ export default function DashboardOverview() {
     { label: isAdmin ? "All Projects" : "My Projects", icon: Briefcase, to: projectsBase },
   ];
 
-  const overdue = (p: ApiProject) => !!p.endDate && p.endDate < todayStr() && !["Closed", "Completed", "Lost"].includes(p.status);
-  const recent = all.slice(0, 5);
+  const recent = all.slice(0, 6);
 
   const openReminders = reminders
     .filter((r) => r.status === "Pending" || r.status === "InProgress")
@@ -183,105 +181,62 @@ export default function DashboardOverview() {
         </div>
       )}
 
-      {/* Three tabs: Projects · Reminders & Notifications · Drafts */}
-      <div>
-        <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max mb-5">
-          {([
-            ["projects", "Projects", Briefcase],
-            ["activity", "Reminders & Notifications", Bell],
-            ["drafts", "Drafts", FileEdit],
-          ] as const).map(([v, label, Icon]) => (
-            <button key={v} onClick={() => setTab(v)} className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all ${tab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
-              <Icon size={14} />{label}
-              {v === "drafts" && drafts.length > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${tab === v ? "bg-white/20" : "bg-slate-100 text-slate-500"}`}>{drafts.length}</span>}
-            </button>
-          ))}
+      {/* Three columns: Recent Projects · Reminders & Notifications · Drafts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+
+        {/* ── Column 1 — Recent Projects (compact: project / contract only) ── */}
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Briefcase size={16} className="text-primary" /> Recent Projects</h3>
+            <button onClick={() => navigate(projectsBase)} className="text-[11px] font-bold text-primary hover:underline">View all</button>
+          </div>
+          {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>
+          : recent.length === 0 ? <p className="text-xs text-slate-400 italic py-6 text-center">No projects yet.</p>
+          : (
+            <div className="space-y-1.5">
+              {recent.map((project) => {
+                const sm = statusMeta(project.status);
+                return (
+                  <button key={project.id} onClick={() => navigate(`/dashboard/projects/${project.id}`)} className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors group">
+                    <span className={`w-1.5 h-9 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
+                    <span className="min-w-0 flex-grow">
+                      <span className="block text-xs font-bold text-slate-800 truncate group-hover:text-primary transition-colors">{project.name}</span>
+                      <span className="block text-[10px] text-slate-400 font-medium truncate">No {project.id}{project.contractNo ? ` · Contract ${project.contractNo}` : ""}</span>
+                      {project.location && <span className="block text-[10px] text-slate-500 font-bold truncate">{locationFlag(project.location) && <span className="text-[1.15em] leading-none align-middle mr-0.5">{locationFlag(project.location)}</span>}{project.location}</span>}
+                    </span>
+                    <ArrowUpRight size={15} className="text-slate-300 group-hover:text-primary flex-shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* ── Projects tab ─────────────────────────────────────────────────── */}
-        {tab === "projects" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-lg font-display font-bold text-slate-900">Recent Projects</h2>
-              <button onClick={() => navigate(projectsBase)} className="text-sm font-bold text-primary hover:underline">View all projects</button>
-            </div>
-            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-              {loading ? (
-                <div className="flex items-center justify-center py-20 text-slate-300"><Loader2 size={28} className="animate-spin" /></div>
-              ) : recent.length === 0 ? (
-                <div className="py-16 text-center text-sm text-slate-400 font-medium">No projects yet.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-50">
-                        {["Project / Contract", "Category", "Client", "Year", "Deadline", "Status"].map((h) => (
-                          <th key={h} className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
-                        ))}
-                        <th className="text-right px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {recent.map((project) => {
-                        const sm = statusMeta(project.status);
-                        return (
-                          <tr key={project.id} onClick={() => navigate(`/dashboard/projects/${project.id}`)} className="group hover:bg-slate-50/50 transition-colors cursor-pointer">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-1.5 h-9 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
-                                <div className="flex flex-col min-w-0">
-                                  <span className="font-bold text-slate-900 group-hover:text-primary transition-colors truncate">{project.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-medium">No {project.id}{project.contractNo ? ` · Contract ${project.contractNo}` : ""}</span>
-                                  {project.location && <span className="text-[10px] text-slate-500 font-bold">{locationFlag(project.location) && <span className="text-[1.3em] leading-none align-middle mr-0.5">{locationFlag(project.location)}</span>}{project.location}</span>}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-bold text-slate-600">{project.category || "—"}</td>
-                            <td className="px-6 py-4 text-xs font-medium text-slate-600">{project.clientInfo?.name || "—"}</td>
-                            <td className="px-6 py-4 text-xs font-bold text-slate-500">{project.contractYear || "—"}</td>
-                            <td className="px-6 py-4 text-xs font-bold whitespace-nowrap">
-                              {project.endDate ? <span className={overdue(project) ? "text-red-600" : "text-slate-500"}>{project.endDate}{overdue(project) ? " ⚠" : ""}</span> : <span className="text-slate-400">—</span>}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border ${sm.badge}`}><span className={`w-1.5 h-1.5 rounded-full ${sm.dot}`} /> {sm.label}</span>
-                            </td>
-                            <td className="px-6 py-4 text-right"><span className="inline-flex p-2 rounded-lg group-hover:bg-white group-hover:shadow-sm text-slate-400 group-hover:text-primary transition-all"><ArrowUpRight size={18} /></span></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+        {/* ── Column 2 — Reminders & Notifications (today first) ── */}
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Bell size={16} className="text-primary" /> Reminders &amp; Notifications</h3>
+            <Link to="/dashboard/reminders" className="text-[11px] font-bold text-primary hover:underline">Open</Link>
           </div>
-        )}
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Today · {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
 
-        {/* ── Reminders & Notifications tab (today first) ───────────────────── */}
-        {tab === "activity" && (
-          <div className="space-y-4">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Today · {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div> : (
+            <div className="space-y-3">
               {/* Reminders */}
-              <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><AlarmClock size={16} className="text-primary" /> Reminders</h3>
-                  <Link to="/dashboard/reminders" className="text-[11px] font-bold text-primary hover:underline">Open</Link>
-                </div>
-                {loading ? <div className="py-8 flex justify-center text-slate-300"><Loader2 size={20} className="animate-spin" /></div>
-                : openReminders.length === 0 ? <p className="text-xs text-slate-400 italic py-6 text-center">No open reminders.</p>
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><AlarmClock size={11} /> Reminders</p>
+                {openReminders.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No open reminders.</p>
                 : (
                   <div className="space-y-1.5">
-                    {openReminders.slice(0, 6).map((r) => {
+                    {openReminders.slice(0, 4).map((r) => {
                       const over = remOverdue(r);
                       return (
-                        <button key={r._id} onClick={() => navigate(r.link || "/dashboard/reminders")} className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl border transition-colors ${over ? "border-red-200 bg-red-50/40 hover:bg-red-50" : "border-slate-100 hover:bg-slate-50"}`}>
+                        <button key={r._id} onClick={() => navigate(r.link || "/dashboard/reminders")} className={`w-full text-left flex items-start gap-2.5 p-2 rounded-xl border transition-colors ${over ? "border-red-200 bg-red-50/40 hover:bg-red-50" : "border-slate-100 hover:bg-slate-50"}`}>
                           <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${over ? "bg-red-500" : isToday(r.dueAt) ? "bg-amber-400" : "bg-slate-300"}`} />
                           <span className="min-w-0 flex-grow">
                             <span className="block text-xs font-bold text-slate-800 truncate">{r.title}</span>
                             <span className={`block text-[10px] font-bold ${over ? "text-red-500" : "text-slate-400"}`}>{over ? "Overdue · " : isToday(r.dueAt) ? "Today · " : ""}{new Date(r.dueAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
                           </span>
-                          {over && <AlertTriangle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />}
                         </button>
                       );
                     })}
@@ -289,18 +244,14 @@ export default function DashboardOverview() {
                 )}
               </div>
               {/* Notifications */}
-              <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Bell size={16} className="text-primary" /> Notifications</h3>
-                  <Link to="/dashboard/reminders?view=notifications" className="text-[11px] font-bold text-primary hover:underline">See all</Link>
-                </div>
-                {loading ? <div className="py-8 flex justify-center text-slate-300"><Loader2 size={20} className="animate-spin" /></div>
-                : notifs.length === 0 ? <p className="text-xs text-slate-400 italic py-6 text-center">You&apos;re all caught up.</p>
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Bell size={11} /> Notifications <Link to="/dashboard/reminders?view=notifications" className="ml-auto text-primary hover:underline normal-case tracking-normal">See all</Link></p>
+                {notifs.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">You&apos;re all caught up.</p>
                 : (
                   <div className="space-y-1.5">
-                    {notifs.slice(0, 6).map((n) => (
-                      <button key={n._id} onClick={() => n.link && navigate(n.link)} className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl border transition-colors ${n.read ? "border-slate-100 hover:bg-slate-50" : "border-primary/20 bg-primary/[0.03] hover:bg-primary/5"}`}>
-                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${notifCls(n)}`}>{notifIcon(n)}</span>
+                    {notifs.slice(0, 4).map((n) => (
+                      <button key={n._id} onClick={() => n.link && navigate(n.link)} className={`w-full text-left flex items-start gap-2.5 p-2 rounded-xl border transition-colors ${n.read ? "border-slate-100 hover:bg-slate-50" : "border-primary/20 bg-primary/[0.03] hover:bg-primary/5"}`}>
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${notifCls(n)}`}>{notifIcon(n)}</span>
                         <span className="min-w-0 flex-grow">
                           <span className="block text-xs font-bold text-slate-800 truncate">{n.title}</span>
                           <span className="block text-[10px] text-slate-400 truncate">{n.message}</span>
@@ -312,45 +263,43 @@ export default function DashboardOverview() {
                 )}
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* ── Drafts tab ───────────────────────────────────────────────────── */}
-        {tab === "drafts" && (
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-900">Unfinished drafts across the platform</h3>
-              <span className="text-[11px] font-bold text-slate-400">{drafts.length} item{drafts.length === 1 ? "" : "s"}</span>
-            </div>
-            {loading ? <div className="py-12 flex justify-center text-slate-300"><Loader2 size={24} className="animate-spin" /></div>
-            : drafts.length === 0 ? (
-              <div className="py-14 text-center text-slate-400">
-                <FileEdit size={34} className="mx-auto mb-3" />
-                <p className="font-bold text-sm">No drafts — you&apos;re all caught up.</p>
-                <p className="text-xs mt-1">Anything you save as a draft (projects, agreements, submittals, RFQs) shows here to finish later.</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {drafts.map((d) => {
-                  const dm = DRAFT_META[d.kind];
-                  return (
-                    <button key={`${d.kind}-${d.id}`} onClick={() => openDraft(d)} className="w-full text-left flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors group">
-                      <span className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${dm.cls}`}><dm.icon size={16} /></span>
-                      <div className="min-w-0 flex-grow">
-                        <p className="text-xs font-bold text-slate-800 truncate group-hover:text-primary transition-colors">{d.title}</p>
-                        <p className="text-[10px] text-slate-400 font-medium truncate">
-                          <span className="uppercase tracking-widest font-bold">{dm.label}</span>
-                          {d.projectName ? ` · ${d.projectName}` : ""}{d.updatedAt ? ` · ${timeAgo(d.updatedAt)}` : ""}
-                        </p>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 group-hover:text-primary shrink-0"><FolderOpen size={13} /> Finish <ChevronRight size={13} /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+        {/* ── Column 3 — Drafts ── */}
+        <div id="overview-drafts" className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><FileEdit size={16} className="text-primary" /> Drafts</h3>
+            <span className="text-[11px] font-bold text-slate-400">{drafts.length} item{drafts.length === 1 ? "" : "s"}</span>
           </div>
-        )}
+          {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>
+          : drafts.length === 0 ? (
+            <div className="py-10 text-center text-slate-400">
+              <FileEdit size={30} className="mx-auto mb-2" />
+              <p className="font-bold text-xs">No drafts — you&apos;re all caught up.</p>
+              <p className="text-[10px] mt-1">Projects, agreements, submittals &amp; RFQs saved as drafts show here.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {drafts.map((d) => {
+                const dm = DRAFT_META[d.kind];
+                return (
+                  <button key={`${d.kind}-${d.id}`} onClick={() => openDraft(d)} className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors group">
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${dm.cls}`}><dm.icon size={15} /></span>
+                    <div className="min-w-0 flex-grow">
+                      <p className="text-xs font-bold text-slate-800 truncate group-hover:text-primary transition-colors">{d.title}</p>
+                      <p className="text-[10px] text-slate-400 font-medium truncate">
+                        <span className="uppercase tracking-widest font-bold">{dm.label}</span>
+                        {d.projectName ? ` · ${d.projectName}` : ""}{d.updatedAt ? ` · ${timeAgo(d.updatedAt)}` : ""}
+                      </p>
+                    </div>
+                    <ChevronRight size={14} className="text-slate-300 group-hover:text-primary shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
