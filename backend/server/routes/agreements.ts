@@ -289,7 +289,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
           userId: rid, type: "general",
           title: "Agreement awaiting your review",
           message: `${req.user!.name || "GreenTech USA"} sent you the agreement "${ag.name || ag.agreementType}".`,
-          link: ctx === "user" ? "/dashboard/profile" : `/dashboard/projects/${ag.ownerProjectId}`,
+          link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
       res.json(ag);
@@ -319,7 +319,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
           userId: ag.addedById, type: "general",
           title: "Agreement signed",
           message: `${req.user!.name || "The recipient"} signed "${ag.name || ag.agreementType}".`,
-          link: ctx === "user" ? "/dashboard/users" : `/dashboard/projects/${ag.ownerProjectId}`,
+          link: `${ctx === "user" ? "/dashboard/users" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
       res.json(ag);
@@ -342,7 +342,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
           userId: ag.addedById, type: "general",
           title: "Agreement rejected",
           message: `${req.user!.name || "The recipient"} rejected "${ag.name || ag.agreementType}".${req.body?.note ? ` Note: ${String(req.body.note).slice(0, 200)}` : ""}`,
-          link: ctx === "user" ? "/dashboard/users" : `/dashboard/projects/${ag.ownerProjectId}`,
+          link: `${ctx === "user" ? "/dashboard/users" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
       res.json(ag);

@@ -6,11 +6,13 @@ import { notifyByEmpId } from "../lib/notify";
 const router = Router();
 router.use(requireAuth);
 
-// GET /api/notifications — the current user's recent notifications + unread count
+// GET /api/notifications — the current user's notifications + unread count.
+// ?all=1 returns the full history (for the Notifications tab); default is the 40 most recent (bell).
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const items = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(40).lean();
+    const all = req.query.all === "1" || req.query.all === "true";
+    const items = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(all ? 300 : 40).lean();
     const unread = await Notification.countDocuments({ userId, read: false });
     res.json({ items, unread });
   } catch (err) {

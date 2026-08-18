@@ -3,10 +3,11 @@ import User from "../models/User";
 
 interface NotifyInput {
   userId: string;
-  type?: "assignment" | "share" | "general";
+  type?: "assignment" | "share" | "general" | "reminder";
   title: string;
   message: string;
   link?: string;
+  reminderId?: string; // links a reminder-due notification back to its reminder (snooze from the bell)
 }
 
 /** Create a notification for a specific user (no-op on failure — never block the caller). */
@@ -18,6 +19,7 @@ export async function createNotification(input: NotifyInput): Promise<void> {
       title: input.title,
       message: input.message,
       link: input.link || "",
+      reminderId: input.reminderId || null,
     });
   } catch {
     /* notifications are best-effort */

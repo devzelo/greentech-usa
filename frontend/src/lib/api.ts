@@ -2068,16 +2068,17 @@ export async function deletePOAttachment(projectId: string, pid: string, aid: st
 
 export interface ApiNotification {
   _id: string;
-  type: "assignment" | "share" | "general";
+  type: "assignment" | "share" | "general" | "reminder";
   title: string;
   message: string;
   link: string;
   read: boolean;
+  reminderId?: string | null;   // set on reminder-due notifications — enables snooze from the bell
   createdAt: string;
 }
 
-export async function fetchNotifications(): Promise<{ items: ApiNotification[]; unread: number }> {
-  return request(`/notifications`);
+export async function fetchNotifications(all = false): Promise<{ items: ApiNotification[]; unread: number }> {
+  return request(`/notifications${all ? "?all=1" : ""}`);
 }
 
 // ── Announcements (public hero banner; admin-managed) ────────────────────────

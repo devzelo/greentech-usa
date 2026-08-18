@@ -127,7 +127,8 @@ async function sweep(): Promise<number> {
     try {
       await createNotification({
         userId: r.userId,
-        type: "general",
+        type: "reminder",
+        reminderId: String(r._id),
         title: `Reminder: ${r.title}`,
         message: [r.contextLabel, r.notes].filter(Boolean).join(" — ") || "Your reminder is due.",
         link: r.link || "/dashboard/reminders",

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, AlertTriangle } from "lucide-react";
+import NotificationsPanel from "./NotificationsPanel";
 import {
   fetchReminders, createReminder, updateReminder, deleteReminder, fetchProjects, getAuthUser,
   type ApiReminder, type ReminderStatus, type ApiProject,
@@ -53,6 +54,15 @@ export default function Reminders() {
   const [form, setForm] = useState({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "" });
   const [saving, setSaving] = useState(false);
   const { confirm, dialogs } = useDialogs();
+  // Top-level view: the reminders list, or the full notifications history (?view=notifications,
+  // linked from the bell's "See all notifications").
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: "reminders" | "notifications" = searchParams.get("view") === "notifications" ? "notifications" : "reminders";
+  const setView = (v: "reminders" | "notifications") => {
+    const next = new URLSearchParams(searchParams);
+    if (v === "notifications") next.set("view", "notifications"); else next.delete("view");
+    setSearchParams(next, { replace: true });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -147,6 +157,23 @@ export default function Reminders() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* View switch — Reminders vs. the full Notifications history. */}
+      <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
+        {([["reminders", "My Reminders"], ["notifications", "Notifications"]] as const).map(([v, label]) => (
+          <button key={v} onClick={() => setView(v)} className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${view === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
+            {v === "reminders" ? <Bell size={14} /> : <AlarmClock size={14} />}{label}
+          </button>
+        ))}
+      </div>
+
+      {view === "notifications" ? (
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-1">Notifications</h1>
+          <p className="text-sm text-slate-500 mb-5">Everything the platform has notified you about — assignments, agreements, shared documents and due reminders.</p>
+          <NotificationsPanel />
+        </div>
+      ) : (
+      <>
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-primary mb-2"><Bell size={18} /><span className="text-xs font-bold uppercase tracking-widest">Reminders</span></div>
@@ -235,6 +262,8 @@ export default function Reminders() {
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       {dialogs}

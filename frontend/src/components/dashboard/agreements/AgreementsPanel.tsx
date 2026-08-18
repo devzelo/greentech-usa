@@ -24,6 +24,7 @@ import { useDialogs } from "../../../lib/useDialogs";
 import PdfPreviewModal from "../PdfPreviewModal";
 import RichTextEditor from "../RichTextEditor";
 import { useUnsavedGuard } from "../../../lib/useUnsavedGuard";
+import { useHighlight } from "../../../lib/useHighlight";
 
 // The one shared Agreements surface — mounted on the employee profile (user context) and on
 // partner / subcontractor / vendor records inside a project (project context). Staff create,
@@ -106,6 +107,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [signName, setSignName] = useState("");
   const { confirm, prompt, dialogs } = useDialogs();
   const [showArchived, setShowArchived] = useState(false);
+  // Deep-link from a notification: ?hl=ag-<id> flashes the matching agreement once the list loads.
+  const flashId = useHighlight(!loading);
 
   const load = async () => {
     setLoading(true);
@@ -359,8 +362,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         <div className="space-y-2">
           {list.map((ag) => {
             const meta = STATUS_META[ag.status] || STATUS_META.Draft;
+            const hlId = `ag-${ag._id}`;
             return (
-              <div key={ag._id} className="border border-slate-100 rounded-2xl bg-white">
+              <div key={ag._id} id={hlId} data-hl={hlId} className={`border border-slate-100 rounded-2xl bg-white ${flashId === hlId ? "hl-flash" : ""}`}>
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                   <FileText size={14} className="text-slate-400 shrink-0" />
                   <div className="min-w-0 flex-grow">
