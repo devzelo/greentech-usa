@@ -182,14 +182,15 @@ export default function DashboardOverview() {
       )}
 
       {/* Three columns: Recent Projects · Reminders & Notifications · Drafts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* ── Column 1 — Recent Projects (compact: project / contract only) ── */}
-        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5 flex flex-col h-[30rem]">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Briefcase size={16} className="text-primary" /> Recent Projects</h3>
             <button onClick={() => navigate(projectsBase)} className="text-[11px] font-bold text-primary hover:underline">View all</button>
           </div>
+          <div className="flex-1 overflow-y-auto scroll-slim -mr-2 pr-2">
           {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>
           : recent.length === 0 ? <p className="text-xs text-slate-400 italic py-6 text-center">No projects yet.</p>
           : (
@@ -210,16 +211,18 @@ export default function DashboardOverview() {
               })}
             </div>
           )}
+          </div>
         </div>
 
         {/* ── Column 2 — Reminders & Notifications (today first) ── */}
-        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-1">
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5 flex flex-col h-[30rem]">
+          <div className="flex items-center justify-between mb-1 shrink-0">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Bell size={16} className="text-primary" /> Reminders &amp; Notifications</h3>
             <Link to="/dashboard/reminders" className="text-[11px] font-bold text-primary hover:underline">Open</Link>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Today · {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 shrink-0">Today · {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
 
+          <div className="flex-1 overflow-y-auto scroll-slim -mr-2 pr-2">
           {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div> : (
             <div className="space-y-3">
               {/* Reminders */}
@@ -264,14 +267,16 @@ export default function DashboardOverview() {
               </div>
             </div>
           )}
+          </div>
         </div>
 
         {/* ── Column 3 — Drafts ── */}
-        <div id="overview-drafts" className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
+        <div id="overview-drafts" className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5 flex flex-col h-[30rem]">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><FileEdit size={16} className="text-primary" /> Drafts</h3>
             <span className="text-[11px] font-bold text-slate-400">{drafts.length} item{drafts.length === 1 ? "" : "s"}</span>
           </div>
+          <div className="flex-1 overflow-y-auto scroll-slim -mr-2 pr-2">
           {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>
           : drafts.length === 0 ? (
             <div className="py-10 text-center text-slate-400">
@@ -299,6 +304,7 @@ export default function DashboardOverview() {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

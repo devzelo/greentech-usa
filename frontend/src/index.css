@@ -31,6 +31,20 @@
     scroll-margin: 6rem;
   }
 
+  /* Branded, minimal scrollbar for in-card scroll areas (Overview columns, etc.). */
+  .scroll-slim {
+    scrollbar-width: thin;                         /* Firefox */
+    scrollbar-color: rgb(203 213 225) transparent; /* slate-300 thumb, no track */
+  }
+  .scroll-slim::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-slim::-webkit-scrollbar-track { background: transparent; }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225);            /* slate-300 */
+    border-radius: 9999px;
+  }
+  .scroll-slim:hover { scrollbar-color: rgb(148 163 184) transparent; } /* slate-400 on hover */
+  .scroll-slim::-webkit-scrollbar-thumb:hover { background-color: #10B981; } /* brand green */
+
   body {
     @apply font-sans text-slate-900 bg-white antialiased;
   }
