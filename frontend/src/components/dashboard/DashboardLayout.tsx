@@ -11,8 +11,8 @@ import {
   Users,
   LogOut,
   Menu,
-  X,
   ChevronRight,
+  ChevronLeft,
   Handshake,
   Bell,
   Building2
@@ -158,71 +158,88 @@ export default function DashboardLayout() {
       {/* Sidebar */}
       <motion.aside
         initial={false}
-        animate={{ 
-          width: isSidebarOpen ? 280 : isMobile ? 0 : 80,
-          x: isMobile && !isSidebarOpen ? -280 : 0
+        animate={{
+          width: isSidebarOpen ? 244 : isMobile ? 0 : 72,
+          x: isMobile && !isSidebarOpen ? -244 : 0
         }}
         className={`fixed lg:relative flex-shrink-0 z-[110] h-screen bg-white border-r border-slate-200 flex flex-col overflow-hidden shadow-xl lg:shadow-none`}
       >
-        {/* Sidebar Header — dark band behind the logo, matching the public top nav */}
-        <div className={`h-20 flex items-center bg-slate-900 ${isSidebarOpen ? "px-6" : "justify-center px-2"}`}>
+        {/* Sidebar Header — dark band behind the logo, matching the public top nav.
+            Clicking the logo goes to Overview; the arrow collapses/expands the panel. */}
+        <div className={`h-20 flex items-center bg-slate-900 ${isSidebarOpen ? "px-5 justify-between" : "justify-center px-2"}`}>
           {isSidebarOpen ? (
-            <img
-              src="/gt-logo-horizontal.png"
-              alt="GreenTech USA"
-              className="h-9 w-auto object-contain flex-shrink-0"
-            />
+            <>
+              <Link to="/dashboard" onClick={() => { if (isMobile) setIsSidebarOpen(false); }} className="flex-shrink-0" aria-label="Go to Overview">
+                <img
+                  src="/gt-logo-horizontal.png"
+                  alt="GreenTech USA"
+                  className="h-9 w-auto object-contain"
+                />
+              </Link>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </>
           ) : (
-            <img
-              src={gtFavicon}
-              alt="GreenTech USA"
-              className="h-10 w-10 object-contain flex-shrink-0"
-            />
+            <Link to="/dashboard" className="flex-shrink-0" aria-label="Go to Overview">
+              <img
+                src={gtFavicon}
+                alt="GreenTech USA"
+                className="h-10 w-10 object-contain"
+              />
+            </Link>
           )}
         </div>
 
         {/* Sidebar Nav */}
-        <div className="flex-grow overflow-y-auto py-6 px-4 space-y-8">
-          <div className="space-y-1">
+        <div className={`flex-grow overflow-y-auto overflow-x-hidden py-5 space-y-6 ${isSidebarOpen ? "px-3" : "px-2"}`}>
+          <div className="space-y-0.5">
             {sidebarLinks.map((link) => (
               <Link
                 key={link.name}
                 to={link.path}
                 onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
-                className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all group ${
+                title={!isSidebarOpen ? link.name : undefined}
+                className={`flex items-center gap-3 rounded-lg transition-all group ${isSidebarOpen ? "px-3 py-2.5" : "justify-center px-0 py-2.5"} ${
                   location.pathname === link.path
-                  ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
+                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <link.icon size={22} className={location.pathname === link.path ? "text-primary" : "group-hover:text-primary transition-colors"} />
-                {isSidebarOpen && <span className="font-bold text-sm tracking-wide">{link.name}</span>}
+                <link.icon size={20} className={location.pathname === link.path ? "text-primary" : "group-hover:text-primary transition-colors"} />
+                {isSidebarOpen && <span className="font-bold text-[13px] tracking-wide">{link.name}</span>}
               </Link>
             ))}
           </div>
 
           <div>
-             {isSidebarOpen && <p className="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Account</p>}
-             <div className="space-y-1">
+             {isSidebarOpen && <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Account</p>}
+             <div className="space-y-0.5">
                 {secondaryLinks.map((link) => (
                   <Link
                     key={link.name}
                     to={link.path}
                     onClick={() => { if (isMobile) setIsSidebarOpen(false); }}
-                    className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all group ${
+                    title={!isSidebarOpen ? link.name : undefined}
+                    className={`flex items-center gap-3 rounded-lg transition-all group ${isSidebarOpen ? "px-3 py-2.5" : "justify-center px-0 py-2.5"} ${
                       location.pathname === link.path
-                      ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
+                      ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                   >
                     <span className="relative">
-                      <link.icon size={22} className={location.pathname === link.path ? "text-primary" : "group-hover:text-primary transition-colors"} />
+                      <link.icon size={20} className={location.pathname === link.path ? "text-primary" : "group-hover:text-primary transition-colors"} />
                       {/* Red overdue badge on the Reminders link — visible from anywhere. */}
                       {link.name === "Reminders" && overdueReminders > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">{overdueReminders > 9 ? "9+" : overdueReminders}</span>
                       )}
                     </span>
-                    {isSidebarOpen && <span className="font-bold text-sm tracking-wide flex-grow">{link.name}</span>}
+                    {isSidebarOpen && <span className="font-bold text-[13px] tracking-wide flex-grow">{link.name}</span>}
                     {isSidebarOpen && link.name === "Reminders" && overdueReminders > 0 && (
                       <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{overdueReminders > 99 ? "99+" : overdueReminders}</span>
                     )}
@@ -230,10 +247,11 @@ export default function DashboardLayout() {
                 ))}
                 <button
                   onClick={() => setShowLogoutConfirm(true)}
-                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all group"
+                  title={!isSidebarOpen ? "Logout" : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all group ${isSidebarOpen ? "px-3 py-2.5" : "justify-center px-0 py-2.5"}`}
                 >
-                  <LogOut size={22} className="group-hover:text-red-600 transition-colors" />
-                  {isSidebarOpen && <span className="font-bold text-sm tracking-wide">Logout</span>}
+                  <LogOut size={20} className="group-hover:text-red-600 transition-colors" />
+                  {isSidebarOpen && <span className="font-bold text-[13px] tracking-wide">Logout</span>}
                 </button>
              </div>
           </div>
@@ -243,7 +261,7 @@ export default function DashboardLayout() {
         {isSidebarOpen && me && (
           <Link
             to="/dashboard/profile"
-            className="p-6 bg-slate-50 mt-auto block hover:bg-slate-100 transition-colors"
+            className="p-4 bg-slate-50 mt-auto block hover:bg-slate-100 transition-colors"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gt-gradient p-0.5 shadow-md flex-shrink-0">
@@ -271,11 +289,12 @@ export default function DashboardLayout() {
         {/* Top Header */}
         <header className="h-16 sm:h-20 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 lg:px-10 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+              aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
-              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              <Menu size={20} />
             </button>
             <div className="hidden sm:flex items-center gap-2 text-sm">
                 <span className="text-slate-400 font-medium">Dashboard</span>
