@@ -51,8 +51,9 @@ export default function DashboardOverview() {
   // Only admins have the All Projects page; everyone else stays in My Projects.
   const projectsBase = isAdmin ? "/dashboard/all-projects" : "/dashboard/my-projects";
 
+  // CR-P-16 — the Overview reflects THIS user's own projects only (owned or assigned), not the
+  // whole platform. Every number, the finances and Recent Projects come from "my projects".
   const [mine, setMine] = useState<ApiProject[]>([]);
-  const [all, setAll] = useState<ApiProject[]>([]);
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
   const [reminders, setReminders] = useState<ApiReminder[]>([]);
   const [notifs, setNotifs] = useState<ApiNotification[]>([]);
@@ -62,23 +63,22 @@ export default function DashboardOverview() {
   useEffect(() => {
     Promise.all([
       fetchProjects("mine").catch(() => [] as ApiProject[]),
-      fetchProjects("all").catch(() => [] as ApiProject[]),
       fetchDrafts().catch(() => [] as ApiDraft[]),
       fetchReminders().catch(() => [] as ApiReminder[]),
       fetchNotifications(true).catch(() => ({ items: [] as ApiNotification[], unread: 0 })),
-    ]).then(([m, a, d, r, n]) => {
-      setMine(m); setAll(a); setDrafts(d); setReminders(r); setNotifs(n.items);
-      if (isStaff && a.length) fetchProjectFinancials(a.map((p) => p.id)).then(setFinancials).catch(() => {});
+    ]).then(([m, d, r, n]) => {
+      setMine(m); setDrafts(d); setReminders(r); setNotifs(n.items);
+      if (isStaff && m.length) fetchProjectFinancials(m.map((p) => p.id)).then(setFinancials).catch(() => {});
     }).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const count = (filter: string) => all.filter((p) => statusMatches(filter, p.status)).length;
+  const count = (filter: string) => mine.filter((p) => statusMatches(filter, p.status)).length;
   const cards = [
     { label: "My Projects", value: mine.length, accent: "blue", icon: Briefcase, trend: "Owned or assigned", onClick: () => navigate("/dashboard/my-projects") },
-    { label: "Active / Ongoing", value: count("Active"), accent: "emerald", icon: Clock, trend: "In progress", onClick: () => navigate(`${projectsBase}?status=Active`) },
-    { label: "Proposal / Opportunity", value: count("Proposal"), accent: "yellow", icon: Lightbulb, trend: "Pipeline", onClick: () => navigate(`${projectsBase}?status=Proposal`) },
-    { label: "Completed / Closed", value: count("Closed"), accent: "slate", icon: CheckCircle2, trend: "Delivered", onClick: () => navigate(`${projectsBase}?status=Closed`) },
+    { label: "Active / Ongoing", value: count("Active"), accent: "emerald", icon: Clock, trend: "In progress", onClick: () => navigate("/dashboard/my-projects?status=Active") },
+    { label: "Proposal / Opportunity", value: count("Proposal"), accent: "yellow", icon: Lightbulb, trend: "Pipeline", onClick: () => navigate("/dashboard/my-projects?status=Proposal") },
+    { label: "Completed / Closed", value: count("Closed"), accent: "slate", icon: CheckCircle2, trend: "Delivered", onClick: () => navigate("/dashboard/my-projects?status=Closed") },
     { label: "Drafts", value: drafts.length, accent: "violet", icon: FileEdit, trend: "Unfinished", onClick: () => document.getElementById("overview-drafts")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
   ];
 
@@ -97,7 +97,7 @@ export default function DashboardOverview() {
     { label: isAdmin ? "All Projects" : "My Projects", icon: Briefcase, to: projectsBase },
   ];
 
-  const recent = all.slice(0, 6);
+  const recent = mine.slice(0, 6);
 
   const openReminders = reminders
     .filter((r) => r.status === "Pending" || r.status === "InProgress")
@@ -161,8 +161,8 @@ export default function DashboardOverview() {
       {isStaff && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">General information · Finances</h2>
-            <button onClick={() => navigate(projectsBase)} className="text-xs font-bold text-primary hover:underline">Full portfolio</button>
+            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">General information · My Finances</h2>
+            <button onClick={() => navigate("/dashboard/my-projects")} className="text-xs font-bold text-primary hover:underline">My projects</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
@@ -188,7 +188,7 @@ export default function DashboardOverview() {
         <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-5 flex flex-col h-[30rem]">
           <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Briefcase size={16} className="text-primary" /> Recent Projects</h3>
-            <button onClick={() => navigate(projectsBase)} className="text-[11px] font-bold text-primary hover:underline">View all</button>
+            <button onClick={() => navigate("/dashboard/my-projects")} className="text-[11px] font-bold text-primary hover:underline">View all</button>
           </div>
           <div className="flex-1 overflow-y-auto scroll-slim -mr-2 pr-2">
           {loading ? <div className="py-10 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>
