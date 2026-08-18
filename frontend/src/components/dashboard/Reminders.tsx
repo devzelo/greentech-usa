@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, AlertTriangle } from "lucide-react";
+import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, AlertTriangle, Briefcase } from "lucide-react";
 import NotificationsPanel from "./NotificationsPanel";
 import {
   fetchReminders, createReminder, updateReminder, deleteReminder, fetchProjects, getAuthUser,
@@ -235,7 +235,12 @@ export default function Reminders() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className={`text-sm font-bold ${r.status === "Completed" || r.status === "Cancelled" ? "text-slate-400 line-through" : "text-slate-900"}`}>{r.title}</p>
                       {over && <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-[9px] font-bold uppercase tracking-widest">Overdue</span>}
-                      {r.projectName && <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold">{r.projectName}</span>}
+                      {/* CR-P-17 — the project is named on every reminder and links to that project. */}
+                      {r.projectName && (
+                        r.projectId
+                          ? <button onClick={() => navigate(`/dashboard/projects/${r.projectId}`)} title={`Open ${r.projectName}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 hover:bg-primary hover:text-white text-[9px] font-bold transition-colors"><Briefcase size={9} /> {r.projectName}</button>
+                          : <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold">{r.projectName}</span>
+                      )}
                     </div>
                     <p className={`text-[11px] mt-0.5 font-bold ${over ? "text-red-500" : "text-slate-400"}`}>{when(r.dueAt)}</p>
                     {r.notes && <p className="text-[11px] text-slate-500 mt-1 whitespace-pre-wrap"><span className="font-bold text-slate-400">Remarks:</span> {r.notes}</p>}
