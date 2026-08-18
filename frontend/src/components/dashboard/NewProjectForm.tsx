@@ -1,7 +1,8 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useRef, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, type ApiProject } from "../../lib/api";
+import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, type ApiProject, type ApiCompany } from "../../lib/api";
+import ClientPicker from "./ClientPicker";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import { SERVICE_CATEGORIES } from "../../data/services";
@@ -251,6 +252,16 @@ export default function NewProjectForm() {
   const [clientCountry, setClientCountry] = useState("");
   const [clientAddress, setClientAddress] = useState("");
   const [clientNotes, setClientNotes] = useState("");
+  // Fill the client fields from a Directory client company (picked or newly created).
+  const applyClientCompany = (c: ApiCompany) => {
+    setClientName(c.name || "");
+    const contact = c.contactPersons?.[0];
+    if (contact?.name) setClientContact(contact.name);
+    if (c.email || contact?.email) setClientEmail(c.email || contact?.email || "");
+    if (c.phone || contact?.phone) setClientPhone(c.phone || contact?.phone || "");
+    if (c.address) setClientAddress(c.address);
+    if (c.notes) setClientNotes(c.notes);
+  };
 
   // Timeline (inside PM tab)
   const [startDate, setStartDate] = useState("");
@@ -471,16 +482,15 @@ export default function NewProjectForm() {
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Name</label>
-            <input
-              type="text"
+          <div className="md:col-span-2">
+            <ClientPicker
+              label="Client Name"
               value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
+              onNameChange={setClientName}
+              onSelectCompany={applyClientCompany}
               placeholder="e.g. USAID Ghana"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              hint="Pick a client from the Directory, or type a new name and add it. Also fills the Client Information tab."
             />
-            <p className="text-[10px] text-slate-400">Also fills the Client Information tab.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>
@@ -902,7 +912,14 @@ export default function NewProjectForm() {
             <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
               <h3 className="text-xl font-display font-bold text-slate-900">Client Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField label="Client / Organization Name" placeholder="e.g. USAID Ghana" value={clientName} onChange={setClientName} />
+                <ClientPicker
+                  label="Client / Organization Name"
+                  value={clientName}
+                  onNameChange={setClientName}
+                  onSelectCompany={applyClientCompany}
+                  placeholder="e.g. USAID Ghana"
+                  hint="Pick from the Directory (Clients) or add a new one."
+                />
                 <InputField label="Client Reference Number" placeholder="e.g. USAID-GH-2026-012" value={clientRef} onChange={setClientRef} />
                 <InputField label="Primary Contact Name" placeholder="Full name" value={clientContact} onChange={setClientContact} />
                 <InputField label="Contact Email" placeholder="contact@client.org" type="email" value={clientEmail} onChange={setClientEmail} />
