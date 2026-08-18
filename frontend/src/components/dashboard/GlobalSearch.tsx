@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Briefcase, FileText, Users, Building2, Loader2 } from "lucide-react";
+import { Search, Briefcase, FileText, Users, Building2, Loader2, Eye, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchProjects, fetchAllDocuments, fetchEmployees, ApiProject, ApiGlobalDocument, ApiEmployee } from "../../lib/api";
+import { fetchProjects, fetchAllDocuments, fetchEmployees, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee } from "../../lib/api";
+import DocumentViewer from "./DocumentViewer";
 
 type Group = "Projects" | "Documents" | "Employees" | "Subcontractors";
 interface Hit {
@@ -12,6 +13,7 @@ interface Hit {
   icon: typeof Search;
   projectId?: string;
   year?: string;
+  doc?: ApiGlobalDocument;   // set on Documents hits so they can be previewed in-app
 }
 
 const GROUPS: ("All" | Group)[] = ["All", "Projects", "Documents", "Employees", "Subcontractors"];
@@ -32,6 +34,8 @@ export default function GlobalSearch() {
   const [typeF, setTypeF] = useState<"All" | Group>("All");
   const [projectF, setProjectF] = useState("All");
   const [yearF, setYearF] = useState("All");
+  // In-app document preview opened straight from a search result.
+  const [preview, setPreview] = useState<{ name: string; url: string; fileType: string } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const ensureLoaded = async () => {
@@ -82,7 +86,7 @@ export default function GlobalSearch() {
     for (const d of docs) {
       if (d.name.toLowerCase().includes(needle) || d.projectName.toLowerCase().includes(needle)) {
         const y = new Date(d.uploadedAt).getFullYear();
-        hits.push({ group: "Documents", label: d.name, sub: d.projectName, to: `/dashboard/documents?focus=${d._id}`, icon: FileText, projectId: d.projectId, year: isNaN(y) ? undefined : String(y) });
+        hits.push({ group: "Documents", label: d.name, sub: d.projectName, to: `/dashboard/documents?focus=${d._id}`, icon: FileText, projectId: d.projectId, year: isNaN(y) ? undefined : String(y), doc: d });
       }
     }
     for (const e of employees) {
@@ -158,8 +162,27 @@ export default function GlobalSearch() {
                 <p className="px-4 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{group} ({hits.length})</p>
                 {hits.map((h, i) => {
                   const Icon = h.icon;
+                  const goTo = () => { navigate(h.to); setOpen(false); setQ(""); };
+                  // Documents get two actions: preview in-app (right there) or jump to the file's
+                  // location in the Documents module. Everything else is a single navigate.
+                  if (h.doc) {
+                    const openPreview = () => { setPreview({ name: h.doc!.name, url: documentUrl(h.doc!), fileType: h.doc!.fileType || h.doc!.name.split(".").pop() || "" }); setOpen(false); };
+                    return (
+                      <div key={`${group}-${i}`} className="w-full flex items-center gap-2 px-2 pr-3 py-1 hover:bg-slate-50 transition-colors group/row">
+                        <button onClick={openPreview} className="min-w-0 flex-grow flex items-center gap-3 px-2 py-1.5 text-left" title="Preview here">
+                          <span className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-primary flex-shrink-0"><Icon size={14} /></span>
+                          <span className="min-w-0 flex-grow">
+                            <span className="block text-xs font-bold text-slate-900 truncate">{h.label}</span>
+                            {h.sub && <span className="block text-[10px] text-slate-400 truncate">{h.sub}</span>}
+                          </span>
+                        </button>
+                        <button onClick={openPreview} title="Preview here" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white flex-shrink-0"><Eye size={15} /></button>
+                        <button onClick={goTo} title="Open file location" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white flex-shrink-0"><ArrowUpRight size={15} /></button>
+                      </div>
+                    );
+                  }
                   return (
-                    <button key={`${group}-${i}`} onClick={() => { navigate(h.to); setOpen(false); setQ(""); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 transition-colors">
+                    <button key={`${group}-${i}`} onClick={goTo} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 transition-colors">
                       <span className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-primary flex-shrink-0"><Icon size={14} /></span>
                       <span className="min-w-0 flex-grow">
                         <span className="block text-xs font-bold text-slate-900 truncate">{h.label}</span>
@@ -173,6 +196,9 @@ export default function GlobalSearch() {
           )}
         </div>
       )}
+
+      {/* In-app preview of a document opened from a search result. */}
+      {preview && <DocumentViewer doc={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }
