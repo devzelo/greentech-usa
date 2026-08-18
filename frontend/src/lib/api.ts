@@ -2081,6 +2081,23 @@ export async function fetchNotifications(all = false): Promise<{ items: ApiNotif
   return request(`/notifications${all ? "?all=1" : ""}`);
 }
 
+// ── Drafts (across the platform) ─────────────────────────────────────────────
+// Everything the user has saved as a draft — projects, agreements, submittals, RFQs — so the
+// Overview can nudge them to finish it.
+export interface ApiDraft {
+  kind: "project" | "agreement" | "submittal" | "rfq";
+  id: string;
+  title: string;
+  subtitle: string;
+  projectId: string;
+  projectName: string;
+  link: string;
+  updatedAt: string;
+}
+export async function fetchDrafts(): Promise<ApiDraft[]> {
+  return request(`/drafts`);
+}
+
 // ── Announcements (public hero banner; admin-managed) ────────────────────────
 export interface ApiAnnouncement {
   _id: string; title: string; message: string; emoji: string; date: string; endDate?: string;

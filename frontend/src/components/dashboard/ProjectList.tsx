@@ -4,7 +4,7 @@ import {
   MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchProjects, fetchProjectFinancials, getAuthUser, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
@@ -34,7 +34,10 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const statusOptions = ["All", ...PROJECT_STATUSES.filter((s) => !isGuest || s !== "Draft")];
   const [view, setView] = useState<"grid" | "list">("list");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  // Deep-link: /dashboard/all-projects?status=Active pre-selects a status chip (Overview cards).
+  const [searchParams] = useSearchParams();
+  const initialStatus = searchParams.get("status");
+  const [statusFilter, setStatusFilter] = useState(initialStatus && PROJECT_STATUSES.includes(initialStatus as never) ? initialStatus : "All");
   const [archivedView, setArchivedView] = useState(false);
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
