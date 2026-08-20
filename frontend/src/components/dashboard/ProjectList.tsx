@@ -356,14 +356,17 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.05 }}
-                  className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm hover:shadow-xl transition-all group"
+                  className="relative bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm hover:shadow-xl transition-all group"
                 >
-                  {/* CR-P-25 — the project's identity picture as a cover on the grid card. */}
+                  {/* CR-P-25 — the project's identity picture as a cover on the grid card. The menu
+                      sits on the CARD (not inside the image) so its dropdown isn't clipped. */}
                   {p.image ? (
-                    <div className="relative -mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
-                      <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                    <>
+                      <div className="-mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
+                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
                       <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} variant="overlay" />
-                    </div>
+                    </>
                   ) : (
                     <div className="flex justify-between items-start mb-6">
                       <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">

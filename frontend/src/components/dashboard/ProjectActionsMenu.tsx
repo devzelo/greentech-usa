@@ -74,8 +74,11 @@ export default function ProjectActionsMenu({
     finally { setBusy(false); }
   };
 
+  // Overlay: the whole control is absolutely placed at the card's top-right (the parent card is
+  // `relative`), so the dropdown escapes the image's overflow-hidden. Button: inline.
+  const wrapperCls = variant === "overlay" ? "absolute top-3 right-3 z-20" : "relative inline-block";
   const trigger = variant === "overlay"
-    ? "absolute top-3 right-3 p-2 rounded-lg bg-white/85 backdrop-blur text-slate-500 hover:text-slate-900 shadow-sm transition-colors"
+    ? "p-2 rounded-lg bg-white/85 backdrop-blur text-slate-600 hover:text-slate-900 shadow-md transition-colors"
     : "p-2 rounded-xl border border-slate-100 hover:bg-white hover:shadow-sm text-slate-400 hover:text-slate-900 transition-all";
 
   const Item = ({ icon: Icon, label, onClick, danger }: { icon: typeof FolderOpen; label: string; onClick: () => void; danger?: boolean }) => (
@@ -85,7 +88,7 @@ export default function ProjectActionsMenu({
   );
 
   return (
-    <div className="relative inline-block">
+    <div className={wrapperCls}>
       <button onClick={() => setOpen((v) => !v)} className={trigger} title="More actions" disabled={busy} aria-label="More actions">
         {busy ? <Loader2 size={variant === "overlay" ? 18 : 18} className="animate-spin" /> : <MoreHorizontal size={variant === "overlay" ? 18 : 18} />}
       </button>
