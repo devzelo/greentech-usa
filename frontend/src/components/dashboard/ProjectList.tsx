@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
-  MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake
+  ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -13,6 +13,7 @@ import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
 import FinanceStrip from "./FinanceStrip";
+import ProjectActionsMenu from "./ProjectActionsMenu";
 import { fiveFromFinancials, sumFive } from "../../lib/projectFinance";
 
 // The colour-coded status key IS the filter (client request): "All" first, then one chip per
@@ -334,9 +335,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           >
                             Manage
                           </button>
-                          <button className="p-2 rounded-xl border border-slate-100 hover:bg-white hover:shadow-sm text-slate-400 transition-all">
-                            <MoreHorizontal size={18} />
-                          </button>
+                          <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} />
                         </div>
                       </td>
                     </tr>
@@ -363,18 +362,14 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   {p.image ? (
                     <div className="relative -mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
                       <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
-                      <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="absolute top-3 right-3 p-2 rounded-lg bg-white/85 backdrop-blur text-slate-500 hover:text-slate-900 shadow-sm transition-colors" title="Open project">
-                        <MoreHorizontal size={18} />
-                      </button>
+                      <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} variant="overlay" />
                     </div>
                   ) : (
                     <div className="flex justify-between items-start mb-6">
                       <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
                         <Clock size={28} />
                       </div>
-                      <button className="p-2 text-slate-300 hover:text-slate-900 transition-colors">
-                        <MoreHorizontal size={20} />
-                      </button>
+                      <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} />
                     </div>
                   )}
                   <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left w-full cursor-pointer" title="Open project">
