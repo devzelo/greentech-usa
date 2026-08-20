@@ -129,9 +129,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       return res.json(projects);
     }
     if (scope === "mine") {
+      // CR-P-18b — an owner sees ALL their own projects here (including their private Drafts, via
+      // the Draft status filter); assigned employees still never see someone else's drafts.
       const ownerClause: Record<string, unknown>[] = [{ ownerId: userId }];
-      if (empId) ownerClause.push({ assignedEmployees: empId });
-      filter = { $or: ownerClause, status: { $ne: "Draft" }, ...archiveClause };
+      if (empId) ownerClause.push({ assignedEmployees: empId, status: { $ne: "Draft" } });
+      filter = { $or: ownerClause, ...archiveClause };
     } else if (scope === "drafts") {
       // Drafts are private to their creator
       filter = { ownerId: userId, status: "Draft", ...archiveClause };

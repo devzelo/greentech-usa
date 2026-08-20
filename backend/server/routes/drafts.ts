@@ -51,18 +51,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
 
     const items: DraftItem[] = [];
 
-    // 1. Draft projects (private to their owner).
-    for (const p of projects) {
-      if (p.status === "Draft" && String(p.ownerId) === String(userId)) {
-        items.push({
-          kind: "project", id: p.projectId, title: p.name || "Untitled project",
-          subtitle: "Project draft", projectId: p.projectId, projectName: p.name || "",
-          link: `/dashboard/projects/${p.projectId}`, updatedAt: String((p as { updatedAt?: unknown }).updatedAt || ""),
-        });
-      }
-    }
+    // CR-P-18b — draft PROJECTS are intentionally excluded here: they already appear under the
+    // "Draft" status on My Projects / All Projects. This aggregator is for the finishable work
+    // INSIDE projects (agreements, submittals, RFQs).
 
-    // 2. Draft agreements — staff only (guests sign, they don't draft). In "mine" scope, only the
+    // Draft agreements — staff only (guests sign, they don't draft). In "mine" scope, only the
     // agreements that belong to one of my projects (general/employee agreements aren't project-tied).
     if (!isGuest) {
       const agFilter: Record<string, unknown> = { status: "Draft", archived: { $ne: true } };

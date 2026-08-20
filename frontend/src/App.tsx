@@ -32,6 +32,7 @@ import ProjectWorkspace from "./components/dashboard/ProjectWorkspace";
 import UserManagement from "./components/dashboard/UserManagement";
 import Reminders from "./components/dashboard/Reminders";
 import RecycleBin from "./components/dashboard/RecycleBin";
+import DraftsPage from "./components/dashboard/DraftsPage";
 import GeneralAgreements from "./components/dashboard/GeneralAgreements";
 import Directory from "./components/dashboard/Directory";
 import CompanyRegister from "./components/CompanyRegister";
@@ -150,7 +151,7 @@ export default function App() {
           <Route index element={<NonGuest><DashboardOverview /></NonGuest>} />
           <Route path="my-projects" element={<ProjectList mode="my" />} />
           <Route path="all-projects" element={<AdminOnly><ProjectList mode="all" /></AdminOnly>} />
-          <Route path="drafts" element={<NonGuest><ProjectList mode="drafts" /></NonGuest>} />
+          <Route path="drafts" element={<NonGuest><DraftsPage /></NonGuest>} />
           <Route path="projects/:id" element={<ProjectWorkspace />} />
           <Route path="new-project" element={<NonGuest><NewProjectForm /></NonGuest>} />
           <Route path="documents" element={<Documents />} />
