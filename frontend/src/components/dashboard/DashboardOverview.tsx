@@ -286,7 +286,7 @@ export default function DashboardOverview() {
             <div className="py-10 text-center text-slate-400">
               <FileEdit size={30} className="mx-auto mb-2" />
               <p className="font-bold text-xs">No drafts — you&apos;re all caught up.</p>
-              <p className="text-[10px] mt-1">Projects, agreements, submittals &amp; RFQs saved as drafts show here.</p>
+              <p className="text-[10px] mt-1">Agreements, submittals &amp; RFQs saved as drafts show here. Draft projects live under the Draft status.</p>
             </div>
           ) : (
             <div className="space-y-1.5">
