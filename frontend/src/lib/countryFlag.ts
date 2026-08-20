@@ -43,16 +43,22 @@ function isoToEmoji(iso: string): string {
   return iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
-/** Best-effort flag emoji for a free-text location. "" when no country is recognised. */
-export function locationFlag(location?: string): string {
+/** Best-effort ISO-2 country code for a free-text location. "" when none is recognised. */
+export function isoForLocation(location?: string): string {
   const s = ` ${String(location || "").toLowerCase()} `;
   for (const name of NAMES_BY_LENGTH) {
     // Word-boundary-ish match so "mali" doesn't hit inside "somalia".
     if (new RegExp(`[^a-z]${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^a-z]`).test(s)) {
-      return isoToEmoji(NAME_TO_ISO[name]);
+      return NAME_TO_ISO[name];
     }
   }
   return "";
+}
+
+/** Best-effort flag emoji for a free-text location. "" when no country is recognised. */
+export function locationFlag(location?: string): string {
+  const iso = isoForLocation(location);
+  return iso ? isoToEmoji(iso) : "";
 }
 
 // ── Country picker list ──────────────────────────────────────────────────────

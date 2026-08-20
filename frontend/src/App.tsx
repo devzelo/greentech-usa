@@ -8,6 +8,7 @@ import Hero from "./components/Hero";
 import About from "./components/About";
 import Services from "./components/Services";
 import Projects from "./components/Projects";
+import ProjectsMap from "./components/ProjectsMap";
 import Partners from "./components/Partners";
 import Community from "./components/Community";
 import CompanyResources from "./components/CompanyResources";
@@ -82,6 +83,7 @@ function HomePage() {
       <About />
       <Services />
       <Projects />
+      <ProjectsMap />
       <Partners />
       <CompanyResources />
       <Community />
