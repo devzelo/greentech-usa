@@ -54,6 +54,7 @@ import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
 import CountrySelect from "./CountrySelect";
+import ScrollableTabs from "./ScrollableTabs";
 import FinanceStrip from "./FinanceStrip";
 import { fiveFromRaw } from "../../lib/projectFinance";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
@@ -2617,8 +2618,8 @@ export default function ProjectWorkspace() {
         )}
       </div>
 
-      {/* ── Tab Bar (top-level) ── */}
-      <div className="bg-white border border-slate-100 rounded-2xl sm:rounded-[1.5rem] shadow-sm overflow-x-auto no-scrollbar">
+      {/* ── Tab Bar (top-level) — scrollable with arrows (CR-P-29) ── */}
+      <ScrollableTabs className="bg-white border border-slate-100 rounded-2xl sm:rounded-[1.5rem] shadow-sm">
         <div className="flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-max">
           {topLevelTabs.map((tab) => {
             const ct = customTabs.find((c) => c.id === tab.id);
@@ -2649,7 +2650,7 @@ export default function ProjectWorkspace() {
             );
           })}
         </div>
-      </div>
+      </ScrollableTabs>
 
       {/* ── Sub-tab Bar (if the active top-level has children) ── */}
       {activeChildren.length > 0 && (
