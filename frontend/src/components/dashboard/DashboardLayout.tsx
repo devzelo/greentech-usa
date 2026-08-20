@@ -342,7 +342,7 @@ export default function DashboardLayout() {
         {/* Powered by Projnell — attribution at the very bottom of the panel (expanded only). */}
         {isSidebarOpen && (
           <div className={`px-4 py-3 border-t border-slate-100 flex justify-center ${me ? "" : "mt-auto"}`}>
-            <PoweredByProjnell tone="light" card={false} />
+            <PoweredByProjnell tone="light" card={false} size="sm" />
           </div>
         )}
       </motion.aside>
