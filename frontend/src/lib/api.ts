@@ -1198,6 +1198,19 @@ export async function fetchAllDocuments(): Promise<ApiGlobalDocument[]> {
   return request<ApiGlobalDocument[]>('/documents');
 }
 
+// ── Company Details (CR-P-37) — admin-managed custom fields ──────────────────
+export interface ApiCompanyDetail { _id: string; label: string; value: string; order: number }
+export async function fetchCompanyDetails(): Promise<ApiCompanyDetail[]> { return request(`/company/details`); }
+export async function createCompanyDetail(body: { label: string; value?: string }): Promise<ApiCompanyDetail> {
+  return request(`/company/details`, { method: 'POST', body: JSON.stringify(body) });
+}
+export async function updateCompanyDetail(id: string, body: Partial<{ label: string; value: string; order: number }>): Promise<ApiCompanyDetail> {
+  return request(`/company/details/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+export async function deleteCompanyDetail(id: string): Promise<void> {
+  await request(`/company/details/${id}`, { method: 'DELETE' });
+}
+
 // Folder descriptions in the Documents module. Folders are virtual (project / tab / section-group),
 // keyed by (projectId, folderKey) where folderKey is "project" | "tab:<id>" | "group:<key>".
 export interface ApiFolderNote { projectId: string; folderKey: string; description: string }

@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import CompanyTab from "../models/CompanyTab";
 import CompanyFile from "../models/CompanyFile";
+import CompanyDetail from "../models/CompanyDetail";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 const router = Router();
@@ -12,6 +13,59 @@ router.use(blockGuests); // company & classified documents are internal (non-gue
 
 // Classified documents are admin-only (only Reza / admin accounts).
 const isAdmin = (req: AuthedRequest) => req.user?.role === "admin";
+
+// ── Company Details (CR-P-37) — admin-managed custom fields ───────────────────
+const DEFAULT_DETAILS: Array<{ label: string; value: string }> = [
+  { label: "Legal Name", value: "GreenTech USA" },
+  { label: "Headquarters", value: "Chantilly, Virginia, USA" },
+  { label: "Established", value: "2020" },
+  { label: "UEI", value: "FYR1QQSL3SM7" },
+  { label: "CAGE / NCAGE", value: "8ZJ10" },
+  { label: "Email", value: "info@gt-usa.com" },
+  { label: "Phone", value: "+1-125-258-3525" },
+  { label: "Website", value: "www.gt-usa.com" },
+];
+
+router.get("/details", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await CompanyDetail.countDocuments())) {
+      await CompanyDetail.insertMany(DEFAULT_DETAILS.map((d, i) => ({ ...d, order: i })));
+    }
+    res.json(await CompanyDetail.find().sort({ order: 1, createdAt: 1 }).lean());
+  } catch (err) { next(err); }
+});
+
+router.post("/details", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Only an admin can edit company details." });
+    const label = String(req.body?.label || "").trim().slice(0, 120);
+    if (!label) return res.status(400).json({ error: "A field needs a label." });
+    const max = await CompanyDetail.findOne().sort({ order: -1 }).select("order").lean();
+    const row = await CompanyDetail.create({ label, value: String(req.body?.value || "").slice(0, 2000), order: ((max as { order?: number } | null)?.order ?? -1) + 1 });
+    res.status(201).json(row);
+  } catch (err) { next(err); }
+});
+
+router.patch("/details/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Only an admin can edit company details." });
+    const row = await CompanyDetail.findById(req.params.id);
+    if (!row) return res.status(404).json({ error: "Not found" });
+    if (typeof req.body?.label === "string") row.label = req.body.label.trim().slice(0, 120) || row.label;
+    if (typeof req.body?.value === "string") row.value = req.body.value.slice(0, 2000);
+    if (typeof req.body?.order === "number") row.order = req.body.order;
+    await row.save();
+    res.json(row);
+  } catch (err) { next(err); }
+});
+
+router.delete("/details/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Only an admin can edit company details." });
+    await CompanyDetail.findByIdAndDelete(req.params.id);
+    res.json({ message: "Deleted" });
+  } catch (err) { next(err); }
+});
 
 // The dedicated classified tab that holds company stamps. Admin manages it in Classified Documents;
 // PO managers can read (only) this tab's files to stamp a purchase order.

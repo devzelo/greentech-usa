@@ -4,10 +4,11 @@ import {
   Search, Download, Eye, FileText, FileImage, FileCode, FileSpreadsheet,
   File, Loader2, List as ListIcon, LayoutGrid,
   Building2, FolderOpen, Lock, ShieldAlert, ChevronsUpDown, ArrowUp, ArrowDown,
-  Folder, ChevronRight, Home,
+  Folder, ChevronRight, Home, Plus, Trash2, Pencil, Check,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, type ApiProject, ApiGlobalDocument } from "../../lib/api";
+import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, fetchCompanyDetails, createCompanyDetail, updateCompanyDetail, deleteCompanyDetail, type ApiProject, type ApiCompanyDetail, ApiGlobalDocument } from "../../lib/api";
+import { toast } from "../../lib/toast";
 import { sectionToPath } from "../../lib/docTree";
 import { locationFlag } from "../../lib/countryFlag";
 import DocumentViewer from "./DocumentViewer";
@@ -73,17 +74,6 @@ function groupLabel(section: string) {
 }
 
 // ── Company documents (fixed, admin-managed) ────────────────────────────────
-const COMPANY_DETAILS: { label: string; value: string }[] = [
-  { label: "Legal Name", value: "GreenTech USA" },
-  { label: "Headquarters", value: "Chantilly, Virginia, USA" },
-  { label: "Established", value: "2020" },
-  { label: "UEI", value: "FYR1QQSL3SM7" },
-  { label: "CAGE / NCAGE", value: "8ZJ10" },
-  { label: "Email", value: "info@gt-usa.com" },
-  { label: "Phone", value: "+1-125-258-3525" },
-  { label: "Website", value: "www.gt-usa.com" },
-];
-
 export default function Documents() {
   useMeta({ title: "Documents", description: "Browse project files and official company documents." });
   const isGuest = getAuthUser()?.role === "subcontractor";
@@ -131,6 +121,31 @@ export default function Documents() {
       .then((notes) => setFolderNotes(Object.fromEntries(notes.map((n) => [`${n.projectId}::${n.folderKey}`, n.description]))))
       .catch(() => {});
   }, []);
+
+  // CR-P-37 — admin-managed Company Details (custom fields, CRUD).
+  const [details, setDetails] = useState<ApiCompanyDetail[]>([]);
+  const [detailsEdit, setDetailsEdit] = useState(false);
+  const [savingDetail, setSavingDetail] = useState(false);
+  useEffect(() => { if (!isGuest) fetchCompanyDetails().then(setDetails).catch(() => {}); }, [isGuest]);
+  const patchDetailLocal = (id: string, field: "label" | "value", v: string) => setDetails((p) => p.map((d) => (d._id === id ? { ...d, [field]: v } : d)));
+  const saveDetail = (d: ApiCompanyDetail, field: "label" | "value", v: string) => {
+    updateCompanyDetail(d._id, { [field]: v }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+  };
+  const addDetail = async () => {
+    setSavingDetail(true);
+    try { const row = await createCompanyDetail({ label: "New field", value: "" }); setDetails((p) => [...p, row]); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not add field.", "error"); }
+    finally { setSavingDetail(false); }
+  };
+  const removeDetail = async (id: string) => {
+    setDetails((p) => p.filter((d) => d._id !== id));
+    deleteCompanyDetail(id).catch((err) => toast(err instanceof Error ? err.message : "Delete failed.", "error"));
+  };
+  // The homepage's two quick downloads, surfaced here for fast access.
+  const COMPANY_DOWNLOADS = [
+    { label: "Fact Sheet", href: "/downloads/greentech-factsheet.pdf", file: "greentech-factsheet.pdf" },
+    { label: "Company Profile", href: "/downloads/greentech-profile.pdf", file: "greentech-profile.pdf" },
+  ];
 
   // Deep-link from global search: ?focus=<docId> opens the document and flashes its row.
   useEffect(() => {
@@ -576,19 +591,52 @@ export default function Documents() {
 
       {tab === "company" && !isGuest && (
         <>
-          {/* Company details — read-only */}
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-display font-bold text-slate-900">Company Details</h2>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Lock size={12} /> Admin-managed</span>
+          {/* Company details — admin-managed custom fields (CR-P-37) */}
+          <div className="bg-white rounded-2xl sm:rounded-[1.5rem] border border-slate-100 shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <h2 className="text-base font-display font-bold text-slate-900">Company Details</h2>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Quick downloads (same as the homepage's Company Resources). */}
+                {COMPANY_DOWNLOADS.map((r) => (
+                  <a key={r.file} href={r.href} download={r.file} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-primary text-[11px] font-bold shadow-sm">
+                    <Download size={13} /> {r.label}
+                  </a>
+                ))}
+                {isAdmin ? (
+                  <button onClick={() => setDetailsEdit((v) => !v)} className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border shadow-sm ${detailsEdit ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:text-primary"}`}>
+                    {detailsEdit ? <><Check size={13} /> Done</> : <><Pencil size={13} /> Edit</>}
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Lock size={12} /> Admin-managed</span>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5">
-              {COMPANY_DETAILS.map((d) => (
-                <div key={d.label}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{d.label}</p>
-                  <p className="text-sm font-bold text-slate-900 break-words">{d.value}</p>
+
+            {/* Compact, dense field grid. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3">
+              {details.map((d) => (
+                <div key={d._id} className={detailsEdit ? "rounded-lg border border-slate-100 p-2" : ""}>
+                  {detailsEdit && isAdmin ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <input value={d.label} onChange={(e) => patchDetailLocal(d._id, "label", e.target.value)} onBlur={(e) => saveDetail(d, "label", e.target.value)} className="w-full text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-50 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-primary/20" />
+                        <button onClick={() => removeDetail(d._id)} title="Delete field" className="p-1 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={12} /></button>
+                      </div>
+                      <input value={d.value} onChange={(e) => patchDetailLocal(d._id, "value", e.target.value)} onBlur={(e) => saveDetail(d, "value", e.target.value)} placeholder="Value" className="w-full text-[13px] font-bold text-slate-900 bg-slate-50 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-primary/20" />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 truncate">{d.label}</p>
+                      <p className="text-[13px] font-bold text-slate-900 break-words leading-tight">{d.value || "—"}</p>
+                    </>
+                  )}
                 </div>
               ))}
+              {detailsEdit && isAdmin && (
+                <button onClick={addDetail} disabled={savingDetail} className="rounded-lg border border-dashed border-slate-200 p-2 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-primary hover:border-primary/40 min-h-[3.5rem]">
+                  {savingDetail ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />} Add field
+                </button>
+              )}
             </div>
           </div>
 
