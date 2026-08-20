@@ -189,12 +189,20 @@ const DEFAULT_TABS = [
   { id: "tech-docs", label: "Technical Docs", icon: FileCode },
   { id: "subs", label: "Subcontractors & Employees", icon: Users },
   { id: "legal", label: "Legal Docs", icon: Scale },
-  { id: "expenses", label: "Expenses", icon: DollarSign },
+  { id: "finances", label: "Finances", icon: DollarSign },
   { id: "po", label: "Purchase Orders", icon: ShoppingCart },
-  { id: "invoice-sent", label: "Invoice Sent", icon: Receipt },
-  { id: "invoice-received", label: "Invoice Received", icon: Receipt },
   { id: "procurement", label: "Procurement & Submittals", icon: Truck },
 ];
+
+// CR-P-30 — Expenses / Invoice Sent / Invoice Received live as sub-tabs under one "Finances" tab.
+// Their perm ids stay the original tab ids so existing guest grants & backend guards keep working.
+const FIN_SUBTABS = [
+  { key: "expenses", permId: "expenses", label: "Expenses", icon: DollarSign },
+  { key: "invoice-sent", permId: "invoice-sent", label: "Invoice Sent", icon: Receipt },
+  { key: "invoice-received", permId: "invoice-received", label: "Invoice Received", icon: Receipt },
+] as const;
+type FinSub = (typeof FIN_SUBTABS)[number]["key"];
+const FIN_PERM_BY_KEY: Record<string, string> = Object.fromEntries(FIN_SUBTABS.map((t) => [t.key, t.permId]));
 
 // Procurement sub-tabs that can be granted to a guest (e.g. a logistics-company subcontractor)
 // individually. Permission keys are stored in the guest's tabPermissions like any other tab.
@@ -509,15 +517,21 @@ export default function ProjectWorkspace() {
   }, [financialLocked, project, proposalSub]);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "builder" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
+  const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
   const [openRfqId, setOpenRfqId] = useState<string | undefined>(undefined); // open a specific RFQ after creating it from the BOQ
 
   // Deep-link support for the "+ New" menu: /dashboard/projects/:id?tab=procurement&proc=rfqs
   useEffect(() => {
-    const tab = searchParams.get("tab");
+    let tab = searchParams.get("tab");
     const proc = searchParams.get("proc");
     const sub = searchParams.get("sub");   // Subcontractors & Employees sub-tab
-    if (!tab && !proc && !sub) return;
+    const fin = searchParams.get("fin");   // Finances sub-tab
+    if (!tab && !proc && !sub && !fin) return;
+    // CR-P-30 — legacy deep-links (?tab=expenses|invoice-sent|invoice-received) now open the
+    // Finances tab on the matching sub-tab; every existing wired link keeps working.
+    if (tab && (FIN_PERM_BY_KEY as Record<string, string>)[tab]) { setFinSub(tab as FinSub); tab = "finances"; }
+    if (fin) setFinSub(fin as FinSub);
     if (tab) setActiveTab(tab);
     if (proc) setProcSub(proc as typeof procSub);
     if (sub) setSubsSubTab(sub as "employees" | "subcontractors" | "partners" | "vendors");
@@ -2187,17 +2201,28 @@ export default function ProjectWorkspace() {
   const isAssigned = !isGuest && !!(project && myEmpId && assignedEmployees.includes(myEmpId));
   const guestHasAccess = isGuest && Object.keys(myGuestPerms).length > 0;
   const hasAnyAccess = isOwner || isAssigned || guestHasAccess;
-  const guestCanEditActive = isGuest && myGuestPerms[activeTab] === "edit";
+  // CR-P-30 — Finances sub-tab permissions (expenses / invoice-sent / invoice-received), mirroring
+  // the procurement model. Defined here so the active-tab edit flag can honour a per-sub-tab grant.
+  const finPermFor = (key: string): "none" | "view" | "edit" => {
+    if (!isGuest) return (isOwner || isAssigned) ? "edit" : "view";
+    const p = hasAnyFinPerm ? myGuestPerms[FIN_PERM_BY_KEY[key]] : myGuestPerms["finances"];
+    return p === "edit" || p === "view" ? p : "none";
+  };
+  const finNav = FIN_SUBTABS.filter((t) => finPermFor(t.key) !== "none");
+  const finActive: FinSub = finNav.some((t) => t.key === finSub) ? finSub : ((finNav[0]?.key as FinSub) || "expenses");
+
+  const guestCanEditActive = isGuest && (myGuestPerms[activeTab] === "edit" || (activeTab === "finances" && finPermFor(finActive) === "edit"));
   const canEdit = isOwner || isAssigned || guestCanEditActive;  // edit content of the ACTIVE tab
   const canEditIdentity = isOwner;              // can edit project identity / A&S
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
   const hasAnyProcPerm = PROC_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
+  const hasAnyFinPerm = FIN_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
   const allTabs = isOwner
     ? allTabsAll
     : isGuest
-      ? allTabsAll.filter((t) => myGuestPerms[t.id] === "view" || myGuestPerms[t.id] === "edit" || (t.id === "procurement" && hasAnyProcPerm))
+      ? allTabsAll.filter((t) => myGuestPerms[t.id] === "view" || myGuestPerms[t.id] === "edit" || (t.id === "procurement" && hasAnyProcPerm) || (t.id === "finances" && hasAnyFinPerm))
       : allTabsAll.filter((t) => {
           if (t.id === "showcase") return false;
           const cfg = tabAccess[t.id];
@@ -4309,8 +4334,20 @@ export default function ProjectWorkspace() {
             </div>
           )}
 
-          {/* EXPENSES */}
-          {activeTab === "expenses" && id && (
+          {/* FINANCES — sub-tab bar (Expenses / Invoice Sent / Invoice Received). CR-P-30 */}
+          {activeTab === "finances" && (
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 flex items-center gap-1 overflow-x-auto no-scrollbar">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 shrink-0">Finances:</span>
+              {finNav.map((t) => (
+                <button key={t.key} onClick={() => setFinSub(t.key)} className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wide sm:tracking-widest transition-all whitespace-nowrap ${finActive === t.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"}`}>
+                  <t.icon size={12} className="shrink-0" /> {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* EXPENSES (Finances → Expenses) */}
+          {activeTab === "finances" && finActive === "expenses" && id && (
             <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm">
               <div className="flex items-center justify-between mb-5">
                 <div>
@@ -4532,13 +4569,13 @@ export default function ProjectWorkspace() {
           )}
 
           {/* INVOICE SENT / RECEIVED — one ledger component, with payments + totals */}
-          {(activeTab === "invoice-sent" || activeTab === "invoice-received") && id && (
+          {activeTab === "finances" && (finActive === "invoice-sent" || finActive === "invoice-received") && id && (
             <div className="space-y-6">
-              <InvoiceLedger projectId={id} kind={activeTab === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} />
+              <InvoiceLedger projectId={id} kind={finActive === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} />
               <DocSection
                 projectId={id}
-                section={activeTab === "invoice-sent" ? "invoice-sent-documents" : "invoice-received-documents"}
-                title={activeTab === "invoice-sent" ? "Invoice Documents" : "Bill Documents"}
+                section={finActive === "invoice-sent" ? "invoice-sent-documents" : "invoice-received-documents"}
+                title={finActive === "invoice-sent" ? "Invoice Documents" : "Bill Documents"}
                 canEdit={canEdit}
                 canPublish={isOwner}
               />
@@ -6153,6 +6190,10 @@ export default function ProjectWorkspace() {
                           // Procurement gets per-sub-tab rows so a guest (e.g. logistics company) can be limited to specific sub-tabs.
                           if (t.id === "procurement") {
                             for (const s of PROC_SUBTABS) rows.push(permRow(s.permId, `Procurement · ${s.label}`, true));
+                          }
+                          // CR-P-30 — Finances gets per-sub-tab rows (Expenses / Invoice Sent / Invoice Received).
+                          if (t.id === "finances") {
+                            for (const s of FIN_SUBTABS) rows.push(permRow(s.permId, `Finances · ${s.label}`, true));
                           }
                           return rows;
                         });
