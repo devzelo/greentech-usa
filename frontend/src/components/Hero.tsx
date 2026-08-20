@@ -39,7 +39,7 @@ export default function Hero() {
           </motion.div>
           
           <h1 className="font-display text-5xl md:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight">
-            Advanced <span className="text-gt-gradient">Environmental</span> Engineering
+            <span className="text-gt-gradient">Environmental</span> Engineering
           </h1>
           
           <p className="text-lg md:text-xl text-slate-100 mb-10 max-w-2xl mx-auto leading-relaxed opacity-90">
