@@ -114,7 +114,9 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     return { total, jv, gt: total - jv };
   })();
   const showValues = mode === "all" && isStaff;
-  // CR-P-15 — five-number financial overview totalled across the shown projects.
+  // CR-P-15 / CR-P-33 — five-number financial overview totalled across the shown projects. Shown on
+  // All Projects and My Projects (staff); on My Projects it sums only the user's own projects.
+  const showFinance = (mode === "all" || mode === "my") && isStaff;
   const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
   return (
@@ -184,8 +186,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         </div>
       )}
 
-      {/* CR-P-15 — five-number financial overview across all shown projects (same names as each project). */}
-      {showValues && !loading && (
+      {/* CR-P-15/33 — five-number financial overview across the shown projects (My & All Projects). */}
+      {showFinance && !loading && (
         <FinanceStrip five={fiveTotals} />
       )}
 
