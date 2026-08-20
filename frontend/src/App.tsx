@@ -31,6 +31,7 @@ import Profile from "./components/dashboard/Profile";
 import ProjectWorkspace from "./components/dashboard/ProjectWorkspace";
 import UserManagement from "./components/dashboard/UserManagement";
 import Reminders from "./components/dashboard/Reminders";
+import RecycleBin from "./components/dashboard/RecycleBin";
 import GeneralAgreements from "./components/dashboard/GeneralAgreements";
 import Directory from "./components/dashboard/Directory";
 import CompanyRegister from "./components/CompanyRegister";
@@ -156,6 +157,7 @@ export default function App() {
           <Route path="directory" element={<NonGuest><Directory /></NonGuest>} />
           <Route path="users" element={<AdminOnly><UserManagement /></AdminOnly>} />
           <Route path="reminders" element={<Reminders />} />
+          <Route path="recycle-bin" element={<NonGuest><RecycleBin /></NonGuest>} />
           <Route path="agreements" element={<NonGuest><GeneralAgreements /></NonGuest>} />
           <Route path="profile" element={<Profile />} />
         </Route>

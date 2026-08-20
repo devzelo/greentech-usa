@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   Handshake,
   Bell,
-  Building2
+  Building2,
+  Trash2
 } from "lucide-react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
@@ -44,6 +45,7 @@ const GUEST_LINKS = new Set(["My Projects", "Documents"]);
 
 const secondaryLinks = [
   { name: "Reminders", icon: Bell, path: "/dashboard/reminders" },
+  { name: "Archive & Bin", icon: Trash2, path: "/dashboard/recycle-bin" },
   { name: "Profile", icon: User, path: "/dashboard/profile" },
 ];
 
@@ -136,6 +138,8 @@ export default function DashboardLayout() {
   // All Projects is admin-only; everyone else works from My Projects.
   const roleLinks = isAdmin ? baseLinks : baseLinks.filter((l) => l.name !== "All Projects");
   const sidebarLinks = isGuest ? roleLinks.filter((l) => GUEST_LINKS.has(l.name)) : roleLinks;
+  // Guests don't get the Archive & Bin (staff-only).
+  const secondaryNav = isGuest ? secondaryLinks.filter((l) => l.name !== "Archive & Bin") : secondaryLinks;
   const userInitial = (me?.name || me?.email || "?").charAt(0).toUpperCase();
 
   // Breadcrumb: "Overview" is the root (→ /dashboard). On the overview page itself it shows just
@@ -270,7 +274,7 @@ export default function DashboardLayout() {
           <div>
              {isSidebarOpen && <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Account</p>}
              <div className="space-y-0.5">
-                {secondaryLinks.map((link) => (
+                {secondaryNav.map((link) => (
                   <Link
                     key={link.name}
                     to={link.path}

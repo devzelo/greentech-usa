@@ -7,6 +7,7 @@ import Project from "../models/Project";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { getProjectAccess, sectionToTabId, canEditTab, canViewTab } from "../lib/access";
+import { moveToTrash } from "../lib/recycleBin";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -156,8 +157,14 @@ router.delete("/:did", async (req: AuthedRequest, res: Response, next: NextFunct
     if (!target) return res.json({ message: "Document deleted" });
     const allowed = await canEditSection(req, target.projectId, target.section);
     if (!allowed) return res.status(403).json({ error: "You do not have permission to delete this document." });
+    // CR-P-26 — snapshot to the recycle bin; keep the file so it can be restored.
+    await moveToTrash({
+      kind: "document", refId: String(target._id), projectId: target.projectId,
+      name: target.name || "Document", subtitle: "Document",
+      data: target.toObject(), files: target.filePath ? [{ filePath: target.filePath }] : [],
+      deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+    });
     await ProjectDocument.findByIdAndDelete(req.params.did);
-    fs.unlink(target.filePath, () => {});
     res.json({ message: "Document deleted" });
   } catch (err) {
     next(err);

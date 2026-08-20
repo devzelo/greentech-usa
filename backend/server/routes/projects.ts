@@ -9,6 +9,7 @@ import path from "path";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { getProjectAccess } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
+import { moveToTrash } from "../lib/recycleBin";
 
 // Shared check: is the requester the JV partner of this project (or staff)?
 async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { email?: string }; ownerId?: unknown; assignedEmployees?: string[]; guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }> }): Promise<boolean> {
@@ -543,6 +544,12 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!existing.ownerId || String(existing.ownerId) !== req.user!.userId) {
       return res.status(403).json({ error: "Only the project owner can delete this project." });
     }
+    // CR-P-26 — snapshot to the recycle bin before removing (files kept for restore).
+    await moveToTrash({
+      kind: "project", refId: existing.projectId, projectId: existing.projectId, projectName: existing.name || "",
+      name: existing.name || "Untitled project", subtitle: [existing.category, existing.location].filter(Boolean).join(" · ") || "Project",
+      data: existing.toObject(), deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+    });
     await Project.deleteOne({ projectId: req.params.id });
     res.json({ message: "Project deleted" });
   } catch (err) {

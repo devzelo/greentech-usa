@@ -10,6 +10,7 @@ import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { getProjectAccess } from "../lib/access";
 import { createNotification } from "../lib/notify";
+import { moveToTrash } from "../lib/recycleBin";
 
 // One agreement engine, two context adapters (spec: docs/agreement-feature-spec.md):
 //   userAgreementRouter    → /api/users/:uid/agreements      (employee agreements)
@@ -369,8 +370,15 @@ function buildAgreementRouter(ctx: Ctx): Router {
       const ag = await findAg(req);
       if (!ag) return res.status(404).json({ error: "Not found" });
       if (ag.status === "Signed") return res.status(400).json({ error: "A signed agreement cannot be deleted — cancel it instead." });
-      for (const a of ag.attachments || []) if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {});
-      if (ag.signedDocument?.filePath) fs.unlink(path.resolve(ag.signedDocument.filePath), () => {});
+      // CR-P-26 — snapshot to the recycle bin (files kept for restore, purged only on permanent delete).
+      const files: Array<{ filePath: string }> = [];
+      for (const a of ag.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
+      if (ag.signedDocument?.filePath) files.push({ filePath: ag.signedDocument.filePath });
+      await moveToTrash({
+        kind: "agreement", refId: String(ag._id), projectId: ag.ownerProjectId || "",
+        name: ag.name || `${ag.agreementType} agreement`, subtitle: `${ag.agreementType || "Agreement"}`,
+        data: ag.toObject(), files, deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+      });
       await ag.deleteOne();
       res.json({ message: "Agreement deleted" });
     } catch (err) { next(err); }

@@ -50,6 +50,7 @@ import companiesRoutes, { publicCompanyRouter } from "./routes/companies";
 import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import draftRoutes from "./routes/drafts";
+import binRoutes from "./routes/bin";
 import { startBackupCron } from "./services/backupCron";
 import { schedule as cronSchedule } from "node-cron";
 
@@ -113,6 +114,7 @@ app.use("/api/announcements", announcementRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/drafts", draftRoutes);
+app.use("/api/bin", binRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/companies", companiesRoutes);

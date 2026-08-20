@@ -8,6 +8,7 @@ import ProjectDocument from "../models/ProjectDocument";
 import ProcurementEvent from "../models/ProcurementEvent";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
+import { moveToTrash } from "../lib/recycleBin";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -66,10 +67,18 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
 router.delete("/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (blockSub(req, res)) return;
-    const sub = await Submittal.findOneAndDelete({ _id: req.params.sid, projectId: req.params.id });
+    const sub = await Submittal.findOne({ _id: req.params.sid, projectId: req.params.id });
     if (sub) {
-      const revs = await SubmittalRevision.find({ submittalId: req.params.sid });
-      for (const r of revs) for (const a of r.attachments || []) { if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {}); }
+      // CR-P-26 — snapshot the package + its revisions to the recycle bin (files kept for restore).
+      const revs = await SubmittalRevision.find({ submittalId: req.params.sid }).lean();
+      const files: Array<{ filePath: string }> = [];
+      for (const r of revs) for (const a of r.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
+      await moveToTrash({
+        kind: "submittal", refId: String(sub._id), projectId: sub.projectId,
+        name: sub.productName || sub.title || "Submittal", subtitle: "Submittal",
+        data: sub.toObject(), extra: revs, files, deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+      });
+      await Submittal.deleteOne({ _id: req.params.sid });
       await SubmittalRevision.deleteMany({ submittalId: req.params.sid });
       await logEvent(req, { entityId: req.params.sid, action: "deleted", fromValue: sub.title });
     }

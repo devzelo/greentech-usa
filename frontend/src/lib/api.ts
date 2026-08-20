@@ -2104,6 +2104,26 @@ export async function fetchDrafts(scope?: "mine"): Promise<ApiDraft[]> {
   return request(`/drafts${scope ? `?scope=${scope}` : ""}`);
 }
 
+// ── Archive & Recycle Bin (CR-P-26) ──────────────────────────────────────────
+export interface ApiBinItem {
+  kind: string;
+  id: string;
+  refId?: string;
+  name: string;
+  subtitle: string;
+  projectId: string;
+  projectName: string;
+  link?: string;
+  updatedAt?: string;
+  deletedByName?: string;
+  deletedAt?: string;
+}
+export async function fetchArchiveItems(): Promise<ApiBinItem[]> { return request(`/bin/archive`); }
+export async function fetchRecycleItems(): Promise<ApiBinItem[]> { return request(`/bin/recycle`); }
+export async function restoreArchiveItem(kind: string, id: string): Promise<void> { await request(`/bin/archive/${kind}/${id}/restore`, { method: "POST" }); }
+export async function restoreRecycleItem(id: string): Promise<void> { await request(`/bin/recycle/${id}/restore`, { method: "POST" }); }
+export async function purgeRecycleItem(id: string): Promise<void> { await request(`/bin/recycle/${id}`, { method: "DELETE" }); }
+
 // ── Announcements (public hero banner; admin-managed) ────────────────────────
 export interface ApiAnnouncement {
   _id: string; title: string; message: string; emoji: string; date: string; endDate?: string;
