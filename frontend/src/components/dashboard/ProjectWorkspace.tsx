@@ -6,7 +6,7 @@ import {
   Upload, Download, Eye, FileText, FileImage, FileCode,
   Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Search,
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
-  Receipt, ShoppingCart, Truck, Scale, Wrench, Calendar,
+  Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock,
 } from "lucide-react";
@@ -190,7 +190,7 @@ const DEFAULT_TABS = [
   { id: "subs", label: "Subcontractors & Employees", icon: Users },
   { id: "legal", label: "Legal Docs", icon: Scale },
   { id: "finances", label: "Finances", icon: DollarSign },
-  { id: "po", label: "Purchase Orders", icon: ShoppingCart },
+  // CR-P-31 — Purchase Orders removed from the main tabs; use Procurement → Purchase Orders.
   { id: "procurement", label: "Procurement & Submittals", icon: Truck },
 ];
 
