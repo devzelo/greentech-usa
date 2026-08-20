@@ -2030,6 +2030,7 @@ export interface ApiProcurementPO {
 }
 export type PoPatch = Partial<Pick<ApiProcurementPO,
   "terms" | "termsMode" | "notes" | "shipTo" | "deliveryMethod" | "status" | "invoiceNo" | "invoiceAmount" | "invoiceDate" |
+  "vendorId" | "vendorName" | "lineItems" | "shipping" | "tax" |
   "signerName" | "signerEmail" | "signerPhone" | "signerTitle" | "signatureUrl" | "stampUrl" |
   "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "partnerSignatureUrl" | "partnerStampUrl" | "assignedTo">>;
 const poBase = (projectId: string) => `/projects/${projectId}/procurement-pos`;

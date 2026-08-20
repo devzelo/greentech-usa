@@ -131,6 +131,8 @@ router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunct
 });
 
 const PO_FIELDS = ["terms", "termsMode", "notes", "shipTo", "deliveryMethod", "status", "invoiceNo", "invoiceAmount", "invoiceDate",
+  // CR-P-32 — a manual PO's vendor, line items, shipping & tax are editable.
+  "vendorId", "vendorName", "shipping", "tax",
   "signerName", "signerEmail", "signerPhone", "signerTitle", "signatureUrl", "stampUrl",
   "partnerSignerName", "partnerSignerEmail", "partnerSignerPhone", "partnerSignatureUrl", "partnerStampUrl", "assignedTo"] as const;
 router.patch("/:pid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
@@ -140,7 +142,20 @@ router.patch("/:pid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!po) return res.status(404).json({ error: "Not found" });
     const hadInvoice = !!po.invoiceAmount;
     for (const f of PO_FIELDS) if (f in (req.body || {})) (po as unknown as Record<string, unknown>)[f] = req.body[f];
+    // CR-P-32 — replace the line items (manual PO editing).
+    if (Array.isArray(req.body?.lineItems)) {
+      po.lineItems = req.body.lineItems.slice(0, 200).map((l: Record<string, unknown>) => ({
+        itemId: String(l.itemId || ""),
+        description: String(l.description || "").slice(0, 500),
+        qty: String(l.qty || ""),
+        unit: String(l.unit || "").slice(0, 40),
+        unitPrice: String(l.unitPrice || ""),
+        cancelled: !!l.cancelled,
+      }));
+    }
     if (typeof req.body?.archived === "boolean") po.archived = req.body.archived;
+    // Keep the total consistent with the (possibly edited) line items + shipping + tax.
+    po.total = String((po.lineItems || []).filter((l) => !l.cancelled).reduce((s, l) => s + num(l.qty) * num(l.unitPrice), 0) + num(po.shipping) + num(po.tax));
     // Recording an invoice amount for the first time advances the PO to "Invoice received".
     // No amount matching and no auto-expense — expenses are managed manually.
     if (po.invoiceAmount && num(po.invoiceAmount) && !hadInvoice && po.status === "Sent") po.status = "InvoiceReceived";

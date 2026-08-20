@@ -125,13 +125,23 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   // CR-PR-06 — a manual PO (not from a BOQ/quote); opens straight into the editor.
   const createManual = async () => {
     setNewPoMenu(false);
-    try { const po = await createManualPO(projectId); setPOs((p) => [po, ...p]); setOpenId(po._id); void autoSavePoDoc(po); toast(`Manual PO ${po.poNo} created — add the vendor and line items.`, "success"); }
+    try { const po = await createManualPO(projectId); setPOs((p) => [po, ...p]); setManageId(po._id); void autoSavePoDoc(po); toast(`Manual PO ${po.poNo} created — add the vendor and line items.`, "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not create the PO.", "error"); }
   };
   const createPO = async (rfqId: string, quoteId: string) => {
-    try { const po = await createProcurementPO(projectId, rfqId, quoteId); setPOs((p) => [...p, po]); setOpenId(po._id); void autoSavePoDoc(po); }
+    try { const po = await createProcurementPO(projectId, rfqId, quoteId); setPOs((p) => [...p, po]); setManageId(po._id); void autoSavePoDoc(po); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not create PO.", "error"); }
   };
+  // CR-P-32 — editable line items (manual POs & corrections). Saving recomputes the total server-side.
+  const saveLines = (pid: string, lines: ApiProcurementPO["lineItems"]) =>
+    updateProcurementPO(projectId, pid, { lineItems: lines }).then((po) => { patch(pid, po); setDirty(false); }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+  const editLine = (po: ApiProcurementPO, i: number, field: keyof ApiProcurementPO["lineItems"][number], value: string) => {
+    const lines = po.lineItems.map((l, j) => (j === i ? { ...l, [field]: value } : l));
+    patch(po._id, { lineItems: lines }); setDirty(true);
+  };
+  const commitLines = (po: ApiProcurementPO) => saveLines(po._id, po.lineItems);
+  const addLine = (po: ApiProcurementPO) => saveLines(po._id, [...po.lineItems, { itemId: "", description: "", qty: "1", unit: "", unitPrice: "", cancelled: false }]);
+  const removeLine = (po: ApiProcurementPO, i: number) => saveLines(po._id, po.lineItems.filter((_, j) => j !== i));
   // CR-B-20 — a field was typed but not yet saved (blur persists it). Warn before leaving.
   const [dirty, setDirty] = useState(false);
   useUnsavedGuard(dirty);
@@ -292,27 +302,47 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   // Full editor — shown in the actions modal.
   const renderPoDetail = (po: ApiProcurementPO) => {
     const att = (kind: string) => po.attachments.filter((a) => a.kind === kind);
+    const liveTotal = po.lineItems.filter((l) => !l.cancelled).reduce((s, l) => s + n(l.qty) * n(l.unitPrice), 0) + n(po.shipping) + n(po.tax);
     return (
       <div className="p-4 space-y-4">
-        {/* Line items */}
+        {/* Vendor (editable — a manual PO isn't tied to any BOQ). CR-P-32 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor
+            <select className={`${inp} mt-1 font-bold`} value={po.vendorId || ""} disabled={!canEdit}
+              onChange={(e) => { const v = vendors.find((x) => x._id === e.target.value); updateProcurementPO(projectId, po._id, { vendorId: e.target.value, vendorName: v?.name ?? po.vendorName }).then((p) => patch(po._id, p)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error")); }}>
+              <option value="">— pick from vendors —</option>
+              {vendors.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
+            </select>
+          </label>
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor name
+            <input className={`${inp} mt-1`} placeholder="Type a vendor name" value={po.vendorName || ""} disabled={!canEdit}
+              onChange={(e) => { patch(po._id, { vendorName: e.target.value }); setDirty(true); }}
+              onBlur={(e) => updateProcurementPO(projectId, po._id, { vendorName: e.target.value }).then((p) => { patch(po._id, p); setDirty(false); }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"))} />
+          </label>
+        </div>
+
+        {/* Line items — editable */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">{["#", "Description", "Qty", "Unit", "Unit Price", "Amount"].map((h) => <th key={h} className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]">{h}</th>)}</tr></thead>
+          <table className="w-full min-w-[620px] text-xs">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{["#", "Description", "Qty", "Unit", "Unit Price", "Amount", ""].map((h, hi) => <th key={hi} className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-50">
+              {po.lineItems.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-slate-400 italic">No line items yet.{canEdit ? " Add one below." : ""}</td></tr>}
               {po.lineItems.map((li, i) => (
-                <tr key={i} className={li.cancelled ? "bg-red-50/50" : ""}>
-                  <td className="px-3 py-2 text-slate-400">{i + 1}</td>
-                  <td className={`px-3 py-2 font-bold ${li.cancelled ? "text-red-400 line-through" : "text-slate-700"}`}>{li.description || "—"}{li.cancelled && <span className="ml-1.5 text-[9px] font-bold text-red-500 uppercase no-underline">cancelled</span>}</td>
-                  <td className="px-3 py-2 text-slate-500">{li.qty}</td>
-                  <td className="px-3 py-2 text-slate-500">{li.unit}</td>
-                  <td className="px-3 py-2 text-slate-500">{li.unitPrice ? money(n(li.unitPrice)) : "—"}</td>
-                  <td className="px-3 py-2 font-bold text-slate-700">{money(n(li.qty) * n(li.unitPrice))}</td>
+                <tr key={i} className={li.cancelled ? "bg-red-50/40" : ""}>
+                  <td className="px-2 py-1.5 text-slate-400">{i + 1}</td>
+                  <td className="px-1 py-1"><input className={`${inp} min-w-[12rem]`} placeholder="Description" value={li.description || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "description", e.target.value)} onBlur={() => commitLines(po)} /></td>
+                  <td className="px-1 py-1"><input className={`${inp} w-16`} value={li.qty || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "qty", e.target.value)} onBlur={() => commitLines(po)} /></td>
+                  <td className="px-1 py-1"><input className={`${inp} w-16`} placeholder="ea" value={li.unit || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "unit", e.target.value)} onBlur={() => commitLines(po)} /></td>
+                  <td className="px-1 py-1"><input className={`${inp} w-24`} placeholder="0.00" value={li.unitPrice || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "unitPrice", e.target.value)} onBlur={() => commitLines(po)} /></td>
+                  <td className="px-3 py-1.5 font-bold text-slate-700 whitespace-nowrap">{money(n(li.qty) * n(li.unitPrice))}</td>
+                  <td className="px-2 py-1.5">{canEdit && <button onClick={() => removeLine(po, i)} title="Remove line" className="p-1 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr className="border-t border-slate-100"><td colSpan={5} className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</td><td className="px-3 py-2 font-bold text-slate-900">{money(n(po.total))}</td></tr></tfoot>
+            <tfoot><tr className="border-t border-slate-100"><td colSpan={5} className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</td><td className="px-3 py-2 font-bold text-slate-900 whitespace-nowrap">{money(liveTotal)}</td><td /></tr></tfoot>
           </table>
         </div>
+        {canEdit && <button onClick={() => addLine(po)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Plus size={13} /> Add line item</button>}
 
         {/* Status (editable after creation) + Create-the-PO-document action */}
         <div className="flex flex-wrap items-end justify-between gap-3">
