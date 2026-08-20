@@ -7,8 +7,9 @@ import {
   Folder, ChevronRight, Home,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, ApiGlobalDocument } from "../../lib/api";
+import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, type ApiProject, ApiGlobalDocument } from "../../lib/api";
 import { sectionToPath } from "../../lib/docTree";
+import { locationFlag } from "../../lib/countryFlag";
 import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
 import CompanyDocs from "./CompanyDocs";
@@ -167,6 +168,13 @@ export default function Documents() {
       d.projectName.toLowerCase().includes(q) ||
       sectionLabel(d.section).toLowerCase().includes(q));
   }, [byType, searching, search]);
+
+  // CR-P-35 — project metadata (No/Contract/location/image) for the project-level folders.
+  const [projById, setProjById] = useState<Record<string, ApiProject>>({});
+  useEffect(() => {
+    const scope = getAuthUser()?.role === "subcontractor" ? "mine" : "all";
+    fetchProjects(scope).then((ps) => setProjById(Object.fromEntries(ps.map((p) => [p.id, p])))).catch(() => {});
+  }, []);
 
   // ── Folder-drill levels ──────────────────────────────────────────────
   const projectFolders = useMemo(() => {
@@ -339,8 +347,8 @@ export default function Documents() {
         // ── Folder browser ──
         (() => {
           // Each virtual folder carries the (projectId, folderKey) its description is stored under.
-          const folders = !browse.pid
-            ? projectFolders.map((p) => ({ id: p.id, label: p.name, count: p.count, projectId: p.id, folderKey: "project", onOpen: () => setBrowse({ pid: p.id }) }))
+          const folders: Array<{ id: string; label: string; count: number; projectId: string; folderKey: string; proj?: ApiProject; onOpen: () => void }> = !browse.pid
+            ? projectFolders.map((p) => ({ id: p.id, label: p.name, count: p.count, projectId: p.id, folderKey: "project", proj: projById[p.id], onOpen: () => setBrowse({ pid: p.id }) }))
             : !browse.tabId
               ? tabFolders.map((t) => ({ id: t.id, label: t.label, count: t.count, projectId: browse.pid!, folderKey: `tab:${t.id}`, onOpen: () => setBrowse({ pid: browse.pid, tabId: t.id }) }))
               : groupFolders.map((g) => ({ id: g.key, label: g.label, count: g.count, projectId: browse.pid!, folderKey: `group:${g.key}`, onOpen: () => setBrowse({ pid: browse.pid, tabId: browse.tabId, group: g.key }) }));
@@ -366,9 +374,21 @@ export default function Documents() {
                       <tr key={f.id} className="group hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={f.onOpen}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary"><Folder size={18} /></div>
+                            {/* Project folders show the project's identity image; other folders a folder icon. */}
+                            {f.proj?.image
+                              ? <img src={f.proj.image} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
+                              : <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary"><Folder size={18} /></div>}
                             {/* A real button so the folder drill-down is keyboard reachable. */}
-                            <button onClick={(e) => { e.stopPropagation(); f.onOpen(); }} className="font-bold text-sm text-slate-900 group-hover:text-primary truncate text-left">{f.label}</button>
+                            <button onClick={(e) => { e.stopPropagation(); f.onOpen(); }} className="min-w-0 text-left">
+                              <span className="block font-bold text-sm text-slate-900 group-hover:text-primary truncate">{f.label}</span>
+                              {/* CR-P-35 — same identity as the first column on My/All Projects. */}
+                              {f.proj && (
+                                <>
+                                  <span className="block text-[10px] text-slate-400 font-medium truncate">No {f.proj.id}{f.proj.contractNo ? ` · Contract ${f.proj.contractNo}` : ""}</span>
+                                  {f.proj.location && <span className="block text-[10px] text-slate-500 font-bold truncate">{locationFlag(f.proj.location) && <span className="text-[1.2em] leading-none align-middle mr-0.5">{locationFlag(f.proj.location)}</span>}{f.proj.location}</span>}
+                                </>
+                              )}
+                            </button>
                           </div>
                         </td>
                         <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
@@ -395,12 +415,27 @@ export default function Documents() {
           return (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {folders.map((f) => (
-                <div key={f.id} className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:border-primary/30 transition-all p-5 space-y-3">
+                <div key={f.id} className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:border-primary/30 transition-all overflow-hidden">
+                  {/* CR-P-35 — project folders show the identity picture as a cover in grid view. */}
+                  {f.proj?.image && (
+                    <button onClick={f.onOpen} className="block w-full h-28 bg-slate-100 overflow-hidden">
+                      <img src={f.proj.image} alt={f.label} className="w-full h-full object-cover" loading="lazy" />
+                    </button>
+                  )}
+                  <div className="p-5 space-y-3">
                   <button onClick={f.onOpen} className="w-full flex items-center gap-4 text-left">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-primary/10 text-primary flex-shrink-0"><Folder size={22} /></div>
+                    {!f.proj?.image && <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-primary/10 text-primary flex-shrink-0"><Folder size={22} /></div>}
                     <div className="min-w-0 flex-grow">
                       <p className="font-bold text-sm text-slate-900 group-hover:text-primary truncate">{f.label}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{f.count} file{f.count === 1 ? "" : "s"}</p>
+                      {f.proj ? (
+                        <>
+                          <p className="text-[10px] text-slate-400 font-medium truncate">No {f.proj.id}{f.proj.contractNo ? ` · Contract ${f.proj.contractNo}` : ""}</p>
+                          {f.proj.location && <p className="text-[10px] text-slate-500 font-bold truncate">{locationFlag(f.proj.location) && <span className="text-[1.2em] leading-none align-middle mr-0.5">{locationFlag(f.proj.location)}</span>}{f.proj.location}</p>}
+                          <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">{f.count} file{f.count === 1 ? "" : "s"}</p>
+                        </>
+                      ) : (
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{f.count} file{f.count === 1 ? "" : "s"}</p>
+                      )}
                     </div>
                     <ChevronRight size={16} className="text-slate-300 group-hover:text-primary flex-shrink-0" />
                   </button>
@@ -414,6 +449,7 @@ export default function Documents() {
                   ) : folderNotes[folderNoteKey(f.projectId, f.folderKey)] ? (
                     <p className="text-[11px] text-slate-500">{folderNotes[folderNoteKey(f.projectId, f.folderKey)]}</p>
                   ) : null}
+                  </div>
                 </div>
               ))}
             </div>
