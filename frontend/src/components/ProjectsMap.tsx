@@ -100,9 +100,11 @@ export default function ProjectsMap() {
             {groups.map((g) => (
               <Marker key={g.iso} position={g.coords} icon={pinIcon(g.projects.length)}>
                 <Popup>
-                  <div style={{ minWidth: 180 }}>
+                  {/* Include the flag font so the country emoji renders on Windows (Leaflet forces
+                      its own font, which falls back to the ISO letters otherwise). */}
+                  <div style={{ minWidth: 180, fontFamily: "'Twemoji Country Flags', 'Inter', ui-sans-serif, system-ui, sans-serif" }}>
                     <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 6px", color: "#0f172a" }}>
-                      {flagForCountry(g.projects[0].location)} {g.projects.length} project{g.projects.length === 1 ? "" : "s"}
+                      <span style={{ fontFamily: "'Twemoji Country Flags', sans-serif" }}>{flagForCountry(g.projects[0].location)}</span> {g.projects.length} project{g.projects.length === 1 ? "" : "s"}
                     </p>
                     <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
                       {g.projects.slice(0, 6).map((p) => (
