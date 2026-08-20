@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MoreHorizontal, FolderOpen, Link2, Copy, Archive, RotateCcw, Trash2, Loader2 } from "lucide-react";
-import { setProjectArchived, createProject, deleteProject, type ApiProject } from "../../lib/api";
+import { setProjectArchived, duplicateProject, deleteProject, type ApiProject } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 
@@ -33,17 +33,12 @@ export default function ProjectActionsMenu({
   const duplicate = async () => {
     close();
     setBusy(true);
+    toast("Duplicating the project and its files…", "info");
     try {
-      const dup = await createProject({
-        name: `${project.name} (copy)`,
-        category: project.category, contractNo: "", contractYear: project.contractYear, contractDate: project.contractDate,
-        status: "Draft" as ApiProject["status"], location: project.location, siteAddress: project.siteAddress,
-        description: project.description, value: project.value, fiscal: project.fiscal, compliance: project.compliance,
-        disciplines: project.disciplines, projectNature: project.projectNature, clientInfo: project.clientInfo,
-        jointVenture: project.jointVenture,
-      });
+      // Full server-side deep clone — all data, all files, every number.
+      const dup = await duplicateProject(project.id);
       onMutate((prev) => [dup, ...prev]);
-      toast("Project duplicated as a draft.", "success");
+      toast("Project duplicated — a full copy was created.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not duplicate.", "error"); }
     finally { setBusy(false); }
   };

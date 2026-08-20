@@ -721,6 +721,11 @@ export async function deleteProject(id: string): Promise<void> {
   await request(`/projects/${id}`, { method: 'DELETE' });
 }
 
+// CR-P-26b — server-side deep clone: copies the project + every related record + all files.
+export async function duplicateProject(id: string): Promise<ApiProject> {
+  return request(`/projects/${id}/duplicate`, { method: 'POST' });
+}
+
 // ── Guests (project owner only) ──────────────────────────────────────────────
 
 export async function fetchGuests(projectId: string): Promise<ApiGuest[]> {

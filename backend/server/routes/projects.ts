@@ -10,6 +10,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { getProjectAccess } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
+import { duplicateProject } from "../lib/duplicateProject";
 
 // Shared check: is the requester the JV partner of this project (or staff)?
 async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { email?: string }; ownerId?: unknown; assignedEmployees?: string[]; guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }> }): Promise<boolean> {
@@ -537,6 +538,18 @@ router.delete("/:id/guests/:userId", async (req: AuthedRequest, res: Response, n
 });
 
 // DELETE /api/projects/:id â€” owner only
+// CR-P-26b — full deep clone: the project, every related record (financials, procurement, docs,
+// agreements…) with cross-references remapped, and all files copied on disk.
+router.post("/:id/duplicate", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not allowed." });
+    const src = await Project.findOne({ projectId: req.params.id }).select("_id").lean();
+    if (!src) return res.status(404).json({ error: "Project not found" });
+    const copy = await duplicateProject(req.params.id, { ownerId: req.user!.userId, ownerName: req.user!.name || "" });
+    res.status(201).json(copy);
+  } catch (err) { next(err); }
+});
+
 router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const existing = await Project.findOne({ projectId: req.params.id });
