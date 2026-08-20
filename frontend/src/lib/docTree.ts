@@ -46,15 +46,19 @@ const STATIC: Record<string, { tabId: string; tab: string; section: string; subt
   "legal-bond": { tabId: "legal", tab: "Legal Docs", section: "Bond Documents" },
   "legal-insurance": { tabId: "legal", tab: "Legal Docs", section: "Insurance Certificates" },
   "legal-tax": { tabId: "legal", tab: "Legal Docs", section: "Tax Documents" },
-  // Purchase Orders / Procurement documents
-  "po-documents": { tabId: "po", tab: "Purchase Orders", section: "PO Documents" },
+  // Purchase Orders / Procurement documents (POs live under Procurement now).
+  "po-documents": { tabId: "procurement", tab: "Procurement & Submittals", subtab: "Purchase Orders", section: "PO Documents" },
   "procurement-rfq": { tabId: "procurement", tab: "Procurement & Submittals", subtab: "RFQs", section: "RFQ Documents" },
   "procurement-po": { tabId: "procurement", tab: "Procurement & Submittals", subtab: "Purchase Orders", section: "PO Documents" },
   "procurement-quotes": { tabId: "procurement", tab: "Procurement & Submittals", subtab: "Quotes", section: "Vendor Quotes" },
   "procurement-submittals": { tabId: "procurement", tab: "Procurement & Submittals", subtab: "Submittals", section: "Submittal Packages" },
-  // Invoices
-  "invoice-sent": { tabId: "invoice-sent", tab: "Invoice Sent", section: "Invoice Documents" },
-  "invoice-received": { tabId: "invoice-received", tab: "Invoice Received", section: "Bill Documents" },
+  // Finances → Invoices (CR-P-30: Expenses / Invoice Sent / Invoice Received live under Finances).
+  "invoice-sent": { tabId: "finances", tab: "Finances", subtab: "Invoice Sent", section: "Invoice Documents" },
+  "invoice-received": { tabId: "finances", tab: "Finances", subtab: "Invoice Received", section: "Bill Documents" },
+  "invoice-sent-documents": { tabId: "finances", tab: "Finances", subtab: "Invoice Sent", section: "Invoice Documents" },
+  "invoice-received-documents": { tabId: "finances", tab: "Finances", subtab: "Invoice Received", section: "Bill Documents" },
+  // Closeout (under Project Management).
+  "closeout-client-response": { tabId: "pm", tab: "Project Management", subtab: "Closeout", section: "Client Response" },
 };
 
 export function sectionToPath(section: string): DocPath {
@@ -71,6 +75,10 @@ export function sectionToPath(section: string): DocPath {
   if (sub) return { tabId: "subs", tab: "Subcontractors & Employees", subtab: "Subcontractor", section: `Files (${sub[2]})` };
   if (section.startsWith("subcontractor-")) return { tabId: "subs", tab: "Subcontractors & Employees", section: section.slice("subcontractor-".length) };
   if (section.startsWith("subinvoice-")) return { tabId: "subs", tab: "Subcontractors & Employees", subtab: "Sub-invoices", section: section.slice("subinvoice-".length) };
+  // Partner (JV) per-tab files: `partner-<tabId>`
+  if (section.startsWith("partner-")) return { tabId: "subs", tab: "Subcontractors & Employees", subtab: "Partner (JV)", section: `Files (${section.slice("partner-".length)})` };
+  // Closeout: `closeout-<something>`
+  if (section.startsWith("closeout-")) return { tabId: "pm", tab: "Project Management", subtab: "Closeout", section: section.slice("closeout-".length).replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) };
 
   // Custom tabs: `custom-<tabId>` or `custom-<tabId>-field-<fieldId>`
   if (section.startsWith("custom-")) {
@@ -88,8 +96,10 @@ export function sectionToPath(section: string): DocPath {
     ["legal-", "legal", "Legal Docs"],
     ["proposals-", "proposals", "Proposals"],
     ["project-info", "project-info", "Project Info"],
-    ["po-", "po", "Purchase Orders"],
+    ["po-", "procurement", "Procurement & Submittals"],
     ["procurement-", "procurement", "Procurement & Submittals"],
+    ["invoice-", "finances", "Finances"],
+    ["expense", "finances", "Finances"],
   ];
   for (const [pre, tabId, tab] of prefixes) {
     if (section.startsWith(pre)) {
