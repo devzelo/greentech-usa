@@ -28,6 +28,7 @@ import GlobalEscClose from "./GlobalEscClose";
 import Toaster from "./Toaster";
 import NotificationBell from "./NotificationBell";
 import NewRecordMenu from "./NewRecordMenu";
+import PoweredByProjnell from "../PoweredByProjnell";
 
 const allSidebarLinks = [
   { name: "Overview", icon: LayoutDashboard, path: "/dashboard" },
@@ -336,6 +337,13 @@ export default function DashboardLayout() {
               </div>
             </div>
           </Link>
+        )}
+
+        {/* Powered by Projnell — attribution at the very bottom of the panel (expanded only). */}
+        {isSidebarOpen && (
+          <div className={`px-4 py-3 border-t border-slate-100 flex justify-center ${me ? "" : "mt-auto"}`}>
+            <PoweredByProjnell tone="light" card={false} />
+          </div>
         )}
       </motion.aside>
 
