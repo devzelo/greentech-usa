@@ -201,7 +201,11 @@ export default function DashboardOverview() {
                   <button key={project.id} onClick={() => navigate(`/dashboard/projects/${project.id}`)} className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors group">
                     <span className={`w-1.5 h-9 rounded-full flex-shrink-0 ${sm.dot}`} title={sm.label} />
                     <span className="min-w-0 flex-grow">
-                      <span className="block text-xs font-bold text-slate-800 truncate group-hover:text-primary transition-colors">{project.name}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="block text-xs font-bold text-slate-800 truncate group-hover:text-primary transition-colors">{project.name}</span>
+                        {/* CR-P-23 — JV projects are flagged here too. */}
+                        {project.jointVenture?.enabled && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[8px] font-bold flex-shrink-0" title={project.jointVenture.partnerName ? `Joint Venture with ${project.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={8} /> JV</span>}
+                      </span>
                       <span className="block text-[10px] text-slate-400 font-medium truncate">No {project.id}{project.contractNo ? ` · Contract ${project.contractNo}` : ""}</span>
                       {project.location && <span className="block text-[10px] text-slate-500 font-bold truncate">{locationFlag(project.location) && <span className="text-[1.15em] leading-none align-middle mr-0.5">{locationFlag(project.location)}</span>}{project.location}</span>}
                     </span>

@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
-  MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive
+  MoreHorizontal, ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -41,6 +41,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const initialStatus = searchParams.get("status");
   const [statusFilter, setStatusFilter] = useState(initialStatus && PROJECT_STATUSES.includes(initialStatus as never) ? initialStatus : "All");
   const [archivedView, setArchivedView] = useState(false);
+  const [jvOnly, setJvOnly] = useState(false);   // CR-P-23 — show only JV (joint-venture) projects
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
   const [loading, setLoading] = useState(true);
@@ -73,7 +74,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       (p.category || "").toLowerCase().includes(q) ||
       (p.clientInfo?.name || "").toLowerCase().includes(q) ||
       (p.location || "").toLowerCase().includes(q);
-    return matchesSearch && statusMatches(statusFilter, p.status);
+    return matchesSearch && statusMatches(statusFilter, p.status) && (!jvOnly || !!p.jointVenture?.enabled);
   });
   // §O — click a column header to sort the project list.
   type SortKey = "name" | "status" | "progress" | "category" | "client" | "year" | "contractNo" | "deadline";
@@ -209,6 +210,14 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             );
           })}
         </div>
+        {/* CR-P-23 — JV filter: show only joint-venture projects. */}
+        <button
+          onClick={() => setJvOnly((v) => !v)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border shadow-sm ${jvOnly ? "bg-indigo-500 text-white border-indigo-500" : "bg-white text-slate-400 border-slate-100 hover:text-slate-900"}`}
+          title={jvOnly ? "Show all projects" : "Show only Joint Venture projects"}
+        >
+          <Handshake size={12} /> {jvOnly ? "Viewing JV" : "JV Projects"}
+        </button>
         {/* Archived view toggle — staff only; archived projects are hidden from the normal lists. */}
         {isStaff && mode !== "drafts" && (
           <button
@@ -284,7 +293,11 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                               No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""} · Lead: {p.owner}
                             </span>
                             {p.location && <span className="text-[10px] text-slate-500 font-bold">{locationFlag(p.location) && <span className="text-[1.3em] leading-none align-middle mr-0.5">{locationFlag(p.location)}</span>}{p.location}</span>}
-                            {p.published && <span className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-500 w-fit"><Globe size={10} /> Live on Site</span>}
+                            <span className="flex items-center gap-1.5 flex-wrap">
+                              {/* CR-P-23 — flag JV projects on the table. */}
+                              {p.jointVenture?.enabled && <span className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold w-fit" title={p.jointVenture.partnerName ? `Joint Venture with ${p.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={10} /> JV{p.jointVenture.partnerName ? ` · ${p.jointVenture.partnerName}` : ""}</span>}
+                              {p.published && <span className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-500 w-fit"><Globe size={10} /> Live on Site</span>}
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -361,10 +374,12 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">
                     No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}
                   </p>
-                  <div className="mb-3">
+                  <div className="mb-3 flex items-center gap-1.5 flex-wrap">
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border ${statusMeta(p.status).badge}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${statusMeta(p.status).dot}`} /> {statusMeta(p.status).label}
                     </span>
+                    {/* CR-P-23 — JV badge. */}
+                    {p.jointVenture?.enabled && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold border border-indigo-100" title={p.jointVenture.partnerName ? `Joint Venture with ${p.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={11} /> JV</span>}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 font-medium mb-5">
                     {p.category && <span><span className="text-slate-400">Category:</span> <span className="font-bold text-slate-700">{p.category}</span></span>}
