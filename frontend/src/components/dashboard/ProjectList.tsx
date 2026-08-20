@@ -359,14 +359,24 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   transition={{ delay: i * 0.05 }}
                   className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm hover:shadow-xl transition-all group"
                 >
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
-                      <Clock size={28} />
+                  {/* CR-P-25 — the project's identity picture as a cover on the grid card. */}
+                  {p.image ? (
+                    <div className="relative -mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
+                      <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                      <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="absolute top-3 right-3 p-2 rounded-lg bg-white/85 backdrop-blur text-slate-500 hover:text-slate-900 shadow-sm transition-colors" title="Open project">
+                        <MoreHorizontal size={18} />
+                      </button>
                     </div>
-                    <button className="p-2 text-slate-300 hover:text-slate-900 transition-colors">
-                      <MoreHorizontal size={20} />
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                        <Clock size={28} />
+                      </div>
+                      <button className="p-2 text-slate-300 hover:text-slate-900 transition-colors">
+                        <MoreHorizontal size={20} />
+                      </button>
+                    </div>
+                  )}
                   <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left w-full cursor-pointer" title="Open project">
                     <h3 className="text-xl font-display font-bold text-slate-900 mb-1 group-hover:text-primary hover:text-primary hover:underline transition-colors line-clamp-1">{p.name}</h3>
                   </button>
