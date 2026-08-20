@@ -44,7 +44,7 @@ export default function PoweredByProjnell({
       <img
         src={logo}
         alt="Projnell"
-        className={`w-auto object-contain select-none ${small ? "h-5" : "h-8"}`}
+        className={`w-auto object-contain select-none ${small ? "h-6" : "h-8"}`}
         draggable={false}
       />
     </div>
