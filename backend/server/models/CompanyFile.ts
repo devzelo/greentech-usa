@@ -15,6 +15,7 @@ export interface ICompanyFile extends Document {
   url: string; // direct URL for seeded/external files (takes precedence)
   description: string;
   uploadedByName: string;
+  archived: boolean; // CR-P-39 — hidden from the normal list, restorable from the Archived view
 }
 
 const CompanyFileSchema = new Schema<ICompanyFile>(
@@ -30,6 +31,7 @@ const CompanyFileSchema = new Schema<ICompanyFile>(
     url: { type: String, default: "" },
     description: { type: String, default: "" },
     uploadedByName: { type: String, default: "" },
+    archived: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

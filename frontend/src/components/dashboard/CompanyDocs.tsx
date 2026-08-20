@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   Plus, Pencil, Trash2, Upload, Eye, Download, Loader2, FolderOpen,
-  List as ListIcon, LayoutGrid, ChevronRight,
+  List as ListIcon, LayoutGrid, ChevronRight, Archive, RotateCcw,
 } from "lucide-react";
 import {
   fetchCompanyTabs, createCompanyTab, renameCompanyTab, deleteCompanyTab,
-  fetchCompanyFiles, uploadCompanyFile, deleteCompanyFile, companyFileUrl,
+  fetchCompanyFiles, uploadCompanyFile, deleteCompanyFile, setCompanyFileArchived, companyFileUrl,
   CompanyTab, CompanyFile,
 } from "../../lib/api";
 import { iconFor, colorFor, classifyForFilter, formatDate } from "./fileHelpers";
 import DocumentViewer from "./DocumentViewer";
+import ShareMenu from "./ShareMenu";
 import { PromptDialog, ConfirmDialog } from "./Dialogs";
 import { toast } from "../../lib/toast";
 
@@ -22,6 +23,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [showArchived, setShowArchived] = useState(false); // CR-P-39
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<{ name: string; url: string; fileType: string } | null>(null);
   // Branded dialogs (replace browser prompt/confirm)
@@ -62,16 +64,25 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
     if (!currentTabId) { setFiles([]); return; }
     let cancelled = false;
     setLoadingFiles(true);
-    fetchCompanyFiles({ kind, tab: currentTabId })
+    fetchCompanyFiles({ kind, tab: currentTabId, archived: showArchived })
       .then((f) => { if (!cancelled) setFiles(f); })
       .catch(() => { if (!cancelled) setFiles([]); })
       .finally(() => { if (!cancelled) setLoadingFiles(false); });
     return () => { cancelled = true; };
-  }, [currentTabId]);
+  }, [currentTabId, showArchived]);
 
   const refreshFiles = async () => {
     if (!currentTabId) return;
-    setFiles(await fetchCompanyFiles({ kind, tab: currentTabId }));
+    setFiles(await fetchCompanyFiles({ kind, tab: currentTabId, archived: showArchived }));
+  };
+
+  // CR-P-39 — archive / restore a file (leaves the current view).
+  const archiveFile = async (f: CompanyFile, next: boolean) => {
+    try {
+      await setCompanyFileArchived(f._id, next);
+      setFiles((prev) => prev.filter((x) => x._id !== f._id));
+      toast(next ? "File archived." : "File restored.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
   };
 
   // ── Tab actions (driven by branded dialogs) ─────────────────────────────────
@@ -201,10 +212,16 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
           <span className="text-slate-400 ml-2 text-sm font-medium">({files.length})</span>
         </h2>
         <div className="flex items-center gap-2">
+          {/* CR-P-39 — view archived files */}
+          <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border shadow-sm transition-all ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-400 border-slate-100 hover:text-slate-900"}`} title={showArchived ? "Back to active files" : "Show archived files"}>
+            <Archive size={13} /> {showArchived ? "Viewing archived" : "Archived"}
+          </button>
+          {!showArchived && (
           <label className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${currentTabId ? "bg-gt-gradient text-white shadow-lg shadow-primary/20 hover:scale-105" : "bg-slate-100 text-slate-300 cursor-not-allowed"}`}>
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
             <input type="file" className="hidden" disabled={!currentTabId || uploading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleUpload(f); }} />
           </label>
+          )}
           <div className="flex items-center gap-1 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
             {([{ id: "grid", Icon: LayoutGrid }, { id: "list", Icon: ListIcon }] as const).map(({ id, Icon }) => (
               <button key={id} onClick={() => setView(id)} className={`p-2 rounded-lg transition-all ${view === id ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-900"}`}>
@@ -240,8 +257,10 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                   {!!f.description && <p className="text-xs text-slate-500 line-clamp-2 flex-grow">{f.description}</p>}
                   <div className="flex items-center gap-1 pt-2 mt-auto border-t border-slate-50">
                     <button onClick={() => openPreview(f)} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-primary px-2 py-1"><Eye size={14} /> Preview</button>
-                    <a href={companyFileUrl(f)} download={f.name} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-primary px-2 py-1"><Download size={14} /></a>
-                    <button onClick={() => setConfirmFile(f)} className="ml-auto p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-slate-50"><Trash2 size={14} /></button>
+                    <a href={companyFileUrl(f)} download={f.name} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Download"><Download size={14} /></a>
+                    <ShareMenu fileName={f.name} fileUrl={companyFileUrl(f)} size={14} />
+                    <button onClick={() => archiveFile(f, !f.archived)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-50" title={f.archived ? "Restore" : "Archive"}>{f.archived ? <RotateCcw size={14} /> : <Archive size={14} />}</button>
+                    <button onClick={() => setConfirmFile(f)} className="ml-auto p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-slate-50" title="Delete"><Trash2 size={14} /></button>
                   </div>
                 </div>
               </div>
@@ -277,6 +296,8 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openPreview(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview"><Eye size={16} /></button>
                         <a href={companyFileUrl(f)} download={f.name} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={16} /></a>
+                        <ShareMenu fileName={f.name} fileUrl={companyFileUrl(f)} size={16} />
+                        <button onClick={() => archiveFile(f, !f.archived)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={f.archived ? "Restore" : "Archive"}>{f.archived ? <RotateCcw size={16} /> : <Archive size={16} />}</button>
                         <button onClick={() => setConfirmFile(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={16} /></button>
                       </div>
                     </td>

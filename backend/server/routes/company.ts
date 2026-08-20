@@ -266,7 +266,9 @@ router.get("/files", async (req: AuthedRequest, res: Response, next: NextFunctio
     const kind = req.query.kind === "classified" ? "classified" : "company";
     if (kind === "classified" && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
     // Both areas are tabbed — files are scoped to the selected tab.
-    const filter: Record<string, unknown> = { kind, tabId: String(req.query.tab || "") };
+    // CR-P-39 — ?archived=true shows only archived files; default hides them.
+    const wantArchived = req.query.archived === "true";
+    const filter: Record<string, unknown> = { kind, tabId: String(req.query.tab || ""), archived: wantArchived ? true : { $ne: true } };
     const files = await CompanyFile.find(filter).sort({ createdAt: -1 }).lean();
     res.json(files);
   } catch (err) {
@@ -336,6 +338,19 @@ router.post("/files", upload.single("file"), async (req: AuthedRequest, res: Res
   } catch (err) {
     next(err);
   }
+});
+
+// PATCH /api/company/files/:id — archive / restore (CR-P-39).
+router.patch("/files/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const file = await CompanyFile.findById(req.params.id);
+    if (!file) return res.status(404).json({ error: "File not found." });
+    if (file.kind === "classified" && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
+    if (typeof req.body?.archived === "boolean") file.archived = req.body.archived;
+    if (typeof req.body?.description === "string") file.description = req.body.description.slice(0, 2000);
+    await file.save();
+    res.json(file);
+  } catch (err) { next(err); }
 });
 
 // DELETE /api/company/files/:id

@@ -2437,6 +2437,7 @@ export interface CompanyFile {
   description: string;
   uploadedByName: string;
   createdAt: string;
+  archived?: boolean;
 }
 
 // CR-P-07 — per-company profile documents (catalogues / certifications / company docs).
@@ -2475,10 +2476,15 @@ export async function deleteCompanyTab(tabId: string): Promise<void> {
   await request(`/company/tabs/${encodeURIComponent(tabId)}`, { method: 'DELETE' });
 }
 
-export async function fetchCompanyFiles(opts: { kind: "company" | "classified"; tab?: string }): Promise<CompanyFile[]> {
+export async function fetchCompanyFiles(opts: { kind: "company" | "classified"; tab?: string; archived?: boolean }): Promise<CompanyFile[]> {
   const qs = new URLSearchParams({ kind: opts.kind });
   if (opts.tab) qs.set('tab', opts.tab);
+  if (opts.archived) qs.set('archived', 'true');
   return request(`/company/files?${qs.toString()}`);
+}
+// CR-P-39 — archive / restore a company file.
+export async function setCompanyFileArchived(id: string, archived: boolean): Promise<CompanyFile> {
+  return request(`/company/files/${id}`, { method: 'PATCH', body: JSON.stringify({ archived }) });
 }
 // Company stamps (the classified Stamps tab) — readable by any staff to stamp a PO.
 export async function fetchStamps(): Promise<CompanyFile[]> { return request('/company/stamps'); }
