@@ -77,7 +77,7 @@ export default function ProjectsMap() {
           </div>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-slate-900 mb-5">Our Global <span className="text-secondary">Footprint</span></h2>
           <p className="text-lg text-slate-500">
-            {pinned} project{pinned === 1 ? "" : "s"} across {countries} countr{countries === 1 ? "y" : "ies"} — delivering
+            {pinned} project{pinned === 1 ? "" : "s"} across {countries} countr{countries === 1 ? "y" : "ies"}, delivering
             water, wastewater and energy infrastructure worldwide.
           </p>
         </div>
