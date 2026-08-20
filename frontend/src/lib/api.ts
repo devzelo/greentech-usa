@@ -661,7 +661,7 @@ export async function uploadAvatar(file: File): Promise<ApiUser> {
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch('/api/auth/avatar', {
+  const res = await fetch(`${API_BASE}/api/auth/avatar`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -678,7 +678,7 @@ export async function uploadSignature(file: File): Promise<ApiUser> {
   const fd = new FormData();
   fd.append('file', file);
   const token = getAuthToken();
-  const res = await fetch('/api/auth/signature', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const res = await fetch(`${API_BASE}/api/auth/signature`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const err = await res.json().catch(() => ({ error: res.statusText })); throw new Error(err.error || res.statusText); }
   return res.json();
 }
@@ -1273,8 +1273,9 @@ export interface ApiPublicProject {
 }
 
 export async function fetchPublicProjects(): Promise<ApiPublicProject[]> {
-  // Public endpoint — no auth header
-  const res = await fetch('/api/public/projects');
+  // Public endpoint — no auth header. MUST hit the backend origin (split hosting): a relative
+  // "/api/..." resolves to the Vercel SPA (index.html) in production, breaking the homepage map/gallery.
+  const res = await fetch(`${API_BASE}/api/public/projects`);
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }

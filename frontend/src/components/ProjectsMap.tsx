@@ -43,6 +43,10 @@ function FitToPins({ points }: { points: [number, number][] }) {
 export default function ProjectsMap() {
   const [projects, setProjects] = useState<ApiPublicProject[]>([]);
   const [loading, setLoading] = useState(true);
+  // Mount the Leaflet map only after the first client commit — avoids react-leaflet's
+  // "Map container is already initialized" error under React 19 StrictMode's double-mount.
+  const [mapReady, setMapReady] = useState(false);
+  useEffect(() => { setMapReady(true); }, []);
 
   useEffect(() => {
     fetchPublicProjects().then(setProjects).catch(() => setProjects([])).finally(() => setLoading(false));
@@ -82,7 +86,8 @@ export default function ProjectsMap() {
           </p>
         </div>
 
-        <div className="rounded-[2rem] overflow-hidden border border-slate-200 shadow-lg">
+        <div className="rounded-[2rem] overflow-hidden border border-slate-200 shadow-lg" style={{ height: 480, background: "#eef2f6" }}>
+          {mapReady && (
           <MapContainer
             center={[20, 10]}
             zoom={2}
@@ -121,6 +126,7 @@ export default function ProjectsMap() {
               </Marker>
             ))}
           </MapContainer>
+          )}
         </div>
       </div>
     </section>
