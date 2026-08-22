@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, Upload, Eye, LayoutGrid, List as ListIcon } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
@@ -58,6 +59,19 @@ export default function Directory() {
   // aren't in the Directory yet (idempotent — only adds what's missing), then refresh if it added any.
   useEffect(() => {
     syncCompaniesFromProjects().then(({ added }) => { if (added) load(); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // CR-P-43 — deep-link from a project's CompanyPicker ("Open in Directory"): preselect the category
+  // tab and optionally open the New Company form prefilled, then clear the params.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const c = searchParams.get("category");
+    const isNew = searchParams.get("new") === "1";
+    const nm = searchParams.get("name") || "";
+    const validCat = c && COMPANY_CATEGORIES.some((x) => x.v === c) ? (c as CompanyCategory) : null;
+    if (validCat) setCat(validCat);
+    if (isNew) setEditor({ id: null, draft: { ...BLANK, category: validCat || "vendor", name: nm } });
+    if (c || isNew || nm) setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

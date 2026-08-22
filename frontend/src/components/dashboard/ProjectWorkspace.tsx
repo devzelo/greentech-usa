@@ -49,7 +49,8 @@ import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
-import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor } from "../../lib/api";
+import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor, type ApiCompany } from "../../lib/api";
+import CompanyPicker from "./CompanyPicker";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
@@ -381,8 +382,30 @@ export default function ProjectWorkspace() {
       {jvInfo.enabled && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* CR-P-43 — partner company comes from the Directory (partners category). */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Company Name</label>
+              {disabled ? (
+                <input value={jvInfo.partnerName} disabled placeholder="e.g. ACCU Company"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none disabled:opacity-60" />
+              ) : (
+                <CompanyPicker
+                  value={jvInfo.partnerName}
+                  category="partner"
+                  onNameChange={(v) => updateJv("partnerName", v)}
+                  onSelectCompany={(c) => {
+                    updateJv("partnerName", c.name);
+                    const cp = c.contactPersons?.[0];
+                    if (c.email || cp?.email) updateJv("email", c.email || cp?.email || "");
+                    if (c.phone || cp?.phone) updateJv("phone", c.phone || cp?.phone || "");
+                    if (cp?.name) updateJv("contactName", cp.name);
+                    if (c.address) updateJv("partnerAddress", c.address);
+                  }}
+                  placeholder="Search or add a partner from the Directory…"
+                />
+              )}
+            </div>
             {([
-              { field: "partnerName", label: "Partner Company Name", placeholder: "e.g. ACCU Company" },
               { field: "contactName", label: "Person in Charge", placeholder: "Full name" },
               { field: "email", label: "Partner Email", placeholder: "contact@partner.com" },
               { field: "phone", label: "Partner Phone", placeholder: "+1 (555) 000-0000" },
@@ -1109,6 +1132,17 @@ export default function ProjectWorkspace() {
       setActiveVendorId(v._id);
       setNewVendorName("");
     } catch { /* ignore — surfaced by the empty state otherwise */ }
+  };
+  // CR-P-43 — add a project vendor chosen from the Directory (prefills the shared vendor record).
+  const addVendorFromCompany = async (c: ApiCompany) => {
+    if (!id) return;
+    if (projVendors.some((v) => (v.name || "").trim().toLowerCase() === c.name.trim().toLowerCase())) { setNewVendorName(""); toast("That vendor is already on this project.", "error"); return; }
+    try {
+      const v = await addVendor(id, { name: c.name, contactName: c.contactPersons?.[0]?.name || "", email: c.email || c.contactPersons?.[0]?.email || "", phone: c.phone || c.contactPersons?.[0]?.phone || "" });
+      setProjVendors((p) => [...p, v]);
+      setActiveVendorId(v._id);
+      setNewVendorName("");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not add vendor.", "error"); }
   };
   // CR-P-05 — edit a vendor's details in-place (the SAME shared record used in Procurement → RFQs).
   const patchVendorLocal = (vid: string, field: keyof ApiVendor, value: string) =>
@@ -2935,8 +2969,30 @@ export default function ProjectWorkspace() {
                 )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* CR-P-43 — client comes from the Directory (client category). */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client / Organization Name</label>
+                  {!canEditIdentity || clientLocked ? (
+                    <input type="text" value={clientInfo.name} disabled placeholder="e.g. USAID Ghana"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none disabled:opacity-60" />
+                  ) : (
+                    <CompanyPicker
+                      value={clientInfo.name}
+                      category="client"
+                      onNameChange={(v) => updateClient("name", v)}
+                      onSelectCompany={(c) => {
+                        updateClient("name", c.name);
+                        const cp = c.contactPersons?.[0];
+                        if (cp?.name) updateClient("contactName", cp.name);
+                        if (c.email || cp?.email) updateClient("email", c.email || cp?.email || "");
+                        if (c.phone || cp?.phone) updateClient("phone", c.phone || cp?.phone || "");
+                        if (c.address) updateClient("address", c.address);
+                      }}
+                      placeholder="Search or add a client from the Directory…"
+                    />
+                  )}
+                </div>
                 {([
-                  { field: "name", label: "Client / Organization Name", type: "text", placeholder: "e.g. USAID Ghana" },
                   { field: "reference", label: "Client Reference Number", type: "text", placeholder: "e.g. USAID-GH-2026-012" },
                   { field: "contactName", label: "Primary Contact Name", type: "text", placeholder: "Full name" },
                   { field: "email", label: "Contact Email", type: "email", placeholder: "contact@client.org" },
@@ -3850,9 +3906,17 @@ export default function ProjectWorkspace() {
                   <p className="text-xs font-medium text-slate-400">GreenTech's shared supplier list (managed in Procurement → RFQs). Agreements you create here belong to <strong>this project</strong>. Vendors have no login, so download the agreement, share it outside the platform, and upload the counter-signed copy when it returns.</p>
                 </div>
                 {canEdit && !isGuest && (
-                  <div className="flex items-center gap-2">
-                    <input value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addNewVendor(); }} placeholder="New vendor name…" className="flex-grow max-w-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15" />
-                    <button onClick={addNewVendor} disabled={!newVendorName.trim()} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-40"><Plus size={14} /> Add new Vendor</button>
+                  <div className="max-w-sm">
+                    <CompanyPicker
+                      value={newVendorName}
+                      category="vendor"
+                      categories={["vendor", "manufacturer", "supplier"]}
+                      onNameChange={setNewVendorName}
+                      onSelectCompany={addVendorFromCompany}
+                      placeholder="Search or add a vendor from the Directory…"
+                      hint="Vendors come from the Directory. Pick one, quick-add, or open the Directory for the full form."
+                      size="sm"
+                    />
                   </div>
                 )}
                 {projVendors.length === 0 ? (
@@ -5578,13 +5642,12 @@ export default function ProjectWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Company Name *</label>
-                  <input
-                    type="text"
-                    autoFocus
+                  <CompanyPicker
                     value={subForm.name}
-                    onChange={(e) => setSubForm({ ...subForm, name: e.target.value })}
-                    placeholder="e.g. AccraBuild Engineering Ltd."
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:ring-4 focus:ring-primary/5"
+                    category="subcontractor"
+                    onNameChange={(v) => setSubForm((f) => ({ ...f, name: v }))}
+                    onSelectCompany={(c) => setSubForm((f) => ({ ...f, name: c.name, contact: c.contactPersons?.[0]?.name || f.contact, email: c.email || c.contactPersons?.[0]?.email || f.email, phone: c.phone || c.contactPersons?.[0]?.phone || f.phone }))}
+                    placeholder="Search or add a subcontractor from the Directory…"
                   />
                 </div>
                 <div className="space-y-2">
