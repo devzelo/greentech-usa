@@ -16,7 +16,7 @@ import ShareMenu from "./ShareMenu";
 import CompanyDocs from "./CompanyDocs";
 import ClassifiedDocs from "./ClassifiedDocs";
 import { ClassifiedPinManager, ClassifiedPinGate } from "./ClassifiedPin";
-import { fetchClassifiedAccess, getClassifiedToken, type ClassifiedAccessStatus } from "../../lib/api";
+import { fetchClassifiedAccess, setClassifiedToken, type ClassifiedAccessStatus } from "../../lib/api";
 import { useMeta } from "../../hooks/useMeta";
 
 // Two views only (client spec): LIST (same style as My Projects / All Projects) and COLUMN/grid.
@@ -145,8 +145,11 @@ export default function Documents() {
   };
   // CR-P — classified access: employees unlock the tab with a PIN; admins manage the PIN.
   const [clsAccess, setClsAccess] = useState<ClassifiedAccessStatus | null>(null);
-  const [clsUnlocked, setClsUnlocked] = useState<boolean>(!!getClassifiedToken());
+  const [clsUnlocked, setClsUnlocked] = useState(false);
   useEffect(() => { if (!isGuest) fetchClassifiedAccess().then(setClsAccess).catch(() => {}); }, [isGuest]);
+  // CR-P-41c — the PIN must be re-entered every time the Classified tab is opened: clear the
+  // unlock + token whenever the user isn't on the classified tab.
+  useEffect(() => { if (tab !== "classified") { setClsUnlocked(false); setClassifiedToken(""); } }, [tab]);
   const showClassifiedTab = !isGuest && (isAdmin || !!clsAccess?.enabled);
 
   // The homepage's two quick downloads, surfaced here for fast access.
