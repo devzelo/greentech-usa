@@ -226,11 +226,12 @@ export default function Reminders() {
         </div>
       ) : (
         <div className="space-y-2">
-          {shown.map((r) => {
+          {shown.map((r, i) => {
             const over = isOverdue(r);
             return (
               <div key={r._id} className={`bg-white rounded-2xl border p-4 ${over ? "border-red-200 bg-red-50/30" : "border-slate-100"}`}>
                 <div className="flex flex-wrap items-start gap-3">
+                  <span className="text-xs font-bold text-slate-300 tabular-nums pt-0.5 shrink-0 w-6 text-right">{i + 1}</span>
                   <div className="min-w-0 flex-grow">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className={`text-sm font-bold ${r.status === "Completed" || r.status === "Cancelled" ? "text-slate-400 line-through" : "text-slate-900"}`}>{r.title}</p>

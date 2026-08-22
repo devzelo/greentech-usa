@@ -2485,6 +2485,8 @@ export default function ProjectWorkspace() {
                   title={`Follow up on ${project.name}`}
                   contextLabel={`Project · ${project.name} (${project.id})`}
                   link={`/dashboard/projects/${project.id}`}
+                  projectId={project.id}
+                  projectName={project.name}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2.5">

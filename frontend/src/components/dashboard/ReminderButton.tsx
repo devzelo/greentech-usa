@@ -26,8 +26,8 @@ export function localDateTime(minutes = 0): string {
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
-export default function ReminderButton({ title, contextLabel, link, compact }: {
-  title?: string; contextLabel?: string; link?: string; compact?: boolean;
+export default function ReminderButton({ title, contextLabel, link, compact, projectId, projectName }: {
+  title?: string; contextLabel?: string; link?: string; compact?: boolean; projectId?: string; projectName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -37,18 +37,20 @@ export default function ReminderButton({ title, contextLabel, link, compact }: {
     setForm({ title: title || "", notes: "", dueAt: localDateTime(60), emailEnabled: false });
     setOpen(true);
   };
-  const save = async (minutes?: number) => {
+  const save = async () => {
     if (!form.title.trim()) { toast("Give the reminder a title.", "error"); return; }
-    if (minutes === undefined && isNaN(new Date(form.dueAt).getTime())) { toast("Pick a valid date and time.", "error"); return; }
+    if (isNaN(new Date(form.dueAt).getTime())) { toast("Pick a valid date and time.", "error"); return; }
     setSaving(true);
     try {
       await createReminder({
         title: form.title.trim(),
         notes: form.notes,
-        dueAt: new Date(minutes !== undefined ? Date.now() + minutes * 60_000 : form.dueAt).toISOString(),
-        link: link || "",
+        dueAt: new Date(form.dueAt).toISOString(),
+        link: link || (projectId ? `/dashboard/projects/${projectId}` : ""),
         contextLabel: contextLabel || "",
         emailEnabled: form.emailEnabled,
+        projectId: projectId || "",     // CR-P-61 — so it shows on the Reminders page with its project
+        projectName: projectName || "",
       });
       toast("Reminder set.", "success");
       setOpen(false);
@@ -85,7 +87,7 @@ export default function ReminderButton({ title, contextLabel, link, compact }: {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quick options</p>
                 <div className="flex flex-wrap gap-1.5">
                   {QUICK.map((q) => (
-                    <button key={q.label} disabled={saving} onClick={() => save(q.minutes)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-primary hover:text-white disabled:opacity-50">{q.label}</button>
+                    <button key={q.label} type="button" onClick={() => setForm({ ...form, dueAt: localDateTime(q.minutes) })} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-primary hover:text-white">{q.label}</button>
                   ))}
                 </div>
               </div>
