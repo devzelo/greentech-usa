@@ -1754,6 +1754,13 @@ export async function deleteReminder(rid: string): Promise<void> {
   await request(`/reminders/${rid}`, { method: "DELETE" });
 }
 
+// CR-P-63 — personal sticky notes (per user), auto-saved.
+export interface ApiStickyNote { _id: string; text: string; color: string; createdAt?: string; updatedAt?: string }
+export async function fetchStickyNotes(): Promise<ApiStickyNote[]> { return request(`/sticky-notes`); }
+export async function createStickyNote(body: { text?: string; color?: string } = {}): Promise<ApiStickyNote> { return request(`/sticky-notes`, { method: "POST", body: JSON.stringify(body) }); }
+export async function updateStickyNote(id: string, body: { text?: string; color?: string }): Promise<ApiStickyNote> { return request(`/sticky-notes/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
+export async function deleteStickyNote(id: string): Promise<void> { await request(`/sticky-notes/${id}`, { method: "DELETE" }); }
+
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";
 export type ProjectRequestStatus = "Draft" | "Sent" | "Responded" | "Closed" | "Cancelled";

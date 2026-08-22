@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, AlertTriangle, Briefcase } from "lucide-react";
 import NotificationsPanel from "./NotificationsPanel";
+import StickyNotes from "./StickyNotes";
 import {
   fetchReminders, createReminder, updateReminder, deleteReminder, fetchProjects, getAuthUser,
   fetchReminderColleagues,
@@ -189,7 +190,9 @@ export default function Reminders() {
           <NotificationsPanel />
         </div>
       ) : (
-      <>
+      // CR-P-63 — reminders on the left, sticky-notes panel on the right (stacks on mobile).
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+      <div className="space-y-6 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-primary mb-2"><Bell size={18} /><span className="text-xs font-bold uppercase tracking-widest">Reminders</span></div>
@@ -285,7 +288,9 @@ export default function Reminders() {
           })}
         </div>
       )}
-      </>
+      </div>
+      <StickyNotes />
+      </div>
       )}
 
       {dialogs}
