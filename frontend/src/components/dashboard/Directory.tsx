@@ -99,6 +99,10 @@ export default function Directory() {
   }, [filtered, sort]);
   const sortIcon = (key: SortKey) => sort.key === key ? (sort.dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="text-slate-300" />;
 
+  // CR-P-43 — Directory tab flow: All, Clients, Subcontractors, Vendors, Partners, then the rest.
+  const TAB_PRIORITY: CompanyCategory[] = ["client", "subcontractor", "vendor", "partner"];
+  const orderedCats: CompanyCategory[] = [...TAB_PRIORITY, ...COMPANY_CATEGORIES.map((c) => c.v).filter((v) => !TAB_PRIORITY.includes(v))];
+
   const openNew = () => setEditor({ id: null, draft: { ...BLANK, category: cat === "all" ? "vendor" : cat } });
   const openEdit = (c: ApiCompany) => setEditor({ id: c._id, draft: { ...c } });
   const setDraft = (patch: Partial<CompanyInput>) => setEditor((e) => (e ? { ...e, draft: { ...e.draft, ...patch } } : e));
@@ -186,7 +190,7 @@ export default function Directory() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 flex-grow">
           <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-            {(["all", ...COMPANY_CATEGORIES.map((c) => c.v)] as const).map((v) => (
+            {(["all", ...orderedCats] as const).map((v) => (
               <button key={v} onClick={() => setCat(v)} className={`px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-wide whitespace-nowrap shrink-0 transition-all ${cat === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
                 {v === "all" ? "All" : catLabel(v)}
               </button>
