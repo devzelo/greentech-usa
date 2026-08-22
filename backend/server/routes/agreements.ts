@@ -225,6 +225,12 @@ function buildAgreementRouter(ctx: Ctx): Router {
         partySnapshot: b.partySnapshot || {},
         sections: b.sections || {},
         extraSections: cleanExtraSections(b.extraSections),
+        sectionAssignees: {
+          scope: String(b.sectionAssignees?.scope || ""),
+          terms: String(b.sectionAssignees?.terms || ""),
+          paymentConditions: String(b.sectionAssignees?.paymentConditions || ""),
+          deliveryConditions: String(b.sectionAssignees?.deliveryConditions || ""),
+        },
         letterhead: b.letterhead === "jv" ? "jv" : "gt",
         jvLogoUrl: String(b.jvLogoUrl || ""),
         documentMode: b.documentMode === "uploaded" ? "uploaded" : "built",
@@ -257,6 +263,15 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (b.documentMode === "built" || b.documentMode === "uploaded") ag.documentMode = b.documentMode;
       if (b.sections && typeof b.sections === "object") ag.sections = { ...ag.sections, ...b.sections };
       if (Array.isArray(b.extraSections)) ag.extraSections = cleanExtraSections(b.extraSections);
+      if (b.sectionAssignees && typeof b.sectionAssignees === "object") {
+        const a = b.sectionAssignees;
+        ag.sectionAssignees = {
+          scope: String(a.scope ?? ag.sectionAssignees?.scope ?? ""),
+          terms: String(a.terms ?? ag.sectionAssignees?.terms ?? ""),
+          paymentConditions: String(a.paymentConditions ?? ag.sectionAssignees?.paymentConditions ?? ""),
+          deliveryConditions: String(a.deliveryConditions ?? ag.sectionAssignees?.deliveryConditions ?? ""),
+        };
+      }
       // The party snapshot freezes at send time (spec §3) — applied only while still a Draft.
       // Once sent it is silently ignored so that editing the TERMS of a sent/rejected agreement
       // (and re-sending it) still works.

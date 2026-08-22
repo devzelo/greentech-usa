@@ -69,8 +69,10 @@ type Draft = {
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
   extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
+  sectionAssignees: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
+const BLANK_ASSIGNEES = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "" };
 
 export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults }: {
   ctx: AgreementCtx; canManage: boolean; canSign?: boolean; defaults?: AgreementDefaults;
@@ -203,6 +205,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       extraSections: ctx.kind === "general"
         ? [{ title: "Scope / Description", body: "" }, { title: "Terms & Conditions", body: "" }, { title: "Payment Conditions", body: "" }, { title: "Delivery Conditions", body: "" }]
         : [],
+      sectionAssignees: { ...BLANK_ASSIGNEES },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "" },
     });
     setEditor({ aid: null });
@@ -230,6 +233,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
             ...(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
           ]
         : (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+      sectionAssignees: { ...BLANK_ASSIGNEES, ...(ag.sectionAssignees || {}) },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
     });
     setEditor({ aid: ag._id });
@@ -273,6 +277,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     ...(isDraftStatus ? { partySnapshot: { party1: party1(), party2: draft!.party2, contextLines: draft!.contextLines.filter((l) => l.label || l.value) } } : {}),
     sections: draft!.sections,
     extraSections: draft!.extraSections.filter((s) => s.title || s.body),
+    sectionAssignees: draft!.sectionAssignees,
     companySignature: draft!.company,
   });
 
@@ -788,7 +793,20 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   CR-P-48 — general agreements manage every section through the flexible list below
                   (rename / delete / reorder). The fixed sections stay for employee & project agreements. */}
               {ctx.kind !== "general" && ([["scope", "Scope / description", 120], ["terms", "Terms & conditions", 160], ["paymentConditions", "Payment conditions", 90], ["deliveryConditions", "Delivery conditions", 90]] as const).map(([f, label, mh]) => (
-                <div key={f} className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}
+                <div key={f} className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{label}</span>
+                    {/* CR-P-49 — tag a colleague to review this fixed section (notifies them). */}
+                    <select value="" onChange={(e) => {
+                      const u = users.find((x) => x.id === e.target.value);
+                      setDraft({ ...draft, sectionAssignees: { ...draft.sectionAssignees, [f]: u?.name || "" } });
+                      const pid = ctx.kind === "project" ? ctx.projectId : "";
+                      if (u) createReminder({ userId: u.id, title: `Review agreement section "${label}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: pid ? `/dashboard/projects/${pid}` : "/dashboard", projectId: pid || undefined, projectName: draft?.name || "Agreement" }).then(() => toast(`${u.name} was notified.`, "success")).catch(() => {});
+                    }} className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer normal-case tracking-normal shrink-0">
+                      <option value="">{draft.sectionAssignees[f] ? `👤 ${draft.sectionAssignees[f]}` : "Tag colleague…"}</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
                   <div className="mt-1"><RichTextEditor value={draft.sections[f]} onChange={(html) => setDraft({ ...draft, sections: { ...draft.sections, [f]: html } })} minHeight={mh} placeholder={`${label}…`} /></div>
                 </div>
               ))}

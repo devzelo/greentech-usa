@@ -1929,6 +1929,7 @@ export interface ApiAgreement {
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
   extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
@@ -1974,6 +1975,7 @@ export interface AgreementInput {
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
   extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
 }
