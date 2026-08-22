@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { MoreHorizontal, FolderOpen, Link2, Copy, Archive, RotateCcw, Trash2, Loader2 } from "lucide-react";
 import { setProjectArchived, duplicateProject, deleteProject, type ApiProject } from "../../lib/api";
@@ -20,8 +21,32 @@ export default function ProjectActionsMenu({
   const { confirm, dialogs } = useDialogs();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // CR-P — the menu is portaled to <body> with fixed positioning so it can never be clipped by a
+  // section's overflow (tables, cards). Position is computed from the trigger's bounding rect.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
 
   const close = () => setOpen(false);
+  const openMenu = () => {
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (r) {
+      const gap = 8, menuH = 300;
+      const right = Math.max(8, window.innerWidth - r.right);
+      const spaceBelow = window.innerHeight - r.bottom;
+      // Flip above the trigger when there isn't room below.
+      if (spaceBelow < menuH && r.top > spaceBelow) setPos({ bottom: window.innerHeight - r.top + gap, right });
+      else setPos({ top: r.bottom + gap, right });
+    }
+    setOpen(true);
+  };
+  // A fixed menu detaches from its trigger on scroll/resize — close it so it never floats out of place.
+  useEffect(() => {
+    if (!open) return;
+    const onMove = () => close();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => { window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); };
+  }, [open]);
 
   const copyLink = async () => {
     close();
@@ -84,15 +109,15 @@ export default function ProjectActionsMenu({
 
   return (
     <div className={wrapperCls}>
-      <button onClick={() => setOpen((v) => !v)} className={trigger} title="More actions" disabled={busy} aria-label="More actions">
+      <button ref={triggerRef} onClick={() => (open ? close() : openMenu())} className={trigger} title="More actions" disabled={busy} aria-label="More actions">
         {busy ? <Loader2 size={variant === "overlay" ? 18 : 18} className="animate-spin" /> : <MoreHorizontal size={variant === "overlay" ? 18 : 18} />}
       </button>
 
-      {open && (
+      {open && pos && createPortal(
         <>
           {/* Click-away catcher (menus close on outside click, unlike modals). */}
-          <button type="button" aria-label="Close menu" className="fixed inset-0 z-40 cursor-default" onClick={close} />
-          <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-2xl p-1.5 z-50">
+          <button type="button" aria-label="Close menu" className="fixed inset-0 cursor-default" style={{ zIndex: 129 }} onClick={close} />
+          <div className="fixed w-48 bg-white border border-slate-100 rounded-xl shadow-2xl p-1.5" style={{ top: pos.top, bottom: pos.bottom, right: pos.right, zIndex: 130 }}>
             <Item icon={FolderOpen} label="Open project" onClick={() => { close(); navigate(`/dashboard/projects/${project.id}`); }} />
             <Item icon={Link2} label="Copy link" onClick={copyLink} />
             {canManage && <Item icon={Copy} label="Duplicate" onClick={duplicate} />}
@@ -100,7 +125,8 @@ export default function ProjectActionsMenu({
             {canManage && <div className="my-1 border-t border-slate-100" />}
             {canManage && <Item icon={Trash2} label="Delete" onClick={remove} danger />}
           </div>
-        </>
+        </>,
+        document.body
       )}
       {dialogs}
     </div>
