@@ -6,7 +6,15 @@ import path from "path";
 import User from "../models/User";
 import UserFile from "../models/UserFile";
 import Employee from "../models/Employee";
+import Project from "../models/Project";
+import Agreement from "../models/Agreement";
+import Expense from "../models/Expense";
+import Reminder from "../models/Reminder";
+import Submittal from "../models/Submittal";
+import ProcurementPO from "../models/ProcurementPO";
 import { requireAuth, AuthedRequest, requireAdmin } from "../middleware/auth";
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const humanFileSize = (bytes: number) => {
   if (!bytes) return "0 B";
@@ -126,6 +134,33 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ error: "User not found." });
     res.json({ message: "User deleted." });
+  } catch (err) { next(err); }
+});
+
+// ── CR-P-57 — everything related to this user (for the admin profile view) ──
+router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = await User.findById(req.params.id).select("name").lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const uid = req.params.id;
+    const name = (user as { name?: string }).name || "";
+    const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
+
+    const [owned, guest, agreements, expenses, reminders, submittals, pos] = await Promise.all([
+      Project.find({ ownerId: uid }).select("name status location").lean(),
+      Project.find({ "guests.userId": uid }).select("name status location").lean(),
+      Agreement.find({ $or: [{ ownerUserId: uid }, { addedById: uid }] }).select("name agreementType status ownerProjectId").sort({ createdAt: -1 }).limit(60).lean(),
+      Expense.find({ addedById: uid }).select("description amount qty approval projectId category").sort({ createdAt: -1 }).limit(60).lean(),
+      Reminder.find({ userId: uid }).select("title dueAt projectId projectName").sort({ dueAt: -1 }).limit(60).lean(),
+      nameRx ? Submittal.find({ addedByName: nameRx }).select("productName status projectId").sort({ createdAt: -1 }).limit(60).lean() : [],
+      nameRx ? ProcurementPO.find({ $or: [{ addedByName: nameRx }, { assignedTo: nameRx }] }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(60).lean() : [],
+    ]);
+
+    // Merge owned + guest projects, de-duped by _id.
+    const seen = new Set<string>();
+    const projects = [...owned, ...guest].filter((p) => { const k = String((p as { _id: unknown })._id); if (seen.has(k)) return false; seen.add(k); return true; });
+
+    res.json({ projects, agreements, expenses, reminders, submittals, pos });
   } catch (err) { next(err); }
 });
 

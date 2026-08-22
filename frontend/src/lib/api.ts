@@ -619,6 +619,16 @@ export function userFileUrl(f: UserFile): string {
   const rel = norm.startsWith("uploads/") ? norm.slice("uploads/".length) : norm;
   return withFileToken(`/uploads/${rel}`);
 }
+// CR-P-57 — everything related to a user (projects, agreements, POs, submittals, expenses, reminders).
+export interface UserLinks {
+  projects: Array<{ _id: string; name: string; status: string; location?: string }>;
+  agreements: Array<{ _id: string; name: string; agreementType: string; status: string; ownerProjectId?: string }>;
+  expenses: Array<{ _id: string; description: string; amount: string; qty?: string; approval?: string; projectId?: string; category?: string }>;
+  reminders: Array<{ _id: string; title: string; dueAt?: string; projectId?: string; projectName?: string }>;
+  submittals: Array<{ _id: string; productName: string; status: string; projectId?: string }>;
+  pos: Array<{ _id: string; poNo: string; vendorName: string; total: string; status: string; projectId?: string }>;
+}
+export async function fetchUserLinks(id: string): Promise<UserLinks> { return request(`/users/${id}/links`); }
 
 export async function adminResetPassword(id: string, password: string): Promise<{ message: string }> {
   return request<{ message: string }>(`/users/${id}/reset-password`, {

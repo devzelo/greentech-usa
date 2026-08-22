@@ -10,6 +10,7 @@ import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import { ConfirmDialog } from "./Dialogs";
 import AgreementsPanel from "./agreements/AgreementsPanel";
+import UserProfile from "./UserProfile";
 
 const ROLES = [
   { value: "admin", label: "Admin" },
@@ -58,6 +59,8 @@ export default function UserManagement() {
 
   // Employee agreements modal — the user-context adapter of the agreement engine.
   const [agreementsFor, setAgreementsFor] = useState<AdminUser | null>(null);
+  // CR-P-57 — clicking a user's name opens their full profile (activity + documents).
+  const [profileUser, setProfileUser] = useState<AdminUser | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -99,7 +102,8 @@ export default function UserManagement() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateUser(editingId, { name: form.name, email: form.email, personalEmail: form.personalEmail, role: form.role, empId: form.empId, phone: form.phone });
+        const up = await updateUser(editingId, { name: form.name, email: form.email, personalEmail: form.personalEmail, role: form.role, empId: form.empId, phone: form.phone });
+        setProfileUser((cur) => (cur && cur._id === editingId ? up : cur));  // keep an open profile in sync
         toast("User updated.", "success");
       } else {
         await createUser({ name: form.name, email: form.email, personalEmail: form.personalEmail, password: form.password, role: form.role, empId: form.empId, phone: form.phone });
@@ -133,8 +137,10 @@ export default function UserManagement() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteUser(deleteTarget._id);
+      const delId = deleteTarget._id;
+      await deleteUser(delId);
       toast("User deleted.", "success");
+      setProfileUser((cur) => (cur && cur._id === delId ? null : cur));  // close the profile if it was open
       setDeleteTarget(null);
       await load();
     } catch (err) {
@@ -157,6 +163,17 @@ export default function UserManagement() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {profileUser ? (
+        <UserProfile
+          user={profileUser}
+          isSelf={me?.id === profileUser._id}
+          onBack={() => setProfileUser(null)}
+          onEdit={(u) => openEdit(u)}
+          onResetPassword={(u) => { setPwTarget(u); setNewPw(""); }}
+          onDelete={(u) => setDeleteTarget(u)}
+        />
+      ) : (
+      <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
         <div>
@@ -207,7 +224,7 @@ export default function UserManagement() {
                     </div>
                     <div className="min-w-0 flex-grow">
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-slate-900 truncate">{u.name || u.email}</p>
+                        <button onClick={() => setProfileUser(u)} className="font-bold text-slate-900 truncate text-left hover:text-primary hover:underline" title="View profile">{u.name || u.email}</button>
                         {isSelf && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">You</span>}
                       </div>
                       <p className="text-xs text-slate-500 truncate">{u.email}{u.empId ? ` · ${u.empId}` : ""}</p>
@@ -227,6 +244,8 @@ export default function UserManagement() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Create / Edit modal */}
       <AnimatePresence>
