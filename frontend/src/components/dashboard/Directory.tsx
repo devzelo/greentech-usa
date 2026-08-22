@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, Upload, Eye, LayoutGrid, List as ListIcon } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, Upload, Eye, LayoutGrid, List as ListIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, syncCompaniesFromProjects,
@@ -82,6 +82,22 @@ export default function Directory() {
       [c.name, c.email, c.phone, c.address, ...(c.contactPersons || []).map((p) => `${p.name} ${p.email}`)]
         .join(" ").toLowerCase().includes(q));
   }, [companies, search]);
+
+  // CR-P-42 — list-view column sorting.
+  type SortKey = "name" | "category" | "email" | "phone" | "address";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
+  const toggleSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  const sortedList = useMemo(() => {
+    const val = (c: ApiCompany) => (sort.key === "category" ? catLabel(c.category) : c[sort.key] || "").toString().trim().toLowerCase();
+    return [...filtered].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (!av && !bv) return 0;
+      if (!av) return 1; if (!bv) return -1;   // blanks always last
+      const cmp = av.localeCompare(bv);
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sort]);
+  const sortIcon = (key: SortKey) => sort.key === key ? (sort.dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="text-slate-300" />;
 
   const openNew = () => setEditor({ id: null, draft: { ...BLANK, category: cat === "all" ? "vendor" : cat } });
   const openEdit = (c: ApiCompany) => setEditor({ id: c._id, draft: { ...c } });
@@ -198,16 +214,16 @@ export default function Directory() {
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-50">
                   <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
-                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Company</th>
-                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category</th>
-                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</th>
-                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</th>
-                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Location</th>
+                  {([["name", "Company"], ["category", "Category"], ["email", "Email"], ["phone", "Phone"], ["address", "Location"]] as const).map(([k, l]) => (
+                    <th key={k} className="text-left px-4 py-4">
+                      <button onClick={() => toggleSort(k)} className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${sort.key === k ? "text-slate-700" : "text-slate-400 hover:text-slate-600"}`} title={`Sort by ${l}`}>{l} {sortIcon(k)}</button>
+                    </th>
+                  ))}
                   <th className="text-right px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((c, i) => (
+                {sortedList.map((c, i) => (
                   <tr key={c._id} className="group hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="px-4 py-3">
