@@ -15,7 +15,8 @@ import {
   Handshake,
   Bell,
   Building2,
-  Trash2
+  Trash2,
+  ExternalLink
 } from "lucide-react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
@@ -252,6 +253,17 @@ export default function DashboardLayout() {
             </Link>
           )}
         </div>
+
+        {/* CR-P — tiny link to the public GreenTech website; opens in a new tab. */}
+        {isSidebarOpen ? (
+          <a href="/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-5 py-1.5 text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline" title="Open the GreenTech website in a new tab">
+            <ExternalLink size={11} /> Go to GT Website
+          </a>
+        ) : (
+          <a href="/" target="_blank" rel="noopener noreferrer" className="flex justify-center py-1.5 text-blue-600 hover:text-blue-700" title="Go to GT Website (new tab)">
+            <ExternalLink size={14} />
+          </a>
+        )}
 
         {/* Sidebar Nav */}
         <div className={`flex-grow overflow-y-auto overflow-x-hidden py-5 space-y-6 ${isSidebarOpen ? "px-3" : "px-2"}`}>
