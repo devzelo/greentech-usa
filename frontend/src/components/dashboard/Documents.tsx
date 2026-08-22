@@ -653,14 +653,19 @@ export default function Documents() {
         </>
       )}
 
-      {tab === "classified" && !isGuest && (
-        <div className="space-y-5">
-          {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
-          {(isAdmin || clsUnlocked)
-            ? <ClassifiedDocs />
-            : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
-        </div>
-      )}
+      {tab === "classified" && !isGuest && (() => {
+        // When a PIN is set AND enabled, everyone (admins included) must unlock to view the docs.
+        // Admins still see the manager bar so they can update or disable the PIN.
+        const gateOn = !!(clsAccess?.enabled && clsAccess?.hasPin);
+        return (
+          <div className="space-y-5">
+            {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
+            {(clsUnlocked || !gateOn)
+              ? <ClassifiedDocs />
+              : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
+          </div>
+        );
+      })()}
 
       <AnimatePresence>
         {selected && (

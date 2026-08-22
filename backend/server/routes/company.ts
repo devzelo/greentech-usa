@@ -15,19 +15,21 @@ const router = Router();
 router.use(requireAuth);
 router.use(blockGuests); // company & classified documents are internal (non-guest)
 
-// Classified documents are admin-only OR an employee who has entered the PIN (CR-P). An admin
-// always passes; otherwise a valid short-lived "classified" token (from /classified-access/verify)
-// in the x-classified-token header unlocks read access while the feature is enabled.
 const isAdmin = (req: AuthedRequest) => req.user?.role === "admin";
-const classifiedAllowed = async (req: AuthedRequest): Promise<boolean> => {
-  if (isAdmin(req)) return true;
+const hasValidPinToken = (req: AuthedRequest): boolean => {
   const token = String(req.headers["x-classified-token"] || "");
   if (!token) return false;
-  try { const d = jwt.verify(token, JWT_SECRET) as { classified?: boolean }; if (!d.classified) return false; }
-  catch { return false; }
-  // A valid PIN token only grants access while the feature is still enabled.
-  const doc = await ClassifiedAccess.findOne({ key: "singleton" }).select("enabled").lean();
-  return !!(doc as { enabled?: boolean } | null)?.enabled;
+  try { return !!(jwt.verify(token, JWT_SECRET) as { classified?: boolean }).classified; } catch { return false; }
+};
+// Who may READ classified documents (CR-P + CR-P-41b). When an active PIN gate is set (enabled +
+// PIN), EVERYONE — admins included — must present a valid PIN token. With no active gate, it falls
+// back to admin-only. Managing the PIN uses separate admin-gated endpoints, so an admin can always
+// change or disable it without being locked out.
+const classifiedAllowed = async (req: AuthedRequest): Promise<boolean> => {
+  const doc = await ClassifiedAccess.findOne({ key: "singleton" }).select("enabled pinHash").lean();
+  const gateOn = !!((doc as { enabled?: boolean; pinHash?: string } | null)?.enabled && (doc as { pinHash?: string } | null)?.pinHash);
+  if (!gateOn) return isAdmin(req);
+  return hasValidPinToken(req);
 };
 
 // ── Company Details (CR-P-37) — admin-managed custom fields ───────────────────
