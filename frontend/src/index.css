@@ -122,11 +122,23 @@
 
 
 /* Rich-text editor (proposal builder) */
+/* CR-P-49 — normal case (never inherit uppercase from a label wrapper), Inter body @ 11px default,
+   normal letter-spacing. Applies to every editor surface. */
+.rte-surface {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: normal;
+}
 .rte-surface:empty::before {
   content: attr(data-placeholder);
   color: #94a3b8;
   pointer-events: none;
+  text-transform: none;
+  letter-spacing: normal;
 }
+/* CR-P-49 — Outfit for headings, Inter for body/description. */
+.rte-surface h1, .rte-surface h2, .rte-surface h3, .rte-surface h4 { font-family: var(--font-display); }
 .rte-surface h1 { font-size: 1.3rem; font-weight: 800; margin: 0.6em 0 0.35em; color: #0f172a; }
 .rte-surface h2 { font-size: 1.05rem; font-weight: 700; margin: 0.6em 0 0.3em; color: #0f172a; }
 .rte-surface h3 { font-size: 0.95rem; font-weight: 700; margin: 0.5em 0 0.25em; color: #0f172a; }

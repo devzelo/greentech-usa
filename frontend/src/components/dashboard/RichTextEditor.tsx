@@ -92,12 +92,14 @@ export default function RichTextEditor({
   const [localDraft, setLocalDraft] = useState<string | null>(null); // CR-B-14b — recovered offline draft
 
   // Sync external value in only when it differs, so typing doesn't reset the caret.
+  // CR-P-49 — `fullscreen` is a dep: toggling full screen re-mounts the contentEditable node
+  // (inline ⇄ portal), so we must re-apply the current value or the content would appear to vanish.
   useEffect(() => {
     const el = ref.current;
     if (el && el.innerHTML !== value) el.innerHTML = value || "";
     // Once the server value matches the saved draft, the local copy is no longer needed.
     if (draftKey && value) { try { if (localStorage.getItem(`rte:${draftKey}`) === value) localStorage.removeItem(`rte:${draftKey}`); } catch { /* ignore */ } }
-  }, [value, draftKey]);
+  }, [value, draftKey, fullscreen]);
 
   // On mount, offer to restore an unsaved local draft (e.g. after an offline reload).
   useEffect(() => {
@@ -550,7 +552,7 @@ export default function RichTextEditor({
         onMouseUp={onSurfaceMouse}
         onClick={onSurfaceMouse}
         data-placeholder={placeholder || "Start writing…"}
-        className={`rte-surface px-4 py-3 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white transition-colors ${fullscreen ? "flex-grow overflow-y-auto bg-white" : ""}`}
+        className={`rte-surface px-4 py-3 text-slate-700 leading-relaxed outline-none focus:bg-white transition-colors normal-case tracking-normal ${fullscreen ? "flex-grow overflow-y-auto bg-white" : ""}`}
         style={{ minHeight: fullscreen ? undefined : minHeight }}
       />
     </div>
