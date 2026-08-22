@@ -752,10 +752,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 </div>
               </div>
 
-              {/* Context lines */}
+              {/* Context lines — CR-P-47: removed from general agreements. */}
+              {ctx.kind !== "general" && (
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ctx.kind === "user" ? "Employment information" : ctx.kind === "general" ? "Agreement information" : "Project information"} <span className="font-medium normal-case text-slate-400">— printed as an info block on the document</span></p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ctx.kind === "user" ? "Employment information" : "Project information"} <span className="font-medium normal-case text-slate-400">— printed as an info block on the document</span></p>
                   <button onClick={() => setDraft({ ...draft, contextLines: [...draft.contextLines, { label: "", value: "" }] })} className="text-[10px] font-bold text-primary hover:underline">+ Add line</button>
                 </div>
                 {draft.contextLines.length === 0 && <p className="text-[11px] text-slate-400 italic">No info lines.</p>}
@@ -767,6 +768,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   </div>
                 ))}
               </div>
+              )}
 
               {/* Sections — rich text so tables & pictures can be added (rendered into the agreement PDF). */}
               {([["scope", "Scope / description", 120], ["terms", "Terms & conditions", 160], ["paymentConditions", "Payment conditions", 90], ["deliveryConditions", "Delivery conditions", 90]] as const).map(([f, label, mh]) => (
