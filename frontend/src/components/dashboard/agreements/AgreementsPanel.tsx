@@ -8,7 +8,7 @@ import {
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
-import { buildAgreementPdf } from "../../../lib/agreementPdf";
+import { buildAgreementPdf, buildUploadedAgreementPdf } from "../../../lib/agreementPdf";
 import { AGREEMENT_TYPE_GROUPS, AGREEMENT_TYPES_FLAT } from "../../../lib/agreementTypes";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { useSectionPresence } from "../../../lib/usePresence";
@@ -331,11 +331,28 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     try { await deleteAgreement(ctx, ag._id); setList((p) => p.filter((x) => x._id !== ag._id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
+  // CR-P-45 — general "uploaded" agreements merge a generated info cover page with the uploaded
+  // document (fetched from the server, or the freshly chosen local file in the editor).
+  const uploadedMergedBlob = async (ag: ApiAgreement, localFile?: File | null): Promise<Blob> => {
+    let bytes: Uint8Array; let name: string;
+    if (localFile) { bytes = new Uint8Array(await localFile.arrayBuffer()); name = localFile.name; }
+    else {
+      const res = await fetch(attachmentUrl((ag.uploadedDocument?.filePath || "").replace(/^\/+/, "")));
+      if (!res.ok) throw new Error("Could not load the uploaded file.");
+      bytes = new Uint8Array(await res.arrayBuffer());
+      name = ag.uploadedDocument?.name || "document.pdf";
+    }
+    return buildUploadedAgreementPdf(ag, bytes, name);
+  };
+
   const download = async (ag: ApiAgreement) => {
     try {
       if (ag.signedDocument?.filePath) { window.open(attachmentUrl(ag.signedDocument.filePath), "_blank"); return; }
-      // Uploaded-document agreements: download the attached file as-is (whatever format).
-      if (ag.documentMode === "uploaded" && ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; }
+      if (ag.documentMode === "uploaded") {
+        // General uploaded agreements: cover page + merged document. Others: the file as-is.
+        if (ctx.kind === "general") { downloadBlob(await uploadedMergedBlob(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`); return; }
+        if (ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; }
+      }
       downloadBlob(await buildAgreementPdf(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); }
   };
@@ -413,7 +430,14 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       {canManage && ag.status !== "Signed" && (
         <button onClick={() => openEdit(ag)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage</button>
       )}
-      <button onClick={() => { if (ag.documentMode === "uploaded" && ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; } setPreview({ title: ag.name || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) }); }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
+      <button onClick={() => {
+        if (ag.documentMode === "uploaded") {
+          // General uploaded agreements preview as cover page + merged document.
+          if (ctx.kind === "general") { setPreview({ title: ag.title || ag.agreementType || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(ag) }); return; }
+          if (ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; }
+        }
+        setPreview({ title: ag.name || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) });
+      }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
       <button onClick={() => download(ag)} className="p-1.5 rounded text-slate-400 hover:text-primary" title={ag.signedDocument ? "Open the signed copy" : "Download PDF"}><Download size={14} /></button>
       <button onClick={() => {
         const secs = (ag.extraSections || []).filter((s) => !(s as { hidden?: boolean }).hidden);
@@ -900,6 +924,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   (() => {
                     const existing = list.find((a) => a._id === editor?.aid)?.uploadedDocument;
                     const openUploaded = () => {
+                      // General agreements preview the generated cover page merged with the file.
+                      if (ctx.kind === "general") {
+                        const cur = list.find((a) => a._id === editor?.aid);
+                        const previewAg = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody() } as ApiAgreement;
+                        setPreview({ title: draft.title || draft.agreementType || "Agreement", fileName: `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(previewAg, draft.uploadFile) });
+                        return;
+                      }
                       if (draft.uploadFile) { window.open(URL.createObjectURL(draft.uploadFile), "_blank"); return; }
                       if (existing?.filePath) window.open(attachmentUrl(existing.filePath.replace(/^\/+/, "")), "_blank");
                     };

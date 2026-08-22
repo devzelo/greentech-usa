@@ -137,6 +137,94 @@ async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDF
 
 const fmt = (d?: string) => (d ? d : "—");
 
+// The document heading — the agreement type. Many types already contain the document word
+// (e.g. "Service Agreement", "Change Order", "NDA"), so we only append "AGREEMENT" when it
+// doesn't, to avoid printing "… AGREEMENT AGREEMENT".
+export function agreementHeading(ag: ApiAgreement): string {
+  const t = (ag.agreementType || "").trim();
+  if (!t) return "AGREEMENT";
+  return /agreement|contract|order|amendment|modification|addendum|nda|mou|loi|understanding|intent|waiver|release|memorandum|warranty|lease/i.test(t)
+    ? t.toUpperCase() : `${t.toUpperCase()} AGREEMENT`;
+}
+
+// CR-P-45 — "Upload existing file" general agreements: a generated, centered info cover page,
+// then the uploaded document merged in after it (PDF pages copied; images placed on their own
+// page). The title + all input info sit centered on the first page.
+function addImagePage(doc: PDFDocument, img: PDFImage) {
+  const p = doc.addPage([PAGE_W, PAGE_H]);
+  p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
+  const scale = Math.min((PAGE_W - M * 2) / img.width, (PAGE_H - M * 2 - 20) / img.height, 1);
+  const w = img.width * scale, h = img.height * scale;
+  p.drawImage(img, { x: (PAGE_W - w) / 2, y: (PAGE_H - h) / 2, width: w, height: h });
+}
+
+async function drawUploadedCover(doc: PDFDocument, ag: ApiAgreement, font: PDFFont, bold: PDFFont) {
+  const p = doc.addPage([PAGE_W, PAGE_H]);
+  p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
+  const gtLogo = await embedImage(doc, "/gt-usa-logo-new.png");
+  if (gtLogo) drawFitted(p, gtLogo, M, PAGE_H - 62, 150, 40);
+  if (ag.letterhead === "jv") {
+    const jvLogo = await embedImage(doc, ag.jvLogoUrl || ag.partySnapshot?.party2?.logoUrl);
+    if (jvLogo) { const s = Math.min(150 / jvLogo.width, 40 / jvLogo.height, 1); drawFitted(p, jvLogo, PAGE_W - M - jvLogo.width * s, PAGE_H - 62, 150, 40); }
+  }
+  let y = PAGE_H - 170;
+  const center = (text: string, f: PDFFont, size: number, color = INK, gapAfter = size * 0.6) => {
+    for (const line of wrap(f, text, size, PAGE_W - M * 2)) {
+      if (!line) { y -= size * 0.7; continue; }
+      const w = f.widthOfTextAtSize(line, size);
+      p.drawText(line, { x: (PAGE_W - w) / 2, y, size, font: f, color });
+      y -= size + 4;
+    }
+    y -= gapAfter;
+  };
+  center(agreementHeading(ag), bold, 20, GREEN, 18);
+  const p1 = ag.partySnapshot?.party1, p2 = ag.partySnapshot?.party2;
+  center("This agreement is made between", font, 9, MUTED, 8);
+  if (p1?.name) center(p1.name, bold, 12, INK, 2);
+  for (const l of [p1?.address, p1?.email, p1?.phone].filter(Boolean) as string[]) center(l, font, 9, MUTED, 0);
+  y -= 10;
+  center("and", font, 9, MUTED, 8);
+  if (p2?.name) center(p2.name, bold, 12, INK, 2);
+  for (const l of [p2?.contactName ? `Attn: ${p2.contactName}` : "", p2?.address, p2?.email, p2?.phone].filter(Boolean) as string[]) center(l, font, 9, MUTED, 0);
+  y -= 16;
+  const dates = [ag.effectiveDate ? `Effective: ${ag.effectiveDate}` : "", ag.startDate ? `Start: ${ag.startDate}` : "", ag.endDate ? `End: ${ag.endDate}` : ""].filter(Boolean).join("      ");
+  if (dates) center(dates, font, 9, MUTED, 12);
+  if (ag.description) { center("Description / Remarks", bold, 9, INK, 4); center(ag.description, font, 9.5, INK, 12); }
+  for (const cl of ag.partySnapshot?.contextLines || []) {
+    if (!cl.label && !cl.value) continue;
+    center(`${cl.label}${cl.label && cl.value ? ": " : ""}${cl.value}`, font, 9, INK, 0);
+  }
+  y -= 18;
+  center("The full agreement document follows.", font, 8.5, MUTED, 0);
+}
+
+export async function buildUploadedAgreementPdf(ag: ApiAgreement, bytes: Uint8Array, name: string): Promise<Blob> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  await drawUploadedCover(doc, ag, font, bold);
+  const lower = (name || "").toLowerCase();
+  try {
+    if (lower.endsWith(".pdf")) {
+      const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const pages = await doc.copyPages(src, src.getPageIndices());
+      pages.forEach((pg) => doc.addPage(pg));
+    } else if (/\.png$/.test(lower)) {
+      addImagePage(doc, await doc.embedPng(bytes));
+    } else if (/\.jpe?g$/.test(lower)) {
+      addImagePage(doc, await doc.embedJpg(bytes));
+    } else {
+      const p = doc.addPage([PAGE_W, PAGE_H]);
+      p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
+      p.drawText("Uploaded document", { x: M, y: PAGE_H - 110, size: 13, font: bold, color: INK });
+      p.drawText(name || "attachment", { x: M, y: PAGE_H - 132, size: 11, font, color: MUTED });
+      p.drawText("This file type cannot be shown inline — download the original from the agreement.", { x: M, y: PAGE_H - 152, size: 9, font, color: MUTED });
+    }
+  } catch { /* keep the cover page even if the uploaded file can't be parsed */ }
+  const out = await doc.save();
+  return new Blob([out], { type: "application/pdf" });
+}
+
 export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -162,13 +250,7 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   }
   cur.gap(50);
 
-  const t = (ag.agreementType || "").trim();
-  // Many types already contain the document word (e.g. "Service Agreement", "Change Order",
-  // "NDA") — only append "AGREEMENT" when it doesn't, so we never print "… AGREEMENT AGREEMENT".
-  const title = t
-    ? (/agreement|contract|order|amendment|modification|addendum|nda|mou|loi|understanding|intent|waiver|release|memorandum|warranty|lease/i.test(t) ? t.toUpperCase() : `${t.toUpperCase()} AGREEMENT`)
-    : "AGREEMENT";
-  cur.text(title, bold, 16, GREEN);
+  cur.text(agreementHeading(ag), bold, 16, GREEN);
   // General agreements show only the type as the heading — the GT- code stays an internal
   // reference and is not printed on the document (CR-P-45).
   if (ag.name && ag.ownerContextType !== "general") cur.text(ag.name, bold, 10, INK);
