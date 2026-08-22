@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake } from "lucide-react";
+import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2 } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, adminResetPassword, deleteUser,
   getAuthUser, AdminUser,
@@ -124,6 +124,13 @@ export default function UserManagement() {
     }
   };
 
+  // CR-P-56 — next available employee ID (EMP-###), based on existing IDs. Editable afterwards.
+  const nextEmpId = () => {
+    let max = 0;
+    for (const u of users) { const m = /(\d+)\s*$/.exec(u.empId || ""); if (m) max = Math.max(max, parseInt(m[1], 10)); }
+    return `EMP-${String(max + 1).padStart(3, "0")}`;
+  };
+
   const q = query.trim().toLowerCase();
   const filtered = q
     ? users.filter((u) => [u.name, u.email, u.empId, u.role].some((v) => (v || "").toLowerCase().includes(q)))
@@ -237,7 +244,10 @@ export default function UserManagement() {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><IdCard size={13} /> Employee ID</label>
-                    <input value={form.empId} onChange={(e) => setForm({ ...form, empId: e.target.value })} placeholder="EMP-011" className={field} />
+                    <div className="flex gap-2">
+                      <input value={form.empId} onChange={(e) => setForm({ ...form, empId: e.target.value })} placeholder="EMP-011" className={field} />
+                      <button type="button" onClick={() => setForm({ ...form, empId: nextEmpId() })} title="Auto-generate the next ID (still editable)" className="shrink-0 px-3 rounded-2xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 inline-flex items-center gap-1.5"><Wand2 size={14} /> Auto</button>
+                    </div>
                   </div>
                 </div>
                 <div>
