@@ -17,6 +17,10 @@ router.param("rid", (req, res, next, value) => {
 });
 
 const clean = (s: unknown, max: number) => String(s ?? "").slice(0, max);
+// CR-P-60 — sanitise the "also notify" lists.
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const cleanIds = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 30) : []);
+const cleanEmails = (v: unknown) => (Array.isArray(v) ? Array.from(new Set(v.map((x) => String(x).trim().toLowerCase()).filter((e) => EMAIL_RX.test(e)))).slice(0, 30) : []);
 
 // List my reminders. ?status=Pending|Completed|Cancelled ; default = all, soonest due first.
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
@@ -24,6 +28,13 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const filter: Record<string, unknown> = { userId: req.user!.userId };
     if (req.query.status) filter.status = String(req.query.status);
     res.json(await Reminder.find(filter).sort({ status: 1, dueAt: 1 }));
+  } catch (err) { next(err); }
+});
+
+// CR-P-60 — staff list for the "notify other employees" picker (any signed-in user, not admin-only).
+router.get("/colleagues", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(await User.find({ role: { $ne: "subcontractor" }, archived: { $ne: true } }).select("name email").sort({ name: 1 }).lean());
   } catch (err) { next(err); }
 });
 
@@ -45,6 +56,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       projectId: clean(b.projectId, 60),
       projectName: clean(b.projectName, 200),
       emailEnabled: !!b.emailEnabled,
+      recipients: cleanIds(b.recipients),
+      externalEmails: cleanEmails(b.externalEmails),
       status: "Pending",
     });
     res.status(201).json(r);
@@ -64,6 +77,8 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (typeof b.projectId === "string") r.projectId = clean(b.projectId, 60);
     if (typeof b.projectName === "string") r.projectName = clean(b.projectName, 200);
     if (typeof b.emailEnabled === "boolean") r.emailEnabled = b.emailEnabled;
+    if (Array.isArray(b.recipients)) r.recipients = cleanIds(b.recipients);
+    if (Array.isArray(b.externalEmails)) r.externalEmails = cleanEmails(b.externalEmails);
     if (b.dueAt) {
       const d = new Date(b.dueAt);
       if (isNaN(d.getTime())) return res.status(400).json({ error: "Invalid date and time." });
@@ -147,6 +162,20 @@ async function sweep(): Promise<number> {
                    <p>Due: ${r.dueAt.toLocaleString()}</p>`,
           });
         }
+      }
+      // CR-P-60 — also notify tagged employees (in-app + email) and external emails.
+      const dueLabel = r.dueAt.toLocaleString();
+      const bodyHtml = (greet: string) => `<p>${greet}</p><p>Reminder: <strong>${r.title}</strong></p>${r.contextLabel ? `<p>Regarding: ${r.contextLabel}</p>` : ""}${r.notes ? `<p>${r.notes}</p>` : ""}<p>Due: ${dueLabel}</p>`;
+      for (const rid of r.recipients || []) {
+        try {
+          await createNotification({ userId: rid, type: "reminder", reminderId: String(r._id), title: `Reminder: ${r.title}`, message: [r.contextLabel, r.notes].filter(Boolean).join(" — ") || "A reminder is due.", link: r.link || "/dashboard/reminders" });
+          const ru = await User.findById(rid).select("email name").lean();
+          const remail = (ru as { email?: string } | null)?.email;
+          if (remail) await sendMail({ to: remail, subject: `Reminder: ${r.title}`, html: bodyHtml(`Hi ${(ru as { name?: string } | null)?.name || "there"},`) });
+        } catch { /* skip one bad recipient */ }
+      }
+      for (const em of r.externalEmails || []) {
+        try { await sendMail({ to: em, subject: `Reminder: ${r.title}`, html: bodyHtml("Hi,") }); } catch { /* skip one bad address */ }
       }
       sent++;   // notifiedAt was already stamped by the claim above
     } catch { /* skip this one; the rest still fire */ }

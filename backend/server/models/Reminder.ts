@@ -16,6 +16,8 @@ export interface IReminder extends Document {
   projectId: string;       // the project this reminder is about (for the project filter)
   projectName: string;     // denormalised for display / filtering without a join
   emailEnabled: boolean;
+  recipients: string[];       // CR-P-60 — other users (ids) to also notify (in-app + email)
+  externalEmails: string[];   // CR-P-60 — outside emails to also notify (title + notes + time)
   notifiedAt: Date | null; // set when the due notification has been sent (fire once)
   completedAt: Date | null;
 }
@@ -32,6 +34,8 @@ const ReminderSchema = new Schema<IReminder>(
     projectId: { type: String, default: "" },
     projectName: { type: String, default: "" },
     emailEnabled: { type: Boolean, default: false },
+    recipients: { type: [String], default: [] },       // CR-P-60
+    externalEmails: { type: [String], default: [] },   // CR-P-60
     notifiedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
   },

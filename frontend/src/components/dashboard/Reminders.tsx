@@ -4,7 +4,8 @@ import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, A
 import NotificationsPanel from "./NotificationsPanel";
 import {
   fetchReminders, createReminder, updateReminder, deleteReminder, fetchProjects, getAuthUser,
-  type ApiReminder, type ReminderStatus, type ApiProject,
+  fetchReminderColleagues,
+  type ApiReminder, type ReminderStatus, type ApiProject, type ReminderColleague,
 } from "../../lib/api";
 import { localDateTime } from "./ReminderButton";
 import { useMeta } from "../../hooks/useMeta";
@@ -51,8 +52,12 @@ export default function Reminders() {
   const [projectFilter, setProjectFilter] = useState("all");  // per-tab project filter
   const [busy, setBusy] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id: string | null } | null>(null);
-  const [form, setForm] = useState({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "" });
+  const [form, setForm] = useState({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "", recipients: [] as string[], externalEmails: [] as string[] });
   const [saving, setSaving] = useState(false);
+  // CR-P-60 — colleagues for the "notify other employees" picker + external-email chip input.
+  const [colleagues, setColleagues] = useState<ReminderColleague[]>([]);
+  const [emailInput, setEmailInput] = useState("");
+  useEffect(() => { fetchReminderColleagues().then(setColleagues).catch(() => {}); }, []);
   const { confirm, dialogs } = useDialogs();
   // Top-level view: the reminders list, or the full notifications history (?view=notifications,
   // linked from the bell's "See all notifications").
@@ -107,13 +112,15 @@ export default function Reminders() {
   }, [list]);
   const overdue = useMemo(() => list.filter(isOverdue), [list]);
 
-  const openNew = () => { setForm({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "" }); setEditor({ id: null }); };
+  const openNew = () => { setForm({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "", recipients: [], externalEmails: [] }); setEmailInput(""); setEditor({ id: null }); };
   const openEdit = (r: ApiReminder) => {
     const d = new Date(r.dueAt); const pad = (v: number) => String(v).padStart(2, "0");
     setForm({
       title: r.title, notes: r.notes, emailEnabled: r.emailEnabled, link: r.link, projectId: r.projectId || "",
+      recipients: r.recipients || [], externalEmails: r.externalEmails || [],
       dueAt: isNaN(d.getTime()) ? localDateTime(60) : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
     });
+    setEmailInput("");
     setEditor({ id: r._id });
   };
   const save = async () => {
@@ -125,6 +132,7 @@ export default function Reminders() {
       const body = {
         title: form.title.trim(), notes: form.notes, dueAt: new Date(form.dueAt).toISOString(),
         emailEnabled: form.emailEnabled,
+        recipients: form.recipients, externalEmails: form.externalEmails,
         // Default the link to the chosen project when the user didn't type one.
         link: form.link || (proj ? `/dashboard/projects/${proj.id}` : ""),
         projectId: form.projectId, projectName: proj?.name || "",
@@ -154,6 +162,14 @@ export default function Reminders() {
     try { await deleteReminder(r._id); setList((p) => p.filter((x) => x._id !== r._id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
+  // CR-P-60 — add an external email chip.
+  const addEmail = () => {
+    const e = emailInput.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { toast("Enter a valid email address.", "error"); return; }
+    setForm((f) => (f.externalEmails.includes(e) ? f : { ...f, externalEmails: [...f.externalEmails, e] }));
+    setEmailInput("");
+  };
+  const myId = getAuthUser()?.id;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -305,6 +321,45 @@ export default function Reminders() {
                 <input type="checkbox" checked={form.emailEnabled} onChange={(e) => setForm({ ...form, emailEnabled: e.target.checked })} />
                 Also email me when it's due
               </label>
+
+              {/* CR-P-60 — also notify other employees (in-app + email when due). */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Also notify employees{form.recipients.length > 0 ? ` (${form.recipients.length})` : ""}</p>
+                {colleagues.filter((c) => c._id !== myId).length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">No colleagues to notify.</p>
+                ) : (
+                  <div className="max-h-28 overflow-y-auto rounded-xl border border-slate-100 p-2 space-y-0.5">
+                    {colleagues.filter((c) => c._id !== myId).map((c) => {
+                      const on = form.recipients.includes(c._id);
+                      return (
+                        <label key={c._id} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
+                          <input type="checkbox" checked={on} onChange={(e) => setForm((f) => ({ ...f, recipients: e.target.checked ? [...f.recipients, c._id] : f.recipients.filter((x) => x !== c._id) }))} />
+                          <span className="font-bold text-slate-700 truncate">{c.name}</span>
+                          <span className="text-slate-400 truncate">{c.email}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* CR-P-60 — external emails: people outside the platform get the title, remarks & time. */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">External emails</p>
+                {form.externalEmails.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {form.externalEmails.map((em) => (
+                      <span key={em} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">{em}<button type="button" onClick={() => setForm((f) => ({ ...f, externalEmails: f.externalEmails.filter((x) => x !== em) }))} className="text-slate-400 hover:text-red-500"><X size={11} /></button></span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input value={emailInput} onChange={(e) => setEmailInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEmail(); } }} placeholder="name@example.com" className={inp} />
+                  <button type="button" onClick={addEmail} className="px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 shrink-0">Add</button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">They receive an email with the title, remarks and time when it's due.</p>
+              </div>
+
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setEditor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
                 <button onClick={save} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} {editor.id ? "Save changes" : "Set reminder"}</button>

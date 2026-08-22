@@ -1734,10 +1734,13 @@ export interface ApiReminder {
   _id: string; userId: string; title: string; notes: string;
   dueAt: string; status: ReminderStatus; link: string; contextLabel: string;
   projectId: string; projectName: string;
-  emailEnabled: boolean; notifiedAt: string | null; completedAt: string | null;
+  emailEnabled: boolean; recipients?: string[]; externalEmails?: string[];
+  notifiedAt: string | null; completedAt: string | null;
   createdAt?: string;
 }
-export type ReminderInput = Partial<Pick<ApiReminder, "title" | "notes" | "dueAt" | "link" | "contextLabel" | "projectId" | "projectName" | "emailEnabled" | "status">>;
+export type ReminderInput = Partial<Pick<ApiReminder, "title" | "notes" | "dueAt" | "link" | "contextLabel" | "projectId" | "projectName" | "emailEnabled" | "recipients" | "externalEmails" | "status">>;
+export interface ReminderColleague { _id: string; name: string; email: string }
+export async function fetchReminderColleagues(): Promise<ReminderColleague[]> { return request(`/reminders/colleagues`); }
 export async function fetchReminders(status?: ReminderStatus): Promise<ApiReminder[]> {
   return request(`/reminders${status ? `?status=${status}` : ""}`);
 }
