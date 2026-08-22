@@ -13,20 +13,21 @@ import { COUNTRY_COORDS } from "../lib/countryCoords";
 
 type Group = { iso: string; coords: [number, number]; projects: ApiPublicProject[] };
 
+// CR-P-52 — small, clean pins for a professional default view.
 const pinIcon = (count: number) =>
   L.divIcon({
     className: "gt-pin",
     html: `
-      <div style="position:relative;width:34px;height:44px;filter:drop-shadow(0 3px 3px rgba(2,6,23,.28))">
-        <svg width="34" height="44" viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 0C5.4 0 0 5.4 0 12c0 8.6 12 20 12 20s12-11.4 12-20C24 5.4 18.6 0 12 0z" fill="#10B981" stroke="#ffffff" stroke-width="1.6"/>
-          <circle cx="12" cy="12" r="4.6" fill="#ffffff"/>
+      <div style="position:relative;width:22px;height:28px;filter:drop-shadow(0 2px 2px rgba(2,6,23,.25))">
+        <svg width="22" height="28" viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.4 0 0 5.4 0 12c0 8.6 12 20 12 20s12-11.4 12-20C24 5.4 18.6 0 12 0z" fill="#10B981" stroke="#ffffff" stroke-width="1.8"/>
+          <circle cx="12" cy="12" r="4.4" fill="#ffffff"/>
         </svg>
-        ${count > 1 ? `<span style="position:absolute;top:-4px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#0f172a;color:#fff;font:700 10px/18px system-ui,sans-serif;text-align:center;border:2px solid #fff">${count}</span>` : ""}
+        ${count > 1 ? `<span style="position:absolute;top:-5px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:9999px;background:#0f172a;color:#fff;font:700 9px/15px system-ui,sans-serif;text-align:center;border:1.5px solid #fff">${count}</span>` : ""}
       </div>`,
-    iconSize: [34, 44],
-    iconAnchor: [17, 44],
-    popupAnchor: [0, -40],
+    iconSize: [22, 28],
+    iconAnchor: [11, 28],
+    popupAnchor: [0, -26],
   });
 
 // Frame the map to the pins once they load.
@@ -91,7 +92,7 @@ export default function ProjectsMap() {
           <MapContainer
             center={[20, 10]}
             zoom={2}
-            scrollWheelZoom={false}
+            scrollWheelZoom={true}
             worldCopyJump
             style={{ height: "480px", width: "100%", background: "#eef2f6" }}
           >
