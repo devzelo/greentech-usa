@@ -2,17 +2,33 @@ import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import CompanyTab from "../models/CompanyTab";
 import CompanyFile from "../models/CompanyFile";
 import CompanyDetail from "../models/CompanyDetail";
+import ClassifiedAccess from "../models/ClassifiedAccess";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
+import { JWT_SECRET } from "../config/secrets";
 
 const router = Router();
 router.use(requireAuth);
 router.use(blockGuests); // company & classified documents are internal (non-guest)
 
-// Classified documents are admin-only (only Reza / admin accounts).
+// Classified documents are admin-only OR an employee who has entered the PIN (CR-P). An admin
+// always passes; otherwise a valid short-lived "classified" token (from /classified-access/verify)
+// in the x-classified-token header unlocks read access while the feature is enabled.
 const isAdmin = (req: AuthedRequest) => req.user?.role === "admin";
+const classifiedAllowed = async (req: AuthedRequest): Promise<boolean> => {
+  if (isAdmin(req)) return true;
+  const token = String(req.headers["x-classified-token"] || "");
+  if (!token) return false;
+  try { const d = jwt.verify(token, JWT_SECRET) as { classified?: boolean }; if (!d.classified) return false; }
+  catch { return false; }
+  // A valid PIN token only grants access while the feature is still enabled.
+  const doc = await ClassifiedAccess.findOne({ key: "singleton" }).select("enabled").lean();
+  return !!(doc as { enabled?: boolean } | null)?.enabled;
+};
 
 // ── Company Details (CR-P-37) — admin-managed custom fields ───────────────────
 const DEFAULT_DETAILS: Array<{ label: string; value: string }> = [
@@ -64,6 +80,46 @@ router.delete("/details/:id", async (req: AuthedRequest, res: Response, next: Ne
     if (!isAdmin(req)) return res.status(403).json({ error: "Only an admin can edit company details." });
     await CompanyDetail.findByIdAndDelete(req.params.id);
     res.json({ message: "Deleted" });
+  } catch (err) { next(err); }
+});
+
+// ── Classified access PIN (CR-P) — admin managed, employee unlock ─────────────
+const classifiedDoc = async () => (await ClassifiedAccess.findOne({ key: "singleton" })) || (await ClassifiedAccess.create({ key: "singleton" }));
+
+// Status — every non-guest can read whether the tab is available + PIN-protected.
+router.get("/classified-access", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const doc = await classifiedDoc();
+    res.json({ enabled: doc.enabled, hasPin: !!doc.pinHash, isAdmin: isAdmin(req) });
+  } catch (err) { next(err); }
+});
+
+// Admin: enable/disable + set/update the PIN.
+router.put("/classified-access", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
+    const doc = await classifiedDoc();
+    if (typeof req.body?.enabled === "boolean") doc.enabled = req.body.enabled;
+    if (typeof req.body?.pin === "string" && req.body.pin.trim()) {
+      const pin = req.body.pin.trim();
+      if (!/^\d{4,12}$/.test(pin)) return res.status(400).json({ error: "PIN must be 4–12 digits." });
+      doc.pinHash = await bcrypt.hash(pin, 10);
+    }
+    await doc.save();
+    res.json({ enabled: doc.enabled, hasPin: !!doc.pinHash });
+  } catch (err) { next(err); }
+});
+
+// Employee: verify the PIN → short-lived token that unlocks classified reads.
+router.post("/classified-access/verify", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const doc = await classifiedDoc();
+    if (!doc.enabled) return res.status(403).json({ error: "Classified access is disabled." });
+    if (!doc.pinHash) return res.status(400).json({ error: "No PIN has been set yet." });
+    const ok = await bcrypt.compare(String(req.body?.pin || ""), doc.pinHash);
+    if (!ok) return res.status(401).json({ error: "Incorrect PIN." });
+    const token = jwt.sign({ classified: true, uid: req.user!.userId }, JWT_SECRET, { expiresIn: "8h" });
+    res.json({ token });
   } catch (err) { next(err); }
 });
 
@@ -188,7 +244,7 @@ router.get("/tabs", async (req: AuthedRequest, res: Response, next: NextFunction
   try {
     await ensureSeeded();
     const classified = req.query.kind === "classified";
-    if (classified && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
+    if (classified && !(await classifiedAllowed(req))) return res.status(403).json({ error: "Classified access required." });
     // Legacy tabs without `kind` are treated as company.
     const filter = classified ? { kind: "classified" } : { kind: { $ne: "classified" } };
     const tabs = await CompanyTab.find(filter).sort({ order: 1, createdAt: 1 }).lean();
@@ -264,7 +320,7 @@ router.get("/files", async (req: AuthedRequest, res: Response, next: NextFunctio
   try {
     await ensureSeeded();
     const kind = req.query.kind === "classified" ? "classified" : "company";
-    if (kind === "classified" && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
+    if (kind === "classified" && !(await classifiedAllowed(req))) return res.status(403).json({ error: "Classified access required." });
     // Both areas are tabbed — files are scoped to the selected tab.
     // CR-P-39 — ?archived=true shows only archived files; default hides them.
     const wantArchived = req.query.archived === "true";

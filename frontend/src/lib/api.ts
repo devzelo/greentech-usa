@@ -513,6 +513,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(options?.headers as Record<string, string> | undefined),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
+  // CR-P — carry the classified-access token (from the PIN unlock) so employees can read classified.
+  const cls = getClassifiedToken();
+  if (cls) headers['x-classified-token'] = cls;
 
   const res = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
   if (res.status === 401) {
@@ -2487,6 +2490,19 @@ export async function fetchCompanyFiles(opts: { kind: "company" | "classified"; 
 export async function setCompanyFileArchived(id: string, archived: boolean): Promise<CompanyFile> {
   return request(`/company/files/${id}`, { method: 'PATCH', body: JSON.stringify({ archived }) });
 }
+// ── Classified access PIN (CR-P) ─────────────────────────────────────────────
+const CLASSIFIED_TOKEN_KEY = 'gt_classified_token';
+export function getClassifiedToken(): string { try { return sessionStorage.getItem(CLASSIFIED_TOKEN_KEY) || ''; } catch { return ''; } }
+export function setClassifiedToken(t: string): void { try { t ? sessionStorage.setItem(CLASSIFIED_TOKEN_KEY, t) : sessionStorage.removeItem(CLASSIFIED_TOKEN_KEY); } catch { /* ignore */ } }
+export interface ClassifiedAccessStatus { enabled: boolean; hasPin: boolean; isAdmin: boolean }
+export async function fetchClassifiedAccess(): Promise<ClassifiedAccessStatus> { return request('/company/classified-access'); }
+export async function updateClassifiedAccess(body: { enabled?: boolean; pin?: string }): Promise<{ enabled: boolean; hasPin: boolean }> {
+  return request('/company/classified-access', { method: 'PUT', body: JSON.stringify(body) });
+}
+export async function verifyClassifiedPin(pin: string): Promise<{ token: string }> {
+  return request('/company/classified-access/verify', { method: 'POST', body: JSON.stringify({ pin }) });
+}
+
 // Company stamps (the classified Stamps tab) — readable by any staff to stamp a PO.
 export async function fetchStamps(): Promise<CompanyFile[]> { return request('/company/stamps'); }
 export async function fetchNdaFiles(): Promise<CompanyFile[]> { return request('/company/nda-files'); }

@@ -15,6 +15,8 @@ import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
 import CompanyDocs from "./CompanyDocs";
 import ClassifiedDocs from "./ClassifiedDocs";
+import { ClassifiedPinManager, ClassifiedPinGate } from "./ClassifiedPin";
+import { fetchClassifiedAccess, getClassifiedToken, type ClassifiedAccessStatus } from "../../lib/api";
 import { useMeta } from "../../hooks/useMeta";
 
 // Two views only (client spec): LIST (same style as My Projects / All Projects) and COLUMN/grid.
@@ -141,6 +143,12 @@ export default function Documents() {
     setDetails((p) => p.filter((d) => d._id !== id));
     deleteCompanyDetail(id).catch((err) => toast(err instanceof Error ? err.message : "Delete failed.", "error"));
   };
+  // CR-P — classified access: employees unlock the tab with a PIN; admins manage the PIN.
+  const [clsAccess, setClsAccess] = useState<ClassifiedAccessStatus | null>(null);
+  const [clsUnlocked, setClsUnlocked] = useState<boolean>(!!getClassifiedToken());
+  useEffect(() => { if (!isGuest) fetchClassifiedAccess().then(setClsAccess).catch(() => {}); }, [isGuest]);
+  const showClassifiedTab = !isGuest && (isAdmin || !!clsAccess?.enabled);
+
   // The homepage's two quick downloads, surfaced here for fast access.
   const COMPANY_DOWNLOADS = [
     { label: "Fact Sheet", href: "/downloads/greentech-factsheet.pdf", file: "greentech-factsheet.pdf" },
@@ -290,7 +298,7 @@ export default function Documents() {
               <Building2 size={14} className="shrink-0" /> Company<span className="hidden sm:inline"> Documents</span>
             </button>
           )}
-          {isAdmin && (
+          {showClassifiedTab && (
             <button
               onClick={() => setTab("classified")}
               className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${tab === "classified" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}
@@ -645,7 +653,14 @@ export default function Documents() {
         </>
       )}
 
-      {tab === "classified" && isAdmin && <ClassifiedDocs />}
+      {tab === "classified" && !isGuest && (
+        <div className="space-y-5">
+          {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
+          {(isAdmin || clsUnlocked)
+            ? <ClassifiedDocs />
+            : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
+        </div>
+      )}
 
       <AnimatePresence>
         {selected && (
