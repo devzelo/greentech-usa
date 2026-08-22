@@ -580,10 +580,12 @@ export interface AdminUser {
   _id: string;
   name: string;
   email: string;
+  personalEmail?: string;
   role: string;
   empId?: string;
   phone?: string;
   avatarUrl?: string;
+  jobTitle?: string;
   createdAt?: string;
 }
 
@@ -592,15 +594,30 @@ export async function fetchUsers(): Promise<AdminUser[]> {
 }
 
 export async function createUser(body: {
-  name: string; email: string; password: string; role: string; empId?: string; phone?: string;
+  name: string; email: string; password: string; role: string; empId?: string; phone?: string; personalEmail?: string;
 }): Promise<AdminUser> {
   return request<AdminUser>('/users', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function updateUser(id: string, body: Partial<{
-  name: string; email: string; role: string; empId: string; phone: string;
+  name: string; email: string; role: string; empId: string; phone: string; personalEmail: string;
 }>): Promise<AdminUser> {
   return request<AdminUser>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+// CR-P-57 — admin-uploaded documents on a user profile.
+export interface UserFile { _id: string; userId: string; name: string; fileType: string; size: string; filePath?: string; url?: string; description?: string; uploadedByName?: string; createdAt?: string }
+export async function fetchUserFiles(userId: string): Promise<UserFile[]> { return request(`/users/${userId}/files`); }
+export async function uploadUserFile(userId: string, file: File, description = ""): Promise<UserFile> {
+  const fd = new FormData(); fd.append("file", file); if (description) fd.append("description", description);
+  return postMultipart<UserFile>(`/api/users/${userId}/files`, fd);
+}
+export async function deleteUserFile(userId: string, fid: string): Promise<void> { await request(`/users/${userId}/files/${fid}`, { method: "DELETE" }); }
+export function userFileUrl(f: UserFile): string {
+  if (f.url) return f.url;
+  const norm = (f.filePath || "").replace(/\\/g, "/");
+  const rel = norm.startsWith("uploads/") ? norm.slice("uploads/".length) : norm;
+  return withFileToken(`/uploads/${rel}`);
 }
 
 export async function adminResetPassword(id: string, password: string): Promise<{ message: string }> {

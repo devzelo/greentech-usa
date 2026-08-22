@@ -1,8 +1,18 @@
 import { Router, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
 import User from "../models/User";
+import UserFile from "../models/UserFile";
 import Employee from "../models/Employee";
 import { requireAuth, AuthedRequest, requireAdmin } from "../middleware/auth";
+
+const humanFileSize = (bytes: number) => {
+  if (!bytes) return "0 B";
+  const u = ["B", "KB", "MB", "GB"]; const i = Math.min(u.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${u[i]}`;
+};
 
 // Admin user-management portal: list / create / update / delete users and reset passwords.
 // Every route here is admin-only.
@@ -35,7 +45,7 @@ router.get("/", async (_req: AuthedRequest, res: Response, next: NextFunction) =
 // POST /api/users — create an account
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, email, password, role, empId, phone } = req.body || {};
+    const { name, email, password, role, empId, phone, personalEmail } = req.body || {};
     if (!name || !email || !password)
       return res.status(400).json({ error: "Name, email and password are required." });
     if (String(password).length < 8)
@@ -53,6 +63,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       role: normRole,
       empId: empId || "",
       phone: phone || "",
+      personalEmail: personalEmail || "",
     });
     await syncEmployeeDirectory(empId, name);
 
@@ -64,11 +75,12 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 // PATCH /api/users/:id — update profile fields / role (not password)
 router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, email, role, empId, phone } = req.body || {};
+    const { name, email, role, empId, phone, personalEmail } = req.body || {};
     const updates: Record<string, unknown> = {};
     if (typeof name === "string") updates.name = name;
     if (typeof phone === "string") updates.phone = phone;
     if (typeof empId === "string") updates.empId = empId;
+    if (typeof personalEmail === "string") updates.personalEmail = personalEmail;
     if (typeof email === "string" && email.trim()) {
       const lower = email.toLowerCase();
       const clash = await User.findOne({ email: lower, _id: { $ne: req.params.id } });
@@ -114,6 +126,49 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ error: "User not found." });
     res.json({ message: "User deleted." });
+  } catch (err) { next(err); }
+});
+
+// ── CR-P-57 — admin-uploaded documents on a user's profile (any file type) ──
+const userFileStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const uid = String((req as AuthedRequest).params.id || "").replace(/[^\w-]/g, "");
+    const dir = path.join("uploads", "users", uid || "misc");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const userFileUpload = multer({ storage: userFileStorage, limits: { fileSize: 64 * 1024 * 1024 } });
+
+router.get("/:id/files", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try { res.json(await UserFile.find({ userId: req.params.id }).sort({ createdAt: -1 }).lean()); }
+  catch (err) { next(err); }
+});
+router.post("/:id/files", userFileUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const user = await User.exists({ _id: req.params.id });
+    if (!user) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "User not found." }); }
+    const file = await UserFile.create({
+      userId: req.params.id,
+      name: req.file.originalname,
+      fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(),
+      size: humanFileSize(req.file.size),
+      filePath: req.file.path.replace(/\\/g, "/"),
+      description: String(req.body.description || ""),
+      uploadedByName: req.user!.name || "",
+    });
+    res.status(201).json(file);
+  } catch (err) { next(err); }
+});
+router.delete("/:id/files/:fid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const file = await UserFile.findOne({ _id: req.params.fid, userId: req.params.id });
+    if (!file) return res.status(404).json({ error: "File not found." });
+    await file.deleteOne();
+    if (file.filePath) fs.unlink(path.resolve(file.filePath), () => {});
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 

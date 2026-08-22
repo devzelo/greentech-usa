@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2 } from "lucide-react";
+import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, adminResetPassword, deleteUser,
   getAuthUser, AdminUser,
+  fetchUserFiles, uploadUserFile, deleteUserFile, userFileUrl, type UserFile,
 } from "../../lib/api";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
@@ -27,8 +28,8 @@ const overlay = "absolute inset-0 bg-slate-950/40 backdrop-blur-sm";
 const panel = "relative bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto";
 const field = "w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all text-sm font-medium";
 
-interface FormState { name: string; email: string; password: string; role: string; empId: string; phone: string; }
-const emptyForm: FormState = { name: "", email: "", password: "", role: "employee", empId: "", phone: "" };
+interface FormState { name: string; email: string; personalEmail: string; password: string; role: string; empId: string; phone: string; }
+const emptyForm: FormState = { name: "", email: "", personalEmail: "", password: "", role: "employee", empId: "", phone: "" };
 
 export default function UserManagement() {
   useMeta({ title: "User Management", description: "Add, edit, and remove employee accounts and reset passwords." });
@@ -43,6 +44,9 @@ export default function UserManagement() {
   const [editingId, setEditingId] = useState<string | null>(null); // null = creating
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
+  // CR-P-57 — admin-uploaded documents on the user being edited.
+  const [userFiles, setUserFiles] = useState<UserFile[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   // Reset-password modal
   const [pwTarget, setPwTarget] = useState<AdminUser | null>(null);
@@ -67,11 +71,26 @@ export default function UserManagement() {
   };
   useEffect(() => { void load(); }, []);
 
-  const openCreate = () => { setEditingId(null); setForm(emptyForm); setEditorOpen(true); };
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setUserFiles([]); setEditorOpen(true); };
   const openEdit = (u: AdminUser) => {
     setEditingId(u._id);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role, empId: u.empId || "", phone: u.phone || "" });
+    setForm({ name: u.name, email: u.email, personalEmail: u.personalEmail || "", password: "", role: u.role, empId: u.empId || "", phone: u.phone || "" });
+    setUserFiles([]);
+    fetchUserFiles(u._id).then(setUserFiles).catch(() => setUserFiles([]));
     setEditorOpen(true);
+  };
+  // CR-P-57 — upload / delete a document on the user being edited (admin only).
+  const uploadDoc = async (file: File) => {
+    if (!editingId) return;
+    setUploadingDoc(true);
+    try { const f = await uploadUserFile(editingId, file); setUserFiles((p) => [f, ...p]); toast("Document uploaded.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+    finally { setUploadingDoc(false); }
+  };
+  const removeDoc = async (f: UserFile) => {
+    if (!editingId) return;
+    try { await deleteUserFile(editingId, f._id); setUserFiles((p) => p.filter((x) => x._id !== f._id)); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
   };
 
   const saveUser = async () => {
@@ -80,10 +99,10 @@ export default function UserManagement() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateUser(editingId, { name: form.name, email: form.email, role: form.role, empId: form.empId, phone: form.phone });
+        await updateUser(editingId, { name: form.name, email: form.email, personalEmail: form.personalEmail, role: form.role, empId: form.empId, phone: form.phone });
         toast("User updated.", "success");
       } else {
-        await createUser({ name: form.name, email: form.email, password: form.password, role: form.role, empId: form.empId, phone: form.phone });
+        await createUser({ name: form.name, email: form.email, personalEmail: form.personalEmail, password: form.password, role: form.role, empId: form.empId, phone: form.phone });
         toast("User created.", "success");
       }
       setEditorOpen(false);
@@ -220,17 +239,24 @@ export default function UserManagement() {
                 <button onClick={() => setEditorOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
               <div className="space-y-4">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Personal information</p>
                 <div>
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><span>Full name</span></label>
                   <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Reza Esfandiari" className={field} />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Email</label>
-                  <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@greentech-usa.com" className={field} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Business email <span className="font-medium text-slate-400 normal-case">(login)</span></label>
+                    <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@greentech-usa.com" className={field} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Personal email</label>
+                    <input value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} placeholder="Optional" className={field} />
+                  </div>
                 </div>
                 {!editingId && (
                   <div>
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><KeyRound size={13} /> Temporary password</label>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><KeyRound size={13} /> Temp password</label>
                     <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" className={field} />
                     <p className="text-[11px] text-slate-400 mt-1">The employee can change this later from their profile.</p>
                   </div>
@@ -253,6 +279,35 @@ export default function UserManagement() {
                 <div>
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Phone size={13} /> Phone</label>
                   <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" className={field} />
+                </div>
+
+                {/* CR-P-57 — admin can attach any document to the user. */}
+                <div className="border-t border-slate-100 pt-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5"><FileText size={13} /> Documents {userFiles.length > 0 && <span className="text-slate-400">({userFiles.length})</span>}</label>
+                    {editingId && (
+                      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary cursor-pointer">
+                        {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                        <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); e.target.value = ""; }} />
+                      </label>
+                    )}
+                  </div>
+                  {!editingId ? (
+                    <p className="text-[11px] text-slate-400 italic">Create the user first, then upload documents from Edit.</p>
+                  ) : userFiles.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic">No documents yet. Upload contracts, IDs, or any file.</p>
+                  ) : (
+                    <div className="space-y-1.5">{userFiles.map((f) => (
+                      <div key={f._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                        <span className="flex items-center gap-1.5 min-w-0"><FileText size={13} className="text-slate-400 shrink-0" /><span className="font-bold text-slate-700 truncate" title={f.name}>{f.name}</span>{f.size && <span className="text-slate-400 shrink-0">· {f.size}</span>}</span>
+                        <span className="flex items-center gap-1 shrink-0">
+                          <a href={userFileUrl(f)} target="_blank" rel="noreferrer" className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></a>
+                          <a href={userFileUrl(f)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
+                          <button onClick={() => removeDoc(f)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+                        </span>
+                      </div>
+                    ))}</div>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3 mt-8">

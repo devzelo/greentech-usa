@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
   role:             { type: String, enum: ['admin', 'employee', 'subcontractor'], default: 'employee' },
   empId:            { type: String, default: '' },
   phone:            { type: String, default: '' },
+  personalEmail:    { type: String, default: '' }, // CR-P-57 — personal email (login uses `email` = business email)
   avatarUrl:        { type: String, default: '' },
   signatureUrl:     { type: String, default: '' }, // personal signature image, used on PO documents
   jobTitle:         { type: String, default: '' },
