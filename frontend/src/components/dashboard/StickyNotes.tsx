@@ -3,6 +3,12 @@ import { StickyNote as StickyIcon, Plus, Trash2, Loader2 } from "lucide-react";
 import { fetchStickyNotes, createStickyNote, updateStickyNote, deleteStickyNote, type ApiStickyNote } from "../../lib/api";
 import { toast } from "../../lib/toast";
 
+const fmtWhen = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
 // CR-P-63 — personal sticky notes on the Reminders page. Each note auto-saves (debounced while
 // typing, and on blur) and is kept until the owner deletes it.
 export default function StickyNotes() {
@@ -22,12 +28,14 @@ export default function StickyNotes() {
     catch (e) { toast(e instanceof Error ? e.message : "Could not add note.", "error"); }
     finally { setAdding(false); }
   };
+  // Reflect the server's new updatedAt so the "Edited …" stamp stays accurate.
+  const applySaved = (saved: ApiStickyNote) => setNotes((p) => p.map((n) => (n._id === saved._id ? { ...n, updatedAt: saved.updatedAt } : n)));
   const edit = (id: string, text: string) => {
     setNotes((p) => p.map((n) => (n._id === id ? { ...n, text } : n)));
     clearTimeout(timers.current[id]);
-    timers.current[id] = setTimeout(() => { updateStickyNote(id, { text }).catch(() => {}); }, 700);
+    timers.current[id] = setTimeout(() => { updateStickyNote(id, { text }).then(applySaved).catch(() => {}); }, 700);
   };
-  const saveNow = (id: string, text: string) => { clearTimeout(timers.current[id]); updateStickyNote(id, { text }).catch(() => {}); };
+  const saveNow = (id: string, text: string) => { clearTimeout(timers.current[id]); updateStickyNote(id, { text }).then(applySaved).catch(() => {}); };
   const remove = async (id: string) => {
     clearTimeout(timers.current[id]);
     try { await deleteStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); }
@@ -56,9 +64,9 @@ export default function StickyNotes() {
                 placeholder="Write a note…"
                 className="w-full bg-transparent resize-y text-sm text-slate-700 outline-none placeholder:text-amber-700/40 leading-relaxed"
               />
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[9px] font-bold text-amber-600/70 uppercase tracking-wide">Auto-saved</span>
-                <button onClick={() => remove(n._id)} className="p-1 rounded text-amber-600/60 hover:text-red-500" title="Delete note"><Trash2 size={13} /></button>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span className="text-[9px] font-bold text-amber-600/70 truncate" title={n.updatedAt ? `Last edited ${fmtWhen(n.updatedAt)}` : ""}>{n.updatedAt ? `Edited ${fmtWhen(n.updatedAt)}` : "Auto-saved"}</span>
+                <button onClick={() => remove(n._id)} className="p-1 rounded text-amber-600/60 hover:text-red-500 shrink-0" title="Delete note"><Trash2 size={13} /></button>
               </div>
             </div>
           ))}
