@@ -217,7 +217,9 @@ export default function DashboardLayout() {
           width: isSidebarOpen ? 244 : isMobile ? 0 : 72,
           x: isMobile && !isSidebarOpen ? -244 : 0
         }}
-        className={`fixed lg:relative flex-shrink-0 z-[110] h-screen bg-white border-r border-slate-200 flex flex-col overflow-hidden shadow-xl lg:shadow-none`}
+        // CR-P — z-[110] on mobile keeps the drawer above its overlay; lg:z-30 on desktop puts the
+        // sidebar below the modal layer (modals are z-50+) so any open modal's backdrop covers it.
+        className={`fixed lg:relative flex-shrink-0 z-[110] lg:z-30 h-screen bg-white border-r border-slate-200 flex flex-col overflow-hidden shadow-xl lg:shadow-none`}
       >
         {/* Sidebar Header — dark band behind the logo, matching the public top nav.
             Clicking the logo goes to Overview; the arrow collapses/expands the panel. */}

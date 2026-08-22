@@ -5,9 +5,12 @@ import {
   uploadPOAttachment, deletePOAttachment, fetchRfqs, fetchVendors, attachmentUrl,
   fetchProcurementItems, fetchProcurementSections, uploadDocument,
   fetchSignatories, fetchStamps, uploadPOPartyImage, attachPOFile, fetchSubmittals, invoiceFromPO, fetchInvoices,
+  fetchCompanies, withFileToken, COMPANY_CATEGORIES,
   type ApiProcurementPO, type ApiRfq, type ApiVendor, type ApiProcurementItem, type ApiProcurementSection,
-  type ApiSignatory, type CompanyFile, type ApiSubmittal,
+  type ApiSignatory, type CompanyFile, type ApiSubmittal, type ApiCompany,
 } from "../../lib/api";
+import { useNavigate } from "react-router-dom";
+import { Building2 } from "lucide-react";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
@@ -54,6 +57,22 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const [partnerPicker, setPartnerPicker] = useState<{ pid: string; target: "signature" | "stamp" } | null>(null);
   const { confirm, dialogs } = useDialogs();
   const hasPartner = !!projectInfo?.partner;
+  const navigate = useNavigate();
+  // CR-P — the PO "To" company is chosen from the whole Directory via a full-screen modal.
+  const [dirPickerPo, setDirPickerPo] = useState<ApiProcurementPO | null>(null);
+  const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companySearch, setCompanySearch] = useState("");
+  useEffect(() => {
+    if (!dirPickerPo || companies.length) return;
+    setCompaniesLoading(true);
+    fetchCompanies().then(setCompanies).catch(() => setCompanies([])).finally(() => setCompaniesLoading(false));
+  }, [dirPickerPo, companies.length]);
+  const selectCompanyForPo = (po: ApiProcurementPO, c: ApiCompany) => {
+    updateProcurementPO(projectId, po._id, { vendorName: c.name, vendorId: "" }).then((p) => patch(po._id, p)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+    setDirPickerPo(null); setCompanySearch("");
+  };
+  const catLabel = (c: string) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label || c;
 
   const load = async () => {
     setLoading(true);
@@ -307,15 +326,14 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
       <div className="p-4 space-y-4">
         {/* Vendor (editable — a manual PO isn't tied to any BOQ). CR-P-32 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor
-            <select className={`${inp} mt-1 font-bold`} value={po.vendorId || ""} disabled={!canEdit}
-              onChange={(e) => { const v = vendors.find((x) => x._id === e.target.value); updateProcurementPO(projectId, po._id, { vendorId: e.target.value, vendorName: v?.name ?? po.vendorName }).then((p) => patch(po._id, p)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error")); }}>
-              <option value="">— pick from vendors —</option>
-              {vendors.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
-            </select>
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To
+            <button type="button" disabled={!canEdit} onClick={() => setDirPickerPo(po)} className={`${inp} mt-1 font-bold text-left flex items-center justify-between gap-2 ${canEdit ? "hover:border-primary/40" : "opacity-60"}`}>
+              <span className={po.vendorName ? "text-slate-800 truncate" : "text-slate-400"}>{po.vendorName || "Select a company from the Directory…"}</span>
+              <Search size={13} className="text-slate-400 shrink-0" />
+            </button>
           </label>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor name
-            <input className={`${inp} mt-1`} placeholder="Type a vendor name" value={po.vendorName || ""} disabled={!canEdit}
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title
+            <input className={`${inp} mt-1`} placeholder="Title" value={po.vendorName || ""} disabled={!canEdit}
               onChange={(e) => { patch(po._id, { vendorName: e.target.value }); setDirty(true); }}
               onBlur={(e) => updateProcurementPO(projectId, po._id, { vendorName: e.target.value }).then((p) => { patch(po._id, p); setDirty(false); }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"))} />
           </label>
@@ -711,6 +729,54 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
       )}
       {dialogs}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
+
+      {/* CR-P — full-screen Directory picker for the PO "To" company (any company, any category). */}
+      {dirPickerPo && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900">Select a company</h3>
+                <p className="text-[11px] text-slate-400">Pick any company from the Directory — vendor, subcontractor, manufacturer, anyone.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => navigate("/dashboard/directory?category=vendor&new=1")} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary"><Plus size={14} /> Create new in Directory</button>
+                <button onClick={() => { setDirPickerPo(null); setCompanySearch(""); }} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-b border-slate-100">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input autoFocus value={companySearch} onChange={(e) => setCompanySearch(e.target.value)} placeholder="Search companies…" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15 focus:bg-white" />
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              {companiesLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-300"><Loader2 size={20} className="animate-spin" /></div>
+              ) : (() => {
+                const q = companySearch.trim().toLowerCase();
+                const list = companies.filter((c) => !q || `${c.name} ${catLabel(c.category)} ${c.email}`.toLowerCase().includes(q));
+                if (list.length === 0) return <p className="text-center text-sm text-slate-400 italic py-10">No companies{q ? " match your search" : " in the Directory yet"}. Use “Create new in Directory”.</p>;
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {list.map((c) => (
+                      <button key={c._id} onClick={() => selectCompanyForPo(dirPickerPo, c)} className="flex items-center gap-3 p-3 rounded-2xl border border-slate-100 hover:border-primary/40 hover:bg-primary/5 text-left transition-colors">
+                        <span className="w-10 h-10 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                          {c.logoUrl ? <img src={withFileToken(c.logoUrl)} alt="" className="w-full h-full object-contain" /> : <Building2 size={16} className="text-slate-300" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-slate-800 truncate">{c.name}</span>
+                          <span className="block text-[11px] text-slate-400 truncate">{[catLabel(c.category), c.email || c.phone].filter(Boolean).join(" · ")}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* §A1 — Actions modal: status, terms, invoice, documents */}
       {manageId && (() => {
