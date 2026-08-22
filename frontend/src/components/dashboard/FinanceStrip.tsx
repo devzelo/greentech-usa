@@ -21,7 +21,10 @@ export default function FinanceStrip({ five, size = "md" }: { five: FiveNumbers;
         return (
           <div key={m.key} className={`rounded-xl border px-3 py-2 ${t.bg} ${t.border}`}>
             <p className={`font-display font-bold leading-none ${size === "sm" ? "text-sm" : "text-base"} ${t.text}`}>{fmtMoney(val)}</p>
-            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1 truncate">{m.label}</p>
+            <div className="flex items-center gap-1.5 mt-1 min-w-0">
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest truncate">{m.label}</p>
+              {m.tag && <span className={`shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-white border ${t.text} ${t.border}`}>{m.tag}</span>}
+            </div>
           </div>
         );
       })}

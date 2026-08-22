@@ -60,11 +60,13 @@ export function sumFive(list: FiveNumbers[]): FiveNumbers {
 }
 
 // The canonical labels + colour tones — same names in every place they're shown.
-export const FIVE_META: { key: keyof FiveNumbers; label: string; tone: "rose" | "amber" | "emerald" | "blue" | "primary" }[] = [
+// CR-P — "Remaining Income" is labelled "Pending Income" (data key stays remainingIncome);
+// Pending Expenses carries a "Payables" tag and Pending Income a "Receivables" tag.
+export const FIVE_META: { key: keyof FiveNumbers; label: string; tone: "rose" | "amber" | "emerald" | "blue" | "primary"; tag?: string }[] = [
   { key: "approvedExpenses", label: "Approved Expenses", tone: "rose" },
-  { key: "pendingExpenses", label: "Pending Expenses", tone: "amber" },
+  { key: "pendingExpenses", label: "Pending Expenses", tone: "amber", tag: "Payables" },
   { key: "incomeReceived", label: "Income Received", tone: "emerald" },
-  { key: "remainingIncome", label: "Remaining Income", tone: "blue" },
+  { key: "remainingIncome", label: "Pending Income", tone: "blue", tag: "Receivables" },
   { key: "estimatedProfit", label: "Estimated Profit", tone: "primary" },
 ];
 
