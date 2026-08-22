@@ -199,7 +199,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       party2: { ...BLANK_PARTY, ...(defaults?.party2 || {}) },
       contextLines: defaults?.contextLines?.map((l) => ({ ...l })) || [],
       sections: { ...BLANK_SECTIONS },
-      extraSections: [],
+      // CR-P-48 — general agreements seed the four defaults as editable, deletable sections.
+      extraSections: ctx.kind === "general"
+        ? [{ title: "Scope / Description", body: "" }, { title: "Terms & Conditions", body: "" }, { title: "Payment Conditions", body: "" }, { title: "Delivery Conditions", body: "" }]
+        : [],
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "" },
     });
     setEditor({ aid: null });
@@ -214,8 +217,19 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       documentMode: ag.documentMode === "uploaded" ? "uploaded" : "built", uploadFile: null,
       party2: { ...BLANK_PARTY, ...(ag.partySnapshot?.party2 || {}) },
       contextLines: (ag.partySnapshot?.contextLines || []).map((l) => ({ ...l })),
-      sections: { ...BLANK_SECTIONS, ...(ag.sections || {}) },
-      extraSections: (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+      // CR-P-48 — general agreements move any legacy fixed-section content into the editable list
+      // (and clear the fixed fields) so every section can be renamed / deleted.
+      sections: ctx.kind === "general"
+        ? { ...BLANK_SECTIONS, ndaEnabled: ag.sections?.ndaEnabled || false, ndaMode: ag.sections?.ndaMode || "text", ndaText: ag.sections?.ndaText || "", ndaFile: ag.sections?.ndaFile || null }
+        : { ...BLANK_SECTIONS, ...(ag.sections || {}) },
+      extraSections: ctx.kind === "general"
+        ? [
+            ...(([["scope", "Scope / Description"], ["terms", "Terms & Conditions"], ["paymentConditions", "Payment Conditions"], ["deliveryConditions", "Delivery Conditions"]] as const)
+              .filter(([k]) => String(ag.sections?.[k] || "").trim())
+              .map(([k, label]) => ({ title: label, body: String(ag.sections?.[k] || ""), status: "" as SectionStatus }))),
+            ...(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+          ]
+        : (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
     });
     setEditor({ aid: ag._id });
@@ -770,8 +784,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
               </div>
               )}
 
-              {/* Sections — rich text so tables & pictures can be added (rendered into the agreement PDF). */}
-              {([["scope", "Scope / description", 120], ["terms", "Terms & conditions", 160], ["paymentConditions", "Payment conditions", 90], ["deliveryConditions", "Delivery conditions", 90]] as const).map(([f, label, mh]) => (
+              {/* Sections — rich text so tables & pictures can be added (rendered into the agreement PDF).
+                  CR-P-48 — general agreements manage every section through the flexible list below
+                  (rename / delete / reorder). The fixed sections stay for employee & project agreements. */}
+              {ctx.kind !== "general" && ([["scope", "Scope / description", 120], ["terms", "Terms & conditions", 160], ["paymentConditions", "Payment conditions", 90], ["deliveryConditions", "Delivery conditions", 90]] as const).map(([f, label, mh]) => (
                 <div key={f} className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}
                   <div className="mt-1"><RichTextEditor value={draft.sections[f]} onChange={(html) => setDraft({ ...draft, sections: { ...draft.sections, [f]: html } })} minHeight={mh} placeholder={`${label}…`} /></div>
                 </div>
