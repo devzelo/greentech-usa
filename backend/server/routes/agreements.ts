@@ -127,7 +127,7 @@ async function recipientUserId(ctx: Ctx, ag: IAgreement): Promise<string | null>
   return (sub as { userId?: string } | undefined)?.userId || null;
 }
 
-const EDIT_FIELDS = ["name", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
+const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
 
 function buildAgreementRouter(ctx: Ctx): Router {
   const router = Router({ mergeParams: true });
@@ -215,6 +215,8 @@ function buildAgreementRouter(ctx: Ctx): Router {
         ownerEntityType: entityType as AgreementEntityType,
         ownerEntityId: ctx === "project" ? String(b.ownerEntityId || "") : "",
         name: String(b.name || "").slice(0, 160),
+        title: String(b.title || "").slice(0, 200),
+        description: String(b.description || "").slice(0, 4000),
         agreementType: String(b.agreementType || "Custom").slice(0, 60),
         templateId: String(b.templateId || ""),
         effectiveDate: String(b.effectiveDate || ""),
@@ -249,7 +251,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       }
       if (ag.status === "Signed") return res.status(400).json({ error: "A signed agreement is locked. Only cancel/expire are possible." });
       const b = req.body || {};
-      for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : 200);
+      for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : f === "description" ? 4000 : 200);
       if (b.letterhead === "gt" || b.letterhead === "jv") ag.letterhead = b.letterhead;
       if (typeof b.jvLogoUrl === "string") ag.jvLogoUrl = b.jvLogoUrl;
       if (b.documentMode === "built" || b.documentMode === "uploaded") ag.documentMode = b.documentMode;

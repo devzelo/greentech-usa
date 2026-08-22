@@ -1921,7 +1921,7 @@ export interface ApiAgreement {
   _id: string;
   ownerContextType: "user" | "project" | "general";
   ownerUserId: string; ownerProjectId: string; ownerEntityType: "" | AgreementEntityType; ownerEntityId: string;
-  name: string; agreementType: string; templateId: string;
+  name: string; title?: string; description?: string; agreementType: string; templateId: string;
   effectiveDate: string; startDate: string; endDate: string;
   status: AgreementStatus;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
@@ -1967,7 +1967,7 @@ export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archi
   return request(`${agrBase(ctx)}/${aid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
 export interface AgreementInput {
-  name?: string; agreementType?: string; templateId?: string;
+  name?: string; title?: string; description?: string; agreementType?: string; templateId?: string;
   effectiveDate?: string; startDate?: string; endDate?: string;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
   documentMode?: "built" | "uploaded";

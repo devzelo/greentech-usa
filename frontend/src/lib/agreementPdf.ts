@@ -162,9 +162,16 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   }
   cur.gap(50);
 
-  const title = ag.agreementType ? `${ag.agreementType.toUpperCase()} AGREEMENT` : "AGREEMENT";
+  const t = (ag.agreementType || "").trim();
+  // Many types already contain the document word (e.g. "Service Agreement", "Change Order",
+  // "NDA") — only append "AGREEMENT" when it doesn't, so we never print "… AGREEMENT AGREEMENT".
+  const title = t
+    ? (/agreement|contract|order|amendment|modification|addendum|nda|mou|loi|understanding|intent|waiver|release|memorandum|warranty|lease/i.test(t) ? t.toUpperCase() : `${t.toUpperCase()} AGREEMENT`)
+    : "AGREEMENT";
   cur.text(title, bold, 16, GREEN);
-  if (ag.name) cur.text(ag.name, bold, 10, INK);
+  // General agreements show only the type as the heading — the GT- code stays an internal
+  // reference and is not printed on the document (CR-P-45).
+  if (ag.name && ag.ownerContextType !== "general") cur.text(ag.name, bold, 10, INK);
   cur.text(
     [`Effective: ${fmt(ag.effectiveDate)}`, `Start: ${fmt(ag.startDate)}`, `End: ${fmt(ag.endDate)}`, `Status: ${ag.status}`].join("     "),
     font, 8.5, MUTED

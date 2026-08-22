@@ -25,6 +25,8 @@ export interface IAgreement extends Document {
   ownerEntityId: string;      // subId / vendorId; "jv" for the project's partner
 
   name: string;               // auto-generated code (GT-…), editable
+  title: string;              // short human title (general agreements) — CR-P-45
+  description: string;        // description / remarks (general agreements) — CR-P-45
   agreementType: string;      // Employment | Service | Supply | Partnership | NDA | Custom
   templateId: string;
   effectiveDate: string;
@@ -91,6 +93,8 @@ const AgreementSchema = new Schema<IAgreement>(
     ownerEntityId: { type: String, default: "", index: true },
 
     name: { type: String, default: "" },
+    title: { type: String, default: "" },        // CR-P-45
+    description: { type: String, default: "" },   // CR-P-45
     agreementType: { type: String, default: "Custom" },
     templateId: { type: String, default: "" },
     effectiveDate: { type: String, default: "" },

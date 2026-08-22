@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
@@ -9,6 +9,7 @@ import {
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
 import { buildAgreementPdf } from "../../../lib/agreementPdf";
+import { AGREEMENT_TYPE_GROUPS, AGREEMENT_TYPES_FLAT } from "../../../lib/agreementTypes";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { useSectionPresence } from "../../../lib/usePresence";
 import PresenceBar from "../PresenceBar";
@@ -60,7 +61,7 @@ const BLANK_PARTY: ApiAgreementParty = { name: "", contactName: "", address: "",
 const BLANK_SECTIONS: ApiAgreementSections = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "", ndaEnabled: false, ndaMode: "text", ndaText: "", ndaFile: null };
 
 type Draft = {
-  name: string; agreementType: string; templateId: string;
+  name: string; title: string; description: string; agreementType: string; templateId: string;
   effectiveDate: string; startDate: string; endDate: string;
   letterhead: "gt" | "jv"; jvLogoUrl: string;
   documentMode: "built" | "uploaded"; uploadFile: File | null;
@@ -109,6 +110,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [showArchived, setShowArchived] = useState(false);
   // Deep-link from a notification: ?hl=ag-<id> flashes the matching agreement once the list loads.
   const flashId = useHighlight(!loading);
+  // CR-P-45 — general agreements render as a sortable table.
+  const [genSort, setGenSort] = useState<{ key: "title" | "party" | "type" | "status"; dir: "asc" | "desc" }>({ key: "title", dir: "asc" });
+  const genVal = (ag: ApiAgreement, key: "title" | "party" | "type" | "status") =>
+    (key === "title" ? ag.title : key === "party" ? ag.partySnapshot?.party2?.name : key === "type" ? ag.agreementType : ag.status || "").toString().trim().toLowerCase();
+  const sortedGeneral = useMemo(() => {
+    if (ctx.kind !== "general") return list;
+    return [...list].sort((a, b) => {
+      const av = genVal(a, genSort.key), bv = genVal(b, genSort.key);
+      if (!av && !bv) return 0; if (!av) return 1; if (!bv) return -1;
+      const cmp = av.localeCompare(bv); return genSort.dir === "asc" ? cmp : -cmp;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, genSort, ctx.kind]);
+  const genToggle = (key: "title" | "party" | "type" | "status") => setGenSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  const genSortIcon = (key: "title" | "party" | "type" | "status") => genSort.key === key ? (genSort.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={11} className="text-slate-300" />;
 
   const load = async () => {
     setLoading(true);
@@ -141,15 +157,23 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     [templates, ctx]
   );
 
+  const slug = (s: string) => (s || "").trim().replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const autoName = (type: string): string => {
     const year = new Date().getFullYear();
     const typeCode = (type || "AGREEMENT").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     const p2 = abbr(draft?.party2.name || defaults?.party2?.name || "");
-    const base = ctx.kind === "user"
-      ? `GT-EMP-${p2 || "NAME"}-${typeCode}-${year}`
-      : ctx.kind === "general"
-        ? `GT-GEN-${p2 || "NAME"}-${typeCode}-${year}`
-        : `GT-${abbr(defaults?.projectNo || "") || abbr(defaults?.projectName || "") || "PROJ"}-${ENTITY_CODE[ctx.entityType]}-${p2 || "NAME"}-${typeCode}-${year}`;
+    let base: string;
+    if (ctx.kind === "general") {
+      // CR-P-45 — GT-<2nd party name>-<service type>-<Mon YYYY>.
+      const d = draft?.effectiveDate ? new Date(draft.effectiveDate) : new Date();
+      const stamp = `${d.toLocaleString("en-US", { month: "short" })}-${d.getFullYear()}`;
+      const p2full = slug(draft?.party2.name || defaults?.party2?.name || "") || "NAME";
+      base = `GT-${p2full}-${slug(type) || "AGREEMENT"}-${stamp}`;
+    } else if (ctx.kind === "user") {
+      base = `GT-EMP-${p2 || "NAME"}-${typeCode}-${year}`;
+    } else {
+      base = `GT-${abbr(defaults?.projectNo || "") || abbr(defaults?.projectName || "") || "PROJ"}-${ENTITY_CODE[ctx.entityType]}-${p2 || "NAME"}-${typeCode}-${year}`;
+    }
     // De-duplicate against existing agreements with a serial suffix.
     let name = base, n = 2;
     while (list.some((a) => a.name === name && a._id !== editor?.aid)) name = `${base}-${n++}`;
@@ -163,7 +187,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   const openCreate = async () => {
     setDraft({
-      name: "", agreementType: ctx.kind === "user" ? "Employment" : ctx.kind === "general" ? "Service" : ctx.entityType === "vendor" ? "Supply" : ctx.entityType === "partner" ? "Partnership" : "Service",
+      name: "", title: "", description: "",
+      agreementType: ctx.kind === "user" ? "Employment" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supply" : ctx.entityType === "partner" ? "Partnership" : "Service",
       templateId: "", effectiveDate: new Date().toISOString().slice(0, 10), startDate: "", endDate: "",
       // A partner agreement defaults to the JV (dual-logo) letterhead; everything else to GT.
       letterhead: ctx.kind === "project" && ctx.entityType === "partner" ? "jv" : "gt",
@@ -182,7 +207,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   const openEdit = (ag: ApiAgreement) => {
     setDraft({
-      name: ag.name, agreementType: ag.agreementType, templateId: ag.templateId,
+      name: ag.name, title: ag.title || "", description: ag.description || "", agreementType: ag.agreementType, templateId: ag.templateId,
       effectiveDate: ag.effectiveDate, startDate: ag.startDate, endDate: ag.endDate,
       letterhead: ag.letterhead === "jv" && ctx.kind !== "user" ? "jv" : "gt",
       jvLogoUrl: ag.jvLogoUrl || (ctx.kind === "project" ? (defaults?.jv?.logoUrl || defaults?.party2?.logoUrl || "") : ""),
@@ -226,6 +251,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // it later is silently ignored server-side, but we simply don't send it.
   const draftBody = (isDraftStatus = true) => ({
     name: draft!.name || autoName(draft!.agreementType),
+    title: draft!.title, description: draft!.description,
     agreementType: draft!.agreementType, templateId: draft!.templateId,
     effectiveDate: draft!.effectiveDate, startDate: draft!.startDate, endDate: draft!.endDate,
     letterhead: draft!.letterhead, jvLogoUrl: draft!.jvLogoUrl,
@@ -355,6 +381,72 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   const signable = (ag: ApiAgreement) => canSign && ["Sent", "Viewed", "PendingSignature"].includes(ag.status);
 
+  // Shared history list — used by both the card list and the general-agreements table row.
+  const historyList = (ag: ApiAgreement) => (
+    <>
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2 pb-1 flex items-center gap-1"><History size={10} /> History</p>
+      <ul className="space-y-1">
+        {[...(ag.activity || [])].reverse().map((e, i) => (
+          <li key={i} className="flex items-start gap-2 text-[10px]">
+            <span className="text-slate-300 whitespace-nowrap">{new Date(e.at).toLocaleString()}</span>
+            <span className="font-bold text-slate-600 capitalize">{e.action.replace(/-/g, " ")}</span>
+            {e.note && <span className="text-slate-400">{e.note}</span>}
+            <span className="text-slate-400 ml-auto whitespace-nowrap">{e.actorName}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+
+  // Shared action set — reused by the card list and the general-agreements table.
+  const actionButtons = (ag: ApiAgreement) => (
+    <div className="flex items-center gap-1 justify-end flex-wrap">
+      {signable(ag) && (
+        <>
+          <button onClick={() => openSign(ag)} disabled={busy === ag._id} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-50"><PenLine size={11} /> Sign</button>
+          <button onClick={() => doReject(ag)} disabled={busy === ag._id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 disabled:opacity-50">Reject</button>
+        </>
+      )}
+      {canManage && ["Draft", "Rejected"].includes(ag.status) && (
+        <button onClick={() => send(ag)} disabled={busy === ag._id} title="Send to the recipient" className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-white text-[10px] font-bold hover:bg-primary/80 disabled:opacity-50"><Send size={11} /> Send</button>
+      )}
+      {canManage && ag.status !== "Signed" && (
+        <button onClick={() => openEdit(ag)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage</button>
+      )}
+      <button onClick={() => { if (ag.documentMode === "uploaded" && ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; } setPreview({ title: ag.name || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) }); }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
+      <button onClick={() => download(ag)} className="p-1.5 rounded text-slate-400 hover:text-primary" title={ag.signedDocument ? "Open the signed copy" : "Download PDF"}><Download size={14} /></button>
+      <button onClick={() => {
+        const secs = (ag.extraSections || []).filter((s) => !(s as { hidden?: boolean }).hidden);
+        const body = `<h1>${escapeHtml(ag.name || "Agreement")}</h1>`
+          + secs.map((s) => `<h2>${escapeHtml(s.title || "Section")}</h2>${s.body || ""}`).join("")
+          + (ag.sections?.ndaEnabled && ag.sections.ndaText ? `<h2>Non-Disclosure Agreement</h2>${ag.sections.ndaText}` : "")
+          + (ag.signatures?.company?.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(ag.signatures.company.signerName)}${ag.signatures.company.signerTitle ? `, ${escapeHtml(ag.signatures.company.signerTitle)}` : ""}</p>` : "");
+        downloadHtmlAsWord(ag.name || "Agreement", body, `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}`);
+      }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Export to Word"><FileText size={14} /></button>
+      {(ag.signedDocument?.filePath || ag.uploadedDocument?.filePath) && (
+        <ShareMenu fileName={`${ag.name || "agreement"}.pdf`} fileUrl={attachmentUrl((ag.signedDocument?.filePath || ag.uploadedDocument?.filePath || "").replace(/^\/+/, ""))} size={14} />
+      )}
+      {canManage && ["Sent", "Viewed", "PendingSignature", "Rejected"].includes(ag.status) && (
+        <label className="p-1.5 rounded text-slate-400 hover:text-primary cursor-pointer" title="Upload the counter-signed copy (received outside the platform) — marks the agreement Signed">
+          <Upload size={14} />
+          <input type="file" accept=".pdf,image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSigned(ag, f); e.target.value = ""; }} />
+        </label>
+      )}
+      {canManage && !["Draft", "Cancelled"].includes(ag.status) && (
+        <button onClick={() => cancel(ag)} className="p-1.5 rounded text-slate-300 hover:text-orange-500" title={ag.status === "Signed" ? "Retire this signed agreement (the record and signed copy are kept)" : "Cancel agreement"}><Ban size={13} /></button>
+      )}
+      {canManage && ag.status !== "Signed" && (
+        <button onClick={() => remove(ag)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+      )}
+      {canManage && (
+        <button onClick={() => archive(ag, !ag.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500" title={ag.archived ? "Restore" : "Archive"}>{ag.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
+      )}
+      <button onClick={() => setHistoryFor(historyFor === ag._id ? null : ag._id)} className="p-1.5 rounded text-slate-300 hover:text-slate-600" title="History">
+        {historyFor === ag._id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+    </div>
+  );
+
   if (loading) return <div className="py-8 flex justify-center text-slate-300"><Loader2 size={20} className="animate-spin" /></div>;
 
   return (
@@ -369,6 +461,46 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
       {list.length === 0 ? (
         <p className="text-[11px] text-slate-400 italic">No agreements yet.{canManage ? " Create one — the details auto-fill from this profile." : ""}</p>
+      ) : ctx.kind === "general" ? (
+        // CR-P-45 — general agreements as a sortable, numbered table.
+        <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+          <table className="w-full min-w-[860px] text-left">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
+                {([["title", "Title"], ["party", "2nd party"], ["type", "Type"], ["status", "Status"]] as const).map(([k, l]) => (
+                  <th key={k} className="px-3 py-2.5">
+                    <button onClick={() => genToggle(k)} className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${genSort.key === k ? "text-slate-700" : "text-slate-400 hover:text-slate-600"}`} title={`Sort by ${l}`}>{l} {genSortIcon(k)}</button>
+                  </th>
+                ))}
+                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / remarks</th>
+                <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {sortedGeneral.map((ag, i) => {
+                const meta = STATUS_META[ag.status] || STATUS_META.Draft;
+                const hlId = `ag-${ag._id}`;
+                return (
+                  <Fragment key={ag._id}>
+                    <tr id={hlId} data-hl={hlId} className={`hover:bg-slate-50/40 ${flashId === hlId ? "hl-flash" : ""}`}>
+                      <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
+                      <td className="px-3 py-2.5 text-xs font-bold text-slate-800 align-top">{ag.title || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{ag.partySnapshot?.party2?.name || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap align-top">{ag.agreementType || "—"}</td>
+                      <td className="px-3 py-2.5 align-top"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${meta.cls}`}>{meta.label}</span></td>
+                      <td className="px-3 py-2.5 text-xs text-slate-500 max-w-[18rem] truncate align-top" title={ag.description || ""}>{ag.description || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2.5 align-top">{actionButtons(ag)}</td>
+                    </tr>
+                    {historyFor === ag._id && (
+                      <tr className="bg-slate-50/40"><td colSpan={7} className="px-4 pb-3">{historyList(ag)}</td></tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="space-y-2">
           {list.map((ag) => {
@@ -386,55 +518,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     </p>
                   </div>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${meta.cls}`}>{meta.label}</span>
-                  <div className="flex items-center gap-1">
-                    {signable(ag) && (
-                      <>
-                        <button onClick={() => openSign(ag)} disabled={busy === ag._id} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-50"><PenLine size={11} /> Sign</button>
-                        <button onClick={() => doReject(ag)} disabled={busy === ag._id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 disabled:opacity-50">Reject</button>
-                      </>
-                    )}
-                    {canManage && ["Draft", "Rejected"].includes(ag.status) && (
-                      <button onClick={() => send(ag)} disabled={busy === ag._id} title="Send to the recipient" className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-white text-[10px] font-bold hover:bg-primary/80 disabled:opacity-50"><Send size={11} /> Send</button>
-                    )}
-                    {canManage && ag.status !== "Signed" && (
-                      <button onClick={() => openEdit(ag)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage</button>
-                    )}
-                    <button onClick={() => { if (ag.documentMode === "uploaded" && ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; } setPreview({ title: ag.name || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) }); }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
-                    <button onClick={() => download(ag)} className="p-1.5 rounded text-slate-400 hover:text-primary" title={ag.signedDocument ? "Open the signed copy" : "Download PDF"}><Download size={14} /></button>
-                    {/* CR-B-14a — Word export of the agreement text (sections are already HTML). */}
-                    <button onClick={() => {
-                      const secs = (ag.extraSections || []).filter((s) => !(s as { hidden?: boolean }).hidden);
-                      const body = `<h1>${escapeHtml(ag.name || "Agreement")}</h1>`
-                        + secs.map((s) => `<h2>${escapeHtml(s.title || "Section")}</h2>${s.body || ""}`).join("")
-                        + (ag.sections?.ndaEnabled && ag.sections.ndaText ? `<h2>Non-Disclosure Agreement</h2>${ag.sections.ndaText}` : "")
-                        + (ag.company?.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(ag.company.signerName)}${ag.company.signerTitle ? `, ${escapeHtml(ag.company.signerTitle)}` : ""}</p>` : "");
-                      downloadHtmlAsWord(ag.name || "Agreement", body, `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}`);
-                    }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Export to Word"><FileText size={14} /></button>
-                    {/* CR-P-10 — Share the uploaded/signed agreement file (a hosted document). */}
-                    {(ag.signedDocument?.filePath || ag.uploadedDocument?.filePath) && (
-                      <ShareMenu fileName={`${ag.name || "agreement"}.pdf`} fileUrl={attachmentUrl((ag.signedDocument?.filePath || ag.uploadedDocument?.filePath || "").replace(/^\/+/, ""))} size={14} />
-                    )}
-                    {canManage && ["Sent", "Viewed", "PendingSignature", "Rejected"].includes(ag.status) && (
-                      <label className="p-1.5 rounded text-slate-400 hover:text-primary cursor-pointer" title="Upload the counter-signed copy (received outside the platform) — marks the agreement Signed">
-                        <Upload size={14} />
-                        <input type="file" accept=".pdf,image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSigned(ag, f); e.target.value = ""; }} />
-                      </label>
-                    )}
-                    {/* Cancel retires an issued agreement — including a Signed one, which can
-                        never be deleted (spec §4: signed records stay, only the status moves). */}
-                    {canManage && !["Draft", "Cancelled"].includes(ag.status) && (
-                      <button onClick={() => cancel(ag)} className="p-1.5 rounded text-slate-300 hover:text-orange-500" title={ag.status === "Signed" ? "Retire this signed agreement (the record and signed copy are kept)" : "Cancel agreement"}><Ban size={13} /></button>
-                    )}
-                    {canManage && ag.status !== "Signed" && (
-                      <button onClick={() => remove(ag)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
-                    )}
-                    {canManage && (
-                      <button onClick={() => archive(ag, !ag.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500" title={ag.archived ? "Restore" : "Archive"}>{ag.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
-                    )}
-                    <button onClick={() => setHistoryFor(historyFor === ag._id ? null : ag._id)} className="p-1.5 rounded text-slate-300 hover:text-slate-600" title="History">
-                      {historyFor === ag._id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                  </div>
+                  {actionButtons(ag)}
                 </div>
                 {ag.status === "Signed" && ag.signedDocument && (
                   <div className="px-3 pb-2 -mt-1">
@@ -442,19 +526,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   </div>
                 )}
                 {historyFor === ag._id && (
-                  <div className="px-4 pb-3 border-t border-slate-50">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2 pb-1 flex items-center gap-1"><History size={10} /> History</p>
-                    <ul className="space-y-1">
-                      {[...(ag.activity || [])].reverse().map((e, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[10px]">
-                          <span className="text-slate-300 whitespace-nowrap">{new Date(e.at).toLocaleString()}</span>
-                          <span className="font-bold text-slate-600 capitalize">{e.action.replace(/-/g, " ")}</span>
-                          {e.note && <span className="text-slate-400">{e.note}</span>}
-                          <span className="text-slate-400 ml-auto whitespace-nowrap">{e.actorName}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  <div className="px-4 pb-3 border-t border-slate-50">{historyList(ag)}</div>
                 )}
               </div>
             );
@@ -539,19 +611,47 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
             <div className="p-5 space-y-4">
               {/* Template + type + name */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Template
-                  <select className={`${inp} mt-1 font-bold`} value={draft.templateId} onChange={(e) => applyTemplate(e.target.value)}>
-                    <option value="">— blank —</option>
-                    {relevantTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
-                  </select></label>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agreement type
-                  <input className={`${inp} mt-1`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Employment / Service / Supply…" /></label>
+                {/* CR-P-45 — general agreements use no templates. */}
+                {ctx.kind !== "general" && (
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Template
+                    <select className={`${inp} mt-1 font-bold`} value={draft.templateId} onChange={(e) => applyTemplate(e.target.value)}>
+                      <option value="">— blank —</option>
+                      {relevantTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
+                    </select></label>
+                )}
+                <label className={`text-[10px] font-bold text-slate-400 uppercase tracking-widest ${ctx.kind === "general" ? "sm:col-span-2" : ""}`}>Agreement type
+                  {ctx.kind === "general" ? (() => {
+                    const known = AGREEMENT_TYPES_FLAT.includes(draft.agreementType);
+                    return (<>
+                      <select className={`${inp} mt-1 font-bold`} value={known ? draft.agreementType : "__custom__"} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value === "__custom__" ? "" : e.target.value })}>
+                        {AGREEMENT_TYPE_GROUPS.map((g) => (
+                          <optgroup key={g.group} label={g.group}>
+                            {g.types.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </optgroup>
+                        ))}
+                        <option value="__custom__">Custom…</option>
+                      </select>
+                      {!known && <input className={`${inp} mt-1.5`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Type a custom agreement type…" autoFocus />}
+                    </>);
+                  })() : (
+                    <input className={`${inp} mt-1`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Employment / Service / Supply…" />
+                  )}
+                </label>
               </div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agreement name / code
                 <div className="flex gap-2 mt-1">
                   <input className={inp} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={autoName(draft.agreementType)} />
                   <button onClick={() => setDraft({ ...draft, name: autoName(draft.agreementType) })} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 whitespace-nowrap shrink-0" title="Generate the code automatically">Auto</button>
                 </div></label>
+              {/* CR-P-45 — general agreements: short title + description/remarks after the name. */}
+              {ctx.kind === "general" && (<>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title
+                  <input className={`${inp} mt-1`} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Short title for this agreement" />
+                </label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / remarks
+                  <textarea rows={2} className={`${inp} mt-1`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Notes or remarks about this agreement…" />
+                </label>
+              </>)}
 
               {/* Create vs Upload — build the agreement from the fields below, or attach an already-made file. */}
               <div className="bg-slate-50 rounded-2xl p-3 space-y-2">
@@ -808,7 +908,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   })()
                 ) : (
                   <button onClick={() => {
-                    const previewAg = { ...(list.find((a) => a._id === editor.aid) || {}), ...draftBody(), status: (list.find((a) => a._id === editor.aid)?.status || "Draft"), signatures: { company: draft.company, recipient: list.find((a) => a._id === editor.aid)?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
+                    const previewAg = { ...(list.find((a) => a._id === editor.aid) || {}), ownerContextType: ctx.kind, ...draftBody(), status: (list.find((a) => a._id === editor.aid)?.status || "Draft"), signatures: { company: draft.company, recipient: list.find((a) => a._id === editor.aid)?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
                     setPreview({ title: previewAg.name || "Agreement", fileName: "agreement.pdf", build: () => buildAgreementPdf(previewAg) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5"><Eye size={13} /> Preview</button>
                 )}
@@ -820,7 +920,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   dirty
                   onExportPdf={async () => {
                     const cur = list.find((a) => a._id === editor.aid);
-                    const ag = { ...(cur || {}), ...draftBody(), status: (cur?.status || "Draft"), signatures: { company: draft.company, recipient: cur?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
+                    const ag = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody(), status: (cur?.status || "Draft"), signatures: { company: draft.company, recipient: cur?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
                     downloadBlob(await buildAgreementPdf(ag), `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
                   }}
                   onReset={() => applyTemplate("")}
