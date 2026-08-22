@@ -36,12 +36,15 @@ export default function CompanyProfile({
   showArchived: boolean;
 }) {
   const navigate = useNavigate();
-  const { confirm } = useDialogs();
+  const { confirm, dialogs } = useDialogs();
   const [tab, setTab] = useState<"activity" | "details" | "documents">("activity");
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [docType, setDocType] = useState("catalogue");
   const [uploading, setUploading] = useState(false);
+  // CR-P-43 — upload modal (choose type, then file, then upload).
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   useEffect(() => {
     setLinks(null); setFiles([]);
@@ -49,10 +52,15 @@ export default function CompanyProfile({
     fetchCompanyProfileFiles(company._id).then(setFiles).catch(() => setFiles([]));
   }, [company._id]);
 
-  const uploadDoc = async (file: File) => {
+  const submitUpload = async () => {
+    if (!uploadFile) return;
     setUploading(true);
-    try { await uploadCompanyProfileFile(company._id, file, docType); setFiles(await fetchCompanyProfileFiles(company._id)); toast("Document uploaded.", "success"); }
-    catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
+    try {
+      await uploadCompanyProfileFile(company._id, uploadFile, docType);
+      setFiles(await fetchCompanyProfileFiles(company._id));
+      toast("Document uploaded.", "success");
+      setUploadOpen(false); setUploadFile(null); setDocType("catalogue");
+    } catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
     finally { setUploading(false); }
   };
   const removeDoc = async (f: CompanyFile) => {
@@ -259,18 +267,7 @@ export default function CompanyProfile({
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={13} /> Documents, catalogues &amp; certifications ({files.length})</p>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <select value={docType} onChange={(e) => setDocType(e.target.value)} className="text-[11px] font-bold rounded-lg border border-slate-200 px-2 py-1.5 bg-white text-slate-600 cursor-pointer" title="What kind of document is this?">
-                <option value="catalogue">Catalogue</option>
-                <option value="certification">Certification</option>
-                <option value="document">Document</option>
-                <option value="other">Other</option>
-              </select>
-              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary cursor-pointer">
-                {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
-                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); e.target.value = ""; }} />
-              </label>
-            </div>
+            <button onClick={() => { setUploadFile(null); setDocType("catalogue"); setUploadOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0"><Upload size={12} /> Upload</button>
           </div>
           {files.length === 0 ? <p className="text-xs text-slate-400 italic">No documents yet — upload catalogues, certifications, or other company documents.</p> : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{files.map((f) => (
@@ -290,6 +287,44 @@ export default function CompanyProfile({
           )}
         </div>
       )}
+
+      {/* CR-P-43 — upload modal: choose type, then file, then upload. No click-outside-to-close. */}
+      {uploadOpen && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">Upload document</h3>
+              <button onClick={() => { if (!uploading) { setUploadOpen(false); setUploadFile(null); } }} disabled={uploading} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Document type</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([["catalogue", "Catalogue"], ["certification", "Certification"], ["document", "Document"], ["other", "Other"]] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => setDocType(v)} className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-bold transition-all ${docType === v ? "border-primary bg-primary/5 text-primary" : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                      {docIcon(v)} {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">File</p>
+                <label className="flex flex-col items-center justify-center gap-1.5 px-4 py-6 rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary/40 hover:bg-slate-50 cursor-pointer text-center">
+                  <Upload size={20} className="text-slate-400" />
+                  {uploadFile ? <span className="text-xs font-bold text-slate-700 break-all">{uploadFile.name}</span> : <span className="text-xs text-slate-400">Click to choose a file</span>}
+                  <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); e.target.value = ""; }} />
+                </label>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+              <button onClick={() => { setUploadOpen(false); setUploadFile(null); }} disabled={uploading} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold disabled:opacity-50">Cancel</button>
+              <button onClick={submitUpload} disabled={!uploadFile || uploading} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-40 inline-flex items-center gap-1.5">{uploading && <Loader2 size={14} className="animate-spin" />} Upload</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dialogs}
     </div>
   );
 }

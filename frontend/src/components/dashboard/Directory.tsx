@@ -27,7 +27,7 @@ const BLANK: CompanyInput = {
 };
 
 export default function Directory() {
-  const { confirm } = useDialogs();
+  const { confirm, dialogs } = useDialogs();
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [cat, setCat] = useState<"all" | CompanyCategory>("all");
@@ -378,6 +378,8 @@ export default function Directory() {
           </div>
         </div>
       )}
+
+      {dialogs}
     </div>
   );
 }
