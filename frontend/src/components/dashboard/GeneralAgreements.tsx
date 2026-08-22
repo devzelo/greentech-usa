@@ -11,7 +11,7 @@ export default function GeneralAgreements() {
   useMeta({ title: "General Agreements", description: "Company agreements that aren't tied to a project or an employee." });
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div>
         <div className="flex items-center gap-2 text-primary mb-2">
           <Handshake size={18} /><span className="text-xs font-bold uppercase tracking-widest">Agreements</span>
