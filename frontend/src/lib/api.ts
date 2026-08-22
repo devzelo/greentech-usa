@@ -586,11 +586,12 @@ export interface AdminUser {
   phone?: string;
   avatarUrl?: string;
   jobTitle?: string;
+  archived?: boolean;
   createdAt?: string;
 }
 
-export async function fetchUsers(): Promise<AdminUser[]> {
-  return request<AdminUser[]>('/users');
+export async function fetchUsers(archived = false): Promise<AdminUser[]> {
+  return request<AdminUser[]>(`/users${archived ? '?archived=true' : ''}`);
 }
 
 export async function createUser(body: {
@@ -600,9 +601,13 @@ export async function createUser(body: {
 }
 
 export async function updateUser(id: string, body: Partial<{
-  name: string; email: string; role: string; empId: string; phone: string; personalEmail: string;
+  name: string; email: string; role: string; empId: string; phone: string; personalEmail: string; archived: boolean;
 }>): Promise<AdminUser> {
   return request<AdminUser>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+// CR-P-58 — deactivate (archive) / reactivate an account.
+export async function setUserArchived(id: string, archived: boolean): Promise<AdminUser> {
+  return request<AdminUser>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify({ archived }) });
 }
 
 // CR-P-57 — admin-uploaded documents on a user profile.

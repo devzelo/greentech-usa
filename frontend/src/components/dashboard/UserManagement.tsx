@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye } from "lucide-react";
+import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
-  fetchUsers, createUser, updateUser, adminResetPassword, deleteUser,
+  fetchUsers, createUser, updateUser, adminResetPassword, deleteUser, setUserArchived,
   getAuthUser, AdminUser,
   fetchUserFiles, uploadUserFile, deleteUserFile, userFileUrl, type UserFile,
 } from "../../lib/api";
@@ -39,6 +39,9 @@ export default function UserManagement() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);   // CR-P-58
+  type SortKey = "empId" | "name" | "email" | "role" | "phone";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "empId", dir: "asc" });
 
   // Create / edit modal
   const [editorOpen, setEditorOpen] = useState(false);
@@ -65,14 +68,27 @@ export default function UserManagement() {
   const load = async () => {
     setLoading(true);
     try {
-      setUsers(await fetchUsers());
+      setUsers(await fetchUsers(showArchived));
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to load users.", "error");
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [showArchived]);
+
+  // CR-P-58 — deactivate (archive) / reactivate an account.
+  const toggleArchive = async (u: AdminUser) => {
+    const next = !u.archived;
+    try {
+      await setUserArchived(u._id, next);
+      toast(next ? `${u.name} deactivated — they can no longer sign in.` : `${u.name} reactivated.`, "success");
+      setProfileUser((cur) => (cur && cur._id === u._id ? null : cur));
+      await load();
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
+  const toggleSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  const sortIcon = (key: SortKey) => sort.key === key ? (sort.dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ArrowUpDown size={12} className="text-slate-300" />;
 
   const openCreate = () => { setEditingId(null); setForm(emptyForm); setUserFiles([]); setEditorOpen(true); };
   const openEdit = (u: AdminUser) => {
@@ -160,6 +176,14 @@ export default function UserManagement() {
   const filtered = q
     ? users.filter((u) => [u.name, u.email, u.empId, u.role].some((v) => (v || "").toLowerCase().includes(q)))
     : users;
+  // CR-P-58 — column sorting.
+  const sorted = [...filtered].sort((a, b) => {
+    const val = (u: AdminUser) => String((sort.key === "empId" ? u.empId : sort.key === "name" ? u.name : sort.key === "email" ? u.email : sort.key === "role" ? u.role : u.phone) || "").trim().toLowerCase();
+    const av = val(a), bv = val(b);
+    if (!av && !bv) return 0; if (!av) return 1; if (!bv) return -1;
+    const c = av.localeCompare(bv, undefined, { numeric: true });
+    return sort.dir === "asc" ? c : -c;
+  });
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -184,12 +208,10 @@ export default function UserManagement() {
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">User Management</h1>
           <p className="text-sm text-slate-500 mt-1">Add or remove employee accounts, change roles, and reset passwords.</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="bg-gt-gradient text-white px-5 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all self-start"
-        >
-          <UserPlus size={18} /> Add User
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1.5 px-4 py-3 rounded-2xl text-sm font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={16} /> {showArchived ? "Active" : "Archived"}</button>
+          <button onClick={openCreate} className="bg-gt-gradient text-white px-5 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all"><UserPlus size={18} /> Add User</button>
+        </div>
       </div>
 
       {/* Search */}
@@ -203,44 +225,61 @@ export default function UserManagement() {
         />
       </div>
 
-      {/* List */}
+      {/* List — sortable table (CR-P-58) */}
       <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
         {loading ? (
           <div className="p-16 flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" /></div>
-        ) : filtered.length === 0 ? (
-          <div className="p-16 text-center text-slate-400 text-sm">No users found.</div>
+        ) : sorted.length === 0 ? (
+          <div className="p-16 text-center text-slate-400 text-sm">No {showArchived ? "archived " : ""}users found.</div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {filtered.map((u) => {
-              const isSelf = me?.id === u._id;
-              return (
-                <div key={u._id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 sm:px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
-                  {/* Identity — avatar + name/email + role. Takes the full width so the name is never crushed by the actions. */}
-                  <div className="flex items-center gap-3 min-w-0 flex-grow">
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gt-gradient p-0.5 shrink-0">
-                      {u.avatarUrl
-                        ? <img src={u.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
-                        : <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-sm font-bold text-primary">{(u.name || u.email || "?").charAt(0).toUpperCase()}</div>}
-                    </div>
-                    <div className="min-w-0 flex-grow">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setProfileUser(u)} className="font-bold text-slate-900 truncate text-left hover:text-primary hover:underline" title="View profile">{u.name || u.email}</button>
-                        {isSelf && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">You</span>}
-                      </div>
-                      <p className="text-xs text-slate-500 truncate">{u.email}{u.empId ? ` · ${u.empId}` : ""}</p>
-                    </div>
-                    <span className={`text-[10px] sm:text-[11px] font-bold px-2 sm:px-2.5 py-1 rounded-full uppercase tracking-wide shrink-0 ${roleBadge(u.role)}`}>{u.role}</span>
-                  </div>
-                  {/* Actions — their own right-aligned row on mobile, inline on desktop. */}
-                  <div className="flex items-center gap-1 shrink-0 justify-end">
-                    <button onClick={() => setAgreementsFor(u)} title="Agreements — create, send & track this employee's agreements" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-primary/5 hover:text-primary transition-colors"><Handshake size={16} /></button>
-                    <button onClick={() => openEdit(u)} title="Edit" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil size={16} /></button>
-                    <button onClick={() => { setPwTarget(u); setNewPw(""); }} title="Reset password" className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"><KeyRound size={16} /></button>
-                    <button onClick={() => setDeleteTarget(u)} disabled={isSelf} title={isSelf ? "You can't delete your own account" : "Delete"} className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"><Trash2 size={16} /></button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] text-left">
+              <thead>
+                <tr className="bg-slate-50/60 border-b border-slate-100">
+                  {([["empId", "Employee ID"], ["name", "Name"], ["email", "Business email"], ["role", "Role"], ["phone", "Phone"]] as const).map(([k, l]) => (
+                    <th key={k} className="px-4 py-3">
+                      <button onClick={() => toggleSort(k)} className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${sort.key === k ? "text-slate-700" : "text-slate-400 hover:text-slate-600"}`} title={`Sort by ${l}`}>{l} {sortIcon(k)}</button>
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sorted.map((u) => {
+                  const isSelf = me?.id === u._id;
+                  return (
+                    <tr key={u._id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-3 text-xs font-bold text-slate-500 whitespace-nowrap tabular-nums">{u.empId || "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-gt-gradient p-0.5 shrink-0">
+                            {u.avatarUrl
+                              ? <img src={u.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
+                              : <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-xs font-bold text-primary">{(u.name || u.email || "?").charAt(0).toUpperCase()}</div>}
+                          </div>
+                          <div className="min-w-0">
+                            <button onClick={() => setProfileUser(u)} className="font-bold text-sm text-slate-900 hover:text-primary hover:underline text-left truncate block" title="View profile">{u.name || u.email}</button>
+                            {isSelf && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">You</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{u.email}</td>
+                      <td className="px-4 py-3"><span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${roleBadge(u.role)}`}>{u.role}</span></td>
+                      <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{u.phone || "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button onClick={() => setAgreementsFor(u)} title="Agreements — create, send & track this employee's agreements" className="p-2 rounded-xl text-slate-400 hover:bg-primary/5 hover:text-primary transition-colors"><Handshake size={15} /></button>
+                          <button onClick={() => openEdit(u)} title="Edit" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil size={15} /></button>
+                          <button onClick={() => { setPwTarget(u); setNewPw(""); }} title="Reset password" className="p-2 rounded-xl text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"><KeyRound size={15} /></button>
+                          <button onClick={() => toggleArchive(u)} disabled={isSelf && !u.archived} title={u.archived ? "Reactivate — allow sign-in" : "Deactivate — block sign-in"} className="p-2 rounded-xl text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed">{u.archived ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
+                          <button onClick={() => setDeleteTarget(u)} disabled={isSelf} title={isSelf ? "You can't delete your own account" : "Delete"} className="p-2 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"><Trash2 size={15} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

@@ -43,9 +43,11 @@ async function syncEmployeeDirectory(empId: string | undefined, name: string) {
 }
 
 // GET /api/users — staff accounts only (admins + employees). Subcontractors live in projects.
-router.get("/", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const users = await User.find({ role: { $ne: "subcontractor" } }).select(PUBLIC_FIELDS).sort({ empId: 1, createdAt: -1 });
+    const wantArchived = req.query.archived === "true";   // CR-P-58 — active by default
+    const users = await User.find({ role: { $ne: "subcontractor" }, archived: wantArchived ? true : { $ne: true } })
+      .select(PUBLIC_FIELDS).sort({ empId: 1, createdAt: -1 });
     res.json(users);
   } catch (err) { next(err); }
 });
@@ -100,6 +102,12 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
       if (req.params.id === req.user!.userId && role !== "admin")
         return res.status(400).json({ error: "You cannot change your own admin role." });
       updates.role = role;
+    }
+    // CR-P-58 — archive/restore (deactivate). You cannot deactivate your own account.
+    if (typeof req.body?.archived === "boolean") {
+      if (req.params.id === req.user!.userId && req.body.archived)
+        return res.status(400).json({ error: "You cannot deactivate your own account." });
+      updates.archived = req.body.archived;
     }
 
     const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })

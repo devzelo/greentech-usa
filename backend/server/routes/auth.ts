@@ -77,6 +77,10 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
     if (!isMatch)
       return res.status(401).json({ error: 'Invalid email or password.' });
 
+    // CR-P-58 — archived/deactivated accounts cannot access the platform.
+    if ((user as { archived?: boolean }).archived)
+      return res.status(403).json({ error: 'Your account has been deactivated. Please contact your administrator.' });
+
     const token = jwt.sign(
       { userId: user._id, email: user.email, name: user.name, role: user.role, empId: user.empId || '' },
       JWT_SECRET,

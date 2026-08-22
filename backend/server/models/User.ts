@@ -8,6 +8,7 @@ const UserSchema = new mongoose.Schema({
   empId:            { type: String, default: '' },
   phone:            { type: String, default: '' },
   personalEmail:    { type: String, default: '' }, // CR-P-57 — personal email (login uses `email` = business email)
+  archived:         { type: Boolean, default: false }, // CR-P-58 — deactivated: blocked from logging in
   avatarUrl:        { type: String, default: '' },
   signatureUrl:     { type: String, default: '' }, // personal signature image, used on PO documents
   jobTitle:         { type: String, default: '' },
