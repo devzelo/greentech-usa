@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText, Truck, Upload, Download, Eye, Award, BookOpen } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, History, Receipt, FileText, Truck, Upload, Download, Eye, Award, BookOpen, LayoutGrid, List as ListIcon } from "lucide-react";
 import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, fetchCompanyLinks, syncCompaniesFromProjects,
@@ -32,6 +32,7 @@ export default function Directory() {
   const [cat, setCat] = useState<"all" | CompanyCategory>("all");
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [view, setView] = useState<"grid" | "list">("grid"); // CR-P-42
   const [editor, setEditor] = useState<{ id: string | null; draft: CompanyInput } | null>(null);
   const [saving, setSaving] = useState(false);
   const [linksFor, setLinksFor] = useState<ApiCompany | null>(null);   // CR-PR-05 — profile history
@@ -145,6 +146,11 @@ export default function Directory() {
           <p className="text-sm text-slate-500 mt-1">Master list of vendors, subcontractors, clients, manufacturers, consultants and partners.</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* CR-P-42 — grid / list view toggle */}
+          <div className="flex items-center gap-1 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
+            <button onClick={() => setView("grid")} title="Grid view" className={`p-1.5 rounded-lg transition-all ${view === "grid" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}><LayoutGrid size={16} /></button>
+            <button onClick={() => setView("list")} title="List view" className={`p-1.5 rounded-lg transition-all ${view === "list" ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}><ListIcon size={16} /></button>
+          </div>
           <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={13} /> {showArchived ? "Active" : "Archived"}</button>
           <button onClick={openNew} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gt-gradient text-white text-sm font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-transform"><Plus size={16} /> New company</button>
         </div>
@@ -173,6 +179,56 @@ export default function Directory() {
         <div className="text-center py-16 text-slate-400">
           <Building2 size={40} className="mx-auto mb-3 text-slate-200" />
           <p className="text-sm font-medium">{showArchived ? "No archived companies." : "No companies yet — add your first one."}</p>
+        </div>
+      ) : view === "list" ? (
+        /* CR-P-42 — list view with row numbering */
+        <div className="bg-white rounded-3xl sm:rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px]">
+              <thead>
+                <tr className="bg-slate-50/50 border-b border-slate-50">
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Company</th>
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category</th>
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</th>
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</th>
+                  <th className="text-left px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Location</th>
+                  <th className="text-right px-4 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {filtered.map((c, i) => (
+                  <tr key={c._id} className="group hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                          {c.logoUrl ? <img src={withFileToken(c.logoUrl)} alt="" className="w-full h-full object-contain" /> : <Building2 size={15} className="text-slate-300" />}
+                        </div>
+                        <div className="min-w-0">
+                          <button onClick={() => openEdit(c)} className="font-bold text-sm text-slate-900 group-hover:text-primary text-left truncate">{c.name}</button>
+                          {c.pendingUpdate && <span className="block text-[10px] font-bold text-amber-600">Update pending review</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span></td>
+                    <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.email || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.phone || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.address || "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button onClick={() => openLinks(c)} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white" title="History — linked records"><History size={15} /></button>
+                        <button onClick={() => copyLink(c)} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white" title="Copy self-registration link"><Link2 size={15} /></button>
+                        <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white" title="Edit"><Pencil size={15} /></button>
+                        <button onClick={() => archive(c, !showArchived)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
+                        <button onClick={() => remove(c)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
