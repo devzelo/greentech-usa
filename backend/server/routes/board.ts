@@ -10,6 +10,7 @@ import User from "../models/User";
 import Employee from "../models/Employee";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { createNotification } from "../lib/notify";
 
 const humanSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
@@ -185,6 +186,27 @@ router.delete("/tasks/:tid/attachments/:aid", async (req: AuthedRequest, res: Re
     t.set("attachments", t.attachments.filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid));
     await t.save();
     res.json(t);
+  } catch (err) { next(err); }
+});
+
+// ── Comments (+ @mention notifications) ──────────────────────────────────────
+router.post("/tasks/:tid/comments", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const text = String(req.body?.text || "").slice(0, 4000).trim();
+    if (!text) return res.status(400).json({ error: "Comment can't be empty." });
+    const mentions = Array.isArray(req.body?.mentions) ? req.body.mentions.map((x: unknown) => String(x)).filter(Boolean).slice(0, 30) : [];
+    const t = await Task.findOne({ _id: req.params.tid, projectId: req.params.id });
+    if (!t) return res.status(404).json({ error: "Not found" });
+    t.comments.push({ userId: req.user!.userId, authorName: req.user!.name || "", text, mentions, at: new Date() });
+    await t.save();
+    // Notify each mentioned user (never the author).
+    const link = `/dashboard/projects/${req.params.id}?tab=pm&hl=task-${t._id}`;
+    for (const uid of mentions as string[]) {
+      if (uid && uid !== req.user!.userId && mongoose.isValidObjectId(uid)) {
+        await createNotification({ userId: uid, type: "general", title: `${req.user!.name || "Someone"} mentioned you`, message: `On task "${t.title || "Untitled"}": ${text.slice(0, 140)}`, link });
+      }
+    }
+    res.status(201).json(t);
   } catch (err) { next(err); }
 });
 

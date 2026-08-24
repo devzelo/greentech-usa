@@ -1789,6 +1789,7 @@ export async function uploadTaskAttachment(projectId: string, tid: string, file:
   return postMultipart<ApiTask>(`/api/projects/${projectId}/board/tasks/${tid}/attachments`, fd);
 }
 export async function deleteTaskAttachment(projectId: string, tid: string, aid: string): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/attachments/${aid}`, { method: "DELETE" }); }
+export async function addTaskComment(projectId: string, tid: string, body: { text: string; mentions: string[] }): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/comments`, { method: "POST", body: JSON.stringify(body) }); }
 
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";

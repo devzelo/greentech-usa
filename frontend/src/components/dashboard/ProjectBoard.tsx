@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil, UserPlus, Paperclip, Upload, Download, Eye, FileText } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil, UserPlus, Paperclip, Upload, Download, Eye, FileText, MessageSquare, Send, AtSign } from "lucide-react";
 import {
   fetchBoard, addBoardColumn, updateBoardColumn, deleteBoardColumn,
   createTask, updateTask, deleteTask, reorderBoard,
-  fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl,
+  fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl, addTaskComment,
   type ApiTaskColumn, type ApiTask, type BoardMember, type ApiTaskAssignee,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -222,6 +222,10 @@ function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDele
   const [saving, setSaving] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const mentionable = members.filter((m) => m.userId);
 
   const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
     setSaving(true);
@@ -246,6 +250,25 @@ function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDele
     if (!aid) return;
     try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
+  };
+  const addMention = (m: BoardMember) => { setCommentText((c) => `${c}${c && !c.endsWith(" ") ? " " : ""}@${m.name} `); setMentionOpen(false); };
+  const sendComment = async () => {
+    const text = commentText.trim(); if (!text) return;
+    const mentions = mentionable.filter((m) => text.includes(`@${m.name}`)).map((m) => m.userId);
+    setSending(true);
+    try { onSaved(await addTaskComment(projectId, task._id, { text, mentions })); setCommentText(""); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not comment.", "error"); }
+    finally { setSending(false); }
+  };
+  // Highlight @mentions of known members in a comment body.
+  const memberNames = members.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  const renderComment = (text: string) => {
+    if (!memberNames.length) return text;
+    const rx = new RegExp(`@(${memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+    const parts: ReactNode[] = []; let last = 0; let m: RegExpExecArray | null;
+    while ((m = rx.exec(text))) { if (m.index > last) parts.push(text.slice(last, m.index)); parts.push(<span key={m.index} className="font-bold text-primary">{m[0]}</span>); last = m.index + m[0].length; }
+    parts.push(text.slice(last));
+    return parts;
   };
   const addTag = () => { const t = tagInput.trim(); if (!t || tags.includes(t)) { setTagInput(""); return; } const next = [...tags, t]; setTags(next); setTagInput(""); save({ tags: next }, true); };
   const removeTag = (t: string) => { const next = tags.filter((x) => x !== t); setTags(next); save({ tags: next }, true); };
@@ -344,7 +367,44 @@ function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDele
             )}
           </div>
 
-          <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically. Comments &amp; @mentions are coming next.</p>
+          {/* Comments + @mentions */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-2"><MessageSquare size={12} /> Comments {task.comments.length > 0 && `(${task.comments.length})`}</p>
+            <div className="space-y-3 mb-3">
+              {task.comments.length === 0 ? <p className="text-[11px] text-slate-400 italic">No comments yet.</p> : task.comments.map((c, i) => (
+                <div key={i} className="flex gap-2">
+                  <span className="w-7 h-7 rounded-full bg-gt-gradient text-white text-[10px] font-bold flex items-center justify-center shrink-0">{(c.authorName || "?").charAt(0).toUpperCase()}</span>
+                  <div className="min-w-0">
+                    <p className="text-[11px]"><span className="font-bold text-slate-700">{c.authorName || "Someone"}</span> <span className="text-slate-400">{c.at ? new Date(c.at).toLocaleString() : ""}</span></p>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{renderComment(c.text)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {canEdit && (
+              <div>
+                <textarea value={commentText} onChange={(e) => setCommentText(e.target.value)} rows={2} placeholder="Write a comment… use @ to mention someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+                <div className="flex items-center justify-between gap-2 mt-1.5">
+                  <div className="relative">
+                    <button onClick={() => setMentionOpen((v) => !v)} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Mention a member"}><AtSign size={12} /> Mention</button>
+                    {mentionOpen && (
+                      <>
+                        <button className="fixed inset-0 z-10 cursor-default" onClick={() => setMentionOpen(false)} />
+                        <div className="absolute bottom-full mb-1 left-0 z-20 w-52 bg-white border border-slate-100 rounded-xl shadow-xl p-1 max-h-44 overflow-y-auto">
+                          {mentionable.map((m) => (
+                            <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name} <span className="text-slate-400 font-medium">· {kindLabel[m.kind] || m.kind}</span></button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <button onClick={sendComment} disabled={sending || !commentText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically.</p>
         </div>
       </div>
     </div>
