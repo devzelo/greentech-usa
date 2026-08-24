@@ -40,6 +40,7 @@ import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
+import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
@@ -240,6 +241,7 @@ export default function ProjectWorkspace() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState("nature");
+  const [pmSub, setPmSub] = useState<"board" | "docs">("board");   // CR-P — Project Management: Board | Documents
   type FieldType = "text" | "textarea" | "number" | "date" | "url" | "email" | "select" | "checkbox" | "file";
   type CustomField = { fieldId: string; label: string; type: FieldType; options?: string[]; value?: string };
   type CustomTab = { id: string; label: string; icon: typeof Plus; color?: string; parentId?: string; notes?: string; fields?: CustomField[] };
@@ -3627,16 +3629,28 @@ export default function ProjectWorkspace() {
 
           {/* PROJECT MANAGEMENT */}
           {activeTab === "pm" && id && (
-            <div className="space-y-6">
-              {[
-                { sid: "pm-schedules", title: "Schedules" },
-                { sid: "pm-meeting-minutes", title: "Meeting Minutes" },
-                { sid: "pm-progress-reports", title: "Progress Reports" },
-                { sid: "pm-site-data", title: "Site Data" },
-                { sid: "pm-closeout", title: "Closeout Documents" },
-              ].map((s) => (
-                <DocSection key={s.sid} projectId={id} section={s.sid} title={s.title} canEdit={canEdit} canPublish={isOwner} />
-              ))}
+            <div className="space-y-5">
+              {/* CR-P — Board (Kanban) is primary; the document sections live under Documents. */}
+              <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
+                {([["board", "Board"], ["docs", "Documents"]] as const).map(([v, l]) => (
+                  <button key={v} onClick={() => setPmSub(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${pmSub === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
+                ))}
+              </div>
+              {pmSub === "board" ? (
+                <ProjectBoard projectId={id} canEdit={canEdit} />
+              ) : (
+                <div className="space-y-6">
+                  {[
+                    { sid: "pm-schedules", title: "Schedules" },
+                    { sid: "pm-meeting-minutes", title: "Meeting Minutes" },
+                    { sid: "pm-progress-reports", title: "Progress Reports" },
+                    { sid: "pm-site-data", title: "Site Data" },
+                    { sid: "pm-closeout", title: "Closeout Documents" },
+                  ].map((s) => (
+                    <DocSection key={s.sid} projectId={id} section={s.sid} title={s.title} canEdit={canEdit} canPublish={isOwner} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

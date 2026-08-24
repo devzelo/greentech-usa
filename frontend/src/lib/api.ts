@@ -1761,6 +1761,28 @@ export async function createStickyNote(body: { text?: string; color?: string } =
 export async function updateStickyNote(id: string, body: { text?: string; color?: string }): Promise<ApiStickyNote> { return request(`/sticky-notes/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteStickyNote(id: string): Promise<void> { await request(`/sticky-notes/${id}`, { method: "DELETE" }); }
 
+// ── CR-P — Project Management Kanban board ───────────────────────────────────
+export interface ApiTaskColumn { _id: string; projectId: string; title: string; order: number; isDefault: boolean; key: string }
+export interface ApiTaskAssignee { userId: string; empId: string; name: string; kind: string }
+export interface ApiTaskFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
+export interface ApiTaskComment { _id?: string; userId: string; authorName: string; text: string; mentions: string[]; at: string }
+export interface ApiTask {
+  _id: string; projectId: string; columnId: string; title: string; description: string; order: number;
+  assignees: ApiTaskAssignee[]; tags: string[]; attachments: ApiTaskFile[];
+  subtasks: Array<{ _id?: string; title: string; done: boolean }>; comments: ApiTaskComment[];
+  createdById: string; createdByName: string; createdAt?: string; updatedAt?: string;
+}
+export interface BoardData { columns: ApiTaskColumn[]; tasks: ApiTask[] }
+export type TaskInput = Partial<Pick<ApiTask, "title" | "description" | "columnId" | "tags" | "assignees" | "subtasks">>;
+export async function fetchBoard(projectId: string): Promise<BoardData> { return request(`/projects/${projectId}/board`); }
+export async function addBoardColumn(projectId: string, title: string): Promise<ApiTaskColumn> { return request(`/projects/${projectId}/board/columns`, { method: "POST", body: JSON.stringify({ title }) }); }
+export async function updateBoardColumn(projectId: string, cid: string, body: { title?: string; order?: number }): Promise<ApiTaskColumn> { return request(`/projects/${projectId}/board/columns/${cid}`, { method: "PATCH", body: JSON.stringify(body) }); }
+export async function deleteBoardColumn(projectId: string, cid: string): Promise<void> { await request(`/projects/${projectId}/board/columns/${cid}`, { method: "DELETE" }); }
+export async function createTask(projectId: string, body: { title: string; columnId: string }): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks`, { method: "POST", body: JSON.stringify(body) }); }
+export async function updateTask(projectId: string, tid: string, body: TaskInput): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}`, { method: "PATCH", body: JSON.stringify(body) }); }
+export async function deleteTask(projectId: string, tid: string): Promise<void> { await request(`/projects/${projectId}/board/tasks/${tid}`, { method: "DELETE" }); }
+export async function reorderBoard(projectId: string, columns: Array<{ columnId: string; taskIds: string[] }>): Promise<void> { await request(`/projects/${projectId}/board/reorder`, { method: "POST", body: JSON.stringify({ columns }) }); }
+
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";
 export type ProjectRequestStatus = "Draft" | "Sent" | "Responded" | "Closed" | "Cancelled";
