@@ -236,8 +236,16 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const [sending, setSending] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const myId = getAuthUser()?.id || "";
+  const [mentionQuery, setMentionQuery] = useState("");
+  // The modal fetches its own member list too, so it works even if the parent hasn't loaded it yet;
+  // surfaces an error so a broken endpoint / access issue is visible instead of silently empty.
+  const [localMembers, setLocalMembers] = useState<BoardMember[]>(members);
+  useEffect(() => {
+    fetchBoardMembers(projectId).then(setLocalMembers).catch((e) => toast(e instanceof Error ? e.message : "Could not load the people on this project.", "error"));
+  }, [projectId]);
   // Mentionable = members with a login, minus yourself (you can assign yourself, but not @-mention yourself).
-  const mentionable = members.filter((m) => m.userId && m.userId !== myId);
+  const mentionable = localMembers.filter((m) => m.userId && m.userId !== myId);
+  const mentionMatches = mentionable.filter((m) => !mentionQuery || m.name.toLowerCase().includes(mentionQuery.toLowerCase()));
 
   const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
     setSaving(true);
@@ -263,7 +271,17 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
-  const addMention = (m: BoardMember) => { setCommentText((c) => `${c}${c && !c.endsWith(" ") ? " " : ""}@${m.name} `); setMentionOpen(false); };
+  // Insert a mention: replace the @query being typed (if any) with @Name, else append.
+  const addMention = (m: BoardMember) => {
+    setCommentText((c) => (/@([^\s@]*)$/.test(c) ? c.replace(/@([^\s@]*)$/, `@${m.name} `) : `${c}${c && !c.endsWith(" ") ? " " : ""}@${m.name} `));
+    setMentionOpen(false); setMentionQuery("");
+  };
+  // Detect an @-token as the user types, and open the mention menu filtered by it.
+  const onCommentInput = (val: string) => {
+    setCommentText(val);
+    const m = /@([^\s@]*)$/.exec(val);
+    if (m && mentionable.length) { setMentionQuery(m[1]); setMentionOpen(true); } else { setMentionOpen(false); setMentionQuery(""); }
+  };
   const sendComment = async () => {
     const text = commentText.trim(); if (!text) return;
     const mentions = mentionable.filter((m) => text.includes(`@${m.name}`)).map((m) => m.userId);
@@ -273,7 +291,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     finally { setSending(false); }
   };
   // Highlight @mentions of known members in a comment body.
-  const memberNames = members.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  const memberNames = localMembers.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
   const renderComment = (text: string) => {
     if (!memberNames.length) return text;
     const rx = new RegExp(`@(${memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
@@ -332,7 +350,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             )}
             {assignOpen && canEdit && (
               <div className="mt-2 rounded-xl border border-slate-100 p-2 max-h-56 overflow-y-auto space-y-2">
-                {members.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No one with access to this project yet — assign employees, or grant access to subcontractors / partners first.</p> : groupByKind(members).map((g) => (
+                {localMembers.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No one with access to this project yet — assign employees, or grant access to subcontractors / partners first.</p> : groupByKind(localMembers).map((g) => (
                   <div key={g.kind}>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-0.5">{g.label}</p>
                     {g.items.map((m) => (
@@ -407,26 +425,22 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             </div>
             {canEdit && (
               <div>
-                <textarea value={commentText} onChange={(e) => setCommentText(e.target.value)} rows={2} placeholder="Write a comment… use @ to mention someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
-                <div className="flex items-center justify-between gap-2 mt-1.5">
-                  <div className="relative">
-                    <button onClick={() => setMentionOpen((v) => !v)} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Mention a member"}><AtSign size={12} /> Mention</button>
-                    {mentionOpen && (
-                      <>
-                        <button className="fixed inset-0 z-10 cursor-default" onClick={() => setMentionOpen(false)} />
-                        <div className="absolute bottom-full mb-1 left-0 z-20 w-56 bg-white border border-slate-100 rounded-xl shadow-xl p-1.5 max-h-56 overflow-y-auto space-y-2">
-                          {mentionable.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1.5 py-1">No members with a login to mention.</p> : groupByKind(mentionable).map((g) => (
-                            <div key={g.kind}>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1.5 mb-0.5">{g.label}</p>
-                              {g.items.map((m) => (
-                                <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name}</button>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                <textarea value={commentText} onChange={(e) => onCommentInput(e.target.value)} rows={2} placeholder="Write a comment… type @ to mention someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+                {/* Inline @-mention suggestions as you type. */}
+                {mentionOpen && mentionMatches.length > 0 && (
+                  <div className="mt-1 rounded-xl border border-slate-100 shadow-lg bg-white p-1.5 max-h-52 overflow-y-auto space-y-2">
+                    {groupByKind(mentionMatches).map((g) => (
+                      <div key={g.kind}>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1.5 mb-0.5">{g.label}</p>
+                        {g.items.map((m) => (
+                          <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name}</button>
+                        ))}
+                      </div>
+                    ))}
                   </div>
+                )}
+                <div className="flex items-center justify-between gap-2 mt-1.5">
+                  <button onClick={() => { setMentionQuery(""); setMentionOpen((v) => !v); }} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Mention a member"}><AtSign size={12} /> Mention</button>
                   <button onClick={sendComment} disabled={sending || !commentText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
                 </div>
               </div>

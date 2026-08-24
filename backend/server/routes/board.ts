@@ -135,6 +135,7 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
     // The current user first — so the task creator can assign / mention themselves.
     push({ key: `user:${req.user!.userId}`, name: (req.user!.name ? `${req.user!.name} (You)` : "You"), kind: req.user!.role === "subcontractor" ? "subcontractor" : "employee", userId: req.user!.userId, empId: "" });
 
+    try {
     // Assigned employees (empIds → their user account + directory name).
     const empIds: string[] = Array.isArray(p.assignedEmployees) ? p.assignedEmployees : [];
     if (empIds.length) {
@@ -178,6 +179,7 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
     if (jv?.enabled && jv?.partnerName && !out.some((m) => m.kind === "partner")) {
       push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId: "", empId: "" });
     }
+    } catch { /* a lookup failed — still return at least yourself + whatever resolved */ }
     res.json(out);
   } catch (err) { next(err); }
 });
