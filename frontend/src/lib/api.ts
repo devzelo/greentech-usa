@@ -1782,6 +1782,13 @@ export async function createTask(projectId: string, body: { title: string; colum
 export async function updateTask(projectId: string, tid: string, body: TaskInput): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteTask(projectId: string, tid: string): Promise<void> { await request(`/projects/${projectId}/board/tasks/${tid}`, { method: "DELETE" }); }
 export async function reorderBoard(projectId: string, columns: Array<{ columnId: string; taskIds: string[] }>): Promise<void> { await request(`/projects/${projectId}/board/reorder`, { method: "POST", body: JSON.stringify({ columns }) }); }
+export interface BoardMember { key: string; name: string; kind: string; userId: string; empId: string }
+export async function fetchBoardMembers(projectId: string): Promise<BoardMember[]> { return request(`/projects/${projectId}/board/members`); }
+export async function uploadTaskAttachment(projectId: string, tid: string, file: File): Promise<ApiTask> {
+  const fd = new FormData(); fd.append("file", file);
+  return postMultipart<ApiTask>(`/api/projects/${projectId}/board/tasks/${tid}/attachments`, fd);
+}
+export async function deleteTaskAttachment(projectId: string, tid: string, aid: string): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/attachments/${aid}`, { method: "DELETE" }); }
 
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";

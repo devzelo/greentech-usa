@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil } from "lucide-react";
+import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil, UserPlus, Paperclip, Upload, Download, Eye, FileText } from "lucide-react";
 import {
   fetchBoard, addBoardColumn, updateBoardColumn, deleteBoardColumn,
   createTask, updateTask, deleteTask, reorderBoard,
-  type ApiTaskColumn, type ApiTask,
+  fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl,
+  type ApiTaskColumn, type ApiTask, type BoardMember, type ApiTaskAssignee,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -14,6 +15,7 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
   const { confirm, dialogs } = useDialogs();
   const [columns, setColumns] = useState<ApiTaskColumn[]>([]);
   const [tasks, setTasks] = useState<ApiTask[]>([]);
+  const [members, setMembers] = useState<BoardMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [quickAddCol, setQuickAddCol] = useState<string | null>(null);
@@ -27,6 +29,7 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
   useEffect(() => {
     setLoading(true);
     fetchBoard(projectId).then((b) => { setColumns(b.columns); setTasks(b.tasks); }).catch(() => {}).finally(() => setLoading(false));
+    fetchBoardMembers(projectId).then(setMembers).catch(() => {});
   }, [projectId]);
 
   const tasksIn = (cid: string) => tasks.filter((t) => t.columnId === cid).sort((a, b) => a.order - b.order);
@@ -195,15 +198,20 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
         )}
       </div>
 
-      {openTask && <TaskModal projectId={projectId} task={openTask} canEdit={canEdit} onClose={() => setOpenTaskId(null)} onSaved={patchLocal} onDelete={() => removeTask(openTask)} />}
+      {openTask && <TaskModal projectId={projectId} task={openTask} members={members} canEdit={canEdit} onClose={() => setOpenTaskId(null)} onSaved={patchLocal} onDelete={() => removeTask(openTask)} />}
       {dialogs}
     </div>
   );
 }
 
-// ── Task detail modal — title, description, tags, subtasks (assignees/attachments/comments next) ──
-function TaskModal({ projectId, task, canEdit, onClose, onSaved, onDelete }: {
-  projectId: string; task: ApiTask; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
+// Match a stored assignee to a member (userId, then empId, then name+kind).
+const sameMember = (a: ApiTaskAssignee, m: BoardMember) =>
+  (!!m.userId && a.userId === m.userId) || (!!m.empId && a.empId === m.empId) || (a.name === m.name && a.kind === m.kind);
+const kindLabel: Record<string, string> = { employee: "Employee", subcontractor: "Subcontractor", partner: "Partner" };
+
+// ── Task detail modal — title, description, assignees, tags, subtasks, attachments ──
+function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDelete }: {
+  projectId: string; task: ApiTask; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
@@ -212,12 +220,32 @@ function TaskModal({ projectId, task, canEdit, onClose, onSaved, onDelete }: {
   const [subtasks, setSubtasks] = useState(task.subtasks);
   const [subInput, setSubInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
     setSaving(true);
     try { const up = await updateTask(projectId, task._id, patch); onSaved(up); }
     catch (e) { if (!silent) toast(e instanceof Error ? e.message : "Could not save.", "error"); }
     finally { setSaving(false); }
+  };
+  const isAssigned = (m: BoardMember) => task.assignees.some((a) => sameMember(a, m));
+  const toggleAssignee = (m: BoardMember) => {
+    const next = isAssigned(m)
+      ? task.assignees.filter((a) => !sameMember(a, m))
+      : [...task.assignees, { userId: m.userId, empId: m.empId, name: m.name, kind: m.kind }];
+    save({ assignees: next }, true);
+  };
+  const uploadFile = async (file: File) => {
+    setUploading(true);
+    try { onSaved(await uploadTaskAttachment(projectId, task._id, file)); }
+    catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
+    finally { setUploading(false); }
+  };
+  const removeFile = async (aid?: string) => {
+    if (!aid) return;
+    try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
   const addTag = () => { const t = tagInput.trim(); if (!t || tags.includes(t)) { setTagInput(""); return; } const next = [...tags, t]; setTags(next); setTagInput(""); save({ tags: next }, true); };
   const removeTag = (t: string) => { const next = tags.filter((x) => x !== t); setTags(next); save({ tags: next }, true); };
@@ -241,6 +269,35 @@ function TaskModal({ projectId, task, canEdit, onClose, onSaved, onDelete }: {
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Description</p>
             <textarea value={description} disabled={!canEdit} onChange={(e) => setDescription(e.target.value)} onBlur={() => description !== task.description && save({ description })} rows={4} placeholder="Add a description…" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+          </div>
+
+          {/* Assignees — only people on this project (employees + subcontractors + partner) */}
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Assignees</p>
+              {canEdit && <button onClick={() => setAssignOpen((v) => !v)} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><UserPlus size={12} /> Assign</button>}
+            </div>
+            {task.assignees.length === 0 ? <p className="text-[11px] text-slate-400 italic">No one assigned.</p> : (
+              <div className="flex flex-wrap gap-1.5">
+                {task.assignees.map((a, i) => (
+                  <span key={i} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
+                    <span className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] flex items-center justify-center">{(a.name || "?").charAt(0).toUpperCase()}</span>
+                    {a.name}{a.kind && <span className="text-slate-400 font-medium">· {kindLabel[a.kind] || a.kind}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+            {assignOpen && canEdit && (
+              <div className="mt-2 rounded-xl border border-slate-100 p-2 max-h-40 overflow-y-auto space-y-0.5">
+                {members.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No project members yet — assign employees / subcontractors / partners to this project first.</p> : members.map((m) => (
+                  <label key={m.key} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
+                    <input type="checkbox" checked={isAssigned(m)} onChange={() => toggleAssignee(m)} />
+                    <span className="font-bold text-slate-700 truncate">{m.name}</span>
+                    <span className="text-slate-400 shrink-0">· {kindLabel[m.kind] || m.kind}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -267,7 +324,27 @@ function TaskModal({ projectId, task, canEdit, onClose, onSaved, onDelete }: {
             {canEdit && <div className="flex items-center gap-2 mt-1.5"><input value={subInput} onChange={(e) => setSubInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSub(); } }} placeholder="Add a subtask…" className="flex-grow bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none" /><button onClick={addSub} className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200">Add</button></div>}
           </div>
 
-          <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically. Assignees, attachments &amp; comments are coming next.</p>
+          {/* Attachments */}
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Paperclip size={12} /> Attachments {task.attachments.length > 0 && `(${task.attachments.length})`}</p>
+              {canEdit && <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary cursor-pointer">{uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); e.target.value = ""; }} /></label>}
+            </div>
+            {task.attachments.length === 0 ? <p className="text-[11px] text-slate-400 italic">No files attached.</p> : (
+              <div className="space-y-1">{task.attachments.map((f) => (
+                <div key={f._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
+                  <span className="flex items-center gap-1.5 min-w-0"><FileText size={13} className="text-slate-400 shrink-0" /><span className="font-bold text-slate-700 truncate" title={f.name}>{f.name}</span>{f.size && <span className="text-slate-400 shrink-0">· {f.size}</span>}</span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <a href={attachmentUrl(f.filePath)} target="_blank" rel="noreferrer" className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></a>
+                    <a href={attachmentUrl(f.filePath)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
+                    {canEdit && <button onClick={() => removeFile(f._id)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
+                  </span>
+                </div>
+              ))}</div>
+            )}
+          </div>
+
+          <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically. Comments &amp; @mentions are coming next.</p>
         </div>
       </div>
     </div>

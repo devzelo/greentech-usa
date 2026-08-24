@@ -1,9 +1,17 @@
 import { Router, Response, NextFunction } from "express";
 import mongoose from "mongoose";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import Task from "../models/Task";
 import TaskColumn from "../models/TaskColumn";
+import Project from "../models/Project";
+import User from "../models/User";
+import Employee from "../models/Employee";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+
+const humanSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 // CR-P — Kanban board for a project's Project Management tab. Gated by the "pm" tab permission,
 // so assigned employees, subcontractors and partners with pm access all reach it.
@@ -103,6 +111,81 @@ router.patch("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Next
 router.delete("/tasks/:tid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try { await Task.findOneAndDelete({ _id: req.params.tid, projectId: req.params.id }); res.json({ ok: true }); }
   catch (err) { next(err); }
+});
+
+// ── Members — assignable people on THIS project (employees + subcontractors + partner) ──
+interface Member { key: string; name: string; kind: string; userId: string; empId: string }
+router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findById(req.params.id).lean();
+    if (!project) return res.status(404).json({ error: "Not found" });
+    const p = project as unknown as { assignedEmployees?: string[]; subcontractors?: Array<Record<string, unknown>>; jointVenture?: { enabled?: boolean; partnerName?: string; email?: string }; guests?: Array<{ userId?: unknown }> };
+    const out: Member[] = [];
+    const seen = new Set<string>();
+    const push = (m: Member) => { if (m.name && !seen.has(m.key)) { seen.add(m.key); out.push(m); } };
+
+    const empIds: string[] = Array.isArray(p.assignedEmployees) ? p.assignedEmployees : [];
+    if (empIds.length) {
+      const [users, emps] = await Promise.all([
+        User.find({ empId: { $in: empIds } }).select("name empId").lean(),
+        Employee.find({ empId: { $in: empIds } }).select("name empId").lean(),
+      ]);
+      const uByEmp = new Map(users.map((u) => [String((u as { empId?: string }).empId || ""), u]));
+      const nameByEmp = new Map(emps.map((e) => [String((e as { empId?: string }).empId || ""), String((e as { name?: string }).name || "")]));
+      for (const empId of empIds) {
+        const u = uByEmp.get(empId) as { _id: unknown; name?: string } | undefined;
+        push({ key: `emp:${empId}`, name: u?.name || nameByEmp.get(empId) || empId, kind: "employee", userId: u ? String(u._id) : "", empId });
+      }
+    }
+    for (const s of (Array.isArray(p.subcontractors) ? p.subcontractors : [])) {
+      const sub = s as { name?: string; subId?: string; userId?: string };
+      push({ key: `sub:${sub.subId || sub.name || ""}`, name: sub.name || "Subcontractor", kind: "subcontractor", userId: String(sub.userId || ""), empId: "" });
+    }
+    const jv = p.jointVenture;
+    if (jv?.enabled && jv?.partnerName) {
+      let userId = "";
+      const jvEmail = String(jv.email || "").toLowerCase();
+      const gIds = (Array.isArray(p.guests) ? p.guests : []).map((g) => String(g.userId || "")).filter(Boolean);
+      if (jvEmail && gIds.length) {
+        const gUsers = await User.find({ _id: { $in: gIds } }).select("email").lean();
+        const match = gUsers.find((u) => String((u as { email?: string }).email || "").toLowerCase() === jvEmail);
+        if (match) userId = String((match as { _id: unknown })._id);
+      }
+      push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId, empId: "" });
+    }
+    res.json(out);
+  } catch (err) { next(err); }
+});
+
+// ── Task attachments (same pattern as expenses) ──────────────────────────────
+const storage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dir = path.join("uploads", String((req as AuthedRequest).params.id), "tasks", String((req as AuthedRequest).params.tid));
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+const upload = multer({ storage, limits: { fileSize: 32 * 1024 * 1024 } });
+router.post("/tasks/:tid/attachments", upload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const attachment = { name: req.file.originalname, filePath: req.file.path.replace(/\\/g, "/"), fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(), size: humanSize(req.file.size) };
+    const t = await Task.findOneAndUpdate({ _id: req.params.tid, projectId: req.params.id }, { $push: { attachments: attachment } }, { new: true });
+    if (!t) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Task not found." }); }
+    res.status(201).json(t);
+  } catch (err) { next(err); }
+});
+router.delete("/tasks/:tid/attachments/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const t = await Task.findOne({ _id: req.params.tid, projectId: req.params.id });
+    if (!t) return res.status(404).json({ error: "Not found" });
+    const att = t.attachments.find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
+    if (att?.filePath) fs.unlink(path.resolve(att.filePath), () => {});
+    t.set("attachments", t.attachments.filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid));
+    await t.save();
+    res.json(t);
+  } catch (err) { next(err); }
 });
 
 // ── Reorder / move — body: { columns: [{ columnId, taskIds: [...] }] } ────────
