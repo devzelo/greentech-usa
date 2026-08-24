@@ -9,6 +9,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import Avatar from "./Avatar";
 
 // CR-P — Trello-style Kanban board on a project's Project Management tab. Columns (Pending /
 // In Progress / Done / Archive + custom), draggable task cards, and a task detail modal.
@@ -158,7 +159,7 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
                           {t.deadline && <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isOverdue(t.deadline) ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}><CalendarClock size={8} /> {fmtDeadline(t.deadline)}</span>}
                           {t.tags.slice(0, 3).map((tag) => <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500"><TagIcon size={8} /> {tag}</span>)}
                           {t.subtasks.length > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{doneSubs}/{t.subtasks.length} ✓</span>}
-                          {t.assignees.slice(0, 4).map((a, i) => <span key={i} title={a.name} className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] font-bold flex items-center justify-center ring-1 ring-white">{(a.name || "?").charAt(0).toUpperCase()}</span>)}
+                          {t.assignees.slice(0, 4).map((a, i) => <span key={i} className="inline-flex"><Avatar url={a.avatarUrl || members.find((mm) => mm.userId && mm.userId === a.userId)?.avatarUrl} name={a.name} size={20} /></span>)}
                         </div>
                       )}
                     </div>
@@ -264,7 +265,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const toggleAssignee = (m: BoardMember) => {
     const next = isAssigned(m)
       ? task.assignees.filter((a) => !sameMember(a, m))
-      : [...task.assignees, { userId: m.userId, empId: m.empId, name: m.name, kind: m.kind }];
+      : [...task.assignees, { userId: m.userId, empId: m.empId, name: m.name, kind: m.kind, avatarUrl: m.avatarUrl || "" }];
     save({ assignees: next }, true);
   };
   const uploadFile = async (file: File) => {
@@ -357,7 +358,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
               <div className="flex flex-wrap gap-1.5">
                 {task.assignees.map((a, i) => (
                   <span key={i} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
-                    <span className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] flex items-center justify-center">{(a.name || "?").charAt(0).toUpperCase()}</span>
+                    <Avatar url={a.avatarUrl || localMembers.find((mm) => mm.userId && mm.userId === a.userId)?.avatarUrl} name={a.name} size={20} />
                     {a.name}{a.kind && <span className="text-slate-400 font-medium">· {kindLabel[a.kind] || a.kind}</span>}
                   </span>
                 ))}
@@ -371,6 +372,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                     {g.items.map((m) => (
                       <label key={m.key} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
                         <input type="checkbox" checked={isAssigned(m)} onChange={() => toggleAssignee(m)} />
+                        <Avatar url={m.avatarUrl} name={m.name} size={18} />
                         <span className="font-bold text-slate-700 truncate">{m.name}</span>
                       </label>
                     ))}
@@ -430,7 +432,8 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             <div className="space-y-3 mb-3">
               {task.comments.length === 0 ? <p className="text-[11px] text-slate-400 italic">No comments yet.</p> : task.comments.map((c, i) => (
                 <div key={i} className="flex gap-2">
-                  <span className="w-7 h-7 rounded-full bg-gt-gradient text-white text-[10px] font-bold flex items-center justify-center shrink-0">{(c.authorName || "?").charAt(0).toUpperCase()}</span>
+                  <Avatar url={c.authorAvatar} name={c.authorName} size={28} />
+
                   <div className="min-w-0">
                     <p className="text-[11px]"><span className="font-bold text-slate-700">{c.authorName || "Someone"}</span> <span className="text-slate-400">{c.at ? new Date(c.at).toLocaleString() : ""}</span></p>
                     <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{renderComment(c.text)}</p>
@@ -445,7 +448,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {pendingMentions.map((m) => (
                       <span key={m.key} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                        <span className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] flex items-center justify-center">{(m.name || "?").charAt(0).toUpperCase()}</span>
+                        <Avatar url={m.avatarUrl} name={m.name} size={20} />
                         {m.name}
                         <button onClick={() => removePending(m)} className="text-primary/60 hover:text-red-500"><X size={11} /></button>
                       </span>

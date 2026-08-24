@@ -104,7 +104,7 @@ router.patch("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Next
     if (typeof b.deadline === "string") t.deadline = b.deadline.slice(0, 20);
     if (typeof b.columnId === "string" && mongoose.isValidObjectId(b.columnId)) t.columnId = b.columnId;
     if (Array.isArray(b.tags)) t.set("tags", b.tags.map((x: unknown) => String(x).slice(0, 40)).slice(0, 20));
-    if (Array.isArray(b.assignees)) t.set("assignees", b.assignees.map((a: Record<string, unknown>) => ({ userId: String(a.userId || ""), empId: String(a.empId || ""), name: String(a.name || ""), kind: String(a.kind || "") })).slice(0, 30));
+    if (Array.isArray(b.assignees)) t.set("assignees", b.assignees.map((a: Record<string, unknown>) => ({ userId: String(a.userId || ""), empId: String(a.empId || ""), name: String(a.name || ""), kind: String(a.kind || ""), avatarUrl: String(a.avatarUrl || "") })).slice(0, 30));
     if (Array.isArray(b.subtasks)) t.set("subtasks", b.subtasks.map((s: Record<string, unknown>) => ({ title: String(s.title || "").slice(0, 300), done: !!s.done })).slice(0, 100));
     await t.save();
     res.json(t);
@@ -116,7 +116,7 @@ router.delete("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Nex
 });
 
 // ── Members — assignable people on THIS project (employees + subcontractors + partner) ──
-interface Member { key: string; name: string; kind: string; userId: string; empId: string }
+interface Member { key: string; name: string; kind: string; userId: string; empId: string; avatarUrl: string }
 router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const project = await Project.findOne({ projectId: req.params.id }).lean();
@@ -134,21 +134,22 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
     };
 
     // The current user first — so the task creator can assign / mention themselves.
-    push({ key: `user:${req.user!.userId}`, name: (req.user!.name ? `${req.user!.name} (You)` : "You"), kind: req.user!.role === "subcontractor" ? "subcontractor" : "employee", userId: req.user!.userId, empId: "" });
+    const meDoc = await User.findById(req.user!.userId).select("avatarUrl").lean();
+    push({ key: `user:${req.user!.userId}`, name: (req.user!.name ? `${req.user!.name} (You)` : "You"), kind: req.user!.role === "subcontractor" ? "subcontractor" : "employee", userId: req.user!.userId, empId: "", avatarUrl: String((meDoc as { avatarUrl?: string } | null)?.avatarUrl || "") });
 
     try {
     // Assigned employees (empIds → their user account + directory name).
     const empIds: string[] = Array.isArray(p.assignedEmployees) ? p.assignedEmployees : [];
     if (empIds.length) {
       const [users, emps] = await Promise.all([
-        User.find({ empId: { $in: empIds } }).select("name empId").lean(),
+        User.find({ empId: { $in: empIds } }).select("name empId avatarUrl").lean(),
         Employee.find({ empId: { $in: empIds } }).select("name empId").lean(),
       ]);
       const uByEmp = new Map(users.map((u) => [String((u as { empId?: string }).empId || ""), u]));
       const nameByEmp = new Map(emps.map((e) => [String((e as { empId?: string }).empId || ""), String((e as { name?: string }).name || "")]));
       for (const empId of empIds) {
-        const u = uByEmp.get(empId) as { _id: unknown; name?: string } | undefined;
-        push({ key: `emp:${empId}`, name: u?.name || nameByEmp.get(empId) || empId, kind: "employee", userId: u ? String(u._id) : "", empId });
+        const u = uByEmp.get(empId) as { _id: unknown; name?: string; avatarUrl?: string } | undefined;
+        push({ key: `emp:${empId}`, name: u?.name || nameByEmp.get(empId) || empId, kind: "employee", userId: u ? String(u._id) : "", empId, avatarUrl: String(u?.avatarUrl || "") });
       }
     }
 
@@ -157,12 +158,12 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
     const jvEmail = String(p.jointVenture?.email || "").toLowerCase();
     const gIds = (Array.isArray(p.guests) ? p.guests : []).map((g) => String(g.userId || "")).filter((v) => mongoose.isValidObjectId(v));
     if (gIds.length) {
-      const gUsers = await User.find({ _id: { $in: gIds } }).select("name email").lean();
+      const gUsers = await User.find({ _id: { $in: gIds } }).select("name email avatarUrl").lean();
       for (const u of gUsers) {
         const uid = String((u as { _id: unknown })._id);
         const email = String((u as { email?: string }).email || "").toLowerCase();
         const kind = jvEmail && email === jvEmail ? "partner" : "subcontractor";
-        push({ key: `user:${uid}`, name: String((u as { name?: string }).name || email || "Member"), kind, userId: uid, empId: "" });
+        push({ key: `user:${uid}`, name: String((u as { name?: string }).name || email || "Member"), kind, userId: uid, empId: "", avatarUrl: String((u as { avatarUrl?: string }).avatarUrl || "") });
       }
     }
 
@@ -172,13 +173,13 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
       const sub = s as { name?: string; subId?: string; userId?: string };
       const name = sub.name || "";
       if (!name || takenNames.has(name.toLowerCase())) continue;
-      push({ key: `sub:${sub.subId || name}`, name, kind: "subcontractor", userId: String(sub.userId || ""), empId: "" });
+      push({ key: `sub:${sub.subId || name}`, name, kind: "subcontractor", userId: String(sub.userId || ""), empId: "", avatarUrl: "" });
     }
 
     // JV partner record, if not already represented by a guest login.
     const jv = p.jointVenture;
     if (jv?.enabled && jv?.partnerName && !out.some((m) => m.kind === "partner")) {
-      push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId: "", empId: "" });
+      push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId: "", empId: "", avatarUrl: "" });
     }
     } catch { /* a lookup failed — still return at least yourself + whatever resolved */ }
     res.json(out);
@@ -224,7 +225,8 @@ router.post("/tasks/:tid/comments", async (req: AuthedRequest, res: Response, ne
     const mentions = Array.isArray(req.body?.mentions) ? req.body.mentions.map((x: unknown) => String(x)).filter(Boolean).slice(0, 30) : [];
     const t = await Task.findOne({ _id: req.params.tid, projectId: req.params.id });
     if (!t) return res.status(404).json({ error: "Not found" });
-    t.comments.push({ userId: req.user!.userId, authorName: req.user!.name || "", text, mentions, at: new Date() });
+    const author = await User.findById(req.user!.userId).select("avatarUrl").lean();
+    t.comments.push({ userId: req.user!.userId, authorName: req.user!.name || "", authorAvatar: String((author as { avatarUrl?: string } | null)?.avatarUrl || ""), text, mentions, at: new Date() });
     await t.save();
     // Notify each mentioned user (never the author).
     const link = `/dashboard/projects/${req.params.id}?tab=pm&hl=task-${t._id}`;

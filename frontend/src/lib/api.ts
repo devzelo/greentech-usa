@@ -1763,9 +1763,9 @@ export async function deleteStickyNote(id: string): Promise<void> { await reques
 
 // ── CR-P — Project Management Kanban board ───────────────────────────────────
 export interface ApiTaskColumn { _id: string; projectId: string; title: string; order: number; isDefault: boolean; key: string }
-export interface ApiTaskAssignee { userId: string; empId: string; name: string; kind: string }
+export interface ApiTaskAssignee { userId: string; empId: string; name: string; kind: string; avatarUrl?: string }
 export interface ApiTaskFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
-export interface ApiTaskComment { _id?: string; userId: string; authorName: string; text: string; mentions: string[]; at: string }
+export interface ApiTaskComment { _id?: string; userId: string; authorName: string; authorAvatar?: string; text: string; mentions: string[]; at: string }
 export interface ApiTask {
   _id: string; projectId: string; columnId: string; title: string; description: string; deadline?: string; order: number;
   assignees: ApiTaskAssignee[]; tags: string[]; attachments: ApiTaskFile[];
@@ -1784,7 +1784,7 @@ export async function createTask(projectId: string, body: { title: string; colum
 export async function updateTask(projectId: string, tid: string, body: TaskInput): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteTask(projectId: string, tid: string): Promise<void> { await request(`/projects/${projectId}/board/tasks/${tid}`, { method: "DELETE" }); }
 export async function reorderBoard(projectId: string, columns: Array<{ columnId: string; taskIds: string[] }>): Promise<void> { await request(`/projects/${projectId}/board/reorder`, { method: "POST", body: JSON.stringify({ columns }) }); }
-export interface BoardMember { key: string; name: string; kind: string; userId: string; empId: string }
+export interface BoardMember { key: string; name: string; kind: string; userId: string; empId: string; avatarUrl?: string }
 export async function fetchBoardMembers(projectId: string): Promise<BoardMember[]> { return request(`/projects/${projectId}/board/members`); }
 export async function uploadTaskAttachment(projectId: string, tid: string, file: File): Promise<ApiTask> {
   const fd = new FormData(); fd.append("file", file);
