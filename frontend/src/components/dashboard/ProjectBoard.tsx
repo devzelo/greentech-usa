@@ -251,8 +251,13 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   useEffect(() => {
     fetchBoardMembers(projectId).then(setLocalMembers).catch((e) => toast(e instanceof Error ? e.message : "Could not load the people on this project.", "error"));
   }, [projectId]);
+  // The task's creator may be an admin who isn't an assigned project member; make sure they're
+  // always available to @-mention (and their avatar/name resolve) even if not on the members list.
+  const allMembers: BoardMember[] = (task.createdById && !localMembers.some((m) => m.userId === task.createdById))
+    ? [...localMembers, { key: `user:${task.createdById}`, name: task.createdByName || "Task creator", kind: "employee", userId: task.createdById, empId: "", avatarUrl: "" }]
+    : localMembers;
   // Mentionable = members with a login, minus yourself (you can assign yourself, but not @-mention yourself).
-  const mentionable = localMembers.filter((m) => m.userId && m.userId !== myId);
+  const mentionable = allMembers.filter((m) => m.userId && m.userId !== myId);
   const mentionMatches = mentionable.filter((m) => !mentionQuery || m.name.toLowerCase().includes(mentionQuery.toLowerCase()));
 
   const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
@@ -304,7 +309,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     finally { setSending(false); }
   };
   // Highlight @mentions of known members in a comment body.
-  const memberNames = localMembers.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  const memberNames = allMembers.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
   const renderComment = (text: string) => {
     if (!memberNames.length) return text;
     const rx = new RegExp(`@(${memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
