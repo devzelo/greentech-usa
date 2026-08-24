@@ -3,7 +3,7 @@ import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Sq
 import {
   fetchBoard, addBoardColumn, updateBoardColumn, deleteBoardColumn,
   createTask, updateTask, deleteTask, reorderBoard,
-  fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl, addTaskComment,
+  fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl, addTaskComment, getAuthUser,
   type ApiTaskColumn, type ApiTask, type BoardMember, type ApiTaskAssignee,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -208,6 +208,15 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
 const sameMember = (a: ApiTaskAssignee, m: BoardMember) =>
   (!!m.userId && a.userId === m.userId) || (!!m.empId && a.empId === m.empId) || (a.name === m.name && a.kind === m.kind);
 const kindLabel: Record<string, string> = { employee: "Employee", subcontractor: "Subcontractor", partner: "Partner" };
+// Group members into category sections (Employees / Subcontractors / Partners) for the pickers.
+const KIND_ORDER = ["employee", "subcontractor", "partner"];
+function groupByKind(list: BoardMember[]): Array<{ kind: string; label: string; items: BoardMember[] }> {
+  const m = new Map<string, BoardMember[]>();
+  for (const x of list) { const k = x.kind || "other"; if (!m.has(k)) m.set(k, []); m.get(k)!.push(x); }
+  const inOrder = KIND_ORDER.filter((k) => m.has(k)).map((k) => ({ kind: k, label: `${kindLabel[k] || k}s`, items: m.get(k)! }));
+  const rest = [...m.keys()].filter((k) => !KIND_ORDER.includes(k)).map((k) => ({ kind: k, label: k, items: m.get(k)! }));
+  return [...inOrder, ...rest];
+}
 
 // ── Task detail modal — title, description, assignees, tags, subtasks, attachments ──
 // Exported so the cross-project overview board can reuse it.
@@ -226,7 +235,9 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const [commentText, setCommentText] = useState("");
   const [sending, setSending] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const mentionable = members.filter((m) => m.userId);
+  const myId = getAuthUser()?.id || "";
+  // Mentionable = members with a login, minus yourself (you can assign yourself, but not @-mention yourself).
+  const mentionable = members.filter((m) => m.userId && m.userId !== myId);
 
   const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
     setSaving(true);
@@ -320,13 +331,17 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
               </div>
             )}
             {assignOpen && canEdit && (
-              <div className="mt-2 rounded-xl border border-slate-100 p-2 max-h-40 overflow-y-auto space-y-0.5">
-                {members.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No project members yet — assign employees / subcontractors / partners to this project first.</p> : members.map((m) => (
-                  <label key={m.key} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
-                    <input type="checkbox" checked={isAssigned(m)} onChange={() => toggleAssignee(m)} />
-                    <span className="font-bold text-slate-700 truncate">{m.name}</span>
-                    <span className="text-slate-400 shrink-0">· {kindLabel[m.kind] || m.kind}</span>
-                  </label>
+              <div className="mt-2 rounded-xl border border-slate-100 p-2 max-h-56 overflow-y-auto space-y-2">
+                {members.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1 py-1">No one with access to this project yet — assign employees, or grant access to subcontractors / partners first.</p> : groupByKind(members).map((g) => (
+                  <div key={g.kind}>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-0.5">{g.label}</p>
+                    {g.items.map((m) => (
+                      <label key={m.key} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
+                        <input type="checkbox" checked={isAssigned(m)} onChange={() => toggleAssignee(m)} />
+                        <span className="font-bold text-slate-700 truncate">{m.name}</span>
+                      </label>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}
@@ -399,9 +414,14 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                     {mentionOpen && (
                       <>
                         <button className="fixed inset-0 z-10 cursor-default" onClick={() => setMentionOpen(false)} />
-                        <div className="absolute bottom-full mb-1 left-0 z-20 w-52 bg-white border border-slate-100 rounded-xl shadow-xl p-1 max-h-44 overflow-y-auto">
-                          {mentionable.map((m) => (
-                            <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name} <span className="text-slate-400 font-medium">· {kindLabel[m.kind] || m.kind}</span></button>
+                        <div className="absolute bottom-full mb-1 left-0 z-20 w-56 bg-white border border-slate-100 rounded-xl shadow-xl p-1.5 max-h-56 overflow-y-auto space-y-2">
+                          {mentionable.length === 0 ? <p className="text-[11px] text-slate-400 italic px-1.5 py-1">No members with a login to mention.</p> : groupByKind(mentionable).map((g) => (
+                            <div key={g.kind}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1.5 mb-0.5">{g.label}</p>
+                              {g.items.map((m) => (
+                                <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name}</button>
+                              ))}
+                            </div>
                           ))}
                         </div>
                       </>

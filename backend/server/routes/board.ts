@@ -123,8 +123,19 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
     const p = project as unknown as { assignedEmployees?: string[]; subcontractors?: Array<Record<string, unknown>>; jointVenture?: { enabled?: boolean; partnerName?: string; email?: string }; guests?: Array<{ userId?: unknown }> };
     const out: Member[] = [];
     const seen = new Set<string>();
-    const push = (m: Member) => { if (m.name && !seen.has(m.key)) { seen.add(m.key); out.push(m); } };
+    const seenUser = new Set<string>();
+    const push = (m: Member) => {
+      if (!m.name) return;
+      if (m.userId && seenUser.has(m.userId)) return;   // one entry per person
+      if (seen.has(m.key)) return;
+      seen.add(m.key); if (m.userId) seenUser.add(m.userId);
+      out.push(m);
+    };
 
+    // The current user first — so the task creator can assign / mention themselves.
+    push({ key: `user:${req.user!.userId}`, name: (req.user!.name ? `${req.user!.name} (You)` : "You"), kind: req.user!.role === "subcontractor" ? "subcontractor" : "employee", userId: req.user!.userId, empId: "" });
+
+    // Assigned employees (empIds → their user account + directory name).
     const empIds: string[] = Array.isArray(p.assignedEmployees) ? p.assignedEmployees : [];
     if (empIds.length) {
       const [users, emps] = await Promise.all([
@@ -138,21 +149,34 @@ router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunct
         push({ key: `emp:${empId}`, name: u?.name || nameByEmp.get(empId) || empId, kind: "employee", userId: u ? String(u._id) : "", empId });
       }
     }
+
+    // Guests = the login accounts actually granted access to THIS project (subcontractor / partner).
+    // This is the authoritative "who has platform access here", and each carries a real userId.
+    const jvEmail = String(p.jointVenture?.email || "").toLowerCase();
+    const gIds = (Array.isArray(p.guests) ? p.guests : []).map((g) => String(g.userId || "")).filter((v) => mongoose.isValidObjectId(v));
+    if (gIds.length) {
+      const gUsers = await User.find({ _id: { $in: gIds } }).select("name email").lean();
+      for (const u of gUsers) {
+        const uid = String((u as { _id: unknown })._id);
+        const email = String((u as { email?: string }).email || "").toLowerCase();
+        const kind = jvEmail && email === jvEmail ? "partner" : "subcontractor";
+        push({ key: `user:${uid}`, name: String((u as { name?: string }).name || email || "Member"), kind, userId: uid, empId: "" });
+      }
+    }
+
+    // Subcontractor records without a linked login — assignable (as a label), just not mentionable.
+    const takenNames = new Set(out.map((m) => m.name.replace(/ \(You\)$/, "").toLowerCase()));
     for (const s of (Array.isArray(p.subcontractors) ? p.subcontractors : [])) {
       const sub = s as { name?: string; subId?: string; userId?: string };
-      push({ key: `sub:${sub.subId || sub.name || ""}`, name: sub.name || "Subcontractor", kind: "subcontractor", userId: String(sub.userId || ""), empId: "" });
+      const name = sub.name || "";
+      if (!name || takenNames.has(name.toLowerCase())) continue;
+      push({ key: `sub:${sub.subId || name}`, name, kind: "subcontractor", userId: String(sub.userId || ""), empId: "" });
     }
+
+    // JV partner record, if not already represented by a guest login.
     const jv = p.jointVenture;
-    if (jv?.enabled && jv?.partnerName) {
-      let userId = "";
-      const jvEmail = String(jv.email || "").toLowerCase();
-      const gIds = (Array.isArray(p.guests) ? p.guests : []).map((g) => String(g.userId || "")).filter(Boolean);
-      if (jvEmail && gIds.length) {
-        const gUsers = await User.find({ _id: { $in: gIds } }).select("email").lean();
-        const match = gUsers.find((u) => String((u as { email?: string }).email || "").toLowerCase() === jvEmail);
-        if (match) userId = String((match as { _id: unknown })._id);
-      }
-      push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId, empId: "" });
+    if (jv?.enabled && jv?.partnerName && !out.some((m) => m.kind === "partner")) {
+      push({ key: `partner:${jv.partnerName}`, name: jv.partnerName, kind: "partner", userId: "", empId: "" });
     }
     res.json(out);
   } catch (err) { next(err); }
