@@ -239,6 +239,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [pendingMentions, setPendingMentions] = useState<BoardMember[]>([]);
   const [sending, setSending] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const myId = getAuthUser()?.id || "";
@@ -277,11 +278,13 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
-  // Insert a mention: replace the @query being typed (if any) with @Name, else append.
-  const addMention = (m: BoardMember) => {
-    setCommentText((c) => (/@([^\s@]*)$/.test(c) ? c.replace(/@([^\s@]*)$/, `@${m.name} `) : `${c}${c && !c.endsWith(" ") ? " " : ""}@${m.name} `));
+  // Pick a member → add a removable mention chip and strip the @query from the text.
+  const pickMention = (m: BoardMember) => {
+    setPendingMentions((p) => (p.some((x) => x.userId === m.userId) ? p : [...p, m]));
+    setCommentText((c) => c.replace(/@([^\s@]*)$/, "").replace(/[ ]+$/, ""));
     setMentionOpen(false); setMentionQuery("");
   };
+  const removePending = (m: BoardMember) => setPendingMentions((p) => p.filter((x) => x.userId !== m.userId));
   // Detect an @-token as the user types, and open the mention menu filtered by it.
   const onCommentInput = (val: string) => {
     setCommentText(val);
@@ -289,10 +292,13 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     if (m && mentionable.length) { setMentionQuery(m[1]); setMentionOpen(true); } else { setMentionOpen(false); setMentionQuery(""); }
   };
   const sendComment = async () => {
-    const text = commentText.trim(); if (!text) return;
-    const mentions = mentionable.filter((m) => text.includes(`@${m.name}`)).map((m) => m.userId);
+    const msg = commentText.trim();
+    const mentionText = pendingMentions.map((m) => `@${m.name}`).join(" ");
+    const finalText = [mentionText, msg].filter(Boolean).join(" ");
+    if (!finalText) return;
+    const mentions = pendingMentions.map((m) => m.userId).filter(Boolean);
     setSending(true);
-    try { onSaved(await addTaskComment(projectId, task._id, { text, mentions })); setCommentText(""); }
+    try { onSaved(await addTaskComment(projectId, task._id, { text: finalText, mentions })); setCommentText(""); setPendingMentions([]); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not comment.", "error"); }
     finally { setSending(false); }
   };
@@ -434,7 +440,19 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             </div>
             {canEdit && (
               <div>
-                <textarea value={commentText} onChange={(e) => onCommentInput(e.target.value)} rows={2} placeholder="Write a comment… type @ to mention someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+                {/* Selected mentions as removable tags (like assignees). */}
+                {pendingMentions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {pendingMentions.map((m) => (
+                      <span key={m.key} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
+                        <span className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] flex items-center justify-center">{(m.name || "?").charAt(0).toUpperCase()}</span>
+                        {m.name}
+                        <button onClick={() => removePending(m)} className="text-primary/60 hover:text-red-500"><X size={11} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <textarea value={commentText} onChange={(e) => onCommentInput(e.target.value)} rows={2} placeholder="Write a comment… type @ to tag someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
                 {/* Inline @-mention suggestions as you type. */}
                 {mentionOpen && mentionMatches.length > 0 && (
                   <div className="mt-1 rounded-xl border border-slate-100 shadow-lg bg-white p-1.5 max-h-52 overflow-y-auto space-y-2">
@@ -442,15 +460,15 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                       <div key={g.kind}>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1.5 mb-0.5">{g.label}</p>
                         {g.items.map((m) => (
-                          <button key={m.key} onClick={() => addMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name}</button>
+                          <button key={m.key} onClick={() => pickMention(m)} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 truncate">@{m.name}</button>
                         ))}
                       </div>
                     ))}
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-2 mt-1.5">
-                  <button onClick={() => { setMentionQuery(""); setMentionOpen((v) => !v); }} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Mention a member"}><AtSign size={12} /> Mention</button>
-                  <button onClick={sendComment} disabled={sending || !commentText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
+                  <button onClick={() => { setMentionQuery(""); setMentionOpen((v) => !v); }} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Tag a member"}><AtSign size={12} /> Mention</button>
+                  <button onClick={sendComment} disabled={sending || (!commentText.trim() && pendingMentions.length === 0)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
                 </div>
               </div>
             )}
