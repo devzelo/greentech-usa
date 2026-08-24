@@ -1767,7 +1767,7 @@ export interface ApiTaskAssignee { userId: string; empId: string; name: string; 
 export interface ApiTaskFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
 export interface ApiTaskComment { _id?: string; userId: string; authorName: string; text: string; mentions: string[]; at: string }
 export interface ApiTask {
-  _id: string; projectId: string; columnId: string; title: string; description: string; order: number;
+  _id: string; projectId: string; columnId: string; title: string; description: string; deadline?: string; order: number;
   assignees: ApiTaskAssignee[]; tags: string[]; attachments: ApiTaskFile[];
   subtasks: Array<{ _id?: string; title: string; done: boolean }>; comments: ApiTaskComment[];
   createdById: string; createdByName: string; createdAt?: string; updatedAt?: string;
@@ -1775,7 +1775,7 @@ export interface ApiTask {
 export interface BoardData { columns: ApiTaskColumn[]; tasks: ApiTask[] }
 export interface MyBoardData { projects: Array<{ id: string; name: string }>; columns: ApiTaskColumn[]; tasks: ApiTask[] }
 export async function fetchMyBoard(): Promise<MyBoardData> { return request(`/my-board`); }
-export type TaskInput = Partial<Pick<ApiTask, "title" | "description" | "columnId" | "tags" | "assignees" | "subtasks">>;
+export type TaskInput = Partial<Pick<ApiTask, "title" | "description" | "deadline" | "columnId" | "tags" | "assignees" | "subtasks">>;
 export async function fetchBoard(projectId: string): Promise<BoardData> { return request(`/projects/${projectId}/board`); }
 export async function addBoardColumn(projectId: string, title: string): Promise<ApiTaskColumn> { return request(`/projects/${projectId}/board/columns`, { method: "POST", body: JSON.stringify({ title }) }); }
 export async function updateBoardColumn(projectId: string, cid: string, body: { title?: string; order?: number }): Promise<ApiTaskColumn> { return request(`/projects/${projectId}/board/columns/${cid}`, { method: "PATCH", body: JSON.stringify(body) }); }
@@ -1793,7 +1793,7 @@ export async function uploadTaskAttachment(projectId: string, tid: string, file:
 export async function deleteTaskAttachment(projectId: string, tid: string, aid: string): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/attachments/${aid}`, { method: "DELETE" }); }
 export async function addTaskComment(projectId: string, tid: string, body: { text: string; mentions: string[] }): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/comments`, { method: "POST", body: JSON.stringify(body) }); }
 // CR-P — a person's / company's tasks across projects, for the profile "campaign" board view.
-export interface ProfileTask { _id: string; title: string; projectId: string; projectName: string; columnTitle: string; columnOrder: number; tags: string[]; assignees: ApiTaskAssignee[]; subtasksDone: number; subtasksTotal: number }
+export interface ProfileTask { _id: string; title: string; projectId: string; projectName: string; columnTitle: string; columnOrder: number; deadline?: string; tags: string[]; assignees: ApiTaskAssignee[]; subtasksDone: number; subtasksTotal: number }
 export async function fetchUserTasks(userId: string): Promise<ProfileTask[]> { return request(`/users/${userId}/tasks`); }
 export async function fetchCompanyTasks(companyId: string): Promise<ProfileTask[]> { return request(`/companies/${companyId}/tasks`); }
 

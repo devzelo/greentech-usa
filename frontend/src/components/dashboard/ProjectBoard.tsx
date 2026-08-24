@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil, UserPlus, Paperclip, Upload, Download, Eye, FileText, MessageSquare, Send, AtSign } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Loader2, X, Trash2, GripVertical, Tag as TagIcon, CheckSquare, Square, MoreVertical, Pencil, UserPlus, Paperclip, Upload, Download, Eye, FileText, MessageSquare, Send, AtSign, CalendarClock } from "lucide-react";
 import {
   fetchBoard, addBoardColumn, updateBoardColumn, deleteBoardColumn,
   createTask, updateTask, deleteTask, reorderBoard,
@@ -152,8 +153,9 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
                         {canEdit && <GripVertical size={13} className="text-slate-300 mt-0.5 shrink-0 cursor-grab" />}
                         <p className="text-sm font-semibold text-slate-800 leading-snug flex-grow">{t.title || "Untitled"}</p>
                       </div>
-                      {(t.tags.length > 0 || t.subtasks.length > 0 || t.assignees.length > 0) && (
+                      {(t.tags.length > 0 || t.subtasks.length > 0 || t.assignees.length > 0 || !!t.deadline) && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-[18px]">
+                          {t.deadline && <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isOverdue(t.deadline) ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}><CalendarClock size={8} /> {fmtDeadline(t.deadline)}</span>}
                           {t.tags.slice(0, 3).map((tag) => <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500"><TagIcon size={8} /> {tag}</span>)}
                           {t.subtasks.length > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{doneSubs}/{t.subtasks.length} ✓</span>}
                           {t.assignees.slice(0, 4).map((a, i) => <span key={i} title={a.name} className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] font-bold flex items-center justify-center ring-1 ring-white">{(a.name || "?").charAt(0).toUpperCase()}</span>)}
@@ -208,6 +210,9 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
 const sameMember = (a: ApiTaskAssignee, m: BoardMember) =>
   (!!m.userId && a.userId === m.userId) || (!!m.empId && a.empId === m.empId) || (a.name === m.name && a.kind === m.kind);
 const kindLabel: Record<string, string> = { employee: "Employee", subcontractor: "Subcontractor", partner: "Partner" };
+// Deadline helpers (stored as YYYY-MM-DD).
+export const fmtDeadline = (d?: string) => { if (!d) return ""; const dt = new Date(`${d}T00:00:00`); return isNaN(dt.getTime()) ? "" : dt.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+export const isOverdue = (d?: string) => { if (!d) return false; const dt = new Date(`${d}T23:59:59`); return !isNaN(dt.getTime()) && dt.getTime() < Date.now(); };
 // Group members into category sections (Employees / Subcontractors / Partners) for the pickers.
 const KIND_ORDER = ["employee", "subcontractor", "partner"];
 function groupByKind(list: BoardMember[]): Array<{ kind: string; label: string; items: BoardMember[] }> {
@@ -223,6 +228,7 @@ function groupByKind(list: BoardMember[]): Array<{ kind: string; label: string; 
 export function TaskModal({ projectId, task, columns, members, canEdit, onClose, onSaved, onDelete }: {
   projectId: string; task: ApiTask; columns: ApiTaskColumn[]; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
 }) {
+  const navigate = useNavigate();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
   const [tags, setTags] = useState<string[]>(task.tags);
@@ -296,7 +302,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     if (!memberNames.length) return text;
     const rx = new RegExp(`@(${memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
     const parts: ReactNode[] = []; let last = 0; let m: RegExpExecArray | null;
-    while ((m = rx.exec(text))) { if (m.index > last) parts.push(text.slice(last, m.index)); parts.push(<span key={m.index} className="font-bold text-primary">{m[0]}</span>); last = m.index + m[0].length; }
+    while ((m = rx.exec(text))) { if (m.index > last) parts.push(text.slice(last, m.index)); parts.push(<button key={m.index} onClick={() => navigate(`/dashboard/projects/${projectId}?tab=pm`)} className="inline-flex items-center px-1.5 rounded-md bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors align-baseline" title="Open Project Management">{m[0]}</button>); last = m.index + m[0].length; }
     parts.push(text.slice(last));
     return parts;
   };
@@ -325,6 +331,9 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             <select value={task.columnId} disabled={!canEdit} onChange={(e) => save({ columnId: e.target.value })} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60">
               {columns.map((c) => <option key={c._id} value={c._id}>{c.title}</option>)}
             </select>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1"><CalendarClock size={12} /> Deadline</span>
+            <input type="date" value={task.deadline || ""} disabled={!canEdit} onChange={(e) => save({ deadline: e.target.value })} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
+            {task.deadline && canEdit && <button onClick={() => save({ deadline: "" })} className="text-[10px] font-bold text-slate-400 hover:text-red-500">Clear</button>}
           </div>
 
           <div>

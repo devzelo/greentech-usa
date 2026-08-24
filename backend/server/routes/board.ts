@@ -101,6 +101,7 @@ router.patch("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Next
     const b = req.body || {};
     if (typeof b.title === "string") t.title = b.title.slice(0, 200);
     if (typeof b.description === "string") t.description = b.description.slice(0, 10000);
+    if (typeof b.deadline === "string") t.deadline = b.deadline.slice(0, 20);
     if (typeof b.columnId === "string" && mongoose.isValidObjectId(b.columnId)) t.columnId = b.columnId;
     if (Array.isArray(b.tags)) t.set("tags", b.tags.map((x: unknown) => String(x).slice(0, 40)).slice(0, 20));
     if (Array.isArray(b.assignees)) t.set("assignees", b.assignees.map((a: Record<string, unknown>) => ({ userId: String(a.userId || ""), empId: String(a.empId || ""), name: String(a.name || ""), kind: String(a.kind || "") })).slice(0, 30));

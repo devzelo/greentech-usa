@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Loader2, X, Briefcase, Tag as TagIcon, LayoutGrid } from "lucide-react";
+import { Plus, Loader2, X, Briefcase, Tag as TagIcon, LayoutGrid, CalendarClock } from "lucide-react";
 import {
   fetchMyBoard, createTask, updateTask, fetchBoardMembers,
   type ApiTask, type ApiTaskColumn, type BoardMember,
 } from "../../lib/api";
-import { TaskModal } from "./ProjectBoard";
+import { TaskModal, fmtDeadline, isOverdue } from "./ProjectBoard";
 import { toast } from "../../lib/toast";
 
 // CR-P — a cross-project overview board: every task across the user's projects, grouped by status
@@ -100,6 +100,7 @@ export default function AggregateBoard() {
                       <p className="text-sm font-semibold text-slate-800 leading-snug">{t.title || "Untitled"}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600"><Briefcase size={8} /> {projName(t.projectId) || "Project"}</span>
+                        {t.deadline && <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isOverdue(t.deadline) ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}><CalendarClock size={8} /> {fmtDeadline(t.deadline)}</span>}
                         {t.subtasks.length > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{doneSubs}/{t.subtasks.length} ✓</span>}
                         {t.tags.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500"><TagIcon size={8} /> {tag}</span>)}
                         {t.assignees.slice(0, 3).map((a, i) => <span key={i} title={a.name} className="w-5 h-5 rounded-full bg-gt-gradient text-white text-[9px] font-bold flex items-center justify-center ring-1 ring-white">{(a.name || "?").charAt(0).toUpperCase()}</span>)}

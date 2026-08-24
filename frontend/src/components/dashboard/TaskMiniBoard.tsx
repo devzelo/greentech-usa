@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Briefcase, Tag as TagIcon, LayoutGrid } from "lucide-react";
+import { Loader2, Briefcase, Tag as TagIcon, LayoutGrid, CalendarClock } from "lucide-react";
 import type { ProfileTask } from "../../lib/api";
+import { fmtDeadline, isOverdue } from "./ProjectBoard";
 
 // CR-P — a read-only "campaign" (Kanban) view of someone's tasks, grouped by column, used on the
 // user profile and the Directory company profile. Cards link to the task's project board.
@@ -39,6 +40,7 @@ export default function TaskMiniBoard({ tasks, loading }: { tasks: ProfileTask[]
                 <p className="text-sm font-semibold text-slate-800 leading-snug">{t.title || "Untitled"}</p>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {t.projectName && <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600"><Briefcase size={8} /> {t.projectName}</span>}
+                  {t.deadline && <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isOverdue(t.deadline) ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}><CalendarClock size={8} /> {fmtDeadline(t.deadline)}</span>}
                   {t.subtasksTotal > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{t.subtasksDone}/{t.subtasksTotal} ✓</span>}
                   {t.tags.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500"><TagIcon size={8} /> {tag}</span>)}
                 </div>

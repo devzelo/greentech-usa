@@ -6,7 +6,7 @@ import type { ITask } from "../models/Task";
 // (a user's tasks on their profile; a company's tasks on the Directory profile).
 export interface ProfileTask {
   _id: string; title: string; projectId: string; projectName: string;
-  columnTitle: string; columnOrder: number;
+  columnTitle: string; columnOrder: number; deadline: string;
   tags: string[]; assignees: ITask["assignees"];
   subtasksDone: number; subtasksTotal: number;
 }
@@ -31,6 +31,7 @@ export async function enrichTasks(tasks: Array<Record<string, unknown>>): Promis
       projectName: projName.get(String(t.projectId)) || "",
       columnTitle: col?.title || "Other",
       columnOrder: col?.order ?? 99,
+      deadline: String(t.deadline || ""),
       tags: Array.isArray(t.tags) ? (t.tags as string[]) : [],
       assignees: (Array.isArray(t.assignees) ? t.assignees : []) as ITask["assignees"],
       subtasksDone: subs.filter((s) => s.done).length,

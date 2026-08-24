@@ -10,6 +10,7 @@ export interface ITask extends Document {
   columnId: string;
   title: string;
   description: string;
+  deadline: string;   // CR-P — optional due date (YYYY-MM-DD)
   order: number;
   assignees: ITaskAssignee[];
   tags: string[];
@@ -31,6 +32,7 @@ const TaskSchema = new Schema<ITask>(
     columnId: { type: String, required: true, index: true },
     title: { type: String, default: "" },
     description: { type: String, default: "" },
+    deadline: { type: String, default: "" },   // CR-P
     order: { type: Number, default: 0 },
     assignees: { type: [{ userId: { type: String, default: "" }, empId: { type: String, default: "" }, name: { type: String, default: "" }, kind: { type: String, default: "" } }], default: [] },
     tags: { type: [String], default: [] },
