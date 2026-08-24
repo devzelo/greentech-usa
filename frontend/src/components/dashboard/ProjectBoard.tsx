@@ -308,8 +308,14 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     catch (e) { toast(e instanceof Error ? e.message : "Could not comment.", "error"); }
     finally { setSending(false); }
   };
-  // Highlight @mentions of known members in a comment body.
-  const memberNames = allMembers.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  // Highlight @mentions in a comment body. Match against anyone connected to this task —
+  // members, assignees, the creator, and anyone who has commented — so a mention renders as a
+  // tag even for people not on the current member list (e.g. the admin who created an old task).
+  const memberNames = Array.from(new Set([
+    ...allMembers.map((m) => m.name),
+    ...task.assignees.map((a) => a.name),
+    ...task.comments.map((c) => c.authorName),
+  ].filter(Boolean))).sort((a, b) => b.length - a.length);
   const renderComment = (text: string) => {
     if (!memberNames.length) return text;
     const rx = new RegExp(`@(${memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
