@@ -198,7 +198,7 @@ export default function ProjectBoard({ projectId, canEdit }: { projectId: string
         )}
       </div>
 
-      {openTask && <TaskModal projectId={projectId} task={openTask} members={members} canEdit={canEdit} onClose={() => setOpenTaskId(null)} onSaved={patchLocal} onDelete={() => removeTask(openTask)} />}
+      {openTask && <TaskModal projectId={projectId} task={openTask} columns={columns} members={members} canEdit={canEdit} onClose={() => setOpenTaskId(null)} onSaved={patchLocal} onDelete={() => removeTask(openTask)} />}
       {dialogs}
     </div>
   );
@@ -210,8 +210,8 @@ const sameMember = (a: ApiTaskAssignee, m: BoardMember) =>
 const kindLabel: Record<string, string> = { employee: "Employee", subcontractor: "Subcontractor", partner: "Partner" };
 
 // ── Task detail modal — title, description, assignees, tags, subtasks, attachments ──
-function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDelete }: {
-  projectId: string; task: ApiTask; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
+function TaskModal({ projectId, task, columns, members, canEdit, onClose, onSaved, onDelete }: {
+  projectId: string; task: ApiTask; columns: ApiTaskColumn[]; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
@@ -288,6 +288,14 @@ function TaskModal({ projectId, task, members, canEdit, onClose, onSaved, onDele
         </div>
         <div className="p-5 space-y-4">
           <input value={title} disabled={!canEdit} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== task.title && save({ title })} placeholder="Task title" className="w-full text-lg font-bold text-slate-900 outline-none border-b border-transparent focus:border-slate-200 pb-1" />
+
+          {/* Status = the column the card sits in. Changing it moves the card (same as dragging). */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</span>
+            <select value={task.columnId} disabled={!canEdit} onChange={(e) => save({ columnId: e.target.value })} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60">
+              {columns.map((c) => <option key={c._id} value={c._id}>{c.title}</option>)}
+            </select>
+          </div>
 
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Description</p>
