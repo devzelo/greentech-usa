@@ -7,7 +7,7 @@ import {
   Folder, ChevronRight, Home, Plus, Trash2, Pencil, Check,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, fetchCompanyDetails, createCompanyDetail, updateCompanyDetail, deleteCompanyDetail, type ApiProject, type ApiCompanyDetail, ApiGlobalDocument } from "../../lib/api";
+import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, fetchCompanyDetails, createCompanyDetail, updateCompanyDetail, deleteCompanyDetail, withFileToken, type ApiProject, type ApiCompanyDetail, ApiGlobalDocument } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { sectionToPath } from "../../lib/docTree";
 import { locationFlag } from "../../lib/countryFlag";
@@ -402,7 +402,7 @@ export default function Documents() {
                           <div className="flex items-center gap-3 min-w-0">
                             {/* Project folders show the project's identity image; other folders a folder icon. */}
                             {f.proj?.image
-                              ? <img src={f.proj.image} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
+                              ? <img src={withFileToken(f.proj.image)} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
                               : <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary"><Folder size={18} /></div>}
                             {/* A real button so the folder drill-down is keyboard reachable. */}
                             <button onClick={(e) => { e.stopPropagation(); f.onOpen(); }} className="min-w-0 text-left">
@@ -445,7 +445,7 @@ export default function Documents() {
                   {/* CR-P-35 — project folders show the identity picture as a cover in grid view. */}
                   {f.proj?.image && (
                     <button onClick={f.onOpen} className="block w-full h-28 bg-slate-100 overflow-hidden">
-                      <img src={f.proj.image} alt={f.label} className="w-full h-full object-cover" loading="lazy" />
+                      <img src={withFileToken(f.proj.image)} alt={f.label} className="w-full h-full object-cover" loading="lazy" />
                     </button>
                   )}
                   <div className="p-5 space-y-3">

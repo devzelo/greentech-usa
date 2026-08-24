@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Plus, Upload, Image as ImageIcon, X, Loader2 } from "lucide-react";
-import { uploadProposalAsset, type ApiProject, type ProposalCover } from "../../lib/api";
+import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
 import { toast } from "../../lib/toast";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
@@ -106,7 +106,7 @@ export default function ProposalCoverBuilder({
             <div className="flex items-center gap-3">
               {cover.jvLogoUrl ? (
                 <div className="relative">
-                  <img src={cover.jvLogoUrl} alt="JV logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
+                  <img src={withFileToken(cover.jvLogoUrl)} alt="JV logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
                   {canEdit && <button onClick={() => setCover("jvLogoUrl", "")} className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
                 </div>
               ) : (
@@ -140,7 +140,7 @@ export default function ProposalCoverBuilder({
             <div className="flex flex-wrap gap-3">
               {cover.images.map((im) => (
                 <div key={im.id} className="relative w-28 h-20 rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                  <img src={im.url} alt="" className="w-full h-full object-cover" />
+                  <img src={withFileToken(im.url)} alt="" className="w-full h-full object-cover" />
                   {canEdit && <button onClick={() => removeCoverImage(im.id)} className="absolute top-1 right-1 bg-white/90 rounded-full p-0.5 text-slate-500 hover:text-red-500"><X size={12} /></button>}
                 </div>
               ))}
@@ -164,7 +164,7 @@ export default function ProposalCoverBuilder({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {galleryImages.map((g, i) => (
                   <button key={i} onClick={() => addGalleryImage(g.url)} className="relative aspect-video rounded-xl overflow-hidden border border-slate-100 hover:ring-4 hover:ring-primary/20 transition-all">
-                    <img src={g.url} alt="" className="w-full h-full object-cover" />
+                    <img src={withFileToken(g.url)} alt="" className="w-full h-full object-cover" />
                     <span className="absolute bottom-1 right-1 bg-white/90 rounded-full p-1 text-primary"><Plus size={12} /></span>
                   </button>
                 ))}

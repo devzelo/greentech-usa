@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
-import { clearAuthToken, getAuthUser, fetchReminders } from "../../lib/api";
+import { clearAuthToken, getAuthUser, fetchReminders, withFileToken } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { isAppDirty, clearAppDirty, subscribeDirty } from "../../lib/dirtyState";
 import { useDialogs } from "../../lib/useDialogs";
@@ -336,7 +336,7 @@ export default function DashboardLayout() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gt-gradient p-0.5 shadow-md flex-shrink-0">
                 {me.avatarUrl ? (
-                  <img src={me.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="Avatar" />
+                  <img src={withFileToken(me.avatarUrl)} className="w-full h-full rounded-full border-2 border-white object-cover" alt="Avatar" />
                 ) : (
                   <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-sm font-bold text-primary">
                     {userInitial}

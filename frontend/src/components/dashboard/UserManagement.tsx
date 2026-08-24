@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, adminResetPassword, deleteUser, setUserArchived,
-  getAuthUser, AdminUser,
+  getAuthUser, AdminUser, withFileToken,
   fetchUserFiles, uploadUserFile, deleteUserFile, userFileUrl, type UserFile,
 } from "../../lib/api";
 import { useMeta } from "../../hooks/useMeta";
@@ -254,7 +254,7 @@ export default function UserManagement() {
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-9 h-9 rounded-full bg-gt-gradient p-0.5 shrink-0">
                             {u.avatarUrl
-                              ? <img src={u.avatarUrl} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
+                              ? <img src={withFileToken(u.avatarUrl)} className="w-full h-full rounded-full border-2 border-white object-cover" alt="" />
                               : <div className="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-xs font-bold text-primary">{(u.name || u.email || "?").charAt(0).toUpperCase()}</div>}
                           </div>
                           <div className="min-w-0">

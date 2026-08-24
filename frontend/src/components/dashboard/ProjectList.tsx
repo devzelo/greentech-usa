@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchProjects, fetchProjectFinancials, getAuthUser, ApiProject, ProjectFinancials } from "../../lib/api";
+import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -380,7 +380,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                   {p.image ? (
                     <>
                       <div className="-mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
-                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                        <img src={withFileToken(p.image)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
                       </div>
                       <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} variant="overlay" />
                     </>

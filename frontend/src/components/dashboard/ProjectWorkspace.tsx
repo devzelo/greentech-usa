@@ -5312,7 +5312,7 @@ export default function ProjectWorkspace() {
                 <div className="flex items-center gap-4">
                   <div className="w-32 h-24 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
                     {project.image ? (
-                      <img src={project.image} alt={project.name} className="w-full h-full object-cover" />
+                      <img src={assetSrc(project.image)} alt={project.name} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-300">
                         <FileImage size={28} />
@@ -6058,7 +6058,7 @@ export default function ProjectWorkspace() {
                       {(project.gallery as GalleryItem[]).map((g, i) => (
                         <div key={`${g.url}-${i}`} className="flex gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                           <div className="w-20 h-16 rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center flex-shrink-0">
-                            {g.type === "image" ? <img src={g.url} alt="" className="w-full h-full object-cover" /> : <Globe size={20} className="text-slate-400" />}
+                            {g.type === "image" ? <img src={assetSrc(g.url)} alt="" className="w-full h-full object-cover" /> : <Globe size={20} className="text-slate-400" />}
                           </div>
                           <div className="flex-grow min-w-0 flex flex-col">
                             <div className="flex items-center gap-1.5 mb-1">

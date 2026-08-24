@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Camera, Mail, User, Eye, EyeOff, Save, Phone, IdCard, Loader2, CheckCircle2, AlertCircle, Archive, Calendar, Send, Briefcase, PenLine, Upload } from "lucide-react";
 import { motion } from "motion/react";
-import { fetchMe, updateMe, changePassword as apiChangePassword, uploadAvatar, uploadSignature, attachmentUrl, fetchBackupPreview, sendBackupNow, setAuthUser, getAuthUser, fetchMyExpenses, ApiUser, BackupPreview, MyExpense } from "../../lib/api";
+import { fetchMe, updateMe, changePassword as apiChangePassword, uploadAvatar, uploadSignature, attachmentUrl, withFileToken, fetchBackupPreview, sendBackupNow, setAuthUser, getAuthUser, fetchMyExpenses, ApiUser, BackupPreview, MyExpense } from "../../lib/api";
 import AdminAnnouncements from "./AdminAnnouncements";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
@@ -253,7 +253,7 @@ export default function Profile() {
           <div className="relative group">
             <div className="w-28 h-28 rounded-[2rem] bg-gt-gradient p-1 shadow-xl">
               {me.avatarUrl ? (
-                <img src={me.avatarUrl} alt="Avatar" className="w-full h-full rounded-[1.7rem] border-4 border-white object-cover" />
+                <img src={withFileToken(me.avatarUrl)} alt="Avatar" className="w-full h-full rounded-[1.7rem] border-4 border-white object-cover" />
               ) : (
                 <div className="w-full h-full rounded-[1.7rem] border-4 border-white bg-white flex items-center justify-center text-3xl font-bold text-primary">
                   {initial}
