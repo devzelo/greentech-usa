@@ -118,7 +118,7 @@ router.delete("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Nex
 interface Member { key: string; name: string; kind: string; userId: string; empId: string }
 router.get("/members", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const project = await Project.findById(req.params.id).lean();
+    const project = await Project.findOne({ projectId: req.params.id }).lean();
     if (!project) return res.status(404).json({ error: "Not found" });
     const p = project as unknown as { assignedEmployees?: string[]; subcontractors?: Array<Record<string, unknown>>; jointVenture?: { enabled?: boolean; partnerName?: string; email?: string }; guests?: Array<{ userId?: unknown }> };
     const out: Member[] = [];

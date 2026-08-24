@@ -15,10 +15,11 @@ export async function enrichTasks(tasks: Array<Record<string, unknown>>): Promis
   const projIds = [...new Set(tasks.map((t) => String(t.projectId)))];
   const colIds = [...new Set(tasks.map((t) => String(t.columnId)))];
   const [projects, columns] = await Promise.all([
-    Project.find({ _id: { $in: projIds } }).select("name").lean(),
+    // Tasks key projects by their human projectId string (not the Mongo _id).
+    Project.find({ projectId: { $in: projIds } }).select("name projectId").lean(),
     TaskColumn.find({ _id: { $in: colIds } }).select("title order").lean(),
   ]);
-  const projName = new Map(projects.map((p) => [String((p as { _id: unknown })._id), String((p as { name?: string }).name || "")]));
+  const projName = new Map(projects.map((p) => [String((p as { projectId?: string }).projectId || ""), String((p as { name?: string }).name || "")]));
   const colInfo = new Map(columns.map((c) => [String((c as { _id: unknown })._id), { title: String((c as { title?: string }).title || ""), order: Number((c as { order?: number }).order ?? 99) }]));
   return tasks.map((t) => {
     const subs = Array.isArray(t.subtasks) ? (t.subtasks as Array<{ done?: boolean }>) : [];

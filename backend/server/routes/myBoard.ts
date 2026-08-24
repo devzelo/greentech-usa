@@ -26,8 +26,9 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       filter = { $or: or, archived: { $ne: true } };
     }
 
-    const projects = await Project.find(filter).select("name").sort({ createdAt: -1 }).lean();
-    const projectIds = projects.map((p) => String((p as { _id: unknown })._id));
+    const projects = await Project.find(filter).select("name projectId").sort({ createdAt: -1 }).lean();
+    // Tasks/columns reference a project by its human projectId string, not the Mongo _id.
+    const projectIds = projects.map((p) => String((p as { projectId?: string }).projectId || "")).filter(Boolean);
     if (!projectIds.length) return res.json({ projects: [], columns: [], tasks: [] });
 
     const [columns, tasks] = await Promise.all([
@@ -35,7 +36,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       Task.find({ projectId: { $in: projectIds } }).sort({ order: 1, createdAt: 1 }).lean(),
     ]);
     res.json({
-      projects: projects.map((p) => ({ id: String((p as { _id: unknown })._id), name: String((p as { name?: string }).name || "") })),
+      projects: projects.map((p) => ({ id: String((p as { projectId?: string }).projectId || ""), name: String((p as { name?: string }).name || "") })),
       columns,
       tasks,
     });
