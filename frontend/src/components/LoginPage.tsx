@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, LogIn, ArrowLeft, ShieldCheck, X, CheckCircle2, Loader2, Eye, EyeOff } from "lucide-react";
 import { login, forgotPassword, setAuthToken, setAuthUser } from "../lib/api";
+import { identifyUser } from "../lib/posthog";
 import { useMeta } from "../hooks/useMeta";
 import PoweredByProjnell from "./PoweredByProjnell";
 
@@ -51,6 +52,7 @@ export default function LoginPage() {
       }
       setAuthToken(data.token);
       setAuthUser(data.user);
+      identifyUser({ id: data.user.id, email: data.user.email, role: data.user.role });
       navigate(role === "subcontractor" ? "/dashboard/my-projects" : "/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed.");

@@ -40,6 +40,8 @@ import { motion, useScroll, useSpring } from "motion/react";
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
 import { getAuthUser, getAuthToken, refreshFileToken } from "./lib/api";
+import { identifyUser } from "./lib/posthog";
+import { usePageviews } from "./hooks/usePageviews";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 // Guests may only reach My Projects, a project they're assigned to, Documents, and Profile.
@@ -54,6 +56,13 @@ function AdminOnly({ children }: { children: ReactNode }) {
   const me = getAuthUser();
   if (me?.role !== "admin") return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
+}
+
+// Reports every client-side route change to PostHog. Rendered inside <Router>
+// because it depends on useLocation.
+function AnalyticsPageviews() {
+  usePageviews();
+  return null;
 }
 
 function ScrollToTop() {
@@ -135,9 +144,16 @@ export default function App() {
     if (getAuthToken()) void refreshFileToken();
   }, []);
 
+  // Re-attach analytics to the signed-in user when the app reloads mid-session.
+  useEffect(() => {
+    const me = getAuthUser();
+    if (me) identifyUser({ id: me.id, email: me.email, role: me.role });
+  }, []);
+
   return (
     <Router>
       <ScrollToTop />
+      <AnalyticsPageviews />
       <ErrorBoundary>
       <Routes>
         {/* Auth Routes */}

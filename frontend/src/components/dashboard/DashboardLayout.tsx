@@ -21,6 +21,7 @@ import {
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
 import { clearAuthToken, getAuthUser, fetchReminders, withFileToken } from "../../lib/api";
+import { resetAnalytics } from "../../lib/posthog";
 import { toast } from "../../lib/toast";
 import { isAppDirty, clearAppDirty, subscribeDirty } from "../../lib/dirtyState";
 import { useDialogs } from "../../lib/useDialogs";
@@ -126,6 +127,7 @@ export default function DashboardLayout() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const handleLogout = () => {
     clearAuthToken();
+    resetAnalytics();
     toast("Logged out successfully.", "info");
     navigate("/login");
   };
