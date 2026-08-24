@@ -13,6 +13,7 @@ import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
 import FinanceStrip from "./FinanceStrip";
+import AggregateBoard from "./AggregateBoard";
 import ProjectActionsMenu from "./ProjectActionsMenu";
 import { fiveFromFinancials, sumFive } from "../../lib/projectFinance";
 
@@ -36,6 +37,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   // "All" + every colour-coded status; guests never see drafts.
   const statusOptions = ["All", ...PROJECT_STATUSES.filter((s) => !isGuest || s !== "Draft")];
   const [view, setView] = useState<"grid" | "list">("list");
+  const [wsTab, setWsTab] = useState<"projects" | "board">("projects");   // CR-P — My Workspace tabs
   const [search, setSearch] = useState("");
   // Deep-link: /dashboard/all-projects?status=Active pre-selects a status chip (Overview cards).
   const [searchParams] = useSearchParams();
@@ -168,6 +170,19 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         </div>
       </div>
 
+      {/* CR-P — My Workspace tabs: My Projects | Project Management (cross-project board). */}
+      {mode === "my" && (
+        <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
+          {([["projects", "My Projects"], ["board", "Project Management"]] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setWsTab(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${wsTab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {mode === "my" && wsTab === "board" ? (
+        <AggregateBoard />
+      ) : (
+      <>
       {/* Portfolio value — All Projects, staff only. Total = GT-only + JV. */}
       {showValues && !loading && (
         <div className="flex flex-wrap items-center gap-2">
@@ -436,6 +451,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             </div>
           )}
         </>
+      )}
+      </>
       )}
 
       {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}

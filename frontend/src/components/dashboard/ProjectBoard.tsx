@@ -210,7 +210,8 @@ const sameMember = (a: ApiTaskAssignee, m: BoardMember) =>
 const kindLabel: Record<string, string> = { employee: "Employee", subcontractor: "Subcontractor", partner: "Partner" };
 
 // ── Task detail modal — title, description, assignees, tags, subtasks, attachments ──
-function TaskModal({ projectId, task, columns, members, canEdit, onClose, onSaved, onDelete }: {
+// Exported so the cross-project overview board can reuse it.
+export function TaskModal({ projectId, task, columns, members, canEdit, onClose, onSaved, onDelete }: {
   projectId: string; task: ApiTask; columns: ApiTaskColumn[]; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
 }) {
   const [title, setTitle] = useState(task.title);

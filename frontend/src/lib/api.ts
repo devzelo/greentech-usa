@@ -1773,6 +1773,8 @@ export interface ApiTask {
   createdById: string; createdByName: string; createdAt?: string; updatedAt?: string;
 }
 export interface BoardData { columns: ApiTaskColumn[]; tasks: ApiTask[] }
+export interface MyBoardData { projects: Array<{ id: string; name: string }>; columns: ApiTaskColumn[]; tasks: ApiTask[] }
+export async function fetchMyBoard(): Promise<MyBoardData> { return request(`/my-board`); }
 export type TaskInput = Partial<Pick<ApiTask, "title" | "description" | "columnId" | "tags" | "assignees" | "subtasks">>;
 export async function fetchBoard(projectId: string): Promise<BoardData> { return request(`/projects/${projectId}/board`); }
 export async function addBoardColumn(projectId: string, title: string): Promise<ApiTaskColumn> { return request(`/projects/${projectId}/board/columns`, { method: "POST", body: JSON.stringify({ title }) }); }
