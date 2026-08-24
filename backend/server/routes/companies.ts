@@ -9,6 +9,8 @@ import Invoice from "../models/Invoice";
 import Rfq from "../models/Rfq";
 import ProcurementPO from "../models/ProcurementPO";
 import Project from "../models/Project";
+import Task from "../models/Task";
+import { enrichTasks } from "../lib/taskProfile";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 const humanFileSize = (bytes: number) => {
@@ -181,6 +183,18 @@ router.delete("/:id/files/:fid", async (req: AuthedRequest, res: Response, next:
     await file.deleteOne();
     if (file.filePath) fs.unlink(path.resolve(file.filePath), () => {});
     res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// CR-P — the company's Kanban tasks (assignees matching this company's name) for its profile board.
+router.get("/:id/tasks", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findById(req.params.id).select("name").lean();
+    const name = (c as { name?: string } | null)?.name || "";
+    if (!name) return res.json([]);
+    const rx = new RegExp(`^${escapeRegex(name)}$`, "i");
+    const tasks = await Task.find({ "assignees.name": rx }).sort({ updatedAt: -1 }).limit(200).lean();
+    res.json(await enrichTasks(tasks as unknown as Array<Record<string, unknown>>));
   } catch (err) { next(err); }
 });
 

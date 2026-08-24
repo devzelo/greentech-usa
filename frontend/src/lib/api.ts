@@ -1790,6 +1790,10 @@ export async function uploadTaskAttachment(projectId: string, tid: string, file:
 }
 export async function deleteTaskAttachment(projectId: string, tid: string, aid: string): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/attachments/${aid}`, { method: "DELETE" }); }
 export async function addTaskComment(projectId: string, tid: string, body: { text: string; mentions: string[] }): Promise<ApiTask> { return request(`/projects/${projectId}/board/tasks/${tid}/comments`, { method: "POST", body: JSON.stringify(body) }); }
+// CR-P — a person's / company's tasks across projects, for the profile "campaign" board view.
+export interface ProfileTask { _id: string; title: string; projectId: string; projectName: string; columnTitle: string; columnOrder: number; tags: string[]; assignees: ApiTaskAssignee[]; subtasksDone: number; subtasksTotal: number }
+export async function fetchUserTasks(userId: string): Promise<ProfileTask[]> { return request(`/users/${userId}/tasks`); }
+export async function fetchCompanyTasks(companyId: string): Promise<ProfileTask[]> { return request(`/companies/${companyId}/tasks`); }
 
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";

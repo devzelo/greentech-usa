@@ -7,11 +7,12 @@ import {
 } from "lucide-react";
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
-  companyFileUrl, withFileToken,
-  COMPANY_CATEGORIES, type ApiCompany, type CompanyCategory, type CompanyLinks, type CompanyFile,
+  fetchCompanyTasks, companyFileUrl, withFileToken,
+  COMPANY_CATEGORIES, type ApiCompany, type CompanyCategory, type CompanyLinks, type CompanyFile, type ProfileTask,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import TaskMiniBoard from "./TaskMiniBoard";
 
 const catLabel = (c: CompanyCategory) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label || c;
 const CAT_CLS: Record<string, string> = {
@@ -37,9 +38,11 @@ export default function CompanyProfile({
 }) {
   const navigate = useNavigate();
   const { confirm, dialogs } = useDialogs();
-  const [tab, setTab] = useState<"activity" | "details" | "documents">("activity");
+  const [tab, setTab] = useState<"activity" | "tasks" | "details" | "documents">("activity");
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
+  const [tasks, setTasks] = useState<ProfileTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const [docType, setDocType] = useState("catalogue");
   const [uploading, setUploading] = useState(false);
   // CR-P-43 — upload modal (choose type, then file, then upload).
@@ -47,9 +50,10 @@ export default function CompanyProfile({
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   useEffect(() => {
-    setLinks(null); setFiles([]);
+    setLinks(null); setFiles([]); setTasks([]); setTasksLoading(true);
     fetchCompanyLinks(company._id).then(setLinks).catch(() => setLinks({ invoices: [], rfqs: [], pos: [] }));
     fetchCompanyProfileFiles(company._id).then(setFiles).catch(() => setFiles([]));
+    fetchCompanyTasks(company._id).then(setTasks).catch(() => setTasks([])).finally(() => setTasksLoading(false));
   }, [company._id]);
 
   const submitUpload = async () => {
@@ -184,7 +188,7 @@ export default function CompanyProfile({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-        {([["activity", "Activity"], ["details", "Details"], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
+        {([["activity", "Activity"], ["tasks", `Tasks (${tasks.length})`], ["details", "Details"], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${tab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
         ))}
       </div>
@@ -263,6 +267,12 @@ export default function CompanyProfile({
       )}
 
       {/* ── Documents ────────────────────────────────────────────── */}
+      {tab === "tasks" && (
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-4">
+          <TaskMiniBoard tasks={tasks} loading={tasksLoading} />
+        </div>
+      )}
+
       {tab === "documents" && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
           <div className="flex items-center justify-between gap-2 mb-3">

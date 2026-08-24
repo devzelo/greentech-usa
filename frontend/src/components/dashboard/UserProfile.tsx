@@ -4,7 +4,8 @@ import {
   ArrowLeft, Pencil, KeyRound, Trash2, Mail, Phone, IdCard, Briefcase, Shield, Building2,
   FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck,
 } from "lucide-react";
-import { fetchUserLinks, fetchUserFiles, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile } from "../../lib/api";
+import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
+import TaskMiniBoard from "./TaskMiniBoard";
 
 const roleBadge = (role: string) =>
   role === "admin" ? "bg-primary/10 text-primary" : role === "subcontractor" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
@@ -23,14 +24,17 @@ export default function UserProfile({
   isSelf: boolean;
 }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"activity" | "documents">("activity");
+  const [tab, setTab] = useState<"activity" | "tasks" | "documents">("activity");
   const [links, setLinks] = useState<UserLinks | null>(null);
   const [files, setFiles] = useState<UserFile[]>([]);
+  const [tasks, setTasks] = useState<ProfileTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
 
   useEffect(() => {
-    setLinks(null); setFiles([]);
+    setLinks(null); setFiles([]); setTasks([]); setTasksLoading(true);
     fetchUserLinks(user._id).then(setLinks).catch(() => setLinks({ projects: [], agreements: [], expenses: [], reminders: [], submittals: [], pos: [] }));
     fetchUserFiles(user._id).then(setFiles).catch(() => setFiles([]));
+    fetchUserTasks(user._id).then(setTasks).catch(() => setTasks([])).finally(() => setTasksLoading(false));
   }, [user._id]);
 
   const openProject = (projectId?: string) => { if (projectId) navigate(`/dashboard/projects/${projectId}`); };
@@ -116,7 +120,7 @@ export default function UserProfile({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-        {([["activity", "Activity"], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
+        {([["activity", "Activity"], ["tasks", `Tasks (${tasks.length})`], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${tab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
         ))}
       </div>
@@ -148,6 +152,12 @@ export default function UserProfile({
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-6">Projects, agreements, expenses and reminders are linked by account; purchase orders and submittals are matched by name. Click a row to open its project.</p>
+        </div>
+      )}
+
+      {tab === "tasks" && (
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-4">
+          <TaskMiniBoard tasks={tasks} loading={tasksLoading} />
         </div>
       )}
 

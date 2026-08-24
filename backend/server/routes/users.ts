@@ -12,6 +12,8 @@ import Expense from "../models/Expense";
 import Reminder from "../models/Reminder";
 import Submittal from "../models/Submittal";
 import ProcurementPO from "../models/ProcurementPO";
+import Task from "../models/Task";
+import { enrichTasks } from "../lib/taskProfile";
 import { requireAuth, AuthedRequest, requireAdmin } from "../middleware/auth";
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -169,6 +171,19 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const projects = [...owned, ...guest].filter((p) => { const k = String((p as { _id: unknown })._id); if (seen.has(k)) return false; seen.add(k); return true; });
 
     res.json({ projects, agreements, expenses, reminders, submittals, pos });
+  } catch (err) { next(err); }
+});
+
+// ── CR-P — the user's Kanban tasks across projects (for the profile board view) ──
+router.get("/:id/tasks", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = await User.findById(req.params.id).select("empId").lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const empId = String((user as { empId?: string }).empId || "");
+    const or: Record<string, unknown>[] = [{ "assignees.userId": req.params.id }];
+    if (empId) or.push({ "assignees.empId": empId });
+    const tasks = await Task.find({ $or: or }).sort({ updatedAt: -1 }).limit(200).lean();
+    res.json(await enrichTasks(tasks as unknown as Array<Record<string, unknown>>));
   } catch (err) { next(err); }
 });
 
