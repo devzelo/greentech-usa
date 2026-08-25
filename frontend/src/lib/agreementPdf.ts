@@ -1,5 +1,5 @@
 import { PDFDocument, PDFFont, PDFImage, StandardFonts, degrees, rgb, type PDFPage } from "pdf-lib";
-import type { ApiAgreement } from "./api";
+import { attachmentUrl, type ApiAgreement } from "./api";
 import { GREENTECH, embedImage, drawFitted } from "./poPdf";
 
 // The shared agreement document — one formal layout for every context (employee, partner,
@@ -386,6 +386,41 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
         }
       }
     } catch { /* best-effort — the reference note in the NDA section still stands */ }
+  }
+
+  // CR-PR-10 — files attached to a section are part of the agreement, so they print too:
+  // PDFs are merged page-for-page, images get their own page, anything else gets a stub page
+  // naming the file. Each is introduced by a divider so it is obvious which section it came from.
+  for (const s of ag.extraSections || []) {
+    if ((s as { hidden?: boolean }).hidden) continue;
+    for (const a of s.attachments || []) {
+      try {
+        const res = await fetch(attachmentUrl(a.filePath));
+        if (!res.ok) continue;
+        const bytes = await res.arrayBuffer();
+        const ext = (a.name.split(".").pop() || "").toLowerCase();
+
+        const d = doc.addPage([PAGE_W, PAGE_H]);
+        d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
+        const heading = (s.title || "Attachment").toUpperCase();
+        d.drawText(heading, { x: (PAGE_W - bold.widthOfTextAtSize(heading, 18)) / 2, y: PAGE_H / 2 + 16, size: 18, font: bold, color: INK });
+        d.drawText(a.name, { x: (PAGE_W - font.widthOfTextAtSize(a.name, 10)) / 2, y: PAGE_H / 2 - 24, size: 10, font, color: MUTED });
+
+        if (ext === "pdf") {
+          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+          const pages = await doc.copyPages(src, src.getPageIndices());
+          pages.forEach((p) => doc.addPage(p));
+        } else if (["png", "jpg", "jpeg"].includes(ext)) {
+          addImagePage(doc, ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes));
+        } else {
+          const p = doc.addPage([PAGE_W, PAGE_H]);
+          p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
+          p.drawText("Attached file", { x: M, y: PAGE_H - 110, size: 13, font: bold, color: INK });
+          p.drawText(a.name, { x: M, y: PAGE_H - 132, size: 11, font, color: MUTED });
+          p.drawText("This file type cannot be shown inline — download the original from the agreement.", { x: M, y: PAGE_H - 152, size: 9, font, color: MUTED });
+        }
+      } catch { /* one unreadable attachment must not break the whole document */ }
+    }
   }
 
   const out = await doc.save();

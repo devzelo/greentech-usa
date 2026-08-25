@@ -1570,7 +1570,9 @@ export async function addSubmittalAttachmentFromDocument(projectId: string, sid:
 }
 
 // ── Vendors + RFQ / bid-leveling ─────────────────────────────────────────────
-export interface ApiVendor { _id: string; projectId: string; name: string; country: string; city: string; contactName: string; email: string; phone: string }
+export interface ApiVendor { _id: string; projectId: string; name: string; country: string; city: string; contactName: string; email: string; phone: string;
+  /** CR-PR-08 — the Directory company this vendor is. Empty on legacy hand-entered rows. */
+  companyId?: string }
 export interface RfqLineFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
 export interface RfqLineItem { _id?: string; itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; manufacturer?: string; modelNo?: string; needOnSiteDate?: string; includeSubmittal?: boolean; attachments?: RfqLineFile[] }
 export interface QuoteLine { itemId: string; unitPrice: string }
@@ -1582,7 +1584,9 @@ export interface ApiVendorQuote {
   attachments: ExpenseAttachment[];
 }
 export type RfqStatus = "Draft" | "Sent" | "Quoting" | "Awarded";
-export interface RfqRecipient { companyId: string; name: string; category: string }
+export interface RfqRecipient { companyId: string; name: string; category: string;
+  /** CR-PR-08 — receiver gets a price column in Step 2. Undefined counts as true. */
+  expectsQuote?: boolean }
 export interface ApiRfq {
   _id: string; projectId: string; rfqNo: string; title: string;
   lineItems: RfqLineItem[]; includesShipping: boolean; includesTax: boolean; notes: string;
@@ -1992,7 +1996,9 @@ export function tableRowFileUrl(f: { filePath: string }): string {
 // ── Agreements (one shared engine, two ownership contexts) ───────────────────
 export type AgreementStatus = "Draft" | "Sent" | "Viewed" | "PendingSignature" | "Signed" | "Rejected" | "Expired" | "Cancelled";
 export type AgreementEntityType = "partner" | "subcontractor" | "vendor";
-export interface ApiAgreementParty { name: string; contactName: string; address: string; email: string; phone: string; logoUrl: string }
+export interface ApiAgreementParty { name: string; contactName: string; address: string; email: string; phone: string; logoUrl: string;
+  /** CR-PR-09 — the Directory company this party is. Empty for employees and legacy rows. */
+  companyId?: string }
 export interface ApiAgreementFile { _id: string; name: string; filePath: string; fileType: string; size: string; kind: string }
 export interface ApiAgreementSections { scope: string; terms: string; paymentConditions: string; deliveryConditions: string; ndaEnabled: boolean; ndaMode?: "text" | "file"; ndaText: string; ndaFile?: { name: string; url: string } | null }
 export interface ApiAgreement {
@@ -2000,6 +2006,8 @@ export interface ApiAgreement {
   ownerContextType: "user" | "project" | "general";
   ownerUserId: string; ownerProjectId: string; ownerEntityType: "" | AgreementEntityType; ownerEntityId: string;
   name: string; title?: string; description?: string; agreementType: string; templateId: string;
+  /** CR-PR-11 — projects this agreement covers (a general agreement may span several). */
+  linkedProjects?: Array<{ id: string; name: string }>;
   effectiveDate: string; startDate: string; endDate: string;
   status: AgreementStatus;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
@@ -2047,6 +2055,7 @@ export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archi
 }
 export interface AgreementInput {
   name?: string; title?: string; description?: string; agreementType?: string; templateId?: string;
+  linkedProjects?: Array<{ id: string; name: string }>;
   effectiveDate?: string; startDate?: string; endDate?: string;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
   documentMode?: "built" | "uploaded";

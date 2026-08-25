@@ -127,7 +127,7 @@ async function recipientUserId(ctx: Ctx, ag: IAgreement): Promise<string | null>
   return (sub as { userId?: string } | undefined)?.userId || null;
 }
 
-const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
+const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "linkedProjects", "effectiveDate", "startDate", "endDate"] as const;
 
 function buildAgreementRouter(ctx: Ctx): Router {
   const router = Router({ mergeParams: true });
@@ -219,6 +219,9 @@ function buildAgreementRouter(ctx: Ctx): Router {
         description: String(b.description || "").slice(0, 4000),
         agreementType: String(b.agreementType || "Custom").slice(0, 60),
         templateId: String(b.templateId || ""),
+        linkedProjects: Array.isArray(b.linkedProjects)
+          ? (b.linkedProjects as Array<{ id?: unknown; name?: unknown }>).map((p) => ({ id: String(p?.id || ""), name: String(p?.name || "") })).filter((p) => p.id)
+          : [],
         effectiveDate: String(b.effectiveDate || ""),
         startDate: String(b.startDate || ""),
         endDate: String(b.endDate || ""),

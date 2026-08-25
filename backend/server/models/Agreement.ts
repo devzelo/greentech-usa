@@ -14,6 +14,8 @@ export type AgreementEntityType = "" | "partner" | "subcontractor" | "vendor";
 
 export interface IAgreementParty {
   name: string; contactName: string; address: string; email: string; phone: string; logoUrl: string;
+  // CR-PR-09 — the Directory company this party is. Empty for employees and legacy rows.
+  companyId?: string;
 }
 export interface IAgreementFile { name: string; filePath: string; fileType: string; size: string; kind: string }
 
@@ -29,6 +31,8 @@ export interface IAgreement extends Document {
   description: string;        // description / remarks (general agreements) — CR-P-45
   agreementType: string;      // Employment | Service | Supply | Partnership | NDA | Custom
   templateId: string;
+  // CR-PR-11 — projects this agreement covers. A general agreement may span several, or none.
+  linkedProjects: Array<{ id: string; name: string }>;
   effectiveDate: string;
   startDate: string;
   endDate: string;
@@ -78,7 +82,7 @@ export interface IAgreement extends Document {
 }
 
 const PartySchema = new Schema<IAgreementParty>(
-  { name: { type: String, default: "" }, contactName: { type: String, default: "" }, address: { type: String, default: "" }, email: { type: String, default: "" }, phone: { type: String, default: "" }, logoUrl: { type: String, default: "" } },
+  { name: { type: String, default: "" }, contactName: { type: String, default: "" }, address: { type: String, default: "" }, email: { type: String, default: "" }, phone: { type: String, default: "" }, logoUrl: { type: String, default: "" }, companyId: { type: String, default: "" } },
   { _id: false }
 );
 const FileSchema = new Schema<IAgreementFile>(
@@ -99,6 +103,7 @@ const AgreementSchema = new Schema<IAgreement>(
     description: { type: String, default: "" },   // CR-P-45
     agreementType: { type: String, default: "Custom" },
     templateId: { type: String, default: "" },
+    linkedProjects: { type: [{ id: { type: String, default: "" }, name: { type: String, default: "" } }], default: [] },
     effectiveDate: { type: String, default: "" },
     startDate: { type: String, default: "" },
     endDate: { type: String, default: "" },

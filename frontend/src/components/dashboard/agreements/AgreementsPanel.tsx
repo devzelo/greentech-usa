@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
 import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchMe, attachmentUrl, companyFileUrl,
   fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile, getAuthUser,
+  fetchCompanies, fetchProjects, COMPANY_CATEGORIES, type ApiCompany,
   type ApiAgreement, type ApiAgreementParty, type ApiAgreementSections, type ApiAgreementTemplate,
   type AgreementCtx, type AgreementStatus, type ApiSignatory, type CompanyFile, type AdminUser,
 } from "../../../lib/api";
@@ -17,6 +18,7 @@ import BuilderActions from "../BuilderActions";
 import SaveStatus, { useSaveStatus } from "../SaveStatus";
 import ShareMenu from "../ShareMenu";
 import FileActions from "../FileActions";
+import CompanyEditorModal from "../CompanyEditorModal";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
 import { downloadBlob } from "../../../lib/proposalExport";
@@ -57,11 +59,12 @@ export interface AgreementDefaults {
   jv?: { name: string; logoUrl: string };   // the project's JV partner — used by the JV letterhead
 }
 
-const BLANK_PARTY: ApiAgreementParty = { name: "", contactName: "", address: "", email: "", phone: "", logoUrl: "" };
+const BLANK_PARTY: ApiAgreementParty = { name: "", contactName: "", address: "", email: "", phone: "", logoUrl: "", companyId: "" };
 const BLANK_SECTIONS: ApiAgreementSections = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "", ndaEnabled: false, ndaMode: "text", ndaText: "", ndaFile: null };
 
 type Draft = {
   name: string; title: string; description: string; agreementType: string; templateId: string;
+  linkedProjects: Array<{ id: string; name: string }>;
   effectiveDate: string; startDate: string; endDate: string;
   letterhead: "gt" | "jv"; jvLogoUrl: string;
   documentMode: "built" | "uploaded"; uploadFile: File | null;
@@ -83,12 +86,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]); // CR-B-19a — colleagues to tag on a section
   useEffect(() => { fetchUsers().then(setUsers).catch(() => {}); }, []);
+  useEffect(() => { fetchCompanies().then(setCompanies).catch(() => {}); }, []);
+  // CR-PR-11 — the project list a general agreement can be linked to.
+  const [allProjects, setAllProjects] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => { if (ctx.kind !== "general") return; fetchProjects().then((ps) => setAllProjects(ps.map((p) => ({ id: p.id, name: p.name })))).catch(() => {}); }, [ctx.kind]);
   const [ndaFiles, setNdaFiles] = useState<CompanyFile[]>([]);
   const [ndaPicker, setNdaPicker] = useState(false);
   const [editor, setEditor] = useState<{ aid: string | null } | null>(null); // null aid = creating
   // CR-B-20 — while an agreement editor is open, warn before closing the window / leaving the site.
   useUnsavedGuard(!!editor);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // CR-PR-09 — Party 2 is picked from the Companies Directory (one party, never several),
+  // exactly like an RFQ receiver. Employee agreements keep their own auto-filled details.
+  const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [partyPicker, setPartyPicker] = useState(false);
+  const [partySearch, setPartySearch] = useState("");
+  const [newPartyOpen, setNewPartyOpen] = useState(false);
   // CR-B-17 — which section's change-history panel is open.
   const [secHistFor, setSecHistFor] = useState<number | null>(null);
   // CR-B-16 — live "who is in this section" while the agreement editor is open.
@@ -113,9 +126,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // Deep-link from a notification: ?hl=ag-<id> flashes the matching agreement once the list loads.
   const flashId = useHighlight(!loading);
   // CR-P-45 — general agreements render as a sortable table.
-  const [genSort, setGenSort] = useState<{ key: "title" | "party" | "type" | "status"; dir: "asc" | "desc" }>({ key: "title", dir: "asc" });
-  const genVal = (ag: ApiAgreement, key: "title" | "party" | "type" | "status") =>
-    (key === "title" ? ag.title : key === "party" ? ag.partySnapshot?.party2?.name : key === "type" ? ag.agreementType : ag.status || "").toString().trim().toLowerCase();
+  const [genSort, setGenSort] = useState<{ key: "title" | "party" | "projects" | "type" | "status"; dir: "asc" | "desc" }>({ key: "title", dir: "asc" });
+  const genVal = (ag: ApiAgreement, key: "title" | "party" | "projects" | "type" | "status") =>
+    (key === "title" ? ag.title
+      : key === "party" ? ag.partySnapshot?.party2?.name
+      : key === "projects" ? (ag.linkedProjects || []).map((p) => p.name).join(", ")
+      : key === "type" ? ag.agreementType
+      : ag.status || "").toString().trim().toLowerCase();
   const sortedGeneral = useMemo(() => {
     if (ctx.kind !== "general") return list;
     return [...list].sort((a, b) => {
@@ -125,14 +142,46 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, genSort, ctx.kind]);
-  const genToggle = (key: "title" | "party" | "type" | "status") => setGenSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
-  const genSortIcon = (key: "title" | "party" | "type" | "status") => genSort.key === key ? (genSort.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={11} className="text-slate-300" />;
+  const genToggle = (key: "title" | "party" | "projects" | "type" | "status") => setGenSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  const genSortIcon = (key: "title" | "party" | "projects" | "type" | "status") => genSort.key === key ? (genSort.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={11} className="text-slate-300" />;
 
   const load = async () => {
     setLoading(true);
     try { setList(await fetchAgreements(ctx, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx), showArchived]);
+  // CR-PR-09 — Party 2 is a company for every agreement except an employee one, where it is
+  // the person and stays auto-filled from their profile.
+  const party2IsCompany = ctx.kind !== "user";
+  // Copy the Directory record onto the party snapshot: the PDF prints the snapshot, so the
+  // document keeps the details it was signed with even if the company is edited later.
+  const pickParty = (c: ApiCompany) => {
+    setDraft((d) => (d ? { ...d, party2: {
+      ...d.party2,
+      companyId: c._id,
+      name: c.name,
+      contactName: c.contactPersons?.[0]?.name || "",
+      email: c.email || c.contactPersons?.[0]?.email || "",
+      phone: c.phone || c.contactPersons?.[0]?.phone || "",
+      address: c.address || "",
+      logoUrl: c.logoUrl || "",
+    } } : d));
+    setPartyPicker(false);
+    setPartySearch("");
+  };
+  const clearParty = () => setDraft((d) => (d ? { ...d, party2: { ...BLANK_PARTY } } : d));
+
+  // Deleting a custom section throws away whatever was written in it, so it asks first.
+  const removeExtraSection = async (idx: number) => {
+    const title = draft?.extraSections[idx]?.title?.trim();
+    if (!(await confirm({
+      title: title ? `Delete “${title}”?` : "Delete this section?",
+      message: "The section and everything written in it are removed from this agreement.",
+      confirmLabel: "Delete",
+    }))) return;
+    setDraft((d) => (d ? { ...d, extraSections: d.extraSections.filter((_, j) => j !== idx) } : d));
+  };
+
   const undoArchive = async (ag: ApiAgreement) => {
     try { await setAgreementArchived(ctx, ag._id, false); toast("Agreement restored.", "success"); await load(); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not restore.", "error"); }
@@ -191,7 +240,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     setDraft({
       name: "", title: "", description: "",
       agreementType: ctx.kind === "user" ? "Employment" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supply" : ctx.entityType === "partner" ? "Partnership" : "Service",
-      templateId: "", effectiveDate: new Date().toISOString().slice(0, 10), startDate: "", endDate: "",
+      templateId: "", linkedProjects: [], effectiveDate: new Date().toISOString().slice(0, 10), startDate: "", endDate: "",
       // A partner agreement defaults to the JV (dual-logo) letterhead; everything else to GT.
       letterhead: ctx.kind === "project" && ctx.entityType === "partner" ? "jv" : "gt",
       // Project agreements extract the JV logo from the project; general agreements start blank
@@ -214,6 +263,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const openEdit = (ag: ApiAgreement) => {
     setDraft({
       name: ag.name, title: ag.title || "", description: ag.description || "", agreementType: ag.agreementType, templateId: ag.templateId,
+      linkedProjects: ag.linkedProjects || [],
       effectiveDate: ag.effectiveDate, startDate: ag.startDate, endDate: ag.endDate,
       letterhead: ag.letterhead === "jv" && ctx.kind !== "user" ? "jv" : "gt",
       jvLogoUrl: ag.jvLogoUrl || (ctx.kind === "project" ? (defaults?.jv?.logoUrl || defaults?.party2?.logoUrl || "") : ""),
@@ -271,6 +321,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     name: draft!.name || autoName(draft!.agreementType),
     title: draft!.title, description: draft!.description,
     agreementType: draft!.agreementType, templateId: draft!.templateId,
+    linkedProjects: draft!.linkedProjects,
     effectiveDate: draft!.effectiveDate, startDate: draft!.startDate, endDate: draft!.endDate,
     letterhead: draft!.letterhead, jvLogoUrl: draft!.jvLogoUrl,
     documentMode: draft!.documentMode,
@@ -306,10 +357,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         ag = await sendAgreement(ctx, ag._id);
         patch(ag);
         toast("Agreement sent — the recipient can now review and sign it.", "success");
+        setEditor(null); setDraft(null);
       } else {
+        // Stay open so you can keep editing, preview, or attach files after saving.
         toast("Agreement saved.", "success");
       }
-      setEditor(null); setDraft(null);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save the agreement.", "error"); }
     finally { setSaving(false); }
   };
@@ -511,7 +563,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
-                {([["title", "Title"], ["party", "2nd party"], ["type", "Type"], ["status", "Status"]] as const).map(([k, l]) => (
+                {([["title", "Title"], ["party", "2nd party"], ["projects", "Project(s)"], ["type", "Type"], ["status", "Status"]] as const).map(([k, l]) => (
                   <th key={k} className="px-3 py-2.5">
                     <button onClick={() => genToggle(k)} className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${genSort.key === k ? "text-slate-700" : "text-slate-400 hover:text-slate-600"}`} title={`Sort by ${l}`}>{l} {genSortIcon(k)}</button>
                   </th>
@@ -530,13 +582,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                       <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
                       <td className="px-3 py-2.5 text-xs font-bold text-slate-800 align-top">{ag.title || <span className="text-slate-300">—</span>}</td>
                       <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{ag.partySnapshot?.party2?.name || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2.5 align-top">
+                        {(ag.linkedProjects || []).length === 0 ? <span className="text-slate-300 text-xs">—</span> : (
+                          <div className="flex flex-wrap gap-1 max-w-[16rem]">
+                            {ag.linkedProjects!.map((p) => (
+                              <span key={p.id} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">{p.name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap align-top">{ag.agreementType || "—"}</td>
                       <td className="px-3 py-2.5 align-top"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${meta.cls}`}>{meta.label}</span></td>
                       <td className="px-3 py-2.5 text-xs text-slate-500 max-w-[18rem] truncate align-top" title={ag.description || ""}>{ag.description || <span className="text-slate-300">—</span>}</td>
                       <td className="px-3 py-2.5 align-top">{actionButtons(ag)}</td>
                     </tr>
                     {historyFor === ag._id && (
-                      <tr className="bg-slate-50/40"><td colSpan={7} className="px-4 pb-3">{historyList(ag)}</td></tr>
+                      <tr className="bg-slate-50/40"><td colSpan={8} className="px-4 pb-3">{historyList(ag)}</td></tr>
                     )}
                   </Fragment>
                 );
@@ -575,6 +636,60 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
             );
           })}
         </div>
+      )}
+
+      {/* CR-PR-09 — Party 2 picker. One company only: choosing replaces whatever was there. */}
+      {partyPicker && draft && (() => {
+        const q = partySearch.trim().toLowerCase();
+        const list = companies.filter((c) => !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q));
+        return (
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-900">Choose the other party</h3>
+                <button onClick={() => setPartyPicker(false)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input value={partySearch} onChange={(e) => setPartySearch(e.target.value)} placeholder="Search the Directory…" className={`${inp} pl-9`} />
+                </div>
+                {companies.length === 0 && <p className="text-sm text-slate-400 italic">No companies in the Directory yet — add one with “New company”.</p>}
+                <div className="max-h-80 overflow-y-auto space-y-1">
+                  {list.map((c) => {
+                    const on = draft.party2.companyId === c._id;
+                    return (
+                      <button key={c._id} onClick={() => pickParty(c)} className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left ${on ? "border-primary bg-primary/5" : "border-slate-100 hover:bg-slate-50"}`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-800 truncate">{c.name}</p>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wide">{COMPANY_CATEGORIES.find((x) => x.v === c.category)?.label || c.category}{c.email ? ` · ${c.email}` : ""}</p>
+                        </div>
+                        {on && <CheckCircle2 size={16} className="text-primary shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex justify-between items-center px-5 py-3 border-t border-slate-100">
+                <button onClick={() => { setPartyPicker(false); setNewPartyOpen(true); }} className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"><Plus size={12} /> New company</button>
+                <button onClick={() => setPartyPicker(false)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary">Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* The Directory's own form, opened over the agreement editor — saving picks the company. */}
+      {newPartyOpen && (
+        <CompanyEditorModal
+          initial={{ category: ctx.kind === "project" && ctx.entityType ? (ctx.entityType as ApiCompany["category"]) : "vendor" }}
+          onSaved={(c) => {
+            setCompanies((p) => (p.some((x) => x._id === c._id) ? p.map((x) => (x._id === c._id ? c : x)) : [c, ...p]));
+            setNewPartyOpen(false);
+            pickParty(c);
+          }}
+          onClose={() => setNewPartyOpen(false)}
+        />
       )}
 
       {dialogs}
@@ -694,6 +809,23 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / remarks
                   <textarea rows={2} className={`${inp} mt-1`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Notes or remarks about this agreement…" />
                 </label>
+                {/* CR-PR-11 — one agreement can cover several projects, or none at all. */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project(s) <span className="font-medium normal-case text-slate-400">— which projects this agreement covers; leave empty if it is company-wide</span></p>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto bg-slate-50 rounded-xl p-2">
+                    {allProjects.length === 0 && <span className="text-[11px] text-slate-400 italic">No projects available.</span>}
+                    {allProjects.map((p) => {
+                      const on = draft.linkedProjects.some((x) => x.id === p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setDraft((d) => (d ? { ...d, linkedProjects: on ? d.linkedProjects.filter((x) => x.id !== p.id) : [...d.linkedProjects, { id: p.id, name: p.name }] } : d))}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"}`}
+                        >{on && <CheckCircle2 size={11} />}{p.name}</button>
+                      );
+                    })}
+                  </div>
+                </div>
               </>)}
 
               {/* Create vs Upload — build the agreement from the fields below, or attach an already-made file. */}
@@ -761,14 +893,44 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
               {/* Party 2 */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Party 2 — {ctx.kind === "user" ? "employee" : ctx.kind === "general" ? "other party" : ctx.entityType} <span className="font-medium normal-case text-slate-400">— auto-filled; frozen once sent</span></p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className={inp} placeholder="Name *" value={draft.party2.name} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, name: e.target.value } })} />
-                  <input className={inp} placeholder="Contact person" value={draft.party2.contactName} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, contactName: e.target.value } })} />
-                  <input className={inp} placeholder="Email" value={draft.party2.email} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, email: e.target.value } })} />
-                  <input className={inp} placeholder="Phone" value={draft.party2.phone} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, phone: e.target.value } })} />
-                  <input className={`${inp} col-span-2`} placeholder="Address" value={draft.party2.address} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, address: e.target.value } })} />
-                </div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Party 2 — {ctx.kind === "user" ? "employee" : ctx.kind === "general" ? "other party" : ctx.entityType} <span className="font-medium normal-case text-slate-400">— {party2IsCompany ? "picked from the Directory" : "auto-filled"}; frozen once sent</span></p>
+                {party2IsCompany ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {draft.party2.name ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700">
+                          <Building2 size={12} className="text-slate-400" /> {draft.party2.name}
+                          <button onClick={clearParty} title="Clear this party" className="text-slate-300 hover:text-red-500"><X size={12} /></button>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">No party chosen — pick one from the Directory.</span>
+                      )}
+                      <button onClick={() => { setPartyPicker(true); setPartySearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary">
+                        <Building2 size={11} /> {draft.party2.name ? "Change party" : "Choose from Directory"}
+                      </button>
+                      <button onClick={() => setNewPartyOpen(true)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
+                        <Plus size={11} /> New company
+                      </button>
+                    </div>
+                    {draft.party2.name && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 bg-white rounded-xl border border-slate-100 p-3 text-[11px] text-slate-600">
+                        <p><span className="text-slate-400">Contact</span> {draft.party2.contactName || "—"}</p>
+                        <p><span className="text-slate-400">Email</span> {draft.party2.email || "—"}</p>
+                        <p><span className="text-slate-400">Phone</span> {draft.party2.phone || "—"}</p>
+                        <p className="sm:col-span-2"><span className="text-slate-400">Address</span> {draft.party2.address || "—"}</p>
+                        <p className="sm:col-span-2 text-[10px] text-slate-400 italic">Printed on the document as shown. Edit the company in the Directory to change it, then re-pick it here.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <input className={inp} placeholder="Name *" value={draft.party2.name} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, name: e.target.value } })} />
+                    <input className={inp} placeholder="Contact person" value={draft.party2.contactName} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, contactName: e.target.value } })} />
+                    <input className={inp} placeholder="Email" value={draft.party2.email} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, email: e.target.value } })} />
+                    <input className={inp} placeholder="Phone" value={draft.party2.phone} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, phone: e.target.value } })} />
+                    <input className={`${inp} col-span-2`} placeholder="Address" value={draft.party2.address} onChange={(e) => setDraft({ ...draft, party2: { ...draft.party2, address: e.target.value } })} />
+                  </div>
+                )}
               </div>
 
               {/* Context lines — CR-P-47: removed from general agreements. */}
@@ -828,6 +990,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 };
                 const removeFile = async (fid?: string) => {
                   if (!editor?.aid || !fid) return;
+                  if (!(await confirm({ title: "Delete this file?", message: "The attachment is removed from this section for good.", confirmLabel: "Delete" }))) return;
                   try { const ag = await deleteAgreementSectionFile(ctx, editor.aid, i, fid); upd({ attachments: (ag.extraSections?.[i]?.attachments || []) as typeof s.attachments }); }
                   catch { /* ignore */ }
                 };
@@ -867,7 +1030,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                       <button onClick={() => move(1)} disabled={i === count - 1} title="Move down" className="p-1 rounded text-slate-300 hover:text-slate-600 disabled:opacity-30"><ChevronDown size={13} /></button>
                       <button onClick={dup} title="Duplicate section" className="p-1 rounded text-slate-300 hover:text-primary"><Copy size={13} /></button>
                       <button onClick={() => upd({ hidden: !s.hidden })} title={s.hidden ? "Show section" : "Hide section"} className={`p-1 rounded ${s.hidden ? "text-slate-500 bg-slate-100" : "text-slate-300 hover:text-slate-600"}`}>{s.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-                      <button onClick={() => setDraft({ ...draft, extraSections: draft.extraSections.filter((_, j) => j !== i) })} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
+                      <button onClick={() => removeExtraSection(i)} disabled={locked} title="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
                     </div>
                   </div>
                   {/* CR-B-17 — per-section change history. */}
