@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FileText, Award, FileCheck2, FolderOpen, ChevronRight, Plus, Pencil, Trash2 } from "lucide-react";
 import DocSection from "./DocSection";
 import RequestBuilder from "./RequestBuilder";
@@ -31,7 +31,9 @@ const BUILTINS: Record<TopTab, SubTab[]> = {
   ntp: [{ k: "default", label: "Notices to Proceed", section: "project-info-ntp", hint: "Notices to Proceed (NTPs) issued for this project." }],
 };
 
-export default function ProjectInfoTab({ projectId, canEdit, projectInfo, clientName }: { projectId: string; canEdit: boolean; isOwner?: boolean; projectInfo?: ProjectPdfInfo; clientName?: string }) {
+export default function ProjectInfoTab({ projectId, canEdit, projectInfo, clientName, header }: { projectId: string; canEdit: boolean; isOwner?: boolean; projectInfo?: ProjectPdfInfo; clientName?: string;
+  /** CR-PR-13 — rendered above the RFP / Award / NTP bar (Project Nature lives here). */
+  header?: ReactNode }) {
   const [top, setTop] = useState<TopTab>("rfp");
   const [sub, setSub] = useState("solicitation");
   const [customRows, setCustomRows] = useState<ApiTableRow[]>([]);
@@ -82,6 +84,7 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
 
   return (
     <div className="space-y-6">
+      {header}
       <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
           {topBtn("rfp", "RFP", FileText)}

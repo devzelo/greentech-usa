@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Globe, Clock, ExternalLink, MapPin,
@@ -45,6 +45,8 @@ import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import { useDialogs } from "../../lib/useDialogs";
+import ContractTimeline from "./ContractTimeline";
+import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
@@ -182,8 +184,8 @@ function DocRow({ name, type, size, date }: { name: string; type: string; size: 
 
 
 // ── Default tabs ───────────────────────────────────────────────────────────
+// CR-PR-13 — Project Nature is no longer its own tab; it sits at the top of Project Info.
 const DEFAULT_TABS = [
-  { id: "nature", label: "Project Nature", icon: Wrench },
   { id: "client", label: "Client Info", icon: Building2 },
   { id: "project-info", label: "Project Info", icon: FileText },
   { id: "proposals", label: "Proposals", icon: FileSpreadsheet },
@@ -240,7 +242,7 @@ export default function ProjectWorkspace() {
   const proposalPresent = useBuilderPresence(id ? `proposal:${id}` : null, "the Proposal builder"); // CR-B-01
 
   // Tabs
-  const [activeTab, setActiveTab] = useState("nature");
+  const [activeTab, setActiveTab] = useState("client");
   const [pmSub, setPmSub] = useState<"board" | "docs">("board");   // CR-P — Project Management: Board | Documents
   type FieldType = "text" | "textarea" | "number" | "date" | "url" | "email" | "select" | "checkbox" | "file";
   type CustomField = { fieldId: string; label: string; type: FieldType; options?: string[]; value?: string };
@@ -462,7 +464,7 @@ export default function ProjectWorkspace() {
                     <div key={i} className="relative group border border-slate-100 rounded-xl p-2 bg-slate-50">
                       <img src={assetSrc(img.url)} alt={img.name || kind} className="h-14 object-contain" />
                       {!disabled && (
-                        <button type="button" title="Remove" onClick={() => updateJv(kind, jvInfo[kind].filter((_, j) => j !== i))}
+                        <button type="button" title="Remove" onClick={() => { if (confirm("Remove this image? It is deleted from the partner profile.")) updateJv(kind, jvInfo[kind].filter((_, j) => j !== i)); }}
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                       )}
                     </div>
@@ -493,6 +495,10 @@ export default function ProjectWorkspace() {
   type ExpenseRow = ApiExpense;
   type PORow = { _id: string; poNumber: string; vendor: string; amount: string; date: string; status: string };
   const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([]);
+  // CR-PR-12 — the header Refresh button bumps this to re-pull the project, expenses,
+  // POs and invoices, so the financial tiles catch up without losing unsaved workspace edits.
+  const [reloadKey, setReloadKey] = useState(0);
+  useRefreshSignal(useCallback(() => setReloadKey((k) => k + 1), []));
   const [attachmentPreview, setAttachmentPreview] = useState<{ name: string; url: string; fileType: string } | null>(null);
   const [poRows, setPoRows] = useState<PORow[]>([]);
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
@@ -974,6 +980,7 @@ export default function ProjectWorkspace() {
   };
   const handleContractRemove = async () => {
     if (!id) return;
+    if (!confirm("Remove the signed contract from this project? The file is deleted.")) return;
     try { setProject(await deleteProjectContract(id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not remove the contract.", "error"); }
   };
@@ -1903,7 +1910,6 @@ export default function ProjectWorkspace() {
     return key ? map[key] : section.replace(/-/g, " ");
   };
 
-  // Load everything on mount
   useEffect(() => {
     if (!id) return;
     Promise.all([
@@ -2024,7 +2030,8 @@ export default function ProjectWorkspace() {
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, reloadKey]);
 
   // Load the guest list once the project is known and the viewer is its owner.
   useEffect(() => {
@@ -2143,7 +2150,7 @@ export default function ProjectWorkspace() {
   const handleRemoveCustomTab = (tabId: string) => {
     // Remove the tab AND any sub-tabs (children) of it
     setCustomTabs((prev) => prev.filter((t) => t.id !== tabId && t.parentId !== tabId));
-    if (activeTab === tabId) setActiveTab("nature");
+    if (activeTab === tabId) setActiveTab("client");
     setTabMenuOpen(null); setTabMenuAnchor(null);
   };
 
@@ -2250,6 +2257,56 @@ export default function ProjectWorkspace() {
   const guestCanEditActive = isGuest && (myGuestPerms[activeTab] === "edit" || (activeTab === "finances" && finPermFor(finActive) === "edit"));
   const canEdit = isOwner || isAssigned || guestCanEditActive;  // edit content of the ACTIVE tab
   const canEditIdentity = isOwner;              // can edit project identity / A&S
+
+  // CR-PR-13 — Project Nature used to be a whole tab for one line of chips. It now rides at
+  // the top of Project Info, above that tab's own bars. State and saving are unchanged: it
+  // still persists through Save Workspace as project.projectNature.
+  const projectNatureCard = (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Wrench size={13} className="text-slate-400 shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Project Nature</span>
+          <span className="text-[11px] text-slate-400 font-medium">— one or more types that apply to this engagement</span>
+        </div>
+        {!canEditIdentity && <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 shrink-0">View only</span>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[...PROJECT_NATURE_TYPES, ...customNatureTypes].map((type) => (
+          <button
+            key={type}
+            disabled={!canEditIdentity}
+            onClick={() => {
+              if (!canEditIdentity) return;
+              setSelectedNature((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]));
+            }}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+              selectedNature.includes(type)
+                ? "border-primary bg-primary/5 text-primary"
+                : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
+            }`}
+          >
+            {selectedNature.includes(type) && <Check size={12} />}
+            {type}
+          </button>
+        ))}
+      </div>
+      {canEditIdentity && (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={customNatureInput}
+            onChange={(e) => setCustomNatureInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addCustomNature()}
+            placeholder="Add a custom type…"
+            className="flex-grow bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10"
+          />
+          <button onClick={addCustomNature} className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-primary transition-colors">Add</button>
+        </div>
+      )}
+    </div>
+  );
+  // Load everything on mount
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
@@ -2557,6 +2614,13 @@ export default function ProjectWorkspace() {
                   </>
                 )}
               </div>
+
+              {/* CR-PR-14 — how much contract time is left. Collapsed to one line; click to expand. */}
+              <ContractTimeline
+                startDate={project.contractDate || project.startDate}
+                endDate={project.endDate}
+                className="mt-3 max-w-3xl"
+              />
             </div>
           </div>
 
@@ -2898,64 +2962,6 @@ export default function ProjectWorkspace() {
           className="min-h-[500px]"
         >
 
-          {/* PROJECT NATURE */}
-          {activeTab === "nature" && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-10">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Project Nature</h3>
-                  <p className="text-slate-400 text-sm font-medium">Select one or more project types that apply to this engagement.</p>
-                </div>
-                {!canEditIdentity && (
-                  <span className="px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 flex-shrink-0">View only</span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-4">
-                {[...PROJECT_NATURE_TYPES, ...customNatureTypes].map((type) => (
-                  <button
-                    key={type}
-                    disabled={!canEditIdentity}
-                    onClick={() => {
-                      if (!canEditIdentity) return;
-                      setSelectedNature((prev) =>
-                        prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-                      );
-                    }}
-                    className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all border-2 disabled:opacity-60 disabled:cursor-not-allowed ${
-                      selectedNature.includes(type)
-                        ? "border-primary bg-primary/5 text-primary shadow-lg shadow-primary/10"
-                        : "border-slate-100 bg-slate-50 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    {selectedNature.includes(type) && <Check size={15} />}
-                    {type}
-                  </button>
-                ))}
-              </div>
-              {canEditIdentity && (
-                <div className="border-t border-slate-50 pt-8">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Add Custom Type</p>
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={customNatureInput}
-                      onChange={(e) => setCustomNatureInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addCustomNature()}
-                      placeholder="Type new project category..."
-                      className="flex-grow bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-                    />
-                    <button
-                      onClick={addCustomNature}
-                      className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-bold text-sm hover:bg-primary transition-all active:scale-95"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* CLIENT INFO */}
           {activeTab === "client" && (
             <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
@@ -3044,7 +3050,7 @@ export default function ProjectWorkspace() {
 
           {/* PROJECT INFO */}
           {activeTab === "project-info" && id && (
-            <ProjectInfoTab projectId={id} canEdit={canEdit} isOwner={isOwner} projectInfo={projectPdfInfo(project)} clientName={project?.clientInfo?.name} />
+            <ProjectInfoTab projectId={id} canEdit={canEdit} isOwner={isOwner} projectInfo={projectPdfInfo(project)} clientName={project?.clientInfo?.name} header={projectNatureCard} />
           )}
 
           {/* PROPOSALS */}
@@ -4517,7 +4523,7 @@ export default function ProjectWorkspace() {
                                 <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600">
                                   <button onClick={() => setAttachmentPreview({ name: a.name, url: attachmentUrl(a.filePath), fileType: a.fileType })} className="hover:text-primary max-w-[80px] truncate" title={a.name}>{a.name}</button>
                                   {canEdit && (
-                                    <button onClick={async () => { try { const u = await deleteExpenseAttachment(id, row._id, a._id); setExpenseRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                                    <button onClick={async () => { if (!confirm(`Delete "${a.name}"? The attachment is removed for good.`)) return; try { const u = await deleteExpenseAttachment(id, row._id, a._id); setExpenseRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
                                   )}
                                 </span>
                               ))}
@@ -4781,7 +4787,7 @@ export default function ProjectWorkspace() {
                                 <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600">
                                   <button onClick={() => setAttachmentPreview({ name: a.name, url: attachmentUrl(a.filePath), fileType: a.fileType })} className="hover:text-primary max-w-[80px] truncate" title={a.name}>{a.name}</button>
                                   {canEdit && (
-                                    <button onClick={async () => { try { const u = await deleteProcurementAttachment(id!, row._id, a._id); setProcurementRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                                    <button onClick={async () => { if (!confirm(`Delete "${a.name}"? The attachment is removed for good.`)) return; try { const u = await deleteProcurementAttachment(id!, row._id, a._id); setProcurementRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
                                   )}
                                 </span>
                               ))}
