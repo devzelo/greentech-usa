@@ -16,7 +16,8 @@ import {
   Bell,
   Building2,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  RefreshCw
 } from "lucide-react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import gtFavicon from "@/assets/gt-favicon.png";
@@ -26,6 +27,7 @@ import { toast } from "../../lib/toast";
 import { isAppDirty, clearAppDirty, subscribeDirty } from "../../lib/dirtyState";
 import { useDialogs } from "../../lib/useDialogs";
 import GlobalSearch from "./GlobalSearch";
+import { requestRefresh } from "../../lib/refreshBus";
 import GlobalEscClose from "./GlobalEscClose";
 import Toaster from "./Toaster";
 import NotificationBell from "./NotificationBell";
@@ -54,6 +56,7 @@ const secondaryLinks = [
 
 export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -393,6 +396,21 @@ export default function DashboardLayout() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            {/* CR-PR-12 — pull fresh figures (expenses, invoices, totals) without a full page load. */}
+            <button
+              onClick={() => {
+                setRefreshing(true);
+                // A page that listens reloads its own data; anything else gets a real reload.
+                if (!requestRefresh()) { window.location.reload(); return; }
+                window.setTimeout(() => setRefreshing(false), 800);
+              }}
+              title="Refresh this page's data"
+              aria-label="Refresh"
+              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-primary transition-colors"
+            >
+              <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
+            </button>
+
             <GlobalSearch />
 
             <NotificationBell />
