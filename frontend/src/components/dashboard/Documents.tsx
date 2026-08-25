@@ -9,6 +9,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, fetchCompanyDetails, createCompanyDetail, updateCompanyDetail, deleteCompanyDetail, withFileToken, type ApiProject, type ApiCompanyDetail, ApiGlobalDocument } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { useDialogs } from "../../lib/useDialogs";
 import { sectionToPath } from "../../lib/docTree";
 import { locationFlag } from "../../lib/countryFlag";
 import DocumentViewer from "./DocumentViewer";
@@ -78,6 +79,7 @@ function groupLabel(section: string) {
 // ── Company documents (fixed, admin-managed) ────────────────────────────────
 export default function Documents() {
   useMeta({ title: "Documents", description: "Browse project files and official company documents." });
+  const { confirm, dialogs } = useDialogs();
   const isGuest = getAuthUser()?.role === "subcontractor";
   const isAdmin = getAuthUser()?.role === "admin";
   const [tab, setTab] = useState<"projects" | "company" | "classified">("projects");
@@ -140,6 +142,7 @@ export default function Documents() {
     finally { setSavingDetail(false); }
   };
   const removeDetail = async (id: string) => {
+    if (!(await confirm({ title: "Delete this field?", message: "The field and its value are removed for good.", confirmLabel: "Delete" }))) return;
     setDetails((p) => p.filter((d) => d._id !== id));
     deleteCompanyDetail(id).catch((err) => toast(err instanceof Error ? err.message : "Delete failed.", "error"));
   };
@@ -678,6 +681,7 @@ export default function Documents() {
           />
         )}
       </AnimatePresence>
+      {dialogs}
     </div>
   );
 }

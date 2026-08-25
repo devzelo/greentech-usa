@@ -245,6 +245,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     catch (err) { toast(err instanceof Error ? err.message : "Could not add document.", "error"); }
   };
   const removeAtt = async (sid: string, rid: string, aid: string) => {
+    if (!(await confirm({ title: "Delete this attachment?", message: "The file is removed from this submittal for good.", confirmLabel: "Delete" }))) return;
     try { const rev = await deleteSubmittalAttachment(projectId, sid, rid, aid); replaceRev(sid, rev); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };

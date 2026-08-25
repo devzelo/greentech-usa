@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { StickyNote as StickyIcon, Plus, Trash2, Loader2 } from "lucide-react";
 import { fetchStickyNotes, createStickyNote, updateStickyNote, deleteStickyNote, type ApiStickyNote } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { useDialogs } from "../../lib/useDialogs";
 
 const fmtWhen = (iso?: string) => {
   if (!iso) return "";
@@ -16,6 +17,7 @@ export default function StickyNotes() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const { confirm, dialogs } = useDialogs();
 
   useEffect(() => {
     fetchStickyNotes().then(setNotes).catch(() => setNotes([])).finally(() => setLoading(false));
@@ -37,6 +39,7 @@ export default function StickyNotes() {
   };
   const saveNow = (id: string, text: string) => { clearTimeout(timers.current[id]); updateStickyNote(id, { text }).then(applySaved).catch(() => {}); };
   const remove = async (id: string) => {
+    if (!(await confirm({ title: "Delete this note?", message: "The note and its text are removed for good.", confirmLabel: "Delete" }))) return;
     clearTimeout(timers.current[id]);
     try { await deleteStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
@@ -72,6 +75,7 @@ export default function StickyNotes() {
           ))}
         </div>
       )}
+      {dialogs}
     </aside>
   );
 }

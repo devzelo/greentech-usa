@@ -230,6 +230,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   projectId: string; task: ApiTask; columns: ApiTaskColumn[]; members: BoardMember[]; canEdit: boolean; onClose: () => void; onSaved: (t: ApiTask) => void; onDelete: () => void;
 }) {
   const navigate = useNavigate();
+  const { confirm, dialogs } = useDialogs();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
   const [tags, setTags] = useState<string[]>(task.tags);
@@ -281,6 +282,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   };
   const removeFile = async (aid?: string) => {
     if (!aid) return;
+    if (!(await confirm({ title: "Delete this attachment?", message: "The file is removed from this task for good.", confirmLabel: "Delete" }))) return;
     try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
@@ -328,7 +330,10 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const removeTag = (t: string) => { const next = tags.filter((x) => x !== t); setTags(next); save({ tags: next }, true); };
   const addSub = () => { const t = subInput.trim(); if (!t) return; const next = [...subtasks, { title: t, done: false }]; setSubtasks(next); setSubInput(""); save({ subtasks: next }, true); };
   const toggleSub = (i: number) => { const next = subtasks.map((s, j) => (j === i ? { ...s, done: !s.done } : s)); setSubtasks(next); save({ subtasks: next }, true); };
-  const removeSub = (i: number) => { const next = subtasks.filter((_, j) => j !== i); setSubtasks(next); save({ subtasks: next }, true); };
+  const removeSub = async (i: number) => {
+    if (!(await confirm({ title: "Delete this subtask?", message: subtasks[i]?.title ? `“${subtasks[i].title}” is removed from this task.` : "The subtask is removed from this task.", confirmLabel: "Delete" }))) return;
+    const next = subtasks.filter((_, j) => j !== i); setSubtasks(next); save({ subtasks: next }, true);
+  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
@@ -491,6 +496,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
           <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically.</p>
         </div>
       </div>
+      {dialogs}
     </div>
   );
 }

@@ -312,6 +312,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
   };
   const deleteItemFile = async (iid: string, aid: string) => {
+    if (!(await confirm({ title: "Delete this attachment?", message: "The file is removed from this item for good.", confirmLabel: "Delete" }))) return;
     try { const up = await deleteProcurementItemFile(projectId, iid, aid); setItems((p) => p.map((x) => (x._id === iid ? up : x))); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };

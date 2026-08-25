@@ -8,6 +8,7 @@ import {
 } from "../../lib/api";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
+import { useDialogs } from "../../lib/useDialogs";
 import { ConfirmDialog } from "./Dialogs";
 import AgreementsPanel from "./agreements/AgreementsPanel";
 import UserProfile from "./UserProfile";
@@ -34,6 +35,7 @@ const emptyForm: FormState = { name: "", email: "", personalEmail: "", password:
 
 export default function UserManagement() {
   useMeta({ title: "User Management", description: "Add, edit, and remove employee accounts and reset passwords." });
+  const { confirm, dialogs } = useDialogs();
   const me = getAuthUser();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -108,6 +110,7 @@ export default function UserManagement() {
   };
   const removeDoc = async (f: UserFile) => {
     if (!editingId) return;
+    if (!(await confirm({ title: "Delete this document?", message: `“${f.name}” is removed from this user for good.`, confirmLabel: "Delete" }))) return;
     try { await deleteUserFile(editingId, f._id); setUserFiles((p) => p.filter((x) => x._id !== f._id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
   };
@@ -452,6 +455,7 @@ export default function UserManagement() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
       />
+      {dialogs}
     </div>
   );
 }

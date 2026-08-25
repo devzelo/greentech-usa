@@ -5,6 +5,7 @@ import {
   type ApiProject, type PartnerProfileInput,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { useDialogs } from "../../lib/useDialogs";
 
 // Shown on a JV partner's own Profile page: they edit their partner profile (name, contact,
 // email, phone, address, logo) and manage their stamps & signatures — per project. It edits the
@@ -22,6 +23,7 @@ export default function PartnerProfileSection() {
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  const { confirm, dialogs } = useDialogs();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<"logo" | "stamps" | "signatures" | null>(null);
@@ -75,6 +77,14 @@ export default function PartnerProfileSection() {
     finally { setSaving(false); }
   };
 
+  // A stamp or signature is deleted for good once saved, so removing one asks first.
+  const removeAsset = async (target: "stamps" | "signatures", i: number) => {
+    if (!form) return;
+    const what = target === "stamps" ? "stamp" : "signature";
+    if (!(await confirm({ title: `Delete this ${what}?`, message: `The ${what} is removed from your partner profile.`, confirmLabel: "Delete" }))) return;
+    setForm({ ...form, [target]: form[target].filter((_, j) => j !== i) });
+  };
+
   const imgList = (target: "stamps" | "signatures", label: string, Icon: typeof Stamp) => form && (
     <div className="space-y-2">
       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Icon size={12} /> {label}</label>
@@ -82,7 +92,7 @@ export default function PartnerProfileSection() {
         {form[target].map((img, i) => (
           <div key={i} className="relative group border border-slate-100 rounded-xl p-2 bg-slate-50">
             <img src={resolveImg(img.url)} alt={img.name || label} className="h-14 object-contain" />
-            <button type="button" title="Remove" onClick={() => setForm({ ...form, [target]: form[target].filter((_, j) => j !== i) })}
+            <button type="button" title="Remove" onClick={() => removeAsset(target, i)}
               className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none opacity-0 group-hover:opacity-100 transition-opacity">×</button>
           </div>
         ))}
@@ -152,6 +162,7 @@ export default function PartnerProfileSection() {
           </div>
         </div>
       )}
+      {dialogs}
     </div>
   );
 }

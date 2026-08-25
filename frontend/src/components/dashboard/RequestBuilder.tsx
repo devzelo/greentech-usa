@@ -165,7 +165,13 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
   const secDeleteFile = async (r: ApiProjectRequest, i: number, aid?: string) => {
     if (!aid) return;
+    if (!(await confirm({ title: "Delete this file?", message: "The attachment is removed from this section for good.", confirmLabel: "Delete" }))) return;
     try { patch(await deleteRequestSectionFile(projectId, r._id, i, aid)); } catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
+  };
+  // Dropping a section discards whatever was written in it, so it asks first.
+  const removeDraftSection = async (idx: number) => {
+    if (!(await confirm({ title: "Delete this section?", message: "The section and everything written in it are removed from this request.", confirmLabel: "Delete" }))) return;
+    setDraft((d) => (d ? { ...d, sections: d.sections.filter((_, j) => j !== idx) } : d));
   };
   const setStatus = (r: ApiProjectRequest, status: ProjectRequestStatus) => { patch({ ...r, status }); updateProjectRequest(projectId, r._id, { status }).then(patch).catch(() => {}); };
   const remove = async (r: ApiProjectRequest) => {
@@ -453,7 +459,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 <div key={i} className="space-y-1.5 border-l-2 border-primary/30 pl-3">
                   <div className="flex items-center gap-2">
                     <input className={`${inp} font-bold`} placeholder="Section title (e.g. Background, Proposed Solution)" value={s.title} onChange={(e) => setDraft({ ...draft, sections: draft.sections.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
-                    <button onClick={() => setDraft({ ...draft, sections: draft.sections.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
+                    <button onClick={() => removeDraftSection(i)} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
                   </div>
                   <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, sections: draft.sections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={120} placeholder="Section content — tables, pictures, lists…" onImageUpload={imageUpload} />
                 </div>
