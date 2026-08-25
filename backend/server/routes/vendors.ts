@@ -10,7 +10,7 @@ router.use(procTabGuard(["proc-rfqs"]));
 
 // Writes gated by tabAccessGuard (requires "edit"); a guest granted RFQ-edit may write.
 const block = (_req: AuthedRequest, _res: Response) => false;
-const FIELDS = ["name", "country", "city", "contactName", "email", "phone"] as const;
+const FIELDS = ["name", "country", "city", "contactName", "email", "phone", "companyId"] as const;
 
 // Vendors are a SHARED, company-wide supplier list — created once, usable on every project.
 // So we return all vendors regardless of which project asked (the projectId on each doc just
@@ -23,15 +23,31 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (block(req, res)) return;
     const body: Record<string, unknown> = { projectId: req.params.id };
     for (const f of FIELDS) body[f] = req.body?.[f] || "";
+
+    // CR-PR-08 — vendors picked from the Directory are deduped on companyId, so choosing the
+    // same company again reuses its vendor row (and its quote history) instead of making a twin.
+    // The vendor list is shared company-wide, so this lookup is intentionally global.
+    const companyId = String(body.companyId || "").trim();
+    if (companyId) {
+      const existing = await Vendor.findOne({ companyId });
+      if (existing) return res.status(200).json(existing);
+    }
+
     const vendor = await Vendor.create(body);
     // CR-P-06a — adding a vendor auto-creates its Company Directory profile (deduped by name),
     // so the same company is never entered twice. Best-effort: never block vendor creation.
     try {
       const name = String(body.name || "").trim();
-      if (name) {
+      // Skip when the vendor came from the Directory — it already has its profile.
+      if (name && !companyId) {
         const exists = await Company.findOne({ name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }).select("_id").lean();
-        if (!exists) {
-          await Company.create({
+        // CR-PR-08 — record the link by id either way, so the profile page can find this
+        // vendor's quotes without matching on the name string.
+        if (exists) {
+          await Vendor.findByIdAndUpdate(vendor._id, { companyId: String(exists._id) });
+          vendor.companyId = String(exists._id);
+        } else {
+          const created = await Company.create({
             name,
             category: "vendor",
             email: String(body.email || ""),
@@ -39,6 +55,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
             address: [body.city, body.country].filter(Boolean).join(", "),
             contactPersons: body.contactName ? [{ name: String(body.contactName), role: "", email: String(body.email || ""), phone: String(body.phone || "") }] : [],
           });
+          await Vendor.findByIdAndUpdate(vendor._id, { companyId: String(created._id) });
+          vendor.companyId = String(created._id);
         }
       }
     } catch { /* directory profile is best-effort */ }

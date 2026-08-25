@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip, Archive, RotateCcw, DollarSign } from "lucide-react";
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
@@ -9,6 +9,7 @@ import {
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
 } from "../../lib/api";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
+import CompanyEditorModal from "./CompanyEditorModal";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -65,14 +66,15 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [openId, setOpenId] = useState<string | null>(null);
 
   const [showVendorForm, setShowVendorForm] = useState(false);
-  const [vDraft, setVDraft] = useState({ name: "", country: "", city: "", contactName: "", email: "", phone: "" });
+  const [newCompanyFor, setNewCompanyFor] = useState<string | null>(null); // RFQ awaiting a brand-new company
   const [creating, setCreating] = useState(false);
   const [chooseNew, setChooseNew] = useState(false); // CR-PR-02 — "New RFQ" choice popup (build vs upload)
   const [rTitle, setRTitle] = useState("");
   const [rShipTo, setRShipTo] = useState("");
   const [rDelivery, setRDelivery] = useState("Delivery");
   const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [rVendors, setRVendors] = useState<Record<string, boolean>>({}); // vendors to send the new RFQ to
+  const [rRecv, setRRecv] = useState<Record<string, boolean>>({}); // CR-PR-08 — Directory companies the new RFQ goes to
+  const [rRecvSearch, setRRecvSearch] = useState("");
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
   const [manageId, setManageId] = useState<string | null>(null); // §A1 — actions via popup
@@ -80,7 +82,6 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [vEdit, setVEdit] = useState({ name: "", country: "", city: "", contactName: "", email: "", phone: "" });
   const [addItemsFor, setAddItemsFor] = useState<string | null>(null); // RFQ id whose "add item from BOQ" picker is open
   const [addItemPicks, setAddItemPicks] = useState<Record<string, boolean>>({});
-  const [inlineVendorFor, setInlineVendorFor] = useState<string | null>(null); // RFQ id showing the inline "new vendor" form
   const [savingDoc, setSavingDoc] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false); // CR-PR-07 — toggle archived RFQs
   const { confirm, dialogs } = useDialogs();
@@ -235,10 +236,11 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       });
 
   // ── Vendors ──
-  const saveVendor = async () => {
-    if (!vDraft.name.trim()) { toast("Vendor name required.", "error"); return; }
-    try { const v = await addVendor(projectId, vDraft); setVendors((p) => [...p, v]); setVDraft({ name: "", country: "", city: "", contactName: "", email: "", phone: "" }); setShowVendorForm(false); }
-    catch (err) { toast(err instanceof Error ? err.message : "Could not add vendor.", "error"); }
+  // CR-PR-08 — a new supplier is a Directory company first; its vendor row follows from that.
+  const onDirectoryCompanySaved = async (c: ApiCompany) => {
+    setCompanies((p) => (p.some((x) => x._id === c._id) ? p.map((x) => (x._id === c._id ? c : x)) : [...p, c]));
+    setShowVendorForm(false);
+    await ensureVendorForCompany(c);
   };
   const removeVendor = async (vid: string) => {
     if (!(await confirm({ title: "Delete vendor?", message: "This removes the vendor from this project.", confirmLabel: "Delete" }))) return;
@@ -262,10 +264,18 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     const lineItems: RfqLineItem[] = chosen.map((it) => ({ itemId: it._id, description: it.description, qty: it.qty, unit: it.unit, spec: it.spec }));
     try {
       const rfq = await createRfq(projectId, { title: rTitle, lineItems, shipToLocation: rShipTo, deliveryMethod: rDelivery });
-      // Auto-create a quote column for each vendor we're sending to (Step 2 is then ready to price).
-      const vIds = vendors.filter((v) => rVendors[v._id]).map((v) => v._id);
-      for (const vid of vIds) { try { await addVendorQuote(projectId, rfq._id, vid); } catch { /* skip */ } }
-      setCreating(false); setPicked({}); setRVendors({}); setRTitle(""); setRShipTo(""); setRDelivery("Delivery"); setOpenId(rfq._id);
+      // CR-PR-08 — the chosen Directory companies become both the receivers and the Step-2
+      // price columns, so the two can never drift apart.
+      const chosenCompanies = companies.filter((c) => rRecv[c._id]);
+      if (chosenCompanies.length) {
+        const recipients: RfqRecipient[] = chosenCompanies.map((c) => ({ companyId: c._id, name: c.name, category: c.category, expectsQuote: true }));
+        try { await updateRfq(projectId, rfq._id, { recipients }); } catch { /* receivers are best-effort */ }
+        for (const c of chosenCompanies) {
+          const vid = await ensureVendorForCompany(c);
+          if (vid) { try { await addVendorQuote(projectId, rfq._id, vid); } catch { /* skip */ } }
+        }
+      }
+      setCreating(false); setPicked({}); setRRecv({}); setRRecvSearch(""); setRTitle(""); setRShipTo(""); setRDelivery("Delivery"); setOpenId(rfq._id);
       void autoSaveRfqDoc(rfq); // documents copy exists whether or not "Save to documents" is clicked
       void load(); // pulls the RFQ back with its vendor quote columns
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create RFQ.", "error"); }
@@ -284,6 +294,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
   };
   const removeRfqDoc = async (rfq: ApiRfq) => {
+    if (!(await confirm({ title: "Delete this RFQ document?", message: "The uploaded document is removed from this RFQ for good.", confirmLabel: "Delete" }))) return;
     try { const up = await deleteRfqDocument(projectId, rfq._id); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
@@ -328,19 +339,77 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   };
   const deleteLineDoc = async (rfq: ApiRfq, li: RfqLineItem, aid?: string) => {
     if (!li._id || !aid) return;
+    if (!(await confirm({ title: "Delete this attachment?", message: "The file is removed from this line item for good.", confirmLabel: "Delete" }))) return;
     try { const up = await deleteRfqLineFile(projectId, rfq._id, li._id, aid); setRfqs((p) => p.map((r) => (r._id === up._id ? up : r))); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
 
   // CR-PR-04 — receiver picker (from the Companies Directory).
   useEffect(() => { fetchCompanies().then(setCompanies).catch(() => {}); }, []);
-  const toggleRecipient = async (rfq: ApiRfq, c: ApiCompany) => {
-    const has = (rfq.recipients || []).some((r) => r.companyId === c._id);
-    const recipients: RfqRecipient[] = has
-      ? (rfq.recipients || []).filter((r) => r.companyId !== c._id)
-      : [...(rfq.recipients || []), { companyId: c._id, name: c.name, category: c.category }];
+  // CR-PR-08 — a Directory company IS the vendor. Find its vendor row by the hard link, falling
+  // back to a name match for rows created before that link existed.
+  const vendorForCompany = (companyId: string, name?: string) =>
+    vendors.find((v) => v.companyId === companyId)
+    || (name ? vendors.find((v) => !v.companyId && v.name.trim().toLowerCase() === name.trim().toLowerCase()) : undefined);
+
+  // Resolve (or create) the vendor row behind a Directory company, so it can hold a quote.
+  // The server dedupes on companyId, so racing two RFQs can't produce twins.
+  const ensureVendorForCompany = async (c: ApiCompany): Promise<string | null> => {
+    const found = vendorForCompany(c._id, c.name);
+    if (found) {
+      if (!found.companyId) {  // backfill a legacy row so it stops relying on the name
+        updateVendor(projectId, found._id, { companyId: c._id }).catch(() => {});
+        setVendors((p) => p.map((v) => (v._id === found._id ? { ...v, companyId: c._id } : v)));
+      }
+      return found._id;
+    }
+    try {
+      const v = await addVendor(projectId, {
+        name: c.name, companyId: c._id, email: c.email || "", phone: c.phone || "",
+        contactName: c.contactPersons?.[0]?.name || "",
+      });
+      setVendors((p) => (p.some((x) => x._id === v._id) ? p : [...p, v]));
+      return v._id;
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not attach vendor.", "error"); return null; }
+  };
+
+  const saveRecipients = async (rfq: ApiRfq, recipients: RfqRecipient[]) => {
     setRfqs((p) => p.map((r) => (r._id === rfq._id ? { ...r, recipients } : r)));
     try { await updateRfq(projectId, rfq._id, { recipients }); } catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
+
+  // Drop a receiver's Step-2 column, warning first if prices were already entered.
+  const dropQuoteFor = async (rfq: ApiRfq, companyId: string, name: string): Promise<boolean> => {
+    const vid = vendorForCompany(companyId, name)?._id;
+    const quote = vid ? rfq.quotes.find((q) => q.vendorId === vid) : undefined;
+    if (!quote) return true;
+    if (quote.lineItems.some((l) => n(l.unitPrice) > 0)
+      && !(await confirm({ title: "Remove this receiver?", message: "They already have prices entered — removing them deletes that quote.", confirmLabel: "Remove" }))) return false;
+    await removeQuote(rfq._id, quote._id);
+    return true;
+  };
+
+  const toggleRecipient = async (rfq: ApiRfq, c: ApiCompany) => {
+    const has = (rfq.recipients || []).some((r) => r.companyId === c._id);
+    if (has) {
+      if (!(await dropQuoteFor(rfq, c._id, c.name))) return;
+      await saveRecipients(rfq, (rfq.recipients || []).filter((r) => r.companyId !== c._id));
+      return;
+    }
+    await saveRecipients(rfq, [...(rfq.recipients || []), { companyId: c._id, name: c.name, category: c.category, expectsQuote: true }]);
+    const vid = await ensureVendorForCompany(c);
+    if (vid && !rfq.quotes.some((q) => q.vendorId === vid)) await addQuote(rfq._id, vid);
+  };
+
+  // The per-receiver "quote" switch — adds or removes just their price column.
+  const setRecipientQuote = async (rfq: ApiRfq, r: RfqRecipient, expects: boolean) => {
+    if (!expects && !(await dropQuoteFor(rfq, r.companyId, r.name))) return;
+    await saveRecipients(rfq, (rfq.recipients || []).map((x) => (x.companyId === r.companyId ? { ...x, expectsQuote: expects } : x)));
+    if (expects) {
+      const c = companies.find((x) => x._id === r.companyId);
+      const vid = c ? await ensureVendorForCompany(c) : vendorForCompany(r.companyId, r.name)?._id || null;
+      if (vid && !rfq.quotes.some((q) => q.vendorId === vid)) await addQuote(rfq._id, vid);
+    }
   };
   const confirmAddItems = async (rfq: ApiRfq) => {
     const chosen = items.filter((it) => addItemPicks[it._id] && !rfq.lineItems.some((l) => l.itemId === it._id));
@@ -371,15 +440,12 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     finally { setSavingDoc(null); }
   };
   // Inline "new vendor" from within an RFQ — creates the vendor and immediately attaches it.
-  const saveInlineVendor = async (rfq: ApiRfq) => {
-    if (!vDraft.name.trim()) { toast("Vendor name required.", "error"); return; }
-    try {
-      const v = await addVendor(projectId, vDraft);
-      setVendors((p) => [...p, v]);
-      setVDraft({ name: "", country: "", city: "", contactName: "", email: "", phone: "" });
-      setInlineVendorFor(null);
-      await addQuote(rfq._id, v._id); // attach as a Step-2 column right away
-    } catch (err) { toast(err instanceof Error ? err.message : "Could not add vendor.", "error"); }
+  // CR-PR-08 — "New company" opens the Directory's own form on top of this modal. Whatever is
+  // saved lands in the Directory and is attached here straight away, so you never leave the RFQ.
+  const onNewCompanySaved = async (rfq: ApiRfq, c: ApiCompany) => {
+    setCompanies((p) => (p.some((x) => x._id === c._id) ? p.map((x) => (x._id === c._id ? c : x)) : [...p, c]));
+    setNewCompanyFor(null);
+    await toggleRecipient(rfq, c); // adds the receiver and its Step-2 column
   };
 
   // ── Quotes ──
@@ -459,6 +525,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
   };
   const removeQuoteDoc = async (rid: string, qid: string, aid: string) => {
+    if (!(await confirm({ title: "Delete this attachment?", message: "The file is removed from this quote for good.", confirmLabel: "Delete" }))) return;
     try { const q = await deleteVendorQuoteAttachment(projectId, rid, qid, aid); patchQuote(rid, q); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
@@ -469,6 +536,22 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
 
   // Full RFQ editor — shown in the actions modal (shipping, add quotes, prices, award, versions).
   const renderRfqDetail = (rfq: ApiRfq) => {
+    // CR-PR-08 — one "send to" list. Receivers come from the Directory; a quote whose vendor has
+    // no matching receiver is a legacy row from before the two lists were merged, and is still
+    // shown so those older RFQs keep making sense.
+    const recipients = rfq.recipients || [];
+    const sendRows = [
+      ...recipients.map((r) => ({
+        key: r.companyId, name: r.name, category: r.category,
+        expectsQuote: r.expectsQuote !== false, recipient: r as RfqRecipient | undefined, legacy: false,
+      })),
+      ...rfq.quotes
+        .filter((q) => !recipients.some((r) => vendorForCompany(r.companyId, r.name)?._id === q.vendorId))
+        .map((q) => ({
+          key: "v:" + q.vendorId, name: vendorName(q.vendorId), category: "",
+          expectsQuote: true, recipient: undefined as RfqRecipient | undefined, legacy: true,
+        })),
+    ];
     const totals = rfq.quotes.map((q) => ({ q, total: quoteTotal(rfq, q), lead: n(q.leadTimeDays) }));
     const lowest = totals.filter((t) => t.total > 0).sort((a, b) => a.total - b.total)[0]?.q._id;
     const fastest = totals.filter((t) => t.lead > 0).sort((a, b) => a.lead - b.lead)[0]?.q._id;
@@ -579,21 +662,32 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                     </div>
                   </div>
 
-                  {/* CR-PR-04 — receivers chosen from the Companies Directory. */}
+                  {/* CR-PR-04 / CR-PR-08 — ONE list of receivers, all from the Companies Directory.
+                      Each one marked "quote" gets its own price column in Step 2, so choosing who to
+                      send to and who to compare prices from is a single action. */}
                   <div className="bg-slate-50 rounded-xl p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Send size={12} /> Send to {(rfq.recipients?.length || 0) > 0 && <span className="text-slate-400 normal-case">({rfq.recipients!.length})</span>}</div>
-                      {canEdit && <button onClick={() => { setReceiverFor(rfq._id); setRecvSearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Building2 size={11} /> Choose receivers</button>}
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Send size={12} /> Send to {sendRows.length > 0 && <span className="text-slate-400 normal-case">({sendRows.length})</span>}<span className="font-medium normal-case text-slate-400">— each one marked “quote” gets a price column in Step 2</span></div>
+                      {canEdit && <button onClick={() => { setReceiverFor(rfq._id); setRecvSearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary shrink-0"><Building2 size={11} /> Choose from Directory</button>}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {(rfq.recipients || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No receivers chosen — pick vendors, subs, manufacturers, etc. from the Directory.</span>}
-                      {(rfq.recipients || []).map((r) => (
-                        <span key={r.companyId} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
-                          {r.name}<span className="text-slate-300">· {r.category}</span>
-                          {canEdit && <button onClick={() => toggleRecipient(rfq, { _id: r.companyId, name: r.name, category: r.category } as ApiCompany)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
+                      {sendRows.length === 0 && <span className="text-[10px] text-slate-400 italic">No receivers chosen — pick vendors, subs, manufacturers, etc. from the Directory.</span>}
+                      {sendRows.map((row) => (
+                        <span key={row.key} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                          {row.name}{row.category && <span className="text-slate-300">· {row.category}</span>}
+                          {row.legacy && <span title="Added before receivers were picked from the Directory — remove it and re-pick from the Directory to link the profile." className="px-1 py-0.5 rounded bg-amber-50 text-amber-600 text-[8px] uppercase tracking-wide">legacy</span>}
+                          {canEdit && row.recipient && (
+                            <button
+                              onClick={() => setRecipientQuote(rfq, row.recipient!, !row.expectsQuote)}
+                              title={row.expectsQuote ? "Has a price column in Step 2 — click to drop it" : "No price column — click to add one"}
+                              className={"inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors " + (row.expectsQuote ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-400 hover:text-slate-600")}
+                            ><DollarSign size={9} /> quote</button>
+                          )}
+                          {canEdit && row.recipient && <button onClick={() => toggleRecipient(rfq, { _id: row.recipient!.companyId, name: row.recipient!.name, category: row.recipient!.category } as ApiCompany)} className="text-slate-300 hover:text-red-500"><X size={10} /></button>}
                         </span>
                       ))}
                     </div>
+                    {canEdit && <button onClick={() => setNewCompanyFor(rfq._id)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"><Plus size={11} /> New company — opens the Directory form, then attaches it here</button>}
                   </div>
 
                   {/* Shipping (address + type) — carried onto the PO */}
@@ -606,40 +700,6 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                       </select>
                       <AddressPicker value={rfq.shipToLocation || ""} projectSite={projectInfo?.siteAddress || projectInfo?.location} disabled={!canEdit} onChange={(v) => { setRfqShip(rfq._id, "shipToLocation", v); saveRfqShip(rfq._id, "shipToLocation", v); }} />
                     </div>
-                  </div>
-
-                  {/* Send to vendors — for our tracking; each selected vendor gets a price column in
-                      Step 2. This list is NOT shown on the RFQ PDF. */}
-                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={12} /> Send to vendors <span className="font-medium normal-case text-slate-400">— auto-adds each vendor's price column below (not on the PDF)</span></div>
-                      {canEdit && <button onClick={() => setInlineVendorFor(inlineVendorFor === rfq._id ? null : rfq._id)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 shrink-0"><Plus size={11} /> New vendor</button>}
-                    </div>
-                    {vendors.length === 0 && inlineVendorFor !== rfq._id ? (
-                      <p className="text-[11px] text-slate-400 italic">No vendors yet — add one with “New vendor”.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {vendors.map((v) => {
-                          const on = rfq.quotes.some((q) => q.vendorId === v._id);
-                          return (
-                            <button key={v._id} disabled={!canEdit} onClick={() => toggleRfqVendor(rfq, v._id)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors disabled:opacity-60 ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"}`}>
-                              {on && <Check size={11} />}{v.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {inlineVendorFor === rfq._id && canEdit && (
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-1 bg-white rounded-xl p-2 border border-slate-100">
-                        <input className={inp} placeholder="Name *" value={vDraft.name} onChange={(e) => setVDraft({ ...vDraft, name: e.target.value })} />
-                        <input className={inp} placeholder="Country" value={vDraft.country} onChange={(e) => setVDraft({ ...vDraft, country: e.target.value })} />
-                        <input className={inp} placeholder="City" value={vDraft.city} onChange={(e) => setVDraft({ ...vDraft, city: e.target.value })} />
-                        <input className={inp} placeholder="Contact" value={vDraft.contactName} onChange={(e) => setVDraft({ ...vDraft, contactName: e.target.value })} />
-                        <input className={inp} placeholder="Email" value={vDraft.email} onChange={(e) => setVDraft({ ...vDraft, email: e.target.value })} />
-                        <input className={inp} placeholder="Phone" value={vDraft.phone} onChange={(e) => setVDraft({ ...vDraft, phone: e.target.value })} />
-                        <button onClick={() => saveInlineVendor(rfq)} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold col-span-2 md:col-span-1">Add &amp; attach</button>
-                      </div>
-                    )}
                   </div>
 
                   {/* Actions — the generic (no-vendor) RFQ document. */}
@@ -694,7 +754,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                     </div>
                   </div>
                   {!sent && <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[11px] font-bold text-amber-700"><AlertCircle size={13} /> Send the request in Step 1 first — then fill in prices here as vendors reply.</div>}
-                  {rfq.quotes.length === 0 && <p className="text-[11px] text-slate-400 italic">No vendors selected yet — choose them under “Send to vendors” in Step 1.</p>}
+                  {rfq.quotes.length === 0 && <p className="text-[11px] text-slate-400 italic">No priced receivers yet — pick them under “Send to” in Step 1.</p>}
 
                 {/* Leveling matrix */}
                 <div className="overflow-x-auto">
@@ -918,7 +978,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       <div className="bg-slate-50 rounded-2xl p-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5" title="Vendors are shared across all projects — add once, reuse everywhere"><Building2 size={11} /> Vendors ({vendors.length}) · shared</p>
-          {canEdit && <button onClick={() => setShowVendorForm((v) => !v)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"><Plus size={11} /> Add vendor</button>}
+          {canEdit && <button onClick={() => setShowVendorForm(true)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1" title="Opens the Companies Directory form"><Plus size={11} /> Add vendor</button>}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {vendors.map((v) => (
@@ -929,15 +989,11 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           {vendors.length === 0 && <span className="text-[11px] text-slate-400 italic">No vendors yet.</span>}
         </div>
         {showVendorForm && canEdit && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
-            <input className={inp} placeholder="Name *" value={vDraft.name} onChange={(e) => setVDraft({ ...vDraft, name: e.target.value })} />
-            <input className={inp} placeholder="Country" value={vDraft.country} onChange={(e) => setVDraft({ ...vDraft, country: e.target.value })} />
-            <input className={inp} placeholder="City" value={vDraft.city} onChange={(e) => setVDraft({ ...vDraft, city: e.target.value })} />
-            <input className={inp} placeholder="Contact / Attention" value={vDraft.contactName} onChange={(e) => setVDraft({ ...vDraft, contactName: e.target.value })} />
-            <input className={inp} placeholder="Email" value={vDraft.email} onChange={(e) => setVDraft({ ...vDraft, email: e.target.value })} />
-            <input className={inp} placeholder="Phone" value={vDraft.phone} onChange={(e) => setVDraft({ ...vDraft, phone: e.target.value })} />
-            <button onClick={saveVendor} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold">Save vendor</button>
-          </div>
+          <CompanyEditorModal
+            initial={{ category: "vendor" }}
+            onSaved={(c) => { void onDirectoryCompanySaved(c); }}
+            onClose={() => setShowVendorForm(false)}
+          />
         )}
       </div>
 
@@ -1006,28 +1062,37 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
               );
             })}
           </div>
-          {/* Send to vendors — for our tracking; auto-creates each vendor's price column in Step 2.
+          {/* CR-PR-08 — receivers come from the Companies Directory, exactly as on an existing
+              RFQ. Each one chosen here gets its Step-2 price column straight away.
               (This list is NOT printed on the RFQ PDF.) */}
           <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Send to vendors <span className="font-medium normal-case text-slate-400">— for tracking; not shown on the PDF</span></p>
-            {vendors.length === 0 ? (
-              <p className="text-[11px] text-slate-400 italic">No vendors yet — add one in the Vendors panel above.</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Send to <span className="font-medium normal-case text-slate-400">— from the Directory; each gets a price column in Step 2</span></p>
+            {companies.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic">No companies in the Directory yet — add them under <strong>Directory</strong> in the left menu.</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {vendors.map((v) => {
-                  const on = !!rVendors[v._id];
-                  return (
-                    <button key={v._id} onClick={() => setRVendors((p) => ({ ...p, [v._id]: !p[v._id] }))} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"}`}>
-                      {on && <Check size={11} />}{v.name}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="relative mb-1.5">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input value={rRecvSearch} onChange={(e) => setRRecvSearch(e.target.value)} placeholder="Search vendors, subs, manufacturers…" className={`${inp} pl-9`} />
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {companies
+                    .filter((c) => { const q = rRecvSearch.trim().toLowerCase(); return !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q); })
+                    .map((c) => {
+                      const on = !!rRecv[c._id];
+                      return (
+                        <button key={c._id} onClick={() => setRRecv((p) => ({ ...p, [c._id]: !p[c._id] }))} title={COMPANY_CATEGORIES.find((x) => x.v === c.category)?.label || c.category} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"}`}>
+                          {on && <Check size={11} />}{c.name}
+                        </button>
+                      );
+                    })}
+                </div>
+              </>
             )}
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setCreating(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-            <button onClick={create} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Create request ({Object.values(picked).filter(Boolean).length}){Object.values(rVendors).filter(Boolean).length ? ` → ${Object.values(rVendors).filter(Boolean).length} vendor(s)` : ""}</button>
+            <button onClick={create} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Create request ({Object.values(picked).filter(Boolean).length}){Object.values(rRecv).filter(Boolean).length ? ` → ${Object.values(rRecv).filter(Boolean).length} receiver(s)` : ""}</button>
           </div>
         </div>
         );
@@ -1071,6 +1136,20 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           </table>
         </div>
       )}
+      {/* CR-PR-08 — the Directory's company form, opened from "Send to". The RFQ modal stays
+          mounted underneath, so saving drops you straight back into it with the new receiver. */}
+      {newCompanyFor && (() => {
+        const rfq = rfqs.find((r) => r._id === newCompanyFor);
+        if (!rfq) return null;
+        return (
+          <CompanyEditorModal
+            initial={{ category: "vendor" }}
+            onSaved={(c) => { void onNewCompanySaved(rfq, c); }}
+            onClose={() => setNewCompanyFor(null)}
+          />
+        );
+      })()}
+
       {dialogs}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
 

@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Landmark, Link2, Check, Upload, Eye, LayoutGrid, List as ListIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Link2, Check, Eye, LayoutGrid, List as ListIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
-  fetchCompanies, createCompany, updateCompany, deleteCompany,
+  fetchCompanies, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, syncCompaniesFromProjects,
-  uploadCompanyLogo, withFileToken,
+  withFileToken,
   COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import CompanyProfile from "./CompanyProfile";
+import CompanyEditorModal, { BLANK_COMPANY } from "./CompanyEditorModal";
 
 const inp = "w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15 focus:bg-white";
 const label = "block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1";
@@ -20,11 +21,7 @@ const CAT_CLS: Record<string, string> = {
   supplier: "bg-orange-50 text-orange-600", other: "bg-slate-100 text-slate-500",
 };
 
-const BLANK: CompanyInput = {
-  name: "", category: "vendor", logoUrl: "", address: "", phone: "", email: "", website: "",
-  contactPersons: [], banking: { bankName: "", accountName: "", accountNumber: "", iban: "", swift: "", routing: "" },
-  tax: { taxId: "", registrationNo: "" }, notes: "", archived: false,
-};
+const BLANK = BLANK_COMPANY;
 
 export default function Directory() {
   const { confirm, dialogs } = useDialogs();
@@ -35,16 +32,9 @@ export default function Directory() {
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"grid" | "list">("grid"); // CR-P-42
   const [editor, setEditor] = useState<{ id: string | null; draft: CompanyInput } | null>(null);
-  const [saving, setSaving] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);   // CR-P-43 — open a full profile view
   // CR-P-07 — company logo upload (returns a public URL stored in the draft's logoUrl).
-  const [logoUploading, setLogoUploading] = useState(false);
-  const uploadLogo = async (file: File) => {
-    setLogoUploading(true);
-    try { const { url } = await uploadCompanyLogo(file); setDraft({ logoUrl: url }); }
-    catch (e) { toast(e instanceof Error ? e.message : "Logo upload failed.", "error"); }
-    finally { setLogoUploading(false); }
-  };
+
   const openProfile = (c: ApiCompany) => setProfileId(c._id);
 
   const load = async () => {
@@ -105,19 +95,10 @@ export default function Directory() {
 
   const openNew = () => setEditor({ id: null, draft: { ...BLANK, category: cat === "all" ? "vendor" : cat } });
   const openEdit = (c: ApiCompany) => setEditor({ id: c._id, draft: { ...c } });
-  const setDraft = (patch: Partial<CompanyInput>) => setEditor((e) => (e ? { ...e, draft: { ...e.draft, ...patch } } : e));
-
-  const save = async () => {
-    if (!editor) return;
-    if (!String(editor.draft.name || "").trim()) { toast("Enter a company name.", "error"); return; }
-    setSaving(true);
-    try {
-      if (editor.id) { const up = await updateCompany(editor.id, editor.draft); setCompanies((p) => p.map((c) => (c._id === up._id ? up : c))); }
-      else { const nw = await createCompany(editor.draft); setCompanies((p) => [nw, ...p]); }
-      toast("Company saved.", "success");
-      setEditor(null);
-    } catch (err) { toast(err instanceof Error ? err.message : "Could not save the company.", "error"); }
-    finally { setSaving(false); }
+  // The form itself lives in CompanyEditorModal; we only fold the result back into the list.
+  const onCompanySaved = (saved: ApiCompany) => {
+    setCompanies((p) => (p.some((c) => c._id === saved._id) ? p.map((c) => (c._id === saved._id ? saved : c)) : [saved, ...p]));
+    setEditor(null);
   };
 
   // CR-P-43 — confirm before archiving / restoring (delete already confirmed).
@@ -150,8 +131,6 @@ export default function Directory() {
   };
 
   // Contact-person repeater helpers
-  const cps = () => editor?.draft.contactPersons || [];
-  const setCps = (list: ApiCompany["contactPersons"]) => setDraft({ contactPersons: list });
 
   const profileCompany = profileId ? companies.find((c) => c._id === profileId) || null : null;
 
@@ -315,88 +294,14 @@ export default function Directory() {
       </>
       )}
 
-      {/* Editor modal */}
+      {/* The Directory's company form — shared with the RFQ receiver list (CR-PR-08). */}
       {editor && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
-              <h3 className="text-base font-bold text-slate-900">{editor.id ? "Edit company" : "New company"}</h3>
-              <button onClick={() => setEditor(null)} disabled={saving} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* CR-P-07 — company logo. */}
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-                  {editor.draft.logoUrl ? <img src={withFileToken(editor.draft.logoUrl)} alt="Logo" className="w-full h-full object-contain" /> : <Building2 size={22} className="text-slate-300" />}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary cursor-pointer">
-                    {logoUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {editor.draft.logoUrl ? "Change logo" : "Upload logo"}
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadLogo(f); e.target.value = ""; }} />
-                  </label>
-                  {editor.draft.logoUrl && <button onClick={() => setDraft({ logoUrl: "" })} className="text-[11px] font-bold text-slate-400 hover:text-red-500">Remove</button>}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2"><label className={label}>Company name *</label><input className={inp} value={editor.draft.name || ""} onChange={(e) => setDraft({ name: e.target.value })} placeholder="e.g. Nexans Cables" /></div>
-                <div><label className={label}>Category</label>
-                  <select className={`${inp} font-semibold`} value={editor.draft.category} onChange={(e) => setDraft({ category: e.target.value as CompanyCategory })}>
-                    {COMPANY_CATEGORIES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div><label className={label}>Email</label><input className={inp} value={editor.draft.email || ""} onChange={(e) => setDraft({ email: e.target.value })} /></div>
-                <div><label className={label}>Phone</label><input className={inp} value={editor.draft.phone || ""} onChange={(e) => setDraft({ phone: e.target.value })} /></div>
-                <div><label className={label}>Website</label><input className={inp} value={editor.draft.website || ""} onChange={(e) => setDraft({ website: e.target.value })} /></div>
-              </div>
-              <div><label className={label}>Address</label><textarea rows={2} className={inp} value={editor.draft.address || ""} onChange={(e) => setDraft({ address: e.target.value })} /></div>
-
-              {/* Contact persons */}
-              <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className={label + " mb-0"}>Contact persons</p>
-                  <button onClick={() => setCps([...cps(), { name: "", role: "", email: "", phone: "" }])} className="text-[11px] font-bold text-primary hover:underline">+ Add contact</button>
-                </div>
-                {cps().length === 0 && <p className="text-[11px] text-slate-400 italic">None yet.</p>}
-                {cps().map((p, i) => (
-                  <div key={i} className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
-                    <input className={`${inp} py-1.5`} placeholder="Name" value={p.name} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-                    <input className={`${inp} py-1.5`} placeholder="Role" value={p.role} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))} />
-                    <input className={`${inp} py-1.5`} placeholder="Email" value={p.email} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} />
-                    <div className="flex items-center gap-1">
-                      <input className={`${inp} py-1.5`} placeholder="Phone" value={p.phone} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)))} />
-                      <button onClick={() => setCps(cps().filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Banking + tax */}
-              <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
-                <p className={label + " mb-0 flex items-center gap-1.5"}><Landmark size={12} /> Banking &amp; tax</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input className={`${inp} py-1.5`} placeholder="Bank name" value={editor.draft.banking?.bankName || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, bankName: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="Account name" value={editor.draft.banking?.accountName || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, accountName: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="Account number" value={editor.draft.banking?.accountNumber || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, accountNumber: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="IBAN" value={editor.draft.banking?.iban || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, iban: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="SWIFT/BIC" value={editor.draft.banking?.swift || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, swift: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="Routing" value={editor.draft.banking?.routing || ""} onChange={(e) => setDraft({ banking: { ...editor.draft.banking!, routing: e.target.value } })} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input className={`${inp} py-1.5`} placeholder="Tax ID" value={editor.draft.tax?.taxId || ""} onChange={(e) => setDraft({ tax: { ...editor.draft.tax!, taxId: e.target.value } })} />
-                  <input className={`${inp} py-1.5`} placeholder="Registration no." value={editor.draft.tax?.registrationNo || ""} onChange={(e) => setDraft({ tax: { ...editor.draft.tax!, registrationNo: e.target.value } })} />
-                </div>
-              </div>
-
-              <div><label className={label}>Notes</label><textarea rows={2} className={inp} value={editor.draft.notes || ""} onChange={(e) => setDraft({ notes: e.target.value })} /></div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
-              <button onClick={() => setEditor(null)} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold disabled:opacity-50">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Save</button>
-            </div>
-          </div>
-        </div>
+        <CompanyEditorModal
+          companyId={editor.id}
+          initial={editor.draft}
+          onSaved={onCompanySaved}
+          onClose={() => setEditor(null)}
+        />
       )}
 
       {dialogs}
