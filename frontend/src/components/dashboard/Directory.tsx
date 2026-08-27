@@ -58,10 +58,12 @@ export default function Directory() {
     const c = searchParams.get("category");
     const isNew = searchParams.get("new") === "1";
     const nm = searchParams.get("name") || "";
+    const openId = searchParams.get("open");   // deep-link from global search: open this company's profile
     const validCat = c && COMPANY_CATEGORIES.some((x) => x.v === c) ? (c as CompanyCategory) : null;
     if (validCat) setCat(validCat);
     if (isNew) setEditor({ id: null, draft: { ...BLANK, category: validCat || "vendor", name: nm } });
-    if (c || isNew || nm) setSearchParams({}, { replace: true });
+    if (openId) setProfileId(openId);
+    if (c || isNew || nm || openId) setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

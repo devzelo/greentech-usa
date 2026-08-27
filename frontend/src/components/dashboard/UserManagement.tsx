@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
@@ -78,6 +79,16 @@ export default function UserManagement() {
     }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [showArchived]);
+
+  // Deep-link from global search (?open=<userId>): open that user's profile once the list is in.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId || !users.length) return;
+    const u = users.find((x) => x._id === openId);
+    if (u) setProfileUser(u);
+    setSearchParams({}, { replace: true });
+  }, [users, searchParams, setSearchParams]);
 
   // CR-P-58 — deactivate (archive) / reactivate an account.
   const toggleArchive = async (u: AdminUser) => {

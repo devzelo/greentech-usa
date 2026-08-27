@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Briefcase, FileText, Users, Building2, Loader2, Eye, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchProjects, fetchAllDocuments, fetchEmployees, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee } from "../../lib/api";
+import { fetchProjects, fetchAllDocuments, fetchEmployees, fetchCompanies, fetchUsers, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee, type ApiCompany, type AdminUser, COMPANY_CATEGORIES } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 
-type Group = "Projects" | "Documents" | "Employees" | "Subcontractors";
+type Group = "Projects" | "Documents" | "Employees" | "Subcontractors" | "Directory" | "Users";
+const catLabel = (c: string) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label || c;
 interface Hit {
   group: Group;
   label: string;
@@ -16,7 +17,7 @@ interface Hit {
   doc?: ApiGlobalDocument;   // set on Documents hits so they can be previewed in-app
 }
 
-const GROUPS: ("All" | Group)[] = ["All", "Projects", "Documents", "Employees", "Subcontractors"];
+const GROUPS: ("All" | Group)[] = ["All", "Projects", "Documents", "Directory", "Users", "Employees", "Subcontractors"];
 const yearsOf = (...vals: (string | undefined)[]) => {
   const set = new Set<string>();
   for (const v of vals) { const m = String(v || "").match(/\b(20\d{2})\b/g); m?.forEach((y) => set.add(y)); }
@@ -31,6 +32,9 @@ export default function GlobalSearch() {
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [docs, setDocs] = useState<ApiGlobalDocument[]>([]);
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
+  const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [typeF, setTypeF] = useState<"All" | Group>("All");
   const [projectF, setProjectF] = useState("All");
   const [yearF, setYearF] = useState("All");
@@ -39,11 +43,21 @@ export default function GlobalSearch() {
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const ensureLoaded = async () => {
-    if (projects.length || docs.length || employees.length) return;
+    if (loaded) return;
     setLoading(true);
+    // Each source is fetched independently: the Directory and Users lists are permissioned, so a
+    // non-admin's 403 there must not wipe out projects/docs/employees.
+    const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => { try { return await fn(); } catch { return fallback; } };
     try {
-      const [p, d, e] = await Promise.all([fetchProjects("all"), fetchAllDocuments(), fetchEmployees()]);
-      setProjects(p); setDocs(d); setEmployees(e);
+      const [p, d, e, c, u] = await Promise.all([
+        safe(() => fetchProjects("all"), [] as ApiProject[]),
+        safe(() => fetchAllDocuments(), [] as ApiGlobalDocument[]),
+        safe(() => fetchEmployees(), [] as ApiEmployee[]),
+        safe(() => fetchCompanies(), [] as ApiCompany[]),
+        safe(() => fetchUsers(), [] as AdminUser[]),
+      ]);
+      setProjects(p); setDocs(d); setEmployees(e); setCompanies(c); setUsers(u);
+      setLoaded(true);
     } finally { setLoading(false); }
   };
 
@@ -94,20 +108,38 @@ export default function GlobalSearch() {
         hits.push({ group: "Employees", label: e.name, sub: e.empId, to: `/dashboard/all-projects`, icon: Users });
       }
     }
+    // Directory companies — subcontractors, consultants, vendors, partners, clients, etc.
+    // Matchable by name, email, phone, the category label, or a contact person.
+    for (const c of companies) {
+      const cat = catLabel(c.category);
+      const contactMatch = (c.contactPersons || []).some((p) => `${p.name} ${p.email}`.toLowerCase().includes(needle));
+      if (c.name.toLowerCase().includes(needle) || (c.email || "").toLowerCase().includes(needle) || (c.phone || "").toLowerCase().includes(needle) || cat.toLowerCase().includes(needle) || contactMatch) {
+        hits.push({ group: "Directory", label: c.name, sub: `${cat}${c.email ? ` · ${c.email}` : ""}`, to: `/dashboard/directory?open=${c._id}`, icon: Building2 });
+      }
+    }
+    // Platform users (login accounts) — by name, email, employee ID or role.
+    for (const u of users) {
+      if (u.name.toLowerCase().includes(needle) || (u.email || "").toLowerCase().includes(needle) || (u.empId || "").toLowerCase().includes(needle) || (u.role || "").toLowerCase().includes(needle)) {
+        hits.push({ group: "Users", label: u.name || u.email, sub: `${u.role}${u.empId ? ` · ${u.empId}` : ""}`, to: `/dashboard/users?open=${u._id}`, icon: Users });
+      }
+    }
 
-    // Apply filters
+    // Apply filters. Directory/Users/Employees are not project- or year-scoped, so any project or
+    // year filter hides them.
     return hits.filter((h) => {
       if (typeF !== "All" && h.group !== typeF) return false;
-      if (projectF !== "All" && h.projectId !== projectF && h.group !== "Employees") return false;
-      if (projectF !== "All" && h.group === "Employees") return false;
+      const nonProject = h.group === "Employees" || h.group === "Directory" || h.group === "Users";
+      if (projectF !== "All") {
+        if (nonProject || h.projectId !== projectF) return false;
+      }
       if (yearF !== "All") {
         if (h.group === "Documents") { if (h.year !== yearF) return false; }
-        else if (h.group === "Employees") return false;
+        else if (nonProject) return false;
         else if (h.projectId) { if (!projYears.get(h.projectId)?.has(yearF)) return false; }
       }
       return true;
     }).slice(0, 60);
-  }, [q, projects, docs, employees, typeF, projectF, yearF]);
+  }, [q, projects, docs, employees, companies, users, typeF, projectF, yearF]);
 
   const grouped = useMemo(() => {
     const map = new Map<Group, Hit[]>();
@@ -125,7 +157,7 @@ export default function GlobalSearch() {
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); ensureLoaded(); }}
-        placeholder="Search projects, docs, people…"
+        placeholder="Search projects, docs, directory, people…"
         className="bg-slate-50 border border-slate-100 rounded-full py-2 pl-10 pr-4 text-xs font-medium focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none w-28 sm:w-48 lg:w-80 transition-all"
       />
       {open && (
