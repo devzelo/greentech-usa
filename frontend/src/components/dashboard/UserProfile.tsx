@@ -25,6 +25,7 @@ export default function UserProfile({
 }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"activity" | "tasks" | "documents">("activity");
+  const [highlight, setHighlight] = useState<string | null>(null);
   const [links, setLinks] = useState<UserLinks | null>(null);
   const [files, setFiles] = useState<UserFile[]>([]);
   const [tasks, setTasks] = useState<ProfileTask[]>([]);
@@ -48,11 +49,24 @@ export default function UserProfile({
     documents: files.length,
   }), [links, files]);
 
-  const stat = (label: string, value: number, Icon: typeof Building2, cls: string) => (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5">
+  // Clicking a stat tile jumps to its section: most live under the Activity tab (scroll + brief
+  // highlight); Documents is its own tab.
+  const goTo = (key: "projects" | "agreements" | "pos" | "submittals" | "expenses" | "reminders" | "documents") => {
+    if (key === "documents") { setTab("documents"); return; }
+    setTab("activity");
+    setHighlight(key);
+    window.setTimeout(() => document.getElementById(`up-sec-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    window.setTimeout(() => setHighlight((h) => (h === key ? null : h)), 1800);
+  };
+  const stat = (label: string, value: number, Icon: typeof Building2, cls: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5 text-left w-full transition-all hover:border-primary/40 hover:shadow-md cursor-pointer"
+    >
       <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${cls}`}><Icon size={15} /></div>
       <div className="min-w-0"><p className="text-lg font-bold text-slate-900 leading-none tabular-nums">{value}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">{label}</p></div>
-    </div>
+    </button>
   );
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
     <p className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
@@ -67,8 +81,8 @@ export default function UserProfile({
       <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{projectId && <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" />}</span>
     </button>
   );
-  const section = (title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
-    <div>
+  const section = (secKey: string, title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
+    <div id={`up-sec-${secKey}`} className={`scroll-mt-24 rounded-xl transition-all ${highlight === secKey ? "ring-2 ring-primary/40 ring-offset-2" : ""}`}>
       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Icon size={13} /> {title} ({count})</p>
       {count === 0 ? <p className="text-xs text-slate-400 italic">{emptyHint}</p> : <div className="space-y-1.5">{rows}</div>}
     </div>
@@ -109,13 +123,13 @@ export default function UserProfile({
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-        {stat("Projects", counts.projects, Building2, "bg-indigo-50 text-indigo-600")}
-        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600")}
-        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600")}
-        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600")}
-        {stat("Expenses", counts.expenses, Receipt, "bg-emerald-50 text-emerald-600")}
-        {stat("Reminders", counts.reminders, Bell, "bg-blue-50 text-blue-600")}
-        {stat("Documents", counts.documents, FileText, "bg-slate-100 text-slate-500")}
+        {stat("Projects", counts.projects, Building2, "bg-indigo-50 text-indigo-600", () => goTo("projects"))}
+        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600", () => goTo("agreements"))}
+        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600", () => goTo("pos"))}
+        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600", () => goTo("submittals"))}
+        {stat("Expenses", counts.expenses, Receipt, "bg-emerald-50 text-emerald-600", () => goTo("expenses"))}
+        {stat("Reminders", counts.reminders, Bell, "bg-blue-50 text-blue-600", () => goTo("reminders"))}
+        {stat("Documents", counts.documents, FileText, "bg-slate-100 text-slate-500", () => goTo("documents"))}
       </div>
 
       {/* Tabs */}
@@ -131,22 +145,22 @@ export default function UserProfile({
             <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading activity…</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
-              {section("Projects", counts.projects, Building2,
+              {section("projects", "Projects", counts.projects, Building2,
                 links.projects.map((p) => linkRow(p._id, p.name, p.status, p._id)),
                 "Not on any project yet.")}
-              {section("Agreements", counts.agreements, FileText,
+              {section("agreements", "Agreements", counts.agreements, FileText,
                 links.agreements.map((a) => linkRow(a._id, a.name || a.agreementType, a.status || "—", a.ownerProjectId)),
                 "No agreements linked to this user.")}
-              {section("Purchase orders", counts.pos, FileText,
+              {section("pos", "Purchase orders", counts.pos, FileText,
                 links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId)),
                 "No purchase orders added by this user.")}
-              {section("Submittals", counts.submittals, PackageCheck,
+              {section("submittals", "Submittals", counts.submittals, PackageCheck,
                 links.submittals.map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId)),
                 "No submittals added by this user.")}
-              {section("Expenses", counts.expenses, Receipt,
+              {section("expenses", "Expenses", counts.expenses, Receipt,
                 links.expenses.map((e) => linkRow(e._id, e.description || "Expense", <>{e.amount || "—"}{e.approval ? ` · ${e.approval}` : ""}</>, e.projectId)),
                 "No expenses submitted by this user.")}
-              {section("Reminders", counts.reminders, Bell,
+              {section("reminders", "Reminders", counts.reminders, Bell,
                 links.reminders.map((r) => linkRow(r._id, r.title || "Reminder", <>{r.projectName || ""}{r.dueAt ? ` · ${new Date(r.dueAt).toLocaleDateString()}` : ""}</>, r.projectId)),
                 "No reminders for this user.")}
             </div>
