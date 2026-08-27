@@ -1,5 +1,5 @@
-import projnellDark from "@/assets/projnell logo dark.png";
-import projnellLight from "@/assets/projnell logo light.png";
+import projnellWhiteOnDark from "@/assets/white use on dark.png";
+import projnellDarkOnWhite from "@/assets/dark use on white.png";
 
 type Tone = "light" | "dark";
 
@@ -7,8 +7,8 @@ type Tone = "light" | "dark";
  * "Powered by Projnell" attribution lockup shown inside a subtle card.
  * The logo wordmark supplies the "Projnell"; the label supplies "Powered by".
  *
- * `tone="dark"`  → dark surfaces (e.g. the site footer)  → light logo
- * `tone="light"` → light surfaces (e.g. the auth pages)   → dark logo
+ * `tone="dark"`  → dark surfaces (e.g. the site footer)  → white-on-dark logo
+ * `tone="light"` → light surfaces (auth pages, sidebar)   → dark-on-white logo
  *
  * Non-interactive by design — it never navigates anywhere.
  */
@@ -30,7 +30,7 @@ export default function PoweredByProjnell({
       ? "rounded-2xl border border-white/10 bg-white/5 px-5 py-3"
       : "rounded-2xl border border-slate-200/80 bg-white px-5 py-3 shadow-sm"
     : "";
-  const logo = tone === "dark" ? projnellLight : projnellDark;
+  const logo = tone === "dark" ? projnellWhiteOnDark : projnellDarkOnWhite;
   const small = size === "sm";
 
   return (
