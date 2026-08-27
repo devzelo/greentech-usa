@@ -2672,9 +2672,10 @@ export default function ProjectWorkspace() {
                 )}
               </div>
 
-              {/* CR-PR-14 — how much contract time is left. Collapsed to one line; click to expand. */}
+              {/* CR-PR-14 — time left between the project's start and end dates (not the contract date,
+                  which can differ from when work actually starts). Collapsed to one line; click to expand. */}
               <ContractTimeline
-                startDate={project.contractDate || project.startDate}
+                startDate={project.startDate || project.contractDate}
                 endDate={project.endDate}
                 className="mt-3 max-w-3xl"
               />

@@ -95,13 +95,13 @@ export default function ContractTimeline({ startDate, endDate, className = "" }:
         <div className="px-4 pb-4 pt-1 border-t border-slate-50">
           <div className="flex items-end gap-4 sm:gap-6">
             <div className="shrink-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Contract date</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Start date</p>
               <p className="text-sm font-bold text-slate-900">{start ? fmt(start) : "—"}</p>
             </div>
 
             <div className="flex-grow min-w-0">
               <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[11px] font-bold text-slate-500">{start ? `${Math.round(pct)}% elapsed` : "No contract date set"}</span>
+                <span className="text-[11px] font-bold text-slate-500">{start ? `${Math.round(pct)}% elapsed` : "No start date set"}</span>
                 <span className={`text-sm font-bold ${overdue ? "text-red-600" : "text-slate-900"}`}>{headline}</span>
               </div>
               {/* Track with a Today marker sitting at the elapsed position. */}
@@ -118,11 +118,11 @@ export default function ContractTimeline({ startDate, endDate, className = "" }:
             </div>
 
             <div className="shrink-0 text-right">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Deadline</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">End date</p>
               <p className={`text-sm font-bold ${overdue ? "text-red-600" : "text-slate-900"}`}>{fmt(end)}</p>
             </div>
           </div>
-          <p className="text-[10px] text-slate-400 mt-3">Calendar time against the contract dates — not a measure of work completed.</p>
+          <p className="text-[10px] text-slate-400 mt-3">Calendar time between the start and end dates — not a measure of work completed.</p>
         </div>
       )}
     </div>
