@@ -17,6 +17,7 @@ export default function PoweredByProjnell({
   card = true,
   size = "md",
   className = "",
+  logoClassName = "",
 }: {
   tone?: Tone;
   /** Wrap the lockup in a subtle card. Off = bare inline badge. */
@@ -24,6 +25,8 @@ export default function PoweredByProjnell({
   /** "sm" shrinks the label + logo (e.g. the dashboard sidebar). */
   size?: "sm" | "md";
   className?: string;
+  /** Extra classes on the logo image itself (e.g. rounded corners in the footer). */
+  logoClassName?: string;
 }) {
   const cardStyle = card
     ? tone === "dark"
@@ -44,7 +47,7 @@ export default function PoweredByProjnell({
       <img
         src={logo}
         alt="Projnell"
-        className={`w-auto object-contain select-none ${small ? "h-6" : "h-8"}`}
+        className={`w-auto object-contain select-none ${small ? "h-6" : "h-8"} ${logoClassName}`}
         draggable={false}
       />
     </div>
