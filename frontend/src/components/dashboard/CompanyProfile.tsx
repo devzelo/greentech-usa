@@ -13,6 +13,9 @@ import {
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import TaskMiniBoard from "./TaskMiniBoard";
+import CompanyAccessManager from "./CompanyAccessManager";
+
+type ProfileTab = "activity" | "tasks" | "details" | "documents" | "access";
 
 const catLabel = (c: CompanyCategory) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label || c;
 const CAT_CLS: Record<string, string> = {
@@ -38,7 +41,10 @@ export default function CompanyProfile({
 }) {
   const navigate = useNavigate();
   const { confirm, dialogs } = useDialogs();
-  const [tab, setTab] = useState<"activity" | "tasks" | "details" | "documents">("activity");
+  const [tab, setTab] = useState<ProfileTab>("activity");
+  // CR-P — subcontractors & partners can be given a scoped login + tab access (a "user role"),
+  // so their profile gets an Access tab. Other categories (clients, vendors, …) don't log in.
+  const canHaveLogin = company.category === "subcontractor" || company.category === "partner";
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [tasks, setTasks] = useState<ProfileTask[]>([]);
@@ -188,7 +194,13 @@ export default function CompanyProfile({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-        {([["activity", "Activity"], ["tasks", `Tasks (${tasks.length})`], ["details", "Details"], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
+        {([
+          ["activity", "Activity"],
+          ["tasks", `Tasks (${tasks.length})`],
+          ["details", "Details"],
+          ["documents", `Documents (${counts.documents})`],
+          ...(canHaveLogin ? [["access", "Access"] as [ProfileTab, string]] : []),
+        ] as Array<[ProfileTab, string]>).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${tab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
         ))}
       </div>
@@ -296,6 +308,11 @@ export default function CompanyProfile({
             ))}</div>
           )}
         </div>
+      )}
+
+      {/* ── Access (subcontractor / partner only) ────────────────── */}
+      {tab === "access" && canHaveLogin && (
+        <CompanyAccessManager company={company} involvedProjects={(links?.projects || []).map((p) => ({ projectId: p.projectId, name: p.name, status: p.status }))} />
       )}
 
       {/* CR-P-43 — upload modal: choose type, then file, then upload. No click-outside-to-close. */}
