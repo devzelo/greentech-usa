@@ -96,11 +96,13 @@ export default function ProjectsMap() {
             worldCopyJump
             style={{ height: "480px", width: "100%", background: "#eef2f6" }}
           >
-            {/* CARTO Positron — muted, professional; free with attribution. */}
+            {/* Esri Light Gray Canvas — muted, professional; free with attribution and NO API key.
+                (CARTO's keyless basemaps were retired and now demand an API key.) */}
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              subdomains={["a", "b", "c", "d"]}
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+              attribution='Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
+              maxNativeZoom={16}
+              maxZoom={19}
             />
             <FitToPins points={points} />
             {groups.map((g) => (
