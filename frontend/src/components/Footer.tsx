@@ -117,7 +117,7 @@ export default function Footer() {
 
         <div className="pt-12 border-t border-slate-900 flex flex-col md:flex-row justify-between items-center gap-6 relative">
           {/* Left: Powered by Projnell */}
-          <PoweredByProjnell tone="dark" logoClassName="rounded-lg" />
+          <PoweredByProjnell tone="dark" logoClassName="rounded-lg" labelClassName="text-[9px] tracking-[0.15em]" logoHeightClass="h-11" />
 
           {/* Center: copyright */}
           <p className="text-sm text-center">

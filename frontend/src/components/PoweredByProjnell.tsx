@@ -18,6 +18,8 @@ export default function PoweredByProjnell({
   size = "md",
   className = "",
   logoClassName = "",
+  labelClassName = "",
+  logoHeightClass = "",
 }: {
   tone?: Tone;
   /** Wrap the lockup in a subtle card. Off = bare inline badge. */
@@ -27,6 +29,10 @@ export default function PoweredByProjnell({
   className?: string;
   /** Extra classes on the logo image itself (e.g. rounded corners in the footer). */
   logoClassName?: string;
+  /** Override the "Powered by" label typography (e.g. a smaller label in the footer). */
+  labelClassName?: string;
+  /** Override the logo height class (e.g. a larger logo in the footer). Defaults to the size. */
+  logoHeightClass?: string;
 }) {
   const cardStyle = card
     ? tone === "dark"
@@ -41,13 +47,13 @@ export default function PoweredByProjnell({
       aria-label="Powered by Projnell"
       className={`inline-flex items-center ${small ? "gap-2" : "gap-3"} ${cardStyle} ${className}`}
     >
-      <span className={`font-semibold uppercase text-slate-400 ${small ? "text-[8px] tracking-[0.15em]" : "text-[11px] tracking-[0.2em]"}`}>
+      <span className={`font-semibold uppercase text-slate-400 ${labelClassName || (small ? "text-[8px] tracking-[0.15em]" : "text-[11px] tracking-[0.2em]")}`}>
         Powered by
       </span>
       <img
         src={logo}
         alt="Projnell"
-        className={`w-auto object-contain select-none ${small ? "h-6" : "h-8"} ${logoClassName}`}
+        className={`w-auto object-contain select-none ${logoHeightClass || (small ? "h-6" : "h-8")} ${logoClassName}`}
         draggable={false}
       />
     </div>
