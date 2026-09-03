@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Loader2, Plus, ShieldCheck, Trash2, Wand2, X } from "lucide-react";
+import { KeyRound, Loader2, Plus, ShieldCheck, Trash2, Wand2, X, Copy } from "lucide-react";
 import {
   fetchProjects, fetchGuests, createGuest, updateGuest, removeGuest, getAuthUser,
   type ApiCompany, type ApiGuest, type GuestTabPermission,
@@ -52,6 +52,7 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
 
   // Grant/edit modal state.
   const [modalProject, setModalProject] = useState<{ id: string; name: string } | null>(null);
+  const [modalStep, setModalStep] = useState<1 | 2>(1);   // CR-P — step 1 tab access, step 2 login
   const [existingGuest, setExistingGuest] = useState<ApiGuest | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [password, setPassword] = useState("");
@@ -91,6 +92,7 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
 
   const openModal = async (projectId: string, name: string) => {
     setModalProject({ id: projectId, name });
+    setModalStep(1);
     setModalLoading(true);
     setPassword(""); setExpiry("");
     try {
@@ -99,7 +101,7 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
       setExistingGuest(g);
       const p: Record<string, Perm> = {};
       if (g) { Object.entries(g.tabPermissions || {}).forEach(([k, v]) => { p[k] = v; }); }
-      else { TAB_ROWS.forEach((t) => { p[t.id] = "view"; }); }   // sensible default for a new grant
+      else { TAB_ROWS.forEach((t) => { p[t.id] = "none"; }); }   // CR-P — default every tab to Hidden
       setPerms(p);
       setExpiry(g?.expiresAt ? new Date(g.expiresAt).toISOString().slice(0, 10) : "");
     } catch (err) {
@@ -107,7 +109,12 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
       setModalProject(null);
     } finally { setModalLoading(false); }
   };
-  const closeModal = () => { setModalProject(null); setExistingGuest(null); setPerms({}); setPassword(""); setExpiry(""); };
+  const closeModal = () => { setModalProject(null); setModalStep(1); setExistingGuest(null); setPerms({}); setPassword(""); setExpiry(""); };
+  const copy = async (text: string, label: string) => {
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); toast(`${label} copied.`, "success"); }
+    catch { toast(text, "info"); }
+  };
 
   const resolveExpiry = (): string | null => {
     if (!expiry) return null;
@@ -209,7 +216,7 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
         )}
       </div>
 
-      {/* Grant / edit modal */}
+      {/* Grant / edit modal — step 1 tab access, step 2 login */}
       {modalProject && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => !saving && closeModal()} />
@@ -218,34 +225,36 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
               <h3 className="text-lg font-display font-bold text-slate-900">{existingGuest ? "Manage access" : "Grant access"}</h3>
               <button onClick={() => !saving && closeModal()} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
             </div>
-            <p className="text-xs text-slate-400 mb-4">{company.name} on <span className="font-bold text-slate-600">{modalProject.name}</span> · login <span className="font-bold text-slate-600">{email}</span></p>
+            <p className="text-xs text-slate-400 mb-3">{company.name} on <span className="font-bold text-slate-600">{modalProject.name}</span></p>
+
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mb-4">
+              {([[1, "Tab access"], [2, "Login"]] as const).map(([n, label], idx) => (
+                <div key={n} className="flex items-center gap-2 flex-1">
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${modalStep === n ? "bg-primary text-white" : modalStep > n ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500"}`}>{n}</span>
+                  <span className={`text-[11px] font-bold ${modalStep === n ? "text-slate-800" : "text-slate-400"}`}>{label}</span>
+                  {idx === 0 && <span className="h-px flex-grow bg-slate-100" />}
+                </div>
+              ))}
+            </div>
 
             {modalLoading ? (
               <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading…</div>
-            ) : (
+            ) : modalStep === 1 ? (
               <div className="overflow-y-auto pr-1 space-y-4">
-                {/* Password */}
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{existingGuest ? "Reset password (optional)" : "Password"}</label>
-                  <div className="flex gap-2 mt-1.5">
-                    <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={existingGuest ? "Leave blank to keep current" : "Set a password"} className="flex-1 bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10" />
-                    <button type="button" onClick={() => setPassword(genPassword(company.name.length + (existingGuest ? 3 : 7) + TAB_ROWS.length))} className="inline-flex items-center gap-1.5 px-3 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Wand2 size={13} /> Generate</button>
-                  </div>
-                </div>
-
-                {/* Tab grid */}
+                {/* Tab grid — default Hidden (red alert) */}
                 <div>
                   <p className="text-sm font-bold text-slate-700 mb-1">Tab access</p>
-                  <p className="text-[10px] text-slate-400 mb-2">Hidden = invisible. View = read only. Edit = can also change content.</p>
+                  <p className="text-[10px] text-slate-400 mb-2">Every tab starts <span className="font-bold text-red-500">Hidden</span>. Switch the tabs they should reach to <span className="font-bold">View</span> (read) or <span className="font-bold">Edit</span> (change).</p>
                   <div className="space-y-2">
                     {TAB_ROWS.map((t) => {
                       const level = perms[t.id] || "none";
                       return (
-                        <div key={t.id} className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border border-slate-100 ${t.indent ? "ml-5 bg-slate-50/60" : "bg-slate-50"}`}>
+                        <div key={t.id} className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border ${level === "none" ? "border-red-100 bg-red-50/40" : "border-slate-100 bg-slate-50"} ${t.indent ? "ml-5" : ""}`}>
                           <span className="text-xs font-bold text-slate-700 truncate">{t.indent ? "↳ " : ""}{t.label}</span>
                           <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-slate-100 shrink-0">
                             {([{ v: "none", l: "Hidden" }, { v: "view", l: "View" }, { v: "edit", l: "Edit" }] as const).map(({ v, l }) => (
-                              <button key={v} type="button" onClick={() => setPerm(t.id, v)} className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all ${level === v ? (v === "edit" ? "bg-primary text-white" : v === "view" ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-600") : "text-slate-400 hover:text-slate-700"}`}>{l}</button>
+                              <button key={v} type="button" onClick={() => setPerm(t.id, v)} className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all ${level === v ? (v === "edit" ? "bg-primary text-white" : v === "view" ? "bg-slate-900 text-white" : "bg-red-100 text-red-600") : "text-slate-400 hover:text-slate-700"}`}>{l}</button>
                             ))}
                           </div>
                         </div>
@@ -266,11 +275,40 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
                   </div>
                 </div>
               </div>
+            ) : (
+              <div className="overflow-y-auto pr-1 space-y-4">
+                <p className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                  Copy the email {existingGuest ? "(and a new password if you reset it) " : "and password "}below and share {existingGuest ? "them" : "them"} with <span className="font-bold">{company.name}</span> so they can sign in.
+                </p>
+                {/* Email */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Login email</label>
+                  <div className="flex gap-2 mt-1.5">
+                    <input readOnly value={email} className="flex-1 bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium text-slate-600 outline-none" />
+                    <button type="button" onClick={() => copy(email, "Email")} disabled={!email} className="inline-flex items-center gap-1.5 px-3 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200 disabled:opacity-40"><Copy size={13} /> Copy</button>
+                  </div>
+                </div>
+                {/* Password */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{existingGuest ? "Reset password (optional)" : "Password"}</label>
+                  <div className="flex gap-2 mt-1.5">
+                    <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={existingGuest ? "Leave blank to keep current" : "Set a password"} className="flex-1 bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10" />
+                    <button type="button" onClick={() => setPassword(genPassword(company.name.length + (existingGuest ? 3 : 7) + TAB_ROWS.length))} className="inline-flex items-center gap-1.5 px-3 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Wand2 size={13} /> Generate</button>
+                    <button type="button" onClick={() => copy(password, "Password")} disabled={!password} className="inline-flex items-center gap-1.5 px-3 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200 disabled:opacity-40"><Copy size={13} /> Copy</button>
+                  </div>
+                </div>
+              </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-4 mt-1 border-t border-slate-50">
-              <button onClick={() => !saving && closeModal()} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold">Cancel</button>
-              <button onClick={save} disabled={saving || modalLoading} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40">{saving ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} {existingGuest ? "Save access" : "Create login"}</button>
+            <div className="flex items-center justify-between gap-2 pt-4 mt-1 border-t border-slate-50">
+              {modalStep === 1
+                ? <button onClick={() => !saving && closeModal()} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold">Cancel</button>
+                : <button onClick={() => setModalStep(1)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold">← Back</button>}
+              {modalStep === 1 ? (
+                <button onClick={() => setModalStep(2)} disabled={modalLoading} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-40">Next: Login →</button>
+              ) : (
+                <button onClick={save} disabled={saving || modalLoading} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40">{saving ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} {existingGuest ? "Save access" : "Create login"}</button>
+              )}
             </div>
           </div>
         </div>
