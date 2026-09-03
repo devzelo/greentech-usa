@@ -273,6 +273,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-50">
+                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Added by</th>
@@ -281,8 +282,9 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {files.map((f) => (
+                {files.map((f, i) => (
                   <tr key={f._id} className="group hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${colorFor(f.fileType)}`}>{iconFor(f.fileType)}</div>

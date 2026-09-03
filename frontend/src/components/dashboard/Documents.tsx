@@ -390,6 +390,7 @@ export default function Documents() {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-slate-50/50 border-b border-slate-50">
+                      <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
                       <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
                       <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</th>
                       <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Files</th>
@@ -397,8 +398,9 @@ export default function Documents() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {folders.map((f) => (
+                    {folders.map((f, i) => (
                       <tr key={f.id} className="group hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={f.onOpen}>
+                        <td className="px-6 py-4 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3 min-w-0">
                             {/* Project folders show the project's identity image; other folders a folder icon. */}
@@ -487,6 +489,7 @@ export default function Documents() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-50">
+                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
                   <SortTh label="Name" k="name" />
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</th>
                   <SortTh label="Project" k="projectName" />
@@ -497,8 +500,9 @@ export default function Documents() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {sorted.map((d) => (
+                {sorted.map((d, i) => (
                   <tr key={d._id} id={`doc-${d._id}`} className={`group hover:bg-slate-50/50 transition-colors ${highlightId === d._id ? "bg-amber-50" : ""}`}>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${colorFor(d.fileType)}`}>
