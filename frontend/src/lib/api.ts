@@ -586,6 +586,7 @@ export interface AdminUser {
   phone?: string;
   avatarUrl?: string;
   jobTitle?: string;
+  homeAddress?: string;
   archived?: boolean;
   createdAt?: string;
 }
@@ -595,13 +596,13 @@ export async function fetchUsers(archived = false): Promise<AdminUser[]> {
 }
 
 export async function createUser(body: {
-  name: string; email: string; password: string; role: string; empId?: string; phone?: string; personalEmail?: string;
+  name: string; email: string; password: string; role: string; empId?: string; phone?: string; personalEmail?: string; jobTitle?: string; homeAddress?: string;
 }): Promise<AdminUser> {
   return request<AdminUser>('/users', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function updateUser(id: string, body: Partial<{
-  name: string; email: string; role: string; empId: string; phone: string; personalEmail: string; archived: boolean;
+  name: string; email: string; role: string; empId: string; phone: string; personalEmail: string; jobTitle: string; homeAddress: string; archived: boolean;
 }>): Promise<AdminUser> {
   return request<AdminUser>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }

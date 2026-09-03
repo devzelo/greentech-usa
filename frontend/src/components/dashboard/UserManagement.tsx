@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Users } from "lucide-react";
+import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Users, Briefcase, MapPin } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, adminResetPassword, deleteUser, setUserArchived,
   getAuthUser, AdminUser, withFileToken,
@@ -31,8 +31,9 @@ const overlay = "absolute inset-0 bg-slate-950/40 backdrop-blur-sm";
 const panel = "relative bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto";
 const field = "w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all text-sm font-medium";
 
-interface FormState { name: string; email: string; personalEmail: string; password: string; role: string; empId: string; phone: string; }
-const emptyForm: FormState = { name: "", email: "", personalEmail: "", password: "", role: "employee", empId: "", phone: "" };
+interface FormState { name: string; email: string; personalEmail: string; password: string; role: string; empId: string; phone: string; jobTitle: string; homeAddress: string; }
+const emptyForm: FormState = { name: "", email: "", personalEmail: "", password: "", role: "employee", empId: "", phone: "", jobTitle: "", homeAddress: "" };
+const genPassword = () => `Gt-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
 export default function UserManagement() {
   useMeta({ title: "User Management", description: "Add, edit, and remove employee accounts and reset passwords." });
@@ -43,7 +44,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);   // CR-P-58
-  type SortKey = "empId" | "name" | "email" | "role" | "phone";
+  type SortKey = "empId" | "name" | "email" | "role" | "jobTitle" | "phone";
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "empId", dir: "asc" });
 
   // Create / edit modal
@@ -106,7 +107,7 @@ export default function UserManagement() {
   const openCreate = () => { setEditingId(null); setForm(emptyForm); setUserFiles([]); setEditorOpen(true); };
   const openEdit = (u: AdminUser) => {
     setEditingId(u._id);
-    setForm({ name: u.name, email: u.email, personalEmail: u.personalEmail || "", password: "", role: u.role, empId: u.empId || "", phone: u.phone || "" });
+    setForm({ name: u.name, email: u.email, personalEmail: u.personalEmail || "", password: "", role: u.role, empId: u.empId || "", phone: u.phone || "", jobTitle: u.jobTitle || "", homeAddress: u.homeAddress || "" });
     setUserFiles([]);
     fetchUserFiles(u._id).then(setUserFiles).catch(() => setUserFiles([]));
     setEditorOpen(true);
@@ -132,11 +133,11 @@ export default function UserManagement() {
     setSaving(true);
     try {
       if (editingId) {
-        const up = await updateUser(editingId, { name: form.name, email: form.email, personalEmail: form.personalEmail, role: form.role, empId: form.empId, phone: form.phone });
+        const up = await updateUser(editingId, { name: form.name, email: form.email, personalEmail: form.personalEmail, role: form.role, empId: form.empId, phone: form.phone, jobTitle: form.jobTitle, homeAddress: form.homeAddress });
         setProfileUser((cur) => (cur && cur._id === editingId ? up : cur));  // keep an open profile in sync
         toast("User updated.", "success");
       } else {
-        await createUser({ name: form.name, email: form.email, personalEmail: form.personalEmail, password: form.password, role: form.role, empId: form.empId, phone: form.phone });
+        await createUser({ name: form.name, email: form.email, personalEmail: form.personalEmail, password: form.password, role: form.role, empId: form.empId, phone: form.phone, jobTitle: form.jobTitle, homeAddress: form.homeAddress });
         toast("User created.", "success");
       }
       setEditorOpen(false);
@@ -183,7 +184,7 @@ export default function UserManagement() {
   const nextEmpId = () => {
     let max = 0;
     for (const u of users) { const m = /(\d+)\s*$/.exec(u.empId || ""); if (m) max = Math.max(max, parseInt(m[1], 10)); }
-    return `EMP-${String(max + 1).padStart(3, "0")}`;
+    return `EMP-${String(max + 1).padStart(4, "0")}`;   // CR-P — EMP-0001, EMP-0002, …
   };
 
   const q = query.trim().toLowerCase();
@@ -192,7 +193,7 @@ export default function UserManagement() {
     : users;
   // CR-P-58 — column sorting.
   const sorted = [...filtered].sort((a, b) => {
-    const val = (u: AdminUser) => String((sort.key === "empId" ? u.empId : sort.key === "name" ? u.name : sort.key === "email" ? u.email : sort.key === "role" ? u.role : u.phone) || "").trim().toLowerCase();
+    const val = (u: AdminUser) => String((sort.key === "empId" ? u.empId : sort.key === "name" ? u.name : sort.key === "email" ? u.email : sort.key === "role" ? u.role : sort.key === "jobTitle" ? u.jobTitle : u.phone) || "").trim().toLowerCase();
     const av = val(a), bv = val(b);
     if (!av && !bv) return 0; if (!av) return 1; if (!bv) return -1;
     const c = av.localeCompare(bv, undefined, { numeric: true });
@@ -250,7 +251,7 @@ export default function UserManagement() {
             <table className="w-full min-w-[820px] text-left">
               <thead>
                 <tr className="bg-slate-50/60 border-b border-slate-100">
-                  {([["empId", "Employee ID"], ["name", "Name"], ["email", "Business email"], ["role", "Role"], ["phone", "Phone"]] as const).map(([k, l]) => (
+                  {([["empId", "Employee ID"], ["name", "Name"], ["email", "Business email"], ["role", "Role"], ["jobTitle", "Position"], ["phone", "Phone"]] as const).map(([k, l]) => (
                     <th key={k} className="px-4 py-3">
                       <button onClick={() => toggleSort(k)} className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${sort.key === k ? "text-slate-700" : "text-slate-400 hover:text-slate-600"}`} title={`Sort by ${l}`}>{l} {sortIcon(k)}</button>
                     </th>
@@ -279,6 +280,7 @@ export default function UserManagement() {
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{u.email}</td>
                       <td className="px-4 py-3"><span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${roleBadge(u.role)}`}>{u.role}</span></td>
+                      <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{u.jobTitle || "—"}</td>
                       <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{u.phone || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-0.5">
@@ -311,25 +313,23 @@ export default function UserManagement() {
                 <button onClick={() => setEditorOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
               <div className="space-y-4">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Personal information</p>
+                {/* ── Section 1 — Business information ── */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Business information</p>
                 <div>
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><span>Full name</span></label>
                   <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Reza Esfandiari" className={field} />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Business email <span className="font-medium text-slate-400 normal-case">(login)</span></label>
-                    <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@greentech-usa.com" className={field} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Personal email</label>
-                    <input value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} placeholder="Optional" className={field} />
-                  </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Business email <span className="font-medium text-slate-400 normal-case">(login)</span></label>
+                  <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@greentech-usa.com" className={field} />
                 </div>
                 {!editingId && (
                   <div>
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><KeyRound size={13} /> Temp password</label>
-                    <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" className={field} />
+                    <div className="flex gap-2">
+                      <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" className={field} />
+                      <button type="button" onClick={() => setForm({ ...form, password: genPassword() })} title="Generate a password" className="shrink-0 px-3 rounded-2xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 inline-flex items-center gap-1.5"><Wand2 size={14} /> Generate</button>
+                    </div>
                     <p className="text-[11px] text-slate-400 mt-1">The employee can change this later from their profile.</p>
                   </div>
                 )}
@@ -341,16 +341,33 @@ export default function UserManagement() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><IdCard size={13} /> Employee ID</label>
-                    <div className="flex gap-2">
-                      <input value={form.empId} onChange={(e) => setForm({ ...form, empId: e.target.value })} placeholder="EMP-011" className={field} />
-                      <button type="button" onClick={() => setForm({ ...form, empId: nextEmpId() })} title="Auto-generate the next ID (still editable)" className="shrink-0 px-3 rounded-2xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 inline-flex items-center gap-1.5"><Wand2 size={14} /> Auto</button>
-                    </div>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Briefcase size={13} /> Position</label>
+                    <input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} placeholder="e.g. Project Engineer" className={field} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Phone size={13} /> Phone</label>
-                  <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" className={field} />
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><IdCard size={13} /> Employee ID</label>
+                  <div className="flex gap-2">
+                    <input value={form.empId} onChange={(e) => setForm({ ...form, empId: e.target.value })} placeholder="EMP-0001" className={field} />
+                    <button type="button" onClick={() => setForm({ ...form, empId: nextEmpId() })} title="Auto-generate the next ID (still editable)" className="shrink-0 px-3 rounded-2xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 inline-flex items-center gap-1.5"><Wand2 size={14} /> Auto</button>
+                  </div>
+                </div>
+
+                {/* ── Section 2 — Personal information ── */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-slate-100 pt-4">Personal information</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Mail size={13} /> Personal email</label>
+                    <input value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} placeholder="Optional" className={field} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Phone size={13} /> Phone</label>
+                    <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" className={field} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><MapPin size={13} /> Home address</label>
+                  <textarea rows={2} value={form.homeAddress} onChange={(e) => setForm({ ...form, homeAddress: e.target.value })} placeholder="Optional" className={field} />
                 </div>
 
                 {/* CR-P-57 — admin can attach any document to the user. */}

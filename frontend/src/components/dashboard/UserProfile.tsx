@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Pencil, KeyRound, Trash2, Mail, Phone, IdCard, Briefcase, Shield, Building2,
-  FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck, Ban,
+  FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck, Ban, MapPin,
 } from "lucide-react";
 import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -137,6 +137,7 @@ export default function UserProfile({
               {contactRow(Mail, user.email, user.email ? `mailto:${user.email}` : undefined)}
               {contactRow(Mail, user.personalEmail, user.personalEmail ? `mailto:${user.personalEmail}` : undefined)}
               {contactRow(Phone, user.phone, user.phone ? `tel:${user.phone}` : undefined)}
+              {contactRow(MapPin, user.homeAddress)}
             </div>
           </div>
         </div>

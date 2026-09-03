@@ -58,7 +58,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
 // POST /api/users — create an account
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, email, password, role, empId, phone, personalEmail } = req.body || {};
+    const { name, email, password, role, empId, phone, personalEmail, jobTitle, homeAddress } = req.body || {};
     if (!name || !email || !password)
       return res.status(400).json({ error: "Name, email and password are required." });
     if (String(password).length < 8)
@@ -77,6 +77,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       empId: empId || "",
       phone: phone || "",
       personalEmail: personalEmail || "",
+      jobTitle: jobTitle || "",
+      homeAddress: homeAddress || "",
     });
     await syncEmployeeDirectory(empId, name);
 
@@ -88,12 +90,14 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 // PATCH /api/users/:id — update profile fields / role (not password)
 router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, email, role, empId, phone, personalEmail } = req.body || {};
+    const { name, email, role, empId, phone, personalEmail, jobTitle, homeAddress } = req.body || {};
     const updates: Record<string, unknown> = {};
     if (typeof name === "string") updates.name = name;
     if (typeof phone === "string") updates.phone = phone;
     if (typeof empId === "string") updates.empId = empId;
     if (typeof personalEmail === "string") updates.personalEmail = personalEmail;
+    if (typeof jobTitle === "string") updates.jobTitle = jobTitle;
+    if (typeof homeAddress === "string") updates.homeAddress = homeAddress;
     if (typeof email === "string" && email.trim()) {
       const lower = email.toLowerCase();
       const clash = await User.findOne({ email: lower, _id: { $ne: req.params.id } });
