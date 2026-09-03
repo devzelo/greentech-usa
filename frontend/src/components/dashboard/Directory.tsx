@@ -9,6 +9,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import { useRefreshSignal } from "../../lib/refreshBus";
 import CompanyProfile from "./CompanyProfile";
 import CompanyEditorModal, { BLANK_COMPANY } from "./CompanyEditorModal";
 
@@ -44,6 +45,9 @@ export default function Directory() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [cat, showArchived]);
+  // CR-P (17) — the header Refresh button reloads the current tab's data in place instead of a full
+  // page reload, so it stays on the tab you're viewing (a reload would reset it to "All").
+  useRefreshSignal(load);
   // CR-P-06c — keep the Directory in sync with the platform automatically: on open, silently pull
   // in any clients / subcontractors / partners / vendors / manufacturers that exist in projects but
   // aren't in the Directory yet (idempotent — only adds what's missing), then refresh if it added any.
