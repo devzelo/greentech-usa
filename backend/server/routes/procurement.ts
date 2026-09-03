@@ -6,6 +6,7 @@ import Submittal from "../models/Submittal";
 import Rfq from "../models/Rfq";
 import ProcurementPO from "../models/ProcurementPO";
 import ProcurementItemRevision from "../models/ProcurementItemRevision";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 import multer from "multer";
@@ -69,7 +70,15 @@ router.patch("/sections/:sid", async (req: AuthedRequest, res: Response, next: N
 router.delete("/sections/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await ProcurementItem.deleteMany({ projectId: req.params.id, sectionId: req.params.sid });
-    await ProcurementSection.findOneAndDelete({ _id: req.params.sid, projectId: req.params.id });
+    const section = await ProcurementSection.findOne({ _id: req.params.sid, projectId: req.params.id });
+    if (section) await recycleAndDelete(section, {
+      kind: "procurement-section",
+      name: section.name,
+      subtitle: "Procurement Section",
+      projectId: String(section.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Section deleted" });
   } catch (err) { next(err); }
 });
@@ -264,8 +273,18 @@ router.post("/items/:iid/restore", async (req: AuthedRequest, res: Response, nex
 // Hard delete (mistakes only) — owners/employees.
 router.delete("/items/:iid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const row = await ProcurementItem.findOneAndDelete({ _id: req.params.iid, projectId: req.params.id });
-    if (row) await logEvent(req, { entityId: req.params.iid, action: "deleted", fromValue: row.description });
+    const row = await ProcurementItem.findOne({ _id: req.params.iid, projectId: req.params.id });
+    if (row) {
+      await logEvent(req, { entityId: req.params.iid, action: "deleted", fromValue: row.description });
+      await recycleAndDelete(row, {
+        kind: "procurement-item",
+        name: row.description || row.itemNo || "Item",
+        subtitle: "Procurement Item",
+        projectId: String(row.projectId),
+        deletedById: req.user?.userId,
+        deletedByName: req.user?.name || "",
+      });
+    }
     res.json({ message: "Item deleted" });
   } catch (err) { next(err); }
 });

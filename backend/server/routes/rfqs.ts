@@ -8,6 +8,7 @@ import VendorQuote from "../models/VendorQuote";
 import ProcurementEvent from "../models/ProcurementEvent";
 import ProcurementItem from "../models/ProcurementItem";
 import ProjectDocument from "../models/ProjectDocument";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 
@@ -105,7 +106,17 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
 router.delete("/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (block(req, res)) return;
-    await Rfq.findOneAndDelete({ _id: req.params.rid, projectId: req.params.id });
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (rfq) {
+      await recycleAndDelete(rfq, {
+        kind: "rfq",
+        name: rfq.title,
+        subtitle: "RFQ",
+        projectId: String(rfq.projectId),
+        deletedById: req.user?.userId,
+        deletedByName: req.user?.name || "",
+      });
+    }
     await VendorQuote.deleteMany({ rfqId: req.params.rid, projectId: req.params.id });
     res.json({ message: "RFQ deleted" });
   } catch (err) { next(err); }

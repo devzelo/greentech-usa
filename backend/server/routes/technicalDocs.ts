@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import archiver from "archiver";
 import TechnicalDoc, { DRAWING_CATEGORIES, TechDocStatus, type ITechDocFile } from "../models/TechnicalDoc";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
 
@@ -96,9 +97,21 @@ function copyFileMeta(f: ITechDocFile, projectId: string) {
 
 router.delete("/:did", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const doc = await TechnicalDoc.findOneAndDelete({ _id: req.params.did, projectId: req.params.id });
-    for (const f of doc?.files || []) if (f.filePath) fs.unlink(path.resolve(f.filePath), () => {});
-    for (const f of doc?.clientFiles || []) if (f.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    const doc = await TechnicalDoc.findOne({ _id: req.params.did, projectId: req.params.id });
+    if (doc) {
+      const files = [...(doc.files || []), ...(doc.clientFiles || [])]
+        .filter((f) => f.filePath)
+        .map((f) => ({ filePath: f.filePath }));
+      await recycleAndDelete(doc, {
+        kind: "technical-doc",
+        name: doc.description || doc.submittalStage || "Technical Doc",
+        subtitle: "Technical Doc",
+        projectId: String(doc.projectId),
+        deletedById: req.user?.userId,
+        deletedByName: req.user?.name || "",
+        files,
+      });
+    }
     res.json({ message: "Deleted" });
   } catch (err) { next(err); }
 });

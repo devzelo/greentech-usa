@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import SubInvoice from "../models/SubInvoice";
 import Project from "../models/Project";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { fetchRequesterAccess } from "../lib/access";
 
@@ -100,8 +101,16 @@ router.delete("/:iid", async (req: AuthedRequest, res: Response, next: NextFunct
       if (!restrict.includes(row.subId)) return res.status(403).json({ error: "You can only delete your own invoices." });
       if (row.approval !== "pending") return res.status(403).json({ error: "This invoice has been reviewed and can no longer be deleted." });
     }
-    for (const a of row.attachments || []) { if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {}); }
-    await SubInvoice.deleteOne({ _id: row._id });
+    const files = (row.attachments || []).filter((a) => a.filePath).map((a) => ({ filePath: a.filePath }));
+    await recycleAndDelete(row, {
+      kind: "sub-invoice",
+      name: row.description || "Sub-invoice",
+      subtitle: "Subcontractor invoice",
+      projectId: String(row.projectId),
+      files,
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Invoice deleted" });
   } catch (err) { next(err); }
 });

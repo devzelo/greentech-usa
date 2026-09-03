@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import ResourceBlock from "../models/ResourceBlock";
 import User from "../models/User";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 // Company-wide reusable proposal content library. Subcontractors excluded.
@@ -61,7 +62,14 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!block) return res.status(404).json({ error: "Resource not found." });
     if (req.user!.role !== "admin" && String(block.createdById) !== req.user!.userId)
       return res.status(403).json({ error: "Only the creator or an admin can delete this resource." });
-    await block.deleteOne();
+    await recycleAndDelete(block, {
+      kind: "resource-block",
+      name: block.title,
+      subtitle: "Resource block",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Resource deleted." });
   } catch (err) { next(err); }
 });

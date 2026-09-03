@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from "express";
 import ProposalTemplate from "../models/ProposalTemplate";
 import User from "../models/User";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // Reusable proposal templates (company-wide). Subcontractors are excluded.
 const router = Router();
@@ -58,7 +59,14 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     const isAdmin = req.user!.role === "admin";
     if (!isAdmin && String(tpl.createdById) !== req.user!.userId)
       return res.status(403).json({ error: "Only the creator or an admin can delete this template." });
-    await tpl.deleteOne();
+    await recycleAndDelete(tpl, {
+      kind: "proposal-template",
+      name: tpl.name || "Template",
+      subtitle: "Proposal template",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Template deleted." });
   } catch (err) { next(err); }
 });

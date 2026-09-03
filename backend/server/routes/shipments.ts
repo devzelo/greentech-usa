@@ -6,6 +6,7 @@ import Shipment, { DEFAULT_SHIPMENT_DOCS, REQUIRED_SHIPMENT_DOCS, ShipmentStatus
 import ProcurementPO from "../models/ProcurementPO";
 import ProcurementItem, { ProcurementStatus } from "../models/ProcurementItem";
 import ProcurementEvent from "../models/ProcurementEvent";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // The Mongoose sub-document arrays expose .id()/.deleteOne() at runtime; the plain-array types
 // don't. `subs()` casts to reach those helpers without sprinkling `any` everywhere.
@@ -157,9 +158,20 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
 
 router.delete("/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const s = await Shipment.findOneAndDelete({ _id: req.params.sid, projectId: req.params.id });
-    // Best-effort: remove the uploaded files from disk.
-    for (const row of s?.rows || []) for (const f of row.files || []) if (f.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    const s = await Shipment.findOne({ _id: req.params.sid, projectId: req.params.id });
+    if (s) {
+      const files: Array<{ filePath: string }> = [];
+      for (const row of s.rows || []) for (const f of row.files || []) if (f.filePath) files.push({ filePath: f.filePath });
+      await recycleAndDelete(s, {
+        kind: "shipment",
+        name: s.name,
+        subtitle: "Shipment",
+        projectId: String(s.projectId),
+        files,
+        deletedById: req.user?.userId,
+        deletedByName: req.user?.name || "",
+      });
+    }
     res.json({ message: "Shipment deleted" });
   } catch (err) { next(err); }
 });

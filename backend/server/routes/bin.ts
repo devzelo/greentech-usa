@@ -11,6 +11,27 @@ import Company from "../models/Company";
 import ProjectDocument from "../models/ProjectDocument";
 import RecycleBin from "../models/RecycleBin";
 import User from "../models/User";
+// CR-P — every record type that now snapshots to the recycle bin on delete, so restore can re-create it.
+import Announcement from "../models/Announcement";
+import Invoice from "../models/Invoice";
+import ProcurementPO from "../models/ProcurementPO";
+import ProjectRequest from "../models/ProjectRequest";
+import ProjectTable from "../models/ProjectTable";
+import ProposalRevision from "../models/ProposalRevision";
+import ProposalTemplate from "../models/ProposalTemplate";
+import ResourceBlock from "../models/ResourceBlock";
+import SubResume from "../models/SubResume";
+import RfpDocument from "../models/RfpDocument";
+import Shipment from "../models/Shipment";
+import SubAgreement from "../models/SubAgreement";
+import SubInvoice from "../models/SubInvoice";
+import Vendor from "../models/Vendor";
+import Template from "../models/Template";
+import TaskColumn from "../models/TaskColumn";
+import Task from "../models/Task";
+import TechnicalDoc from "../models/TechnicalDoc";
+import ProcurementSection from "../models/ProcurementSection";
+import ProcurementItem from "../models/ProcurementItem";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 // CR-P-26 — Archive & Recycle Bin. Staff-only. The Archive tab aggregates everything that carries an
@@ -23,11 +44,18 @@ router.use((req: AuthedRequest, res, next) => {
 });
 
 // Restore targets for the two tabs.
+const M = (model: unknown) => model as mongoose.Model<unknown>;
 const RECYCLE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
-  project: Project as unknown as mongoose.Model<unknown>,
-  agreement: Agreement as unknown as mongoose.Model<unknown>,
-  document: ProjectDocument as unknown as mongoose.Model<unknown>,
-  submittal: Submittal as unknown as mongoose.Model<unknown>,
+  project: M(Project), agreement: M(Agreement), document: M(ProjectDocument), submittal: M(Submittal),
+  // CR-P — all record types that now snapshot to the recycle bin on delete.
+  announcement: M(Announcement), invoice: M(Invoice), po: M(ProcurementPO),
+  "project-request": M(ProjectRequest), "project-table": M(ProjectTable),
+  "proposal-revision": M(ProposalRevision), "proposal-template": M(ProposalTemplate),
+  "resource-block": M(ResourceBlock), "sub-resume": M(SubResume), "rfp-document": M(RfpDocument),
+  rfq: M(Rfq), shipment: M(Shipment), "sub-agreement": M(SubAgreement), "sub-invoice": M(SubInvoice),
+  company: M(Company), user: M(User), vendor: M(Vendor), template: M(Template),
+  "board-column": M(TaskColumn), "board-task": M(Task), "technical-doc": M(TechnicalDoc),
+  "procurement-section": M(ProcurementSection), "procurement-item": M(ProcurementItem),
 };
 const ARCHIVE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   project: Project as unknown as mongoose.Model<unknown>,

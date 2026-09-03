@@ -3,6 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import SubAgreement from "../models/SubAgreement";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
 
@@ -50,8 +51,19 @@ router.patch("/:aid", async (req: AuthedRequest, res: Response, next: NextFuncti
 
 router.delete("/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const a = await SubAgreement.findOneAndDelete({ _id: req.params.aid, projectId: req.params.id });
-    for (const d of a?.documents || []) if (d.filePath) fs.unlink(path.resolve(d.filePath), () => {});
+    const a = await SubAgreement.findOne({ _id: req.params.aid, projectId: req.params.id });
+    if (a) {
+      const files = (a.documents || []).filter((d) => d.filePath).map((d) => ({ filePath: d.filePath }));
+      await recycleAndDelete(a, {
+        kind: "sub-agreement",
+        name: a.name,
+        subtitle: "Subcontractor agreement",
+        projectId: String(a.projectId),
+        files,
+        deletedById: req.user?.userId,
+        deletedByName: req.user?.name || "",
+      });
+    }
     res.json({ message: "Agreement deleted" });
   } catch (err) { next(err); }
 });

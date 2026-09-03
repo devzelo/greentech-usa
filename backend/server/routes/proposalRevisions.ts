@@ -3,6 +3,7 @@ import ProposalRevision from "../models/ProposalRevision";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // Version history for a project's proposal. GET needs view access; writes need edit.
 const router = Router({ mergeParams: true });
@@ -41,7 +42,14 @@ router.delete("/:rid", async (req: AuthedRequest, res: Response, next: NextFunct
     const rev = await ProposalRevision.findOne({ _id: req.params.rid, projectId: req.params.id });
     if (!rev) return res.status(404).json({ error: "Revision not found." });
     if (rev.archived) return res.status(400).json({ error: "Archived (submitted) versions cannot be deleted." });
-    await rev.deleteOne();
+    await recycleAndDelete(rev, {
+      kind: "proposal-revision",
+      name: rev.label || "Revision",
+      subtitle: "Proposal revision",
+      projectId: String(rev.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Revision deleted." });
   } catch (err) { next(err); }
 });

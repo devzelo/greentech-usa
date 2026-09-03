@@ -5,6 +5,7 @@ import path from "path";
 import ProjectRequest, { REQUEST_TYPES, RequestStatus } from "../models/ProjectRequest";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // Contract-Administration / Client-Communication requests. Each type auto-numbers per project
 // (RFI-001, RFI-002 …). The client's responses are kept as versioned entries under the request.
@@ -107,9 +108,21 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
 
 router.delete("/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const doc = await ProjectRequest.findOneAndDelete({ _id: req.params.rid, projectId: req.params.id });
-    for (const a of doc?.attachments || []) if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {});
-    for (const r of doc?.responses || []) for (const f of r.files || []) if (f.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    const doc = await ProjectRequest.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!doc) return res.status(404).json({ error: "Not found" });
+    // Keep the request's own files (its attachments + client-response files) so a restore brings them back.
+    const files: Array<{ filePath: string }> = [];
+    for (const a of doc.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
+    for (const r of doc.responses || []) for (const f of r.files || []) if (f.filePath) files.push({ filePath: f.filePath });
+    await recycleAndDelete(doc, {
+      kind: "project-request",
+      name: doc.number || doc.customTitle || doc.title || "Request",
+      subtitle: "Request",
+      projectId: String(doc.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+      files,
+    });
     res.json({ message: "Request deleted" });
   } catch (err) { next(err); }
 });

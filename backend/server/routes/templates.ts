@@ -1,5 +1,6 @@
 import { Router, Response, NextFunction } from "express";
 import Template from "../models/Template";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 const router = Router();
@@ -71,7 +72,14 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (String(tpl.createdBy) !== req.user!.userId) {
       return res.status(403).json({ error: "Only the template's creator can delete it." });
     }
-    await Template.deleteOne({ _id: tpl._id });
+    await recycleAndDelete(tpl, {
+      kind: "template",
+      name: tpl.name,
+      subtitle: "Template",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Template deleted." });
   } catch (err) {
     next(err);

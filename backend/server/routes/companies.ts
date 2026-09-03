@@ -11,6 +11,7 @@ import ProcurementPO from "../models/ProcurementPO";
 import Project from "../models/Project";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 const humanFileSize = (bytes: number) => {
@@ -86,8 +87,18 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
 });
 
 router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-  try { await Company.findByIdAndDelete(req.params.id); res.json({ message: "Deleted" }); }
-  catch (err) { next(err); }
+  try {
+    const c = await Company.findById(req.params.id);
+    if (c) await recycleAndDelete(c, {
+      kind: "company",
+      name: c.name,
+      subtitle: "Company",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
+    res.json({ message: "Deleted" });
+  } catch (err) { next(err); }
 });
 
 // CR-P-06c — populate the Directory from real data already in the platform: every project's

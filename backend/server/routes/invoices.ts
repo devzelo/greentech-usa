@@ -7,6 +7,7 @@ import Expense from "../models/Expense";
 import ProcurementPO from "../models/ProcurementPO";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // Invoices (sent + received) with real payments. Recording a payment on a RECEIVED invoice also
 // posts a matching Expense row, so paying a bill shows up in the Expenses tab with its receipt
@@ -65,14 +66,26 @@ router.patch("/:iid", async (req: AuthedRequest, res: Response, next: NextFuncti
 
 router.delete("/:iid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const row = await Invoice.findOneAndDelete({ _id: req.params.iid, projectId: req.params.id });
-    // Clean up the expenses this invoice's payments created, plus their files.
-    for (const p of row?.payments || []) {
+    const row = await Invoice.findOne({ _id: req.params.iid, projectId: req.params.id });
+    if (!row) return res.status(404).json({ error: "Not found" });
+    // Keep the invoice's own files (its document + payment receipts) so a restore brings them back.
+    const files: Array<{ filePath: string }> = [];
+    for (const p of row.payments || []) for (const a of p.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
+    for (const a of row.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
+    await recycleAndDelete(row, {
+      kind: "invoice",
+      name: row.number || row.party || "Invoice",
+      subtitle: "Invoice",
+      projectId: String(row.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+      files,
+    });
+    // Clean up the expenses this invoice's payments created.
+    for (const p of row.payments || []) {
       // Scope the expense delete to THIS project so a stray id can't reach another project's ledger.
       if (p.expenseId) await Expense.findOneAndDelete({ _id: p.expenseId, projectId: req.params.id }).catch(() => {});
-      for (const a of p.attachments || []) if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {});
     }
-    for (const a of row?.attachments || []) if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {});
     res.json({ message: "Invoice deleted" });
   } catch (err) { next(err); }
 });

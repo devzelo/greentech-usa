@@ -11,6 +11,7 @@ import ProcurementEvent from "../models/ProcurementEvent";
 import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -179,11 +180,20 @@ router.patch("/:pid", async (req: AuthedRequest, res: Response, next: NextFuncti
 router.delete("/:pid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (block(req, res)) return;
-    const po = await ProcurementPO.findOneAndDelete({ _id: req.params.pid, projectId: req.params.id });
-    if (po) {
-      if (po.expenseId) await Expense.findByIdAndDelete(po.expenseId).catch(() => {});
-      for (const a of po.attachments || []) { if (a.filePath) fs.unlink(path.resolve(a.filePath), () => {}); }
-    }
+    const po = await ProcurementPO.findOne({ _id: req.params.pid, projectId: req.params.id });
+    if (!po) return res.status(404).json({ error: "Not found" });
+    // Keep the PO's own attachments so a restore brings them back.
+    const files = (po.attachments || []).filter((a) => a.filePath).map((a) => ({ filePath: a.filePath }));
+    await recycleAndDelete(po, {
+      kind: "po",
+      name: po.poNo ? `PO ${po.poNo}` : (po.vendorName || "Purchase order"),
+      subtitle: "Purchase order",
+      projectId: String(po.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+      files,
+    });
+    if (po.expenseId) await Expense.findByIdAndDelete(po.expenseId).catch(() => {});
     res.json({ message: "PO deleted" });
   } catch (err) { next(err); }
 });

@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import Announcement from "../models/Announcement";
 import { requireAuth, requireAdmin, AuthedRequest } from "../middleware/auth";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 const router = Router();
 
@@ -39,7 +40,19 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
 });
 
 router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-  try { await Announcement.findByIdAndDelete(req.params.id); res.json({ message: "Deleted" }); } catch (err) { next(err); }
+  try {
+    const doc = await Announcement.findById(req.params.id);
+    if (!doc) return res.status(404).json({ error: "Not found" });
+    await recycleAndDelete(doc, {
+      kind: "announcement",
+      name: doc.title || "Announcement",
+      subtitle: "Announcement",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
+    res.json({ message: "Deleted" });
+  } catch (err) { next(err); }
 });
 
 // Seed this year's common US public holidays (skips any that already exist for the same date+title).

@@ -11,6 +11,7 @@ import Employee from "../models/Employee";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
 import { createNotification } from "../lib/notify";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 const humanSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
@@ -74,7 +75,14 @@ router.delete("/columns/:cid", async (req: AuthedRequest, res: Response, next: N
     const first = await TaskColumn.findOne({ projectId: req.params.id, _id: { $ne: col._id } }).sort({ order: 1 });
     if (first) await Task.updateMany({ projectId: req.params.id, columnId: String(col._id) }, { $set: { columnId: String(first._id) } });
     else await Task.deleteMany({ projectId: req.params.id, columnId: String(col._id) });
-    await col.deleteOne();
+    await recycleAndDelete(col, {
+      kind: "board-column",
+      name: col.title || "Column",
+      subtitle: "Column",
+      projectId: String(col.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -111,8 +119,18 @@ router.patch("/tasks/:tid", async (req: AuthedRequest, res: Response, next: Next
   } catch (err) { next(err); }
 });
 router.delete("/tasks/:tid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-  try { await Task.findOneAndDelete({ _id: req.params.tid, projectId: req.params.id }); res.json({ ok: true }); }
-  catch (err) { next(err); }
+  try {
+    const t = await Task.findOne({ _id: req.params.tid, projectId: req.params.id });
+    if (t) await recycleAndDelete(t, {
+      kind: "board-task",
+      name: t.title || "Task",
+      subtitle: "Task",
+      projectId: String(t.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // ── Members — assignable people on THIS project (employees + subcontractors + partner) ──

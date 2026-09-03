@@ -5,6 +5,7 @@ import path from "path";
 import ProjectTable, { type IProjectTableFile } from "../models/ProjectTable";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // Generic structured-table rows (see model). Scoped by ?table=<key>.
 const router = Router({ mergeParams: true });
@@ -57,8 +58,19 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
 
 router.delete("/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const row = await ProjectTable.findOneAndDelete({ _id: req.params.rid, projectId: req.params.id });
-    for (const f of row?.files || []) if (f.filePath) fs.unlink(path.resolve(f.filePath), () => {});
+    const row = await ProjectTable.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!row) return res.status(404).json({ error: "Not found" });
+    // Keep the row's own files so a restore brings them back.
+    const files = (row.files || []).filter((f) => f.filePath).map((f) => ({ filePath: f.filePath }));
+    await recycleAndDelete(row, {
+      kind: "project-table",
+      name: row.tableKey || "Table row",
+      subtitle: "Table row",
+      projectId: String(row.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+      files,
+    });
     res.json({ message: "Deleted" });
   } catch (err) { next(err); }
 });

@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import RfpDocument from "../models/RfpDocument";
 import User from "../models/User";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 // Company-wide RFP / spec library. Staff only.
@@ -78,8 +79,15 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!doc) return res.status(404).json({ error: "Document not found." });
     if (req.user!.role !== "admin" && String(doc.createdById) !== req.user!.userId)
       return res.status(403).json({ error: "Only the creator or an admin can delete this document." });
-    if (doc.filePath) fs.unlink(path.resolve(doc.filePath), () => {});
-    await doc.deleteOne();
+    await recycleAndDelete(doc, {
+      kind: "rfp-document",
+      name: doc.title,
+      subtitle: "RFP document",
+      projectId: "",
+      files: doc.filePath ? [{ filePath: doc.filePath }] : [],
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Document deleted." });
   } catch (err) { next(err); }
 });

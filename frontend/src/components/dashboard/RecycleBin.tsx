@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Archive, Trash2, RotateCcw, Loader2, Briefcase, Handshake, FileText, ClipboardList,
-  Package, Building2, ExternalLink, X,
+  Package, Building2, ExternalLink, X, Users, Truck, Receipt, Megaphone,
 } from "lucide-react";
 import {
   fetchArchiveItems, fetchRecycleItems, restoreArchiveItem, restoreRecycleItem, purgeRecycleItem,
@@ -19,6 +19,28 @@ const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: st
   submittal: { label: "Submittal", icon: ClipboardList, cls: "bg-amber-50 text-amber-600" },
   rfq: { label: "RFQ", icon: Package, cls: "bg-emerald-50 text-emerald-600" },
   company: { label: "Company", icon: Building2, cls: "bg-violet-50 text-violet-600" },
+  // CR-P — everything else that now snapshots to the recycle bin on delete.
+  user: { label: "User", icon: Users, cls: "bg-blue-50 text-blue-600" },
+  vendor: { label: "Vendor", icon: Building2, cls: "bg-emerald-50 text-emerald-600" },
+  invoice: { label: "Invoice", icon: Receipt, cls: "bg-emerald-50 text-emerald-600" },
+  "sub-invoice": { label: "Sub-invoice", icon: Receipt, cls: "bg-emerald-50 text-emerald-600" },
+  po: { label: "Purchase order", icon: FileText, cls: "bg-amber-50 text-amber-600" },
+  shipment: { label: "Shipment", icon: Truck, cls: "bg-orange-50 text-orange-600" },
+  "sub-agreement": { label: "Sub-agreement", icon: Handshake, cls: "bg-indigo-50 text-indigo-600" },
+  "technical-doc": { label: "Technical doc", icon: FileText, cls: "bg-sky-50 text-sky-600" },
+  "rfp-document": { label: "RFP document", icon: FileText, cls: "bg-sky-50 text-sky-600" },
+  "project-request": { label: "Request", icon: ClipboardList, cls: "bg-amber-50 text-amber-600" },
+  "project-table": { label: "Table", icon: FileText, cls: "bg-slate-100 text-slate-500" },
+  "proposal-template": { label: "Proposal template", icon: FileText, cls: "bg-indigo-50 text-indigo-600" },
+  "proposal-revision": { label: "Proposal revision", icon: FileText, cls: "bg-indigo-50 text-indigo-600" },
+  "resource-block": { label: "Resource block", icon: FileText, cls: "bg-slate-100 text-slate-500" },
+  "sub-resume": { label: "Resume", icon: FileText, cls: "bg-slate-100 text-slate-500" },
+  template: { label: "Template", icon: FileText, cls: "bg-slate-100 text-slate-500" },
+  announcement: { label: "Announcement", icon: Megaphone, cls: "bg-rose-50 text-rose-600" },
+  "board-task": { label: "Board task", icon: ClipboardList, cls: "bg-blue-50 text-blue-600" },
+  "board-column": { label: "Board column", icon: ClipboardList, cls: "bg-blue-50 text-blue-600" },
+  "procurement-section": { label: "Procurement section", icon: Package, cls: "bg-amber-50 text-amber-600" },
+  "procurement-item": { label: "Procurement item", icon: Package, cls: "bg-amber-50 text-amber-600" },
 };
 const metaFor = (k: string) => KIND_META[k] || { label: k, icon: FileText, cls: "bg-slate-100 text-slate-500" };
 const timeAgo = (iso?: string) => {

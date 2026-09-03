@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import Vendor from "../models/Vendor";
 import Company from "../models/Company";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 
@@ -78,7 +79,15 @@ router.delete("/:vid", async (req: AuthedRequest, res: Response, next: NextFunct
   try {
     if (block(req, res)) return;
     // Shared list → delete by id (removes the vendor for every project).
-    await Vendor.findByIdAndDelete(req.params.vid);
+    const v = await Vendor.findById(req.params.vid);
+    if (v) await recycleAndDelete(v, {
+      kind: "vendor",
+      name: v.name,
+      subtitle: "Vendor",
+      projectId: String(v.projectId),
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Vendor deleted" });
   } catch (err) { next(err); }
 });

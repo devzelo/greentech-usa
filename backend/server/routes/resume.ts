@@ -7,6 +7,7 @@ import SubResume from "../models/SubResume";
 import SavedDocument from "../models/SavedDocument";
 import Project from "../models/Project";
 import User from "../models/User";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 const router = Router();
@@ -222,8 +223,16 @@ router.put("/sub/:id", async (req: AuthedRequest, res: Response, next: NextFunct
 // DELETE /api/resume/sub/:id
 router.delete("/sub/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const resume = await SubResume.findByIdAndDelete(req.params.id);
+    const resume = await SubResume.findById(req.params.id);
     if (!resume) return res.status(404).json({ error: "Resume not found." });
+    await recycleAndDelete(resume, {
+      kind: "sub-resume",
+      name: resume.personName,
+      subtitle: "Subcontractor resume",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "Resume deleted." });
   } catch (err) { next(err); }
 });

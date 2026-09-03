@@ -14,6 +14,7 @@ import Submittal from "../models/Submittal";
 import ProcurementPO from "../models/ProcurementPO";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
+import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest, requireAdmin } from "../middleware/auth";
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -141,8 +142,16 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
   try {
     if (req.params.id === req.user!.userId)
       return res.status(400).json({ error: "You cannot delete your own account." });
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: "User not found." });
+    await recycleAndDelete(user, {
+      kind: "user",
+      name: user.name || user.email,
+      subtitle: user.role || "User",
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
     res.json({ message: "User deleted." });
   } catch (err) { next(err); }
 });
