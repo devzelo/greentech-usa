@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Building2, ArrowLeft, Mail, Phone, Globe, MapPin, Pencil, Archive, RotateCcw, Trash2, Link2,
   Receipt, FileText, Truck, Award, BookOpen, Download, Eye, Upload, Loader2, Check, X, Landmark,
-  Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck, ExternalLink,
+  Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck, ExternalLink, Ban,
 } from "lucide-react";
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
@@ -42,6 +42,7 @@ export default function CompanyProfile({
   const navigate = useNavigate();
   const { confirm, dialogs } = useDialogs();
   const [tab, setTab] = useState<ProfileTab>("activity");
+  const [highlight, setHighlight] = useState<string | null>(null);   // CR-P (11) — stat-tile jump
   // CR-P — subcontractors & partners can be given a scoped login + tab access (a "user role"),
   // so their profile gets an Access tab. Other categories (clients, vendors, …) don't log in.
   const canHaveLogin = companyCategories(company).some((c) => c === "subcontractor" || c === "partner");
@@ -80,7 +81,19 @@ export default function CompanyProfile({
   };
   const docIcon = (t?: string) => t === "catalogue" ? <BookOpen size={14} className="text-amber-500 shrink-0" /> : t === "certification" ? <Award size={14} className="text-emerald-500 shrink-0" /> : <FileText size={14} className="text-slate-400 shrink-0" />;
 
-  const openProject = (projectId?: string) => { if (projectId) navigate(`/dashboard/projects/${projectId}`); };
+  // projectId → name for every project this company is linked to; a referenced id missing here
+  // means that project was deleted (its rows are blurred and can't be opened).
+  const projById: Record<string, string> = {};
+  for (const p of links?.projects || []) if (p.projectId) projById[p.projectId] = p.name;
+
+  // Clicking a stat tile jumps to its section (Documents is its own tab), with a brief highlight.
+  const goTo = (key: string) => {
+    if (key === "documents") { setTab("documents"); return; }
+    setTab("activity");
+    setHighlight(key);
+    window.setTimeout(() => document.getElementById(`cp-sec-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    window.setTimeout(() => setHighlight((h) => (h === key ? null : h)), 1800);
+  };
 
   // Counts for the stat tiles.
   const counts = useMemo(() => ({
@@ -95,11 +108,11 @@ export default function CompanyProfile({
     documents: files.length,
   }), [links, files]);
 
-  const stat = (label: string, value: number, Icon: typeof Building2, cls: string) => (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5">
+  const stat = (label: string, value: number, Icon: typeof Building2, cls: string, onClick: () => void) => (
+    <button type="button" onClick={onClick} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5 text-left w-full transition-all hover:border-primary/40 hover:shadow-md cursor-pointer">
       <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${cls}`}><Icon size={15} /></div>
       <div className="min-w-0"><p className="text-lg font-bold text-slate-900 leading-none tabular-nums">{value}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">{label}</p></div>
-    </div>
+    </button>
   );
 
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
@@ -109,17 +122,33 @@ export default function CompanyProfile({
     </p>
   ) : null;
 
-  // A compact, optionally project-linked activity row.
-  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string) => (
-    <button key={key} onClick={() => openProject(projectId)} disabled={!projectId}
-      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs text-left ${projectId ? "hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "cursor-default"}`}>
-      <span className="font-bold text-slate-700 truncate flex items-center gap-1.5 min-w-0">{primary}</span>
-      <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{projectId && <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" />}</span>
-    </button>
-  );
+  // A row that shows its project and deep-links into that project (optionally to a specific tab via
+  // `query`). If the project was deleted, the row is blurred and clicking it explains why. `self`
+  // is for the Projects section, where the row IS the project (no separate project label).
+  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string, query?: string, self = false) => {
+    const projName = !self && projectId ? projById[projectId] : undefined;
+    const deleted = !self && !!projectId && !projById[projectId];
+    const open = () => {
+      if (!projectId) return;
+      if (deleted) { toast("This project has been deleted, so you can't open it.", "info"); return; }
+      navigate(`/dashboard/projects/${projectId}${query ? `?${query}` : ""}`);
+    };
+    return (
+      <button key={key} onClick={open} disabled={!projectId}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
+        title={deleted ? "The project for this item was deleted — you can't open it." : ""}>
+        <span className="min-w-0 flex flex-col">
+          <span className="font-bold text-slate-700 truncate flex items-center gap-1.5">{primary}</span>
+          {projName && <span className="text-[10px] font-bold text-slate-400 truncate flex items-center gap-1"><Building2 size={9} /> {projName}</span>}
+          {deleted && <span className="text-[10px] font-bold text-red-400 truncate flex items-center gap-1"><Ban size={9} /> Project deleted</span>}
+        </span>
+        <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
+      </button>
+    );
+  };
 
-  const section = (title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
-    <div>
+  const section = (secKey: string, title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
+    <div id={`cp-sec-${secKey}`} className={`scroll-mt-24 rounded-xl transition-all ${highlight === secKey ? "ring-2 ring-primary/40 ring-offset-2" : ""}`}>
       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Icon size={13} /> {title} ({count})</p>
       {count === 0 ? <p className="text-xs text-slate-400 italic">{emptyHint}</p> : <div className="space-y-1.5">{rows}</div>}
     </div>
@@ -181,15 +210,15 @@ export default function CompanyProfile({
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-        {stat("Projects", counts.projects, Briefcase, "bg-indigo-50 text-indigo-600")}
-        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600")}
-        {stat("RFQs", counts.rfqs, ClipboardList, "bg-blue-50 text-blue-600")}
-        {stat("Quotes", counts.quotes, QuoteIcon, "bg-purple-50 text-purple-600")}
-        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600")}
-        {stat("Invoices", counts.invoices, Receipt, "bg-emerald-50 text-emerald-600")}
-        {stat("Shipments", counts.shipments, Truck, "bg-orange-50 text-orange-600")}
-        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600")}
-        {stat("Documents", counts.documents, BookOpen, "bg-slate-100 text-slate-500")}
+        {stat("Projects", counts.projects, Briefcase, "bg-indigo-50 text-indigo-600", () => goTo("projects"))}
+        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600", () => goTo("agreements"))}
+        {stat("RFQs", counts.rfqs, ClipboardList, "bg-blue-50 text-blue-600", () => goTo("rfqs"))}
+        {stat("Quotes", counts.quotes, QuoteIcon, "bg-purple-50 text-purple-600", () => goTo("quotes"))}
+        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600", () => goTo("pos"))}
+        {stat("Invoices", counts.invoices, Receipt, "bg-emerald-50 text-emerald-600", () => goTo("invoices"))}
+        {stat("Shipments", counts.shipments, Truck, "bg-orange-50 text-orange-600", () => goTo("shipments"))}
+        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600", () => goTo("submittals"))}
+        {stat("Documents", counts.documents, BookOpen, "bg-slate-100 text-slate-500", () => goTo("documents"))}
       </div>
 
       {/* Tabs */}
@@ -212,29 +241,29 @@ export default function CompanyProfile({
             <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading activity…</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
-              {section("Projects involved", counts.projects, Building2,
-                (links.projects || []).map((p) => linkRow(p._id, p.name, p.status, p.projectId)),
+              {section("projects", "Projects involved", counts.projects, Building2,
+                (links.projects || []).map((p) => linkRow(p._id, p.name, p.status, p.projectId, undefined, true)),
                 "Not linked to any project yet.")}
-              {section("Agreements", counts.agreements, FileText,
+              {section("agreements", "Agreements", counts.agreements, FileText,
                 (links.agreements || []).map((a) => linkRow(a._id, a.name || "Agreement", a.status || "—", a.projectId)),
                 "No agreements with this company yet.")}
-              {section("RFQs", counts.rfqs, ClipboardList,
-                links.rfqs.map((r) => linkRow(r._id, `RFQ #${r.rfqNo}`, <>{r.title ? `${r.title} · ` : ""}{r.status}</>, r.projectId)),
+              {section("rfqs", "RFQs", counts.rfqs, ClipboardList,
+                links.rfqs.map((r) => linkRow(r._id, `RFQ #${r.rfqNo}`, <>{r.title ? `${r.title} · ` : ""}{r.status}</>, r.projectId, "tab=procurement&proc=rfqs")),
                 "No RFQs sent to this company yet.")}
-              {section("Quotes", counts.quotes, QuoteIcon,
-                (links.quotes || []).map((q) => linkRow(q._id, <>Quote{q.accepted ? " ✓" : ""}</>, <>{q.total || "—"}{q.status ? ` · ${q.status}` : ""}</>, q.projectId)),
+              {section("quotes", "Quotes", counts.quotes, QuoteIcon,
+                (links.quotes || []).map((q) => linkRow(q._id, <>Quote{q.accepted ? " ✓" : ""}</>, <>{q.total || "—"}{q.status ? ` · ${q.status}` : ""}</>, q.projectId, "tab=procurement&proc=quotes")),
                 "No quotes received from this company yet.")}
-              {section("Purchase orders", counts.pos, FileText,
-                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId)),
+              {section("pos", "Purchase orders", counts.pos, FileText,
+                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId, "tab=procurement&proc=po")),
                 "No purchase orders for this company yet.")}
-              {section("Invoices", counts.invoices, Receipt,
-                links.invoices.map((iv) => linkRow(iv._id, <>#{iv.number} <span className="text-slate-400 font-medium">· {iv.type}</span></>, <>{iv.amount} · {iv.status}</>, iv.projectId)),
+              {section("invoices", "Invoices", counts.invoices, Receipt,
+                links.invoices.map((iv) => linkRow(iv._id, <>#{iv.number} <span className="text-slate-400 font-medium">· {iv.type}</span></>, <>{iv.amount} · {iv.status}</>, iv.projectId, "tab=finances")),
                 "No invoices linked to this company yet.")}
-              {section("Shipments", counts.shipments, Truck,
-                (links.shipments || []).map((s) => linkRow(s._id, s.name || "Shipment", <>{s.status}{s.etaDate ? ` · ETA ${s.etaDate}` : ""}</>, s.projectId)),
+              {section("shipments", "Shipments", counts.shipments, Truck,
+                (links.shipments || []).map((s) => linkRow(s._id, s.name || "Shipment", <>{s.status}{s.etaDate ? ` · ETA ${s.etaDate}` : ""}</>, s.projectId, "tab=procurement&proc=shipment")),
                 "No shipments handled by this company yet.")}
-              {section("Submittals", counts.submittals, PackageCheck,
-                (links.submittals || []).map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId)),
+              {section("submittals", "Submittals", counts.submittals, PackageCheck,
+                (links.submittals || []).map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId, "tab=procurement&proc=submittals")),
                 "No submittals for this company's products yet.")}
             </div>
           )}

@@ -166,8 +166,8 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
 
     const [owned, guest, agreements, expenses, reminders, submittals, pos] = await Promise.all([
-      Project.find({ ownerId: uid }).select("name status location").lean(),
-      Project.find({ "guests.userId": uid }).select("name status location").lean(),
+      Project.find({ ownerId: uid }).select("projectId name status location").lean(),
+      Project.find({ "guests.userId": uid }).select("projectId name status location").lean(),
       Agreement.find({ $or: [{ ownerUserId: uid }, { addedById: uid }] }).select("name agreementType status ownerProjectId").sort({ createdAt: -1 }).limit(60).lean(),
       Expense.find({ addedById: uid }).select("description amount qty approval projectId category").sort({ createdAt: -1 }).limit(60).lean(),
       Reminder.find({ userId: uid }).select("title dueAt projectId projectName").sort({ dueAt: -1 }).limit(60).lean(),
@@ -179,7 +179,17 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const seen = new Set<string>();
     const projects = [...owned, ...guest].filter((p) => { const k = String((p as { _id: unknown })._id); if (seen.has(k)) return false; seen.add(k); return true; });
 
-    res.json({ projects, agreements, expenses, reminders, submittals, pos });
+    // CR-P (11) — resolve the name of every project referenced by the user's items, so each row can
+    // show its project. A referenced projectId that's missing here means that project was deleted.
+    const pidSet = new Set<string>();
+    for (const a of agreements as Array<{ ownerProjectId?: string }>) if (a.ownerProjectId) pidSet.add(a.ownerProjectId);
+    for (const arr of [expenses, reminders, submittals, pos] as Array<Array<{ projectId?: string }>>)
+      for (const r of arr) if (r.projectId) pidSet.add(r.projectId);
+    const projRows = pidSet.size ? await Project.find({ projectId: { $in: [...pidSet] } }).select("projectId name").lean() : [];
+    const projectNames: Record<string, string> = {};
+    for (const p of projRows as Array<{ projectId?: string; name?: string }>) if (p.projectId) projectNames[p.projectId] = p.name || "";
+
+    res.json({ projects, agreements, expenses, reminders, submittals, pos, projectNames });
   } catch (err) { next(err); }
 });
 

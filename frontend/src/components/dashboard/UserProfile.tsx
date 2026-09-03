@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Pencil, KeyRound, Trash2, Mail, Phone, IdCard, Briefcase, Shield, Building2,
-  FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck,
+  FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck, Ban,
 } from "lucide-react";
 import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
+import { toast } from "../../lib/toast";
 import TaskMiniBoard from "./TaskMiniBoard";
 
 const roleBadge = (role: string) =>
@@ -38,7 +39,9 @@ export default function UserProfile({
     fetchUserTasks(user._id).then(setTasks).catch(() => setTasks([])).finally(() => setTasksLoading(false));
   }, [user._id]);
 
-  const openProject = (projectId?: string) => { if (projectId) navigate(`/dashboard/projects/${projectId}`); };
+  // projectId → name for every project the user's items reference; a referenced id missing here
+  // means that project was deleted (row is blurred and can't be opened).
+  const projById = links?.projectNames || {};
   const counts = useMemo(() => ({
     projects: links?.projects.length ?? 0,
     agreements: links?.agreements.length ?? 0,
@@ -74,13 +77,30 @@ export default function UserProfile({
       {href ? <a href={href} className="hover:text-primary truncate">{value}</a> : <span className="truncate">{value}</span>}
     </p>
   ) : null;
-  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string) => (
-    <button key={key} onClick={() => openProject(projectId)} disabled={!projectId}
-      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs text-left ${projectId ? "hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "cursor-default"}`}>
-      <span className="font-bold text-slate-700 truncate flex items-center gap-1.5 min-w-0">{primary}</span>
-      <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{projectId && <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" />}</span>
-    </button>
-  );
+  // A row that shows its project, and deep-links into that project (optionally to a specific tab via
+  // `query`). If the project was deleted, the row is blurred and clicking it explains why. Pass
+  // `self` for the Projects section, where the row IS the project (no separate project label).
+  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string, query?: string, self = false) => {
+    const projName = !self && projectId ? projById[projectId] : undefined;
+    const deleted = !self && !!projectId && !projById[projectId];
+    const open = () => {
+      if (!projectId) return;
+      if (deleted) { toast("This project has been deleted, so you can't open it.", "info"); return; }
+      navigate(`/dashboard/projects/${projectId}${query ? `?${query}` : ""}`);
+    };
+    return (
+      <button key={key} onClick={open} disabled={!projectId}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
+        title={deleted ? "The project for this item was deleted — you can't open it." : ""}>
+        <span className="min-w-0 flex flex-col">
+          <span className="font-bold text-slate-700 truncate flex items-center gap-1.5">{primary}</span>
+          {projName && <span className="text-[10px] font-bold text-slate-400 truncate flex items-center gap-1"><Building2 size={9} /> {projName}</span>}
+          {deleted && <span className="text-[10px] font-bold text-red-400 truncate flex items-center gap-1"><Ban size={9} /> Project deleted</span>}
+        </span>
+        <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
+      </button>
+    );
+  };
   const section = (secKey: string, title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
     <div id={`up-sec-${secKey}`} className={`scroll-mt-24 rounded-xl transition-all ${highlight === secKey ? "ring-2 ring-primary/40 ring-offset-2" : ""}`}>
       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Icon size={13} /> {title} ({count})</p>
@@ -146,22 +166,22 @@ export default function UserProfile({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
               {section("projects", "Projects", counts.projects, Building2,
-                links.projects.map((p) => linkRow(p._id, p.name, p.status, p._id)),
+                links.projects.map((p) => linkRow(p._id, p.name, p.status, p.projectId, undefined, true)),
                 "Not on any project yet.")}
               {section("agreements", "Agreements", counts.agreements, FileText,
                 links.agreements.map((a) => linkRow(a._id, a.name || a.agreementType, a.status || "—", a.ownerProjectId)),
                 "No agreements linked to this user.")}
               {section("pos", "Purchase orders", counts.pos, FileText,
-                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId)),
+                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId, "tab=procurement&proc=po")),
                 "No purchase orders added by this user.")}
               {section("submittals", "Submittals", counts.submittals, PackageCheck,
-                links.submittals.map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId)),
+                links.submittals.map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId, "tab=procurement&proc=submittals")),
                 "No submittals added by this user.")}
               {section("expenses", "Expenses", counts.expenses, Receipt,
-                links.expenses.map((e) => linkRow(e._id, e.description || "Expense", <>{e.amount || "—"}{e.approval ? ` · ${e.approval}` : ""}</>, e.projectId)),
+                links.expenses.map((e) => linkRow(e._id, e.description || "Expense", <>{e.amount || "—"}{e.approval ? ` · ${e.approval}` : ""}</>, e.projectId, "tab=finances")),
                 "No expenses submitted by this user.")}
               {section("reminders", "Reminders", counts.reminders, Bell,
-                links.reminders.map((r) => linkRow(r._id, r.title || "Reminder", <>{r.projectName || ""}{r.dueAt ? ` · ${new Date(r.dueAt).toLocaleDateString()}` : ""}</>, r.projectId)),
+                links.reminders.map((r) => linkRow(r._id, r.title || "Reminder", <>{r.dueAt ? new Date(r.dueAt).toLocaleDateString() : ""}</>, r.projectId)),
                 "No reminders for this user.")}
             </div>
           )}

@@ -626,12 +626,14 @@ export function userFileUrl(f: UserFile): string {
 }
 // CR-P-57 — everything related to a user (projects, agreements, POs, submittals, expenses, reminders).
 export interface UserLinks {
-  projects: Array<{ _id: string; name: string; status: string; location?: string }>;
+  projects: Array<{ _id: string; projectId?: string; name: string; status: string; location?: string }>;
   agreements: Array<{ _id: string; name: string; agreementType: string; status: string; ownerProjectId?: string }>;
   expenses: Array<{ _id: string; description: string; amount: string; qty?: string; approval?: string; projectId?: string; category?: string }>;
   reminders: Array<{ _id: string; title: string; dueAt?: string; projectId?: string; projectName?: string }>;
   submittals: Array<{ _id: string; productName: string; status: string; projectId?: string }>;
   pos: Array<{ _id: string; poNo: string; vendorName: string; total: string; status: string; projectId?: string }>;
+  // CR-P (11) — projectId → name for every project referenced above; a referenced id missing here = deleted.
+  projectNames?: Record<string, string>;
 }
 export async function fetchUserLinks(id: string): Promise<UserLinks> { return request(`/users/${id}/links`); }
 
