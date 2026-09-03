@@ -119,7 +119,9 @@ router.post("/classified-access/verify", async (req: AuthedRequest, res: Respons
     if (!doc.enabled) return res.status(403).json({ error: "Classified access is disabled." });
     if (!doc.pinHash) return res.status(400).json({ error: "No PIN has been set yet." });
     const ok = await bcrypt.compare(String(req.body?.pin || ""), doc.pinHash);
-    if (!ok) return res.status(401).json({ error: "Incorrect PIN." });
+    // 400 (not 401): a wrong PIN is a validation error, not a session failure — the frontend's
+    // global 401 handler logs the user out, so returning 401 here would sign them out on a typo.
+    if (!ok) return res.status(400).json({ error: "Incorrect PIN." });
     const token = jwt.sign({ classified: true, uid: req.user!.userId }, JWT_SECRET, { expiresIn: "8h" });
     res.json({ token });
   } catch (err) { next(err); }
