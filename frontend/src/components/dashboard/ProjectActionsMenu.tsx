@@ -71,6 +71,15 @@ export default function ProjectActionsMenu({
   const toggleArchive = async () => {
     close();
     const next = !project.archived;
+    if (!(await confirm({
+      title: next ? "Archive project?" : "Restore project?",
+      message: next
+        ? `"${project.name}" will be moved to the archived list and hidden from the active projects. You can restore it anytime.`
+        : `Restore "${project.name}" to your active projects.`,
+      confirmLabel: next ? "Archive" : "Restore",
+      cancelLabel: "Cancel",
+      danger: next,
+    }))) return;
     setBusy(true);
     try {
       const u = await setProjectArchived(project.id, next);
