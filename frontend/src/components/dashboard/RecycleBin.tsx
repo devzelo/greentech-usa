@@ -100,8 +100,7 @@ export default function RecycleBin() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
-        <div className="flex items-center gap-2 text-primary mb-2"><Archive size={18} /><span className="text-xs font-bold uppercase tracking-widest">Archive & Recycle Bin</span></div>
-        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">Archive &amp; Recycle Bin</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 flex items-center gap-2"><Trash2 className="text-primary" /> Archive &amp; Recycle Bin</h1>
         <p className="text-sm text-slate-500 mt-1">Restore anything you archived or deleted across the platform.</p>
       </div>
 

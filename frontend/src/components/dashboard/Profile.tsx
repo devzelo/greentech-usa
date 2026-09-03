@@ -219,7 +219,7 @@ export default function Profile() {
       {/* Profile Card — the feature card, left of the top row (bento) */}
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-8 lg:p-10 lg:col-span-1">
         <div className="flex items-center justify-between mb-10">
-          <h1 className="text-2xl font-display font-bold text-slate-900">My Profile</h1>
+          <h1 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2"><User className="text-primary" /> My Profile</h1>
           {isGuest ? (
             <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">Subcontractor</span>
           ) : !isEditing ? (

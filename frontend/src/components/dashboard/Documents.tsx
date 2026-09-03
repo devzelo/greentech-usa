@@ -275,7 +275,7 @@ export default function Documents() {
   return (
     <div className="flex flex-col space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">Documents</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2 flex items-center gap-2"><FileText className="text-primary" /> Documents</h1>
         <p className="text-slate-500 font-medium">
           {tab === "company"
             ? "Official GreenTech USA company documents — organized into tabs you control."

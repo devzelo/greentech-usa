@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Briefcase, Clock, CheckCircle2, FileEdit, Lightbulb, ArrowUpRight, Loader2,
   Bell, AlarmClock, TrendingUp, TrendingDown, DollarSign, FolderPlus, Handshake,
-  Building2, FileText, ClipboardList, Package, ChevronRight, Share2,
+  Building2, FileText, ClipboardList, Package, ChevronRight, Share2, LayoutDashboard,
 } from "lucide-react";
 import {
   fetchProjects, fetchProjectFinancials, fetchDrafts, fetchReminders, fetchNotifications,
@@ -114,7 +114,7 @@ export default function DashboardOverview() {
       {/* Welcome + KPI cards, side by side (cards fill the space beside the greeting). */}
       <div className="flex flex-col xl:flex-row xl:items-stretch gap-5">
         <div className="xl:w-56 shrink-0 flex flex-col justify-center">
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-1.5">Welcome back, {firstName}!</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-1.5 flex items-center gap-2"><LayoutDashboard className="text-primary" /> Welcome back, {firstName}!</h1>
           <p className="text-slate-500 font-medium text-sm">Here&apos;s what&apos;s happening with your projects today.</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 flex-grow">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Users } from "lucide-react";
 import {
   fetchUsers, createUser, updateUser, adminResetPassword, deleteUser, setUserArchived,
   getAuthUser, AdminUser, withFileToken,
@@ -219,7 +219,7 @@ export default function UserManagement() {
             <Shield size={18} />
             <span className="text-xs font-bold uppercase tracking-widest">Admin</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">User Management</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 flex items-center gap-2"><Users className="text-primary" /> User Management</h1>
           <p className="text-sm text-slate-500 mt-1">Add or remove employee accounts, change roles, and reset passwords.</p>
         </div>
         <div className="flex items-center gap-2 self-start">

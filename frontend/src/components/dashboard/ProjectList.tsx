@@ -1,7 +1,8 @@
 import { motion } from "motion/react";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
-  ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake
+  ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake,
+  Briefcase, FolderSearch, FileEdit
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -126,7 +127,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {/* Header — title/description on the left, report + search + view on the right. */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 mb-2 flex items-center gap-2">
+            {mode === "my" ? <Briefcase className="text-primary" /> : mode === "drafts" ? <FileEdit className="text-primary" /> : <FolderSearch className="text-primary" />}
             {mode === "my" ? "My Workspace" : mode === "drafts" ? "My Drafts" : "Global Project Directory"}
           </h1>
           <p className="text-slate-500 font-medium">
