@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Briefcase, FileText, Users, Building2, Loader2, Eye, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchProjects, fetchAllDocuments, fetchEmployees, fetchCompanies, fetchUsers, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee, type ApiCompany, type AdminUser, COMPANY_CATEGORIES, companyCategories } from "../../lib/api";
+import { fetchProjects, fetchAllDocuments, fetchEmployees, fetchCompanies, fetchUsers, documentUrl, getAuthUser, ApiProject, ApiGlobalDocument, ApiEmployee, type ApiCompany, type AdminUser, COMPANY_CATEGORIES, companyCategories } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 
 type Group = "Projects" | "Documents" | "Employees" | "Subcontractors" | "Directory" | "Users";
@@ -26,6 +26,7 @@ const yearsOf = (...vals: (string | undefined)[]) => {
 
 export default function GlobalSearch() {
   const navigate = useNavigate();
+  const isAdmin = getAuthUser()?.role === "admin";
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -93,7 +94,7 @@ export default function GlobalSearch() {
       }
       for (const s of p.subcontractors || []) {
         if (s.name && s.name.toLowerCase().includes(needle)) {
-          hits.push({ group: "Subcontractors", label: s.name, sub: `${s.scope || "—"} · ${p.name}`, to: `/dashboard/projects/${p.id}`, icon: Building2, projectId: p.id });
+          hits.push({ group: "Subcontractors", label: s.name, sub: `${s.scope || "—"} · ${p.name}`, to: `/dashboard/projects/${p.id}?tab=subs`, icon: Building2, projectId: p.id });
         }
       }
     }
@@ -105,7 +106,10 @@ export default function GlobalSearch() {
     }
     for (const e of employees) {
       if (e.name.toLowerCase().includes(needle) || e.empId.toLowerCase().includes(needle)) {
-        hits.push({ group: "Employees", label: e.name, sub: e.empId, to: `/dashboard/all-projects`, icon: Users });
+        // Open the employee's own profile (admins only — that page is admin-gated); otherwise fall
+        // back to their projects overview.
+        const to = isAdmin && e.id ? `/dashboard/users?open=${e.id}` : `/dashboard/all-projects`;
+        hits.push({ group: "Employees", label: e.name, sub: e.empId, to, icon: Users });
       }
     }
     // Directory companies — subcontractors, consultants, vendors, partners, clients, etc.
@@ -139,7 +143,7 @@ export default function GlobalSearch() {
       }
       return true;
     }).slice(0, 60);
-  }, [q, projects, docs, employees, companies, users, typeF, projectF, yearF]);
+  }, [q, projects, docs, employees, companies, users, typeF, projectF, yearF, isAdmin]);
 
   const grouped = useMemo(() => {
     const map = new Map<Group, Hit[]>();
