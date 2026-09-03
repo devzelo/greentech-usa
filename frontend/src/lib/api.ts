@@ -777,7 +777,7 @@ export async function fetchGuestDirectory(): Promise<{ userId: string; name: str
 export async function createGuest(projectId: string, body: {
   name: string;
   email: string;
-  password: string;
+  password?: string;   // CR-P (12) — omitted when granting an existing account (staff) project access
   tabPermissions: Record<string, GuestTabPermission>;
   alsoAssignProjectIds?: string[];
   expiresAt?: string | null;

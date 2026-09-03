@@ -2293,11 +2293,14 @@ export default function ProjectWorkspace() {
 
   const currentUser = getAuthUser();
   const myEmpId = (currentUser as { empId?: string } | null)?.empId || "";
-  const isGuest = (currentUser as { role?: string } | null)?.role === "subcontractor";
   const isOwner = !!(project && currentUser && (project as ApiProject & { ownerId?: string }).ownerId === currentUser.id);
   // A guest's per-tab permissions on this project ("view" | "edit").
-  const myGuestPerms: Record<string, "view" | "edit"> =
-    (project?.guests || []).find((g) => g.userId === currentUser?.id)?.tabPermissions || {};
+  const myGuestEntry = (project?.guests || []).find((g) => g.userId === currentUser?.id);
+  const myGuestPerms: Record<string, "view" | "edit"> = myGuestEntry?.tabPermissions || {};
+  // CR-P (12) unified access: you're a "guest" here if you hold a guest entry on THIS project,
+  // regardless of your global role — so a staff member granted scoped access is treated as one.
+  // A subcontractor with no entry stays a guest too, so they remain locked out exactly as before.
+  const isGuest = !isOwner && (!!myGuestEntry || (currentUser as { role?: string } | null)?.role === "subcontractor");
   const isAssigned = !isGuest && !!(project && myEmpId && assignedEmployees.includes(myEmpId));
   const guestHasAccess = isGuest && Object.keys(myGuestPerms).length > 0;
   const hasAnyAccess = isOwner || isAssigned || guestHasAccess;

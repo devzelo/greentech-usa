@@ -7,6 +7,7 @@ import {
 import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import TaskMiniBoard from "./TaskMiniBoard";
+import UserAccessManager from "./UserAccessManager";
 
 const roleBadge = (role: string) =>
   role === "admin" ? "bg-primary/10 text-primary" : role === "subcontractor" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
@@ -25,7 +26,7 @@ export default function UserProfile({
   isSelf: boolean;
 }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"activity" | "tasks" | "documents">("activity");
+  const [tab, setTab] = useState<"activity" | "tasks" | "documents" | "access">("activity");
   const [highlight, setHighlight] = useState<string | null>(null);
   const [links, setLinks] = useState<UserLinks | null>(null);
   const [files, setFiles] = useState<UserFile[]>([]);
@@ -154,7 +155,7 @@ export default function UserProfile({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-        {([["activity", "Activity"], ["tasks", `Tasks (${tasks.length})`], ["documents", `Documents (${counts.documents})`]] as const).map(([v, l]) => (
+        {([["activity", "Activity"], ["tasks", `Tasks (${tasks.length})`], ["documents", `Documents (${counts.documents})`], ["access", "Access"]] as const).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${tab === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
         ))}
       </div>
@@ -194,6 +195,8 @@ export default function UserProfile({
           <TaskMiniBoard tasks={tasks} loading={tasksLoading} />
         </div>
       )}
+
+      {tab === "access" && <UserAccessManager user={user} />}
 
       {tab === "documents" && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">

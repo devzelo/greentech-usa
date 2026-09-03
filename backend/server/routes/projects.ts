@@ -7,7 +7,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { getProjectAccess } from "../lib/access";
+import { getProjectAccess, isProjectGuest } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
 import { duplicateProject } from "../lib/duplicateProject";
@@ -175,12 +175,15 @@ router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
-    // Guests may only open a project they are assigned to.
-    if (req.user!.role === "subcontractor") {
-      const assigned = (project.guests || []).some((g) => String(g.userId) === req.user!.userId);
-      if (!assigned) return res.status(403).json({ error: "You do not have access to this project." });
-      // A subcontractor must never see other subcontractors' data — strip the list to their own
-      // record, and the access list to their own entry.
+    // A subcontractor (global role) may only open a project they're a guest on; a staff member
+    // granted scoped guest access is likewise treated as a guest here (unified access, CR-P-12).
+    const requesterIsGuest = isProjectGuest(project, req.user!.userId);
+    if (req.user!.role === "subcontractor" && !requesterIsGuest) {
+      return res.status(403).json({ error: "You do not have access to this project." });
+    }
+    if (requesterIsGuest) {
+      // A guest must never see other people's data — strip the subcontractor list and the access
+      // list to their own entry only.
       const me = req.user!.userId;
       const myEmail = (req.user!.email || "").toLowerCase();
       const obj = project.toObject() as unknown as {
@@ -445,14 +448,16 @@ router.post("/:id/guests", async (req: AuthedRequest, res: Response, next: NextF
     // Reuse an existing subcontractor by email, or create a new one.
     let user = await User.findOne({ email: cleanEmail });
     if (user) {
-      if (user.role !== "subcontractor") {
-        return res.status(409).json({ error: "That email belongs to a non-subcontractor account." });
+      // CR-P (12) unified access: an existing account can be granted scoped project access. Only a
+      // subcontractor login (which we manage here) has its name/password reset; a staff account
+      // (employee/admin) is NEVER mutated — we just add them to the project's guests below.
+      if (user.role === "subcontractor") {
+        if (password) user.password = await bcrypt.hash(password, 12);
+        if (name) user.name = name;
+        await user.save();
       }
-      if (password) user.password = await bcrypt.hash(password, 12);
-      if (name) user.name = name;
-      await user.save();
     } else {
-      if (!password) return res.status(400).json({ error: "Password is required for a new subcontractor." });
+      if (!password) return res.status(400).json({ error: "Password is required for a new login." });
       user = await User.create({
         name: name || cleanEmail.split("@")[0],
         email: cleanEmail,

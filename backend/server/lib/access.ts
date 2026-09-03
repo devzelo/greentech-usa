@@ -21,17 +21,30 @@ interface ProjectLike {
   guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }>;
 }
 
-/** Determine how a user relates to a project. Expired subcontractor access is denied. */
+/**
+ * Determine how a user relates to a project. Expired guest access is denied.
+ *
+ * CR-P (12) — unified access: a "guest" is anyone in project.guests[] with tabPermissions, REGARDLESS
+ * of their global role. This lets a staff member (employee/admin) be given scoped per-tab View/Edit
+ * access to a project, exactly like a subcontractor. Guest membership is checked BEFORE the broad
+ * "assigned employee" role, so a scoped grant wins over a blanket assignment. Safe for existing data:
+ * only subcontractors are currently in guests[], and they are never assigned employees.
+ */
 export function getProjectAccess(project: ProjectLike, userId: string, empId: string): ProjectAccess {
   if (project.ownerId && String(project.ownerId) === String(userId)) return { role: "owner" };
-  if (empId && (project.assignedEmployees || []).includes(empId)) return { role: "employee", empId };
-  const sub = (project.guests || []).find((g) => String(g.userId) === String(userId));
-  if (sub) {
-    // Access timeline: once the expiry passes, the subcontractor loses access automatically.
-    if (sub.expiresAt && new Date(sub.expiresAt).getTime() < Date.now()) return { role: "none" };
-    return { role: "subcontractor", perms: sub.tabPermissions || {} };
+  const guest = (project.guests || []).find((g) => String(g.userId) === String(userId));
+  if (guest) {
+    if (guest.expiresAt && new Date(guest.expiresAt).getTime() < Date.now()) return { role: "none" };
+    return { role: "subcontractor", perms: guest.tabPermissions || {} };
   }
+  if (empId && (project.assignedEmployees || []).includes(empId)) return { role: "employee", empId };
   return { role: "none" };
+}
+
+/** True when the requester's access to this project is scoped guest access (in guests[], not owner). */
+export function isProjectGuest(project: ProjectLike, userId: string): boolean {
+  if (project.ownerId && String(project.ownerId) === String(userId)) return false;
+  return (project.guests || []).some((g) => String(g.userId) === String(userId));
 }
 
 /**
