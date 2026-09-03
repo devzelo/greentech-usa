@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Bell, BellPlus, Loader2, Trash2, Pencil, X, ExternalLink, AlarmClock, AlertTriangle, Briefcase } from "lucide-react";
 import NotificationsPanel from "./NotificationsPanel";
 import StickyNotes from "./StickyNotes";
+import DateTimePicker from "./DateTimePicker";
 import {
   fetchReminders, createReminder, updateReminder, deleteReminder, fetchProjects, getAuthUser,
   fetchReminderColleagues,
@@ -54,6 +55,7 @@ export default function Reminders() {
   const [busy, setBusy] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id: string | null } | null>(null);
   const [form, setForm] = useState({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "", recipients: [] as string[], externalEmails: [] as string[] });
+  const [quickPick, setQuickPick] = useState<string | null>(null);   // CR-P (14) — highlighted quick option
   const [saving, setSaving] = useState(false);
   // CR-P-60 — colleagues for the "notify other employees" picker + external-email chip input.
   const [colleagues, setColleagues] = useState<ReminderColleague[]>([]);
@@ -113,7 +115,7 @@ export default function Reminders() {
   }, [list]);
   const overdue = useMemo(() => list.filter(isOverdue), [list]);
 
-  const openNew = () => { setForm({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "", recipients: [], externalEmails: [] }); setEmailInput(""); setEditor({ id: null }); };
+  const openNew = () => { setForm({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false, link: "", projectId: "", recipients: [], externalEmails: [] }); setEmailInput(""); setQuickPick(null); setEditor({ id: null }); };
   const openEdit = (r: ApiReminder) => {
     const d = new Date(r.dueAt); const pad = (v: number) => String(v).padStart(2, "0");
     setForm({
@@ -122,6 +124,7 @@ export default function Reminders() {
       dueAt: isNaN(d.getTime()) ? localDateTime(60) : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
     });
     setEmailInput("");
+    setQuickPick(null);
     setEditor({ id: r._id });
   };
   const save = async () => {
@@ -315,12 +318,14 @@ export default function Reminders() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quick options</p>
                 <div className="flex flex-wrap gap-1.5">
                   {[{ label: "In 1 hour", m: 60 }, { label: "Tomorrow", m: 1440 }, { label: "Next week", m: 10080 }, { label: "Next month", m: 43200 }].map((q) => (
-                    <button key={q.label} onClick={() => setForm({ ...form, dueAt: localDateTime(q.m) })} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-primary hover:text-white">{q.label}</button>
+                    <button key={q.label} type="button" onClick={() => { setForm({ ...form, dueAt: localDateTime(q.m) }); setQuickPick(q.label); }} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${quickPick === q.label ? "bg-primary text-white shadow" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>{q.label}</button>
                   ))}
                 </div>
               </div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date &amp; time
-                <input type="datetime-local" className={`${inp} mt-1`} value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} /></label>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Date &amp; time</p>
+                <DateTimePicker value={form.dueAt} onChange={(v) => { setForm({ ...form, dueAt: v }); setQuickPick(null); }} />
+              </div>
               <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={form.emailEnabled} onChange={(e) => setForm({ ...form, emailEnabled: e.target.checked })} />
                 Also email me when it's due

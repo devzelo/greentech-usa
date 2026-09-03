@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { StickyNote as StickyIcon, Plus, Trash2, Loader2 } from "lucide-react";
-import { fetchStickyNotes, createStickyNote, updateStickyNote, deleteStickyNote, type ApiStickyNote } from "../../lib/api";
+import { StickyNote as StickyIcon, Plus, Trash2, Loader2, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
+import { fetchStickyNotes, createStickyNote, updateStickyNote, deleteStickyNote, restoreStickyNote, purgeStickyNote, type ApiStickyNote } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 
@@ -10,9 +10,12 @@ const fmtWhen = (iso?: string) => {
   return isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 };
 
-// CR-P-63 — personal sticky notes on the Reminders page. Each note auto-saves (debounced while
-// typing, and on blur) and is kept until the owner deletes it.
+// CR-P-63 / CR-P (13) — personal sticky notes card on the Reminders page. Auto-saves as you type.
+// Collapsible, with a Notes / Deleted tab: deleting a note moves it to the Deleted tab (soft delete)
+// where it can be Restored or removed for good.
 export default function StickyNotes() {
+  const [view, setView] = useState<"active" | "deleted">("active");
+  const [collapsed, setCollapsed] = useState(false);
   const [notes, setNotes] = useState<ApiStickyNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -20,9 +23,11 @@ export default function StickyNotes() {
   const { confirm, dialogs } = useDialogs();
 
   useEffect(() => {
-    fetchStickyNotes().then(setNotes).catch(() => setNotes([])).finally(() => setLoading(false));
-    return () => { Object.values(timers.current).forEach(clearTimeout); };
-  }, []);
+    setLoading(true);
+    fetchStickyNotes(view === "deleted").then(setNotes).catch(() => setNotes([])).finally(() => setLoading(false));
+    const t = timers.current;
+    return () => { Object.values(t).forEach(clearTimeout); };
+  }, [view]);
 
   const add = async () => {
     setAdding(true);
@@ -30,7 +35,6 @@ export default function StickyNotes() {
     catch (e) { toast(e instanceof Error ? e.message : "Could not add note.", "error"); }
     finally { setAdding(false); }
   };
-  // Reflect the server's new updatedAt so the "Edited …" stamp stays accurate.
   const applySaved = (saved: ApiStickyNote) => setNotes((p) => p.map((n) => (n._id === saved._id ? { ...n, updatedAt: saved.updatedAt } : n)));
   const edit = (id: string, text: string) => {
     setNotes((p) => p.map((n) => (n._id === id ? { ...n, text } : n)));
@@ -39,42 +43,88 @@ export default function StickyNotes() {
   };
   const saveNow = (id: string, text: string) => { clearTimeout(timers.current[id]); updateStickyNote(id, { text }).then(applySaved).catch(() => {}); };
   const remove = async (id: string) => {
-    if (!(await confirm({ title: "Delete this note?", message: "The note and its text are removed for good.", confirmLabel: "Delete" }))) return;
+    if (!(await confirm({ title: "Delete this note?", message: "It moves to the Deleted tab, where you can restore it or remove it for good.", confirmLabel: "Delete" }))) return;
     clearTimeout(timers.current[id]);
-    try { await deleteStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); }
+    try { await deleteStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); toast("Moved to Deleted.", "info"); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
+  };
+  const restore = async (id: string) => {
+    try { await restoreStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); toast("Note restored.", "success"); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not restore.", "error"); }
+  };
+  const purge = async (id: string) => {
+    if (!(await confirm({ title: "Delete permanently?", message: "This note and its text are removed for good.", confirmLabel: "Delete forever", danger: true }))) return;
+    try { await purgeStickyNote(id); setNotes((p) => p.filter((n) => n._id !== id)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
 
   return (
-    <aside className="lg:sticky lg:top-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1.5"><StickyIcon size={14} className="text-amber-500" /> Sticky notes</p>
-        <button onClick={add} disabled={adding} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">{adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} />} Add</button>
-      </div>
-      {loading ? (
-        <div className="flex justify-center py-8 text-slate-300"><Loader2 size={18} className="animate-spin" /></div>
-      ) : notes.length === 0 ? (
-        <p className="text-[11px] text-slate-400 italic bg-amber-50/60 border border-dashed border-amber-200 rounded-2xl p-4 text-center">No notes yet. Add one — it saves automatically as you type.</p>
-      ) : (
-        <div className="space-y-3">
-          {notes.map((n) => (
-            <div key={n._id} className="rounded-2xl border border-amber-200 bg-amber-50 shadow-sm p-3">
-              <textarea
-                value={n.text}
-                onChange={(e) => edit(n._id, e.target.value)}
-                onBlur={(e) => saveNow(n._id, e.target.value)}
-                rows={4}
-                placeholder="Write a note…"
-                className="w-full bg-transparent resize-y text-sm text-slate-700 outline-none placeholder:text-amber-700/40 leading-relaxed"
-              />
-              <div className="flex items-center justify-between gap-2 mt-1">
-                <span className="text-[9px] font-bold text-amber-600/70 truncate" title={n.updatedAt ? `Last edited ${fmtWhen(n.updatedAt)}` : ""}>{n.updatedAt ? `Edited ${fmtWhen(n.updatedAt)}` : "Auto-saved"}</span>
-                <button onClick={() => remove(n._id)} className="p-1 rounded text-amber-600/60 hover:text-red-500 shrink-0" title="Delete note"><Trash2 size={13} /></button>
-              </div>
-            </div>
-          ))}
+    <aside className="lg:sticky lg:top-4">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* Header — collapsible */}
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
+          <button onClick={() => setCollapsed((c) => !c)} className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-slate-800">
+            <StickyIcon size={14} className="text-amber-500" /> Sticky notes
+            {collapsed ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronUp size={14} className="text-slate-400" />}
+          </button>
+          {!collapsed && view === "active" && (
+            <button onClick={add} disabled={adding} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">{adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} />} Add</button>
+          )}
         </div>
-      )}
+
+        {!collapsed && (
+          <div className="px-4 pb-4 space-y-3">
+            {/* Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 w-max">
+              {(["active", "deleted"] as const).map((v) => (
+                <button key={v} onClick={() => setView(v)} className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${view === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-700"}`}>{v === "active" ? "Notes" : "Deleted"}</button>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center py-8 text-slate-300"><Loader2 size={18} className="animate-spin" /></div>
+            ) : notes.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic bg-amber-50/60 border border-dashed border-amber-200 rounded-2xl p-4 text-center">
+                {view === "active" ? "No notes yet. Add one — it saves automatically as you type." : "No deleted notes."}
+              </p>
+            ) : view === "active" ? (
+              <div className="space-y-3">
+                {notes.map((n) => (
+                  <div key={n._id} className="rounded-2xl border border-amber-200 bg-amber-50 shadow-sm p-3">
+                    <textarea
+                      value={n.text}
+                      onChange={(e) => edit(n._id, e.target.value)}
+                      onBlur={(e) => saveNow(n._id, e.target.value)}
+                      rows={4}
+                      placeholder="Write a note…"
+                      className="w-full bg-transparent resize-y text-sm text-slate-700 outline-none placeholder:text-amber-700/40 leading-relaxed"
+                    />
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span className="text-[9px] font-bold text-amber-600/70 truncate" title={n.updatedAt ? `Last edited ${fmtWhen(n.updatedAt)}` : ""}>{n.updatedAt ? `Edited ${fmtWhen(n.updatedAt)}` : "Auto-saved"}</span>
+                      <button onClick={() => remove(n._id)} className="p-1 rounded text-amber-600/60 hover:text-red-500 shrink-0" title="Delete note"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notes.map((n) => (
+                  <div key={n._id} className="rounded-2xl border border-slate-200 bg-slate-50 shadow-sm p-3">
+                    <p className="text-sm text-slate-500 whitespace-pre-wrap leading-relaxed min-h-[1.25rem]">{n.text || <span className="italic text-slate-300">(empty note)</span>}</p>
+                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-100">
+                      <span className="text-[9px] font-bold text-slate-400 truncate">{n.updatedAt ? `Deleted around ${fmtWhen(n.updatedAt)}` : ""}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => restore(n._id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-50" title="Restore"><RotateCcw size={12} /> Restore</button>
+                        <button onClick={() => purge(n._id)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete forever"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       {dialogs}
     </aside>
   );

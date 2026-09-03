@@ -1762,11 +1762,13 @@ export async function deleteReminder(rid: string): Promise<void> {
 }
 
 // CR-P-63 — personal sticky notes (per user), auto-saved.
-export interface ApiStickyNote { _id: string; text: string; color: string; createdAt?: string; updatedAt?: string }
-export async function fetchStickyNotes(): Promise<ApiStickyNote[]> { return request(`/sticky-notes`); }
+export interface ApiStickyNote { _id: string; text: string; color: string; deleted?: boolean; createdAt?: string; updatedAt?: string }
+export async function fetchStickyNotes(deleted = false): Promise<ApiStickyNote[]> { return request(`/sticky-notes${deleted ? "?deleted=true" : ""}`); }
 export async function createStickyNote(body: { text?: string; color?: string } = {}): Promise<ApiStickyNote> { return request(`/sticky-notes`, { method: "POST", body: JSON.stringify(body) }); }
 export async function updateStickyNote(id: string, body: { text?: string; color?: string }): Promise<ApiStickyNote> { return request(`/sticky-notes/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteStickyNote(id: string): Promise<void> { await request(`/sticky-notes/${id}`, { method: "DELETE" }); }
+export async function restoreStickyNote(id: string): Promise<ApiStickyNote> { return request(`/sticky-notes/${id}/restore`, { method: "POST" }); }
+export async function purgeStickyNote(id: string): Promise<void> { await request(`/sticky-notes/${id}/purge`, { method: "DELETE" }); }
 
 // ── CR-P — Project Management Kanban board ───────────────────────────────────
 export interface ApiTaskColumn { _id: string; projectId: string; title: string; order: number; isDefault: boolean; key: string }

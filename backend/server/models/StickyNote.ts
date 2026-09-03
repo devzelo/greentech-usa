@@ -6,6 +6,7 @@ export interface IStickyNote extends Document {
   userId: string;
   text: string;
   color: string;
+  deleted: boolean;   // CR-P (13) — soft delete, so a deleted note can be reviewed / restored
 }
 
 const StickyNoteSchema = new Schema<IStickyNote>(
@@ -13,6 +14,7 @@ const StickyNoteSchema = new Schema<IStickyNote>(
     userId: { type: String, required: true, index: true },
     text: { type: String, default: "" },
     color: { type: String, default: "yellow" },
+    deleted: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

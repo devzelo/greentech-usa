@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BellPlus, Loader2, X } from "lucide-react";
 import { createReminder } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import DateTimePicker from "./DateTimePicker";
 
 // Drop this next to ANY record — a BOQ, an RFQ, a PO, an agreement, a proposal — to let the
 // user set a personal reminder about it. `link` deep-links the notification back to the record.
@@ -32,9 +33,11 @@ export default function ReminderButton({ title, contextLabel, link, compact, pro
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: "", notes: "", dueAt: localDateTime(60), emailEnabled: false });
+  const [quickPick, setQuickPick] = useState<string | null>(null);   // CR-P (14) — highlighted quick option
 
   const start = () => {
     setForm({ title: title || "", notes: "", dueAt: localDateTime(60), emailEnabled: false });
+    setQuickPick(null);
     setOpen(true);
   };
   const save = async () => {
@@ -87,12 +90,14 @@ export default function ReminderButton({ title, contextLabel, link, compact, pro
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quick options</p>
                 <div className="flex flex-wrap gap-1.5">
                   {QUICK.map((q) => (
-                    <button key={q.label} type="button" onClick={() => setForm({ ...form, dueAt: localDateTime(q.minutes) })} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-primary hover:text-white">{q.label}</button>
+                    <button key={q.label} type="button" onClick={() => { setForm({ ...form, dueAt: localDateTime(q.minutes) }); setQuickPick(q.label); }} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${quickPick === q.label ? "bg-primary text-white shadow" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>{q.label}</button>
                   ))}
                 </div>
               </div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Or pick a date &amp; time
-                <input type="datetime-local" className={`${inp} mt-1`} value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} /></label>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Or pick a date &amp; time</p>
+                <DateTimePicker value={form.dueAt} onChange={(v) => { setForm({ ...form, dueAt: v }); setQuickPick(null); }} />
+              </div>
               <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={form.emailEnabled} onChange={(e) => setForm({ ...form, emailEnabled: e.target.checked })} />
                 Also email me

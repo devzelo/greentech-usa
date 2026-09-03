@@ -12,8 +12,11 @@ router.param("id", (req, res, next, value) => {
 });
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-  try { res.json(await StickyNote.find({ userId: req.user!.userId }).sort({ updatedAt: -1 })); }
-  catch (err) { next(err); }
+  try {
+    // CR-P (13) — ?deleted=true lists the recycle-bin notes; otherwise only the active ones.
+    const deleted = req.query.deleted === "true";
+    res.json(await StickyNote.find({ userId: req.user!.userId, deleted: deleted ? true : { $ne: true } }).sort({ updatedAt: -1 }));
+  } catch (err) { next(err); }
 });
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
@@ -35,7 +38,25 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
     res.json(r);
   } catch (err) { next(err); }
 });
+// CR-P (13) — soft delete: move the note to the recycle bin so it can still be reviewed / restored.
 router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    await StickyNote.updateOne({ _id: req.params.id, userId: req.user!.userId }, { $set: { deleted: true } });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+// Restore a soft-deleted note back to the active list.
+router.post("/:id/restore", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const r = await StickyNote.findOne({ _id: req.params.id, userId: req.user!.userId });
+    if (!r) return res.status(404).json({ error: "Not found" });
+    r.deleted = false;
+    await r.save();
+    res.json(r);
+  } catch (err) { next(err); }
+});
+// Permanently remove a note (from the recycle bin).
+router.delete("/:id/purge", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await StickyNote.findOneAndDelete({ _id: req.params.id, userId: req.user!.userId });
     res.json({ ok: true });
