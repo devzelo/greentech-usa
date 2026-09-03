@@ -10,7 +10,7 @@ const inp = "w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 tex
 const label = "block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1";
 
 export const BLANK_COMPANY: CompanyInput = {
-  name: "", category: "vendor", logoUrl: "", address: "", phone: "", email: "", website: "",
+  name: "", category: "vendor", categories: ["vendor"], logoUrl: "", address: "", phone: "", email: "", website: "",
   contactPersons: [], banking: { bankName: "", accountName: "", accountNumber: "", iban: "", swift: "", routing: "" },
   tax: { taxId: "", registrationNo: "" }, notes: "", archived: false,
 };
@@ -32,11 +32,22 @@ export default function CompanyEditorModal({
   onSaved: (company: ApiCompany) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraftState] = useState<CompanyInput>({ ...BLANK_COMPANY, ...initial });
+  const [draft, setDraftState] = useState<CompanyInput>(() => {
+    const merged = { ...BLANK_COMPANY, ...initial };
+    // Legacy records / callers may pass only `category`; derive the multi-select set from it.
+    const cats = merged.categories && merged.categories.length ? merged.categories : (merged.category ? [merged.category] : []);
+    return { ...merged, categories: cats, category: cats[0] || merged.category };
+  });
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
 
   const setDraft = (patch: Partial<CompanyInput>) => setDraftState((d) => ({ ...d, ...patch }));
+  // Toggle a category on/off; keep `category` as the primary (first selected).
+  const toggleCat = (v: CompanyCategory) => setDraftState((d) => {
+    const cur = d.categories || [];
+    const next = cur.includes(v) ? cur.filter((c) => c !== v) : [...cur, v];
+    return { ...d, categories: next, category: next[0] || d.category };
+  });
   const cps = () => draft.contactPersons || [];
   const setCps = (list: ApiCompany["contactPersons"]) => setDraft({ contactPersons: list });
 
@@ -49,6 +60,7 @@ export default function CompanyEditorModal({
 
   const save = async () => {
     if (!String(draft.name || "").trim()) { toast("Enter a company name.", "error"); return; }
+    if (!(draft.categories && draft.categories.length)) { toast("Pick at least one category.", "error"); return; }
     setSaving(true);
     try {
       const saved = companyId ? await updateCompany(companyId, draft) : await createCompany(draft);
@@ -79,13 +91,25 @@ export default function CompanyEditorModal({
               {draft.logoUrl && <button onClick={() => setDraft({ logoUrl: "" })} className="text-[11px] font-bold text-slate-400 hover:text-red-500">Remove</button>}
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2"><label className={label}>Company name *</label><input className={inp} value={draft.name || ""} onChange={(e) => setDraft({ name: e.target.value })} placeholder="e.g. Nexans Cables" /></div>
-            <div><label className={label}>Category</label>
-              <select className={`${inp} font-semibold`} value={draft.category} onChange={(e) => setDraft({ category: e.target.value as CompanyCategory })}>
-                {COMPANY_CATEGORIES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-              </select>
+          <div><label className={label}>Company name *</label><input className={inp} value={draft.name || ""} onChange={(e) => setDraft({ name: e.target.value })} placeholder="e.g. Nexans Cables" /></div>
+          <div>
+            <label className={label}>Categories</label>
+            <div className="flex flex-wrap gap-1.5">
+              {COMPANY_CATEGORIES.map((o) => {
+                const on = (draft.categories || []).includes(o.v);
+                return (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => toggleCat(o.v)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[10px] text-slate-400 mt-1.5">Pick one or more — a company can be in several (e.g. Client and Consultant). The first selected is its primary category.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div><label className={label}>Email</label><input className={inp} value={draft.email || ""} onChange={(e) => setDraft({ email: e.target.value })} /></div>

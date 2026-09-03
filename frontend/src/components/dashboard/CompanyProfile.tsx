@@ -8,7 +8,7 @@ import {
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
   fetchCompanyTasks, companyFileUrl, withFileToken,
-  COMPANY_CATEGORIES, type ApiCompany, type CompanyCategory, type CompanyLinks, type CompanyFile, type ProfileTask,
+  COMPANY_CATEGORIES, companyCategories, type ApiCompany, type CompanyCategory, type CompanyLinks, type CompanyFile, type ProfileTask,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -44,7 +44,7 @@ export default function CompanyProfile({
   const [tab, setTab] = useState<ProfileTab>("activity");
   // CR-P — subcontractors & partners can be given a scoped login + tab access (a "user role"),
   // so their profile gets an Access tab. Other categories (clients, vendors, …) don't log in.
-  const canHaveLogin = company.category === "subcontractor" || company.category === "partner";
+  const canHaveLogin = companyCategories(company).some((c) => c === "subcontractor" || c === "partner");
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [tasks, setTasks] = useState<ProfileTask[]>([]);
@@ -147,7 +147,7 @@ export default function CompanyProfile({
           <div className="min-w-0 flex-grow">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-2xl font-display font-bold text-slate-900 truncate">{company.name}</h1>
-              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${CAT_CLS[company.category]}`}>{catLabel(company.category)}</span>
+              {companyCategories(company).map((cat) => <span key={cat} className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${CAT_CLS[cat]}`}>{catLabel(cat)}</span>)}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-3">
               {contactRow(Mail, company.email, company.email ? `mailto:${company.email}` : undefined)}

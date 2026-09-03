@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Briefcase, FileText, Users, Building2, Loader2, Eye, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchProjects, fetchAllDocuments, fetchEmployees, fetchCompanies, fetchUsers, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee, type ApiCompany, type AdminUser, COMPANY_CATEGORIES } from "../../lib/api";
+import { fetchProjects, fetchAllDocuments, fetchEmployees, fetchCompanies, fetchUsers, documentUrl, ApiProject, ApiGlobalDocument, ApiEmployee, type ApiCompany, type AdminUser, COMPANY_CATEGORIES, companyCategories } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 
 type Group = "Projects" | "Documents" | "Employees" | "Subcontractors" | "Directory" | "Users";
@@ -111,10 +111,10 @@ export default function GlobalSearch() {
     // Directory companies — subcontractors, consultants, vendors, partners, clients, etc.
     // Matchable by name, email, phone, the category label, or a contact person.
     for (const c of companies) {
-      const cat = catLabel(c.category);
+      const cats = companyCategories(c).map(catLabel);
       const contactMatch = (c.contactPersons || []).some((p) => `${p.name} ${p.email}`.toLowerCase().includes(needle));
-      if (c.name.toLowerCase().includes(needle) || (c.email || "").toLowerCase().includes(needle) || (c.phone || "").toLowerCase().includes(needle) || cat.toLowerCase().includes(needle) || contactMatch) {
-        hits.push({ group: "Directory", label: c.name, sub: `${cat}${c.email ? ` · ${c.email}` : ""}`, to: `/dashboard/directory?open=${c._id}`, icon: Building2 });
+      if (c.name.toLowerCase().includes(needle) || (c.email || "").toLowerCase().includes(needle) || (c.phone || "").toLowerCase().includes(needle) || cats.some((l) => l.toLowerCase().includes(needle)) || contactMatch) {
+        hits.push({ group: "Directory", label: c.name, sub: `${cats.join(", ")}${c.email ? ` · ${c.email}` : ""}`, to: `/dashboard/directory?open=${c._id}`, icon: Building2 });
       }
     }
     // Platform users (login accounts) — by name, email, employee ID or role.

@@ -2251,7 +2251,10 @@ export const COMPANY_CATEGORIES: { v: CompanyCategory; label: string }[] = [
 export interface ApiCompany {
   _id: string;
   name: string;
+  // CR-P — a company can belong to several categories. `categories` is the full set; `category`
+  // is the primary (categories[0]) kept for readers that need a single value. Use companyCategories().
   category: CompanyCategory;
+  categories?: CompanyCategory[];
   logoUrl: string;
   address: string;
   phone: string;
@@ -2268,6 +2271,10 @@ export interface ApiCompany {
   pendingUpdate?: { data: string; submittedAt: string; submittedBy?: string } | null;
 }
 export type CompanyInput = Partial<Omit<ApiCompany, "_id" | "createdByName" | "createdAt" | "registerToken" | "pendingUpdate">>;
+/** The full category set for a company, falling back to the legacy single `category` for older records. */
+export function companyCategories(c: { category?: CompanyCategory; categories?: CompanyCategory[] }): CompanyCategory[] {
+  return c.categories && c.categories.length ? c.categories : (c.category ? [c.category] : []);
+}
 export interface PublicCompany { name: string; category: string; logoUrl: string; address: string; phone: string; email: string; website: string; contactPersons: ApiCompany["contactPersons"]; banking: ApiCompany["banking"]; tax: ApiCompany["tax"] }
 export async function fetchCompanies(category?: CompanyCategory, archived = false): Promise<ApiCompany[]> {
   const q = new URLSearchParams();

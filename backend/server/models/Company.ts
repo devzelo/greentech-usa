@@ -13,7 +13,11 @@ export const COMPANY_CATEGORIES: CompanyCategory[] = [
 
 export interface ICompany extends Document {
   name: string;
+  // CR-P — a company can belong to several categories at once (e.g. client AND consultant).
+  // `categories` is the full set; `category` is kept as the primary (categories[0]) so every
+  // existing reader that expects a single value (RFQ/PO/invoice snapshots, pickers) keeps working.
   category: CompanyCategory;
+  categories: CompanyCategory[];
   logoUrl: string;
   address: string;
   phone: string;
@@ -35,6 +39,7 @@ const CompanySchema = new Schema<ICompany>(
   {
     name: { type: String, required: true, index: true },
     category: { type: String, enum: COMPANY_CATEGORIES, default: "vendor", index: true },
+    categories: { type: [{ type: String, enum: COMPANY_CATEGORIES }], default: [], index: true },
     logoUrl: { type: String, default: "" },
     address: { type: String, default: "" },
     phone: { type: String, default: "" },

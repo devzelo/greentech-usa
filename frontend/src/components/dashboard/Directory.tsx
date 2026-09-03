@@ -5,7 +5,7 @@ import {
   fetchCompanies, updateCompany, deleteCompany,
   generateCompanyRegisterLink, resolveCompanyPending, syncCompaniesFromProjects,
   withFileToken,
-  COMPANY_CATEGORIES, type ApiCompany, type CompanyInput, type CompanyCategory,
+  COMPANY_CATEGORIES, companyCategories, type ApiCompany, type CompanyInput, type CompanyCategory,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -71,7 +71,7 @@ export default function Directory() {
     const q = search.trim().toLowerCase();
     if (!q) return companies;
     return companies.filter((c) =>
-      [c.name, c.email, c.phone, c.address, ...(c.contactPersons || []).map((p) => `${p.name} ${p.email}`)]
+      [c.name, c.email, c.phone, c.address, ...companyCategories(c).map(catLabel), ...(c.contactPersons || []).map((p) => `${p.name} ${p.email}`)]
         .join(" ").toLowerCase().includes(q));
   }, [companies, search]);
 
@@ -222,7 +222,7 @@ export default function Directory() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span></td>
+                    <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{companyCategories(c).map((cat) => <span key={cat} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[cat]}`}>{catLabel(cat)}</span>)}</div></td>
                     <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.email || "—"}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.phone || "—"}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.address || "—"}</td>
@@ -252,7 +252,7 @@ export default function Directory() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 truncate group-hover:text-primary">{c.name}</p>
-                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[c.category]}`}>{catLabel(c.category)}</span>
+                    <div className="flex flex-wrap gap-1 mt-1">{companyCategories(c).map((cat) => <span key={cat} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[cat]}`}>{catLabel(cat)}</span>)}</div>
                   </div>
                 </button>
                 <div className="flex items-center gap-1 shrink-0">

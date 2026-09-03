@@ -3,7 +3,7 @@ import crypto from "crypto";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import Company from "../models/Company";
+import Company, { COMPANY_CATEGORIES } from "../models/Company";
 import CompanyFile from "../models/CompanyFile";
 import Invoice from "../models/Invoice";
 import Rfq from "../models/Rfq";
@@ -30,13 +30,27 @@ const SELF_FIELDS = ["name", "logoUrl", "address", "phone", "email", "website", 
 const router = Router();
 router.use(requireAuth);
 
-const FIELDS = ["name", "category", "logoUrl", "address", "phone", "email", "website", "contactPersons", "banking", "tax", "notes", "archived"] as const;
+const FIELDS = ["name", "category", "categories", "logoUrl", "address", "phone", "email", "website", "contactPersons", "banking", "tax", "notes", "archived"] as const;
 
-// List — optional ?category= filter and ?archived=true (default hides archived).
+// CR-P — a company can hold several categories. Keep `categories` (the full set) and `category`
+// (the primary = categories[0]) in sync on every write, whichever the client sent.
+const CATS = new Set<string>(COMPANY_CATEGORIES as unknown as string[]);
+function normalizeCategories(body: Record<string, unknown>) {
+  let cats = Array.isArray(body.categories) ? (body.categories as unknown[]).map(String).filter((c) => CATS.has(c)) : undefined;
+  if (cats) {
+    cats = [...new Set(cats)];
+    if (cats.length) { body.categories = cats; body.category = cats[0]; }
+    else delete body.categories;   // never wipe to empty — leave the existing set
+  } else if (typeof body.category === "string" && CATS.has(body.category)) {
+    body.categories = [body.category];
+  }
+}
+
+// List — optional ?category= filter (matches the primary OR the categories set) and ?archived=true.
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const filter: Record<string, unknown> = {};
-    if (req.query.category) filter.category = String(req.query.category);
+    if (req.query.category) { const c = String(req.query.category); filter.$or = [{ category: c }, { categories: c }]; }
     filter.archived = req.query.archived === "true" ? true : { $ne: true };
     res.json(await Company.find(filter).sort({ name: 1 }).lean());
   } catch (err) { next(err); }
@@ -55,6 +69,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const body: Record<string, unknown> = { createdByName: req.user?.name || "" };
     for (const f of FIELDS) if (f in (req.body || {})) body[f] = req.body[f];
     if (!String(body.name || "").trim()) return res.status(400).json({ error: "Company name is required." });
+    normalizeCategories(body);
     res.status(201).json(await Company.create(body));
   } catch (err) { next(err); }
 });
@@ -63,6 +78,7 @@ router.patch("/:id", async (req: AuthedRequest, res: Response, next: NextFunctio
   try {
     const patch: Record<string, unknown> = {};
     for (const f of FIELDS) if (f in (req.body || {})) patch[f] = req.body[f];
+    normalizeCategories(patch);
     const c = await Company.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
     if (!c) return res.status(404).json({ error: "Company not found." });
     res.json(c);
@@ -100,7 +116,7 @@ router.post("/sync-from-projects", async (req: AuthedRequest, res: Response, nex
       const n = (name || "").trim();
       if (!n || seen.has(key(n))) return;
       seen.add(key(n));
-      toCreate.push({ name: n, category, createdByName: req.user?.name || "Sync", ...extra });
+      toCreate.push({ name: n, category, categories: [category], createdByName: req.user?.name || "Sync", ...extra });
       added[category] += 1;
     };
     for (const p of projects as Array<Record<string, any>>) {
