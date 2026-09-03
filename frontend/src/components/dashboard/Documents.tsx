@@ -14,6 +14,7 @@ import { sectionToPath } from "../../lib/docTree";
 import { locationFlag } from "../../lib/countryFlag";
 import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
+import InlineEditText from "./InlineEditText";
 import CompanyDocs from "./CompanyDocs";
 import ClassifiedDocs from "./ClassifiedDocs";
 import { ClassifiedPinManager, ClassifiedPinGate } from "./ClassifiedPin";
@@ -90,9 +91,6 @@ export default function Documents() {
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [view, setView] = useState<ViewMode>("list");
   const [selected, setSelected] = useState<ApiGlobalDocument | null>(null);
-  // CR-P-07 — in the card view the per-file description is hidden by default; the user
-  // reveals it with a subtle "+ note" opt-in (kept for RFP appendix labels).
-  const [descOpen, setDescOpen] = useState<Set<string>>(new Set());
   const [highlightId, setHighlightId] = useState<string | null>(null);
   // Folder-drill navigation: pick a project → tab → section group. Null = top level.
   const [browse, setBrowse] = useState<{ pid?: string; tabId?: string; group?: string }>({});
@@ -421,16 +419,12 @@ export default function Documents() {
                           </div>
                         </td>
                         <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                          {canEditDocs ? (
-                            <input
-                              defaultValue={folderNotes[folderNoteKey(f.projectId, f.folderKey)] || ""}
-                              onBlur={(e) => saveFolderNote(f.projectId, f.folderKey, e.target.value)}
-                              placeholder="Add a description…"
-                              className="w-full min-w-[10rem] bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 rounded px-2 py-1.5 text-xs font-medium text-slate-600 outline-none"
-                            />
-                          ) : (
-                            <span className="text-xs text-slate-500">{folderNotes[folderNoteKey(f.projectId, f.folderKey)] || "—"}</span>
-                          )}
+                          <InlineEditText
+                            value={folderNotes[folderNoteKey(f.projectId, f.folderKey)] || ""}
+                            canEdit={canEditDocs}
+                            onSave={(v) => saveFolderNote(f.projectId, f.folderKey, v)}
+                            inputClassName="flex-grow min-w-[10rem] bg-white border border-slate-200 focus:ring-2 focus:ring-primary/20 rounded px-2 py-1.5 text-xs font-medium text-slate-600 outline-none"
+                          />
                         </td>
                         <td className="px-6 py-4 text-xs font-bold text-slate-400">{f.count} file{f.count === 1 ? "" : "s"}</td>
                         <td className="px-6 py-4 text-right"><ChevronRight size={16} className="text-slate-300 group-hover:text-primary inline-block" /></td>
@@ -468,16 +462,14 @@ export default function Documents() {
                     </div>
                     <ChevronRight size={16} className="text-slate-300 group-hover:text-primary flex-shrink-0" />
                   </button>
-                  {canEditDocs ? (
-                    <input
-                      defaultValue={folderNotes[folderNoteKey(f.projectId, f.folderKey)] || ""}
-                      onBlur={(e) => saveFolderNote(f.projectId, f.folderKey, e.target.value)}
-                      placeholder="Add a description…"
-                      className="w-full bg-slate-50 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-primary/20 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 outline-none"
-                    />
-                  ) : folderNotes[folderNoteKey(f.projectId, f.folderKey)] ? (
-                    <p className="text-[11px] text-slate-500">{folderNotes[folderNoteKey(f.projectId, f.folderKey)]}</p>
-                  ) : null}
+                  <InlineEditText
+                    value={folderNotes[folderNoteKey(f.projectId, f.folderKey)] || ""}
+                    canEdit={canEditDocs}
+                    onSave={(v) => saveFolderNote(f.projectId, f.folderKey, v)}
+                    emptyText=""
+                    className="text-[11px] text-slate-500"
+                    inputClassName="flex-grow min-w-0 bg-white border border-slate-200 focus:ring-2 focus:ring-primary/20 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 outline-none"
+                  />
                   </div>
                 </div>
               ))}
@@ -521,16 +513,12 @@ export default function Documents() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {canEditDocs ? (
-                        <input
-                          defaultValue={d.description || ""}
-                          onBlur={(e) => saveDescription(d, e.target.value)}
-                          placeholder="Add a description…"
-                          className="w-full min-w-[10rem] bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 rounded px-2 py-1.5 text-xs font-medium text-slate-600 outline-none"
-                        />
-                      ) : (
-                        <span className="text-xs text-slate-500">{d.description || "—"}</span>
-                      )}
+                      <InlineEditText
+                        value={d.description || ""}
+                        canEdit={canEditDocs}
+                        onSave={(v) => saveDescription(d, v)}
+                        inputClassName="flex-grow min-w-[10rem] bg-white border border-slate-200 focus:ring-2 focus:ring-primary/20 rounded px-2 py-1.5 text-xs font-medium text-slate-600 outline-none"
+                      />
                     </td>
                     <td className="px-6 py-4">
                       <button
@@ -572,22 +560,15 @@ export default function Documents() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{d.projectName}</p>
                 <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">{sectionLabel(d.section)}</p>
               </button>
-              {/* Per-file description — hidden by default (CR-P-07); shown when set or opted in. */}
-              {canEditDocs ? (
-                d.description || descOpen.has(d._id) ? (
-                  <input
-                    autoFocus={descOpen.has(d._id) && !d.description}
-                    defaultValue={d.description || ""}
-                    onBlur={(e) => saveDescription(d, e.target.value)}
-                    placeholder="Add a description…"
-                    className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-100 focus:ring-2 focus:ring-primary/20 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 outline-none"
-                  />
-                ) : (
-                  <button onClick={() => setDescOpen((s) => new Set(s).add(d._id))} className="text-[10px] font-semibold text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">+ note</button>
-                )
-              ) : d.description ? (
-                <p className="text-[11px] text-slate-500">{d.description}</p>
-              ) : null}
+              {/* Per-file description — inline edit → save (CR-P-06). */}
+              <InlineEditText
+                value={d.description || ""}
+                canEdit={canEditDocs}
+                onSave={(v) => saveDescription(d, v)}
+                emptyText=""
+                className="text-[11px] text-slate-500"
+                inputClassName="flex-grow min-w-0 bg-white border border-slate-200 focus:ring-2 focus:ring-primary/20 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-600 outline-none"
+              />
               <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                 <span className="text-[10px] font-bold text-slate-400">{d.size} · {formatDate(d.uploadedAt)}</span>
                 <div className="flex gap-1">
