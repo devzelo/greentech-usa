@@ -231,12 +231,17 @@ async function ensureSeeded() {
       { $setOnInsert: { tabId: STAMP_TAB_ID, label: "Stamps", parentId: "", order: 1, system: true, kind: "classified" } },
       { upsert: true }
     );
-    // Dedicated NDA Files tab (classified) — admin uploads reusable NDAs; agreement authors pick from it.
+    // CR-P (09) — NDA Files tab now lives under COMPANY documents (moved out of classified). Admin
+    // uploads reusable NDAs; agreement authors still pick from it via /nda-files.
     await CompanyTab.updateOne(
       { tabId: NDA_TAB_ID },
-      { $setOnInsert: { tabId: NDA_TAB_ID, label: "NDA Files", parentId: "", order: 2, system: true, kind: "classified" } },
+      { $setOnInsert: { tabId: NDA_TAB_ID, label: "NDA Files", parentId: "", order: 900, system: true, kind: "company" } },
       { upsert: true }
     );
+    // Migrate any pre-existing NDA tab + its files from classified → company (idempotent). The files'
+    // stored urls are unchanged; only the `kind` (which area lists them) moves.
+    await CompanyTab.updateOne({ tabId: NDA_TAB_ID, kind: { $ne: "company" } }, { $set: { kind: "company" } });
+    await CompanyFile.updateMany({ tabId: NDA_TAB_ID, kind: { $ne: "company" } }, { $set: { kind: "company" } });
   })();
   try { await seeding; } finally { seeding = null; }
 }
@@ -348,12 +353,13 @@ router.get("/stamps", async (_req: AuthedRequest, res: Response, next: NextFunct
   }
 });
 
-// GET /api/company/nda-files — reusable NDA files (the classified NDA Files tab), readable by any
-// staff member so they can attach an NDA to an agreement without full classified access.
+// GET /api/company/nda-files — reusable NDA files (the NDA Files tab, now under Company documents),
+// readable by any staff member so they can attach an NDA to an agreement.
 router.get("/nda-files", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await ensureSeeded();
-    const files = await CompanyFile.find({ kind: "classified", tabId: NDA_TAB_ID }).sort({ createdAt: -1 }).lean();
+    // Kind-agnostic (tabId is unique to NDA) so it works before/after the classified → company move.
+    const files = await CompanyFile.find({ tabId: NDA_TAB_ID }).sort({ createdAt: -1 }).lean();
     res.json(files);
   } catch (err) {
     next(err);
