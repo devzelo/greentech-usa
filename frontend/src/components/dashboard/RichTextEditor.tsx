@@ -5,6 +5,7 @@ import {
   Image as ImageIcon, Table as TableIcon, Loader2, Baseline, Highlighter,
   Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2,
 } from "lucide-react";
+import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS } from "../../lib/docStyle";
 
 /**
  * Rich-text editor backed by a contentEditable surface. Emits HTML via onChange
@@ -58,8 +59,10 @@ const HIGHLIGHTS = [
   "#bfdbfe", "#e9d5ff", "#fbcfe8", "transparent",
 ];
 
-const CELL_BORDER = "border:1px solid #cbd5e1;padding:6px;min-width:60px;";
-const HEAD_STYLE = CELL_BORDER + "background:#f1f5f9;font-weight:700;text-align:left;";
+// CR-P (41) — table styling comes from the shared document style system, so a table looks the
+// same while it is being typed as it does once the document is printed.
+const CELL_BORDER = TABLE_CELL_CSS;
+const HEAD_STYLE = TABLE_HEAD_CSS;
 
 export default function RichTextEditor({
   value,
@@ -86,6 +89,7 @@ export default function RichTextEditor({
   const [menu, setMenu] = useState<null | "style" | "font" | "size" | "color" | "highlight" | "table">(null);
   const [selImg, setSelImg] = useState<HTMLImageElement | null>(null);
   const [tableDims, setTableDims] = useState({ rows: 3, cols: 3 });
+  const [tableTitle, setTableTitleInput] = useState("");   // CR-P (40)
   const [fullscreen, setFullscreen] = useState(false); // CR-B-02 — bigger editing area
   // Active formatting under the caret — drives the toolbar's "what's selected" highlighting.
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, strike: false, ul: false, ol: false, block: "P", font: "" });
@@ -232,14 +236,38 @@ export default function RichTextEditor({
   };
 
   // ── Tables ────────────────────────────────────────────────────────────────
-  const insertTable = (rows: number, cols: number) => {
+  // CR-P (40) — the table's title is its own <caption>, not a paragraph above it. A paragraph
+  // drifted away from the table ("this is too far from the table"); a caption is part of the
+  // table element, so it can never separate from it however the document reflows.
+  const escapeHtmlText = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const nextTableNo = () => (ref.current?.querySelectorAll("table").length || 0) + 1;
+  const insertTable = (rows: number, cols: number, title: string) => {
     const r = Math.max(1, Math.min(30, rows));
     const c = Math.max(1, Math.min(12, cols));
     const cell = (tag: "th" | "td", text: string) => `<${tag} style="${tag === "th" ? HEAD_STYLE : CELL_BORDER}">${text}</${tag}>`;
     const head = `<tr>${Array.from({ length: c }, (_, i) => cell("th", `Header ${i + 1}`)).join("")}</tr>`;
     const bodyRow = `<tr>${Array.from({ length: c }, () => cell("td", "&nbsp;")).join("")}</tr>`;
     const body = Array.from({ length: r - 1 }, () => bodyRow).join("");
-    insertHtml(`<table style="border-collapse:collapse;width:100%;margin:8px 0;" border="1"><tbody>${head}${body}</tbody></table><p><br/></p>`);
+    const caption = title.trim() ? `<caption style="${TABLE_CAPTION_CSS}">${escapeHtmlText(title.trim())}</caption>` : "";
+    insertHtml(`<table style="border-collapse:collapse;width:100%;margin:8px 0;" border="1">${caption}<tbody>${head}${body}</tbody></table><p><br/></p>`);
+  };
+
+  // Add or edit the title of the table the caret is inside.
+  const setTableTitle = () => {
+    const tbl = selectedTable();
+    if (!tbl) return;
+    const existing = tbl.querySelector("caption");
+    const next = window.prompt("Table title", existing?.textContent || `Table ${nextTableNo() - 1}: `);
+    if (next === null) return;
+    if (!next.trim()) { existing?.remove(); emit(); return; }
+    if (existing) existing.textContent = next.trim();
+    else {
+      const cap = document.createElement("caption");
+      cap.setAttribute("style", TABLE_CAPTION_CSS);
+      cap.textContent = next.trim();
+      tbl.insertBefore(cap, tbl.firstChild);
+    }
+    emit();
   };
 
   const selectedTable = (): HTMLTableElement | null => {
@@ -472,13 +500,23 @@ export default function RichTextEditor({
                   <label className="flex items-center gap-1 text-xs text-slate-600">Cols
                     <input type="number" min={1} max={12} value={tableDims.cols} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => setTableDims((d) => ({ ...d, cols: Number(e.target.value) }))} className="w-12 bg-slate-50 border border-slate-200 rounded-md px-1.5 py-1 text-xs" />
                   </label>
-                  <button type="button" onMouseDown={(e) => { e.preventDefault(); insertTable(tableDims.rows, tableDims.cols); closeMenu(); }}
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); insertTable(tableDims.rows, tableDims.cols, tableTitle); setTableTitleInput(""); closeMenu(); }}
                     className="px-2 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-primary">Insert</button>
                 </div>
+                {/* CR-P (40) — the title goes in with the table, sitting tight above it. */}
+                <input
+                  value={tableTitle}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onChange={(e) => setTableTitleInput(e.target.value)}
+                  placeholder={`Table title (optional), e.g. "Table ${nextTableNo()}: Salary list"`}
+                  className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs"
+                />
               </div>
               <div className="border-t border-slate-100 pt-1">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-1">Edit table (click inside first)</p>
                 <div className="grid grid-cols-2 gap-1">
+                  {/* CR-P (40) — title an existing table, or clear it by leaving the box empty. */}
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); setTableTitle(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-slate-100 text-slate-700 col-span-2"><Type size={13} /> Table title</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); addRow(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-slate-100 text-slate-700"><Rows3 size={13} /> Add row</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); addCol(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-slate-100 text-slate-700"><Columns3 size={13} /> Add column</button>
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); deleteRow(); }} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs hover:bg-rose-50 text-rose-600"><Trash2 size={13} /> Del row</button>

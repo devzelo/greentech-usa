@@ -136,7 +136,9 @@ export default function CompanyAccessManager({ company, involvedProjects }: {
         await updateGuest(modalProject.id, existingGuest.userId, { tabPermissions, password: password.trim() || undefined, expiresAt: resolveExpiry() });
         toast("Access updated.", "success");
       } else {
-        await createGuest(modalProject.id, { name: company.name, email, password: password.trim(), tabPermissions, expiresAt: resolveExpiry() });
+        // CR-P (16) — companyId hard-links the login to this Directory company and also creates
+        // the project's subcontractor row, so the project workspace sees the grant too.
+        await createGuest(modalProject.id, { name: company.name, email, password: password.trim(), tabPermissions, expiresAt: resolveExpiry(), companyId: company._id });
         toast("Login created & access granted. Share the email and password with them.", "success");
       }
       closeModal();

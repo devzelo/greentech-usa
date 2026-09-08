@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Upload, Image as ImageIcon, X, Loader2 } from "lucide-react";
 import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -32,6 +32,19 @@ export default function ProposalCoverBuilder({
   onCoverChange: (next: ProposalCover) => void;
   canEdit: boolean;
 }) {
+  // CR-P (91) — the project decides this, once. The cover follows it and keeps itself in step, so
+  // a project switched to a joint venture later does not leave old proposals on a single logo.
+  const isJvProject = !!project.jointVenture?.enabled;
+  const jvProjectLogo = project.jointVenture?.logo || "";
+  useEffect(() => {
+    const wantMode = isJvProject ? "dual" : "single";
+    const wantLogo = isJvProject ? (cover.jvLogoUrl || jvProjectLogo) : "";
+    if (cover.logoMode !== wantMode || cover.jvLogoUrl !== wantLogo) {
+      onCoverChange({ ...cover, logoMode: wantMode, jvLogoUrl: wantLogo });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJvProject, jvProjectLogo]);
+
   const [uploading, setUploading] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const imgInput = useRef<HTMLInputElement>(null);
@@ -87,20 +100,18 @@ export default function ProposalCoverBuilder({
           ))}
         </div>
 
-        {/* Logos */}
+        {/* Logos — CR-P (91): whether this is a joint venture is decided ONCE, when the project is
+            created, so the cover must not ask again: "this project, we're going to choose it at the
+            beginning, whether it's joint venture or not... so it's not a question here." The mode is
+            read from the project, and the partner logo comes from the project's JV partner (which
+            itself comes from the Directory), so nothing is re-uploaded per proposal. */}
         <div className="border-t border-slate-100 pt-4 space-y-3">
           <label className={lbl}>Logo</label>
-          <div className="flex flex-wrap items-center gap-2">
-            {(["single", "dual"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => canEdit && setCover("logoMode", m)}
-                disabled={!canEdit}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${cover.logoMode === m ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
-              >
-                {m === "single" ? "GreenTech only" : "Joint Venture (dual)"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold">
+              {isJvProject ? `Joint venture${project.jointVenture?.partnerName ? ` with ${project.jointVenture.partnerName}` : ""} — both logos` : "GreenTech only"}
+            </span>
+            <span className="text-[10px] text-slate-400 italic">Set in Project Identity, not here.</span>
           </div>
           {cover.logoMode === "dual" && (
             <div className="flex items-center gap-3">

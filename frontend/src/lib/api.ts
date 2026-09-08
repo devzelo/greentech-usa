@@ -96,8 +96,11 @@ export interface ApiUser {
   role: string;
   empId?: string;
   phone?: string;
+  personalEmail?: string;
+  homeAddress?: string;
   avatarUrl?: string;
   signatureUrl?: string;
+  resumeFile?: ApiResumeFile; // CR-P (16) — uploaded CV shown on the profile
   jobTitle?: string;
   backupEnabled?: boolean;
   backupDay?: number;
@@ -499,6 +502,9 @@ export interface ApiEmployee {
   empId: string;      // assignment id — only users with one are assignable to projects
   name: string;
   role?: string;      // account role (admin | employee)
+  /** CR-P (78) - the position, shown beside the name on a project's assigned team. */
+  jobTitle?: string;
+  email?: string;
 }
 
 // Map Mongoose doc (projectId field) → frontend shape (id field)
@@ -637,6 +643,42 @@ export interface UserLinks {
   projectNames?: Record<string, string>;
 }
 export async function fetchUserLinks(id: string): Promise<UserLinks> { return request(`/users/${id}/links`); }
+
+// ── CR-P (16) — self profile preview (works for every role, guests included) ─
+export interface MyLinks extends UserLinks {
+  invoices: Array<{ _id: string; number?: string; type?: string; party?: string; amount?: string; date?: string; status?: string; projectId?: string }>;
+  rfqs: Array<{ _id: string; rfqNo?: string; title?: string; status?: string; projectId?: string; sentAt?: string }>;
+  quotes: Array<{ _id: string; rfqId?: string; total?: string; status?: string; accepted?: boolean; projectId?: string }>;
+  shipments: Array<{ _id: string; name?: string; status?: string; etaDate?: string; agencyName?: string; projectId?: string }>;
+  subInvoices: Array<{ _id: string; description?: string; amount?: string; date?: string; approval?: string; projectId?: string; subId?: string }>;
+  // The Directory company this login belongs to (subcontractor/partner logins only).
+  company: { id: string; name: string; email: string; logoUrl: string; address: string; phone: string; website: string; categories: string[] } | null;
+}
+export async function fetchMyLinks(): Promise<MyLinks> { return request('/me/links'); }
+export async function fetchMyTasks(): Promise<ProfileTask[]> { return request('/me/tasks'); }
+export async function fetchMyFiles(): Promise<UserFile[]> { return request('/me/files'); }
+
+// CR-P (16) — named signatures with a default (the default also feeds signatureUrl everywhere).
+export interface ApiSignature { id: string; label: string; url: string; isDefault: boolean }
+export async function fetchMySignatures(): Promise<ApiSignature[]> { return request('/me/signatures'); }
+export async function uploadMySignature(file: File, label: string): Promise<ApiSignature[]> {
+  const fd = new FormData(); fd.append('file', file); fd.append('label', label);
+  return postMultipart<ApiSignature[]>('/api/me/signatures', fd);
+}
+export async function updateMySignature(id: string, body: { label?: string; isDefault?: boolean }): Promise<ApiSignature[]> {
+  return request(`/me/signatures/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+export async function deleteMySignature(id: string): Promise<ApiSignature[]> {
+  return request(`/me/signatures/${id}`, { method: 'DELETE' });
+}
+
+// CR-P (16) — a plain uploaded CV on the profile (separate from the resume builder).
+export interface ApiResumeFile { name: string; filePath: string; size: string }
+export async function uploadMyResumeFile(file: File): Promise<ApiResumeFile> {
+  const fd = new FormData(); fd.append('file', file);
+  return postMultipart<ApiResumeFile>('/api/me/resume-file', fd);
+}
+export async function deleteMyResumeFile(): Promise<void> { await request('/me/resume-file', { method: 'DELETE' }); }
 
 export async function adminResetPassword(id: string, password: string): Promise<{ message: string }> {
   return request<{ message: string }>(`/users/${id}/reset-password`, {
@@ -782,6 +824,7 @@ export async function createGuest(projectId: string, body: {
   tabPermissions: Record<string, GuestTabPermission>;
   alsoAssignProjectIds?: string[];
   expiresAt?: string | null;
+  companyId?: string;  // CR-P (16) — hard-links the login to its Directory company and syncs the project's subcontractor row
 }): Promise<ApiGuest & { assignedTo: string[] }> {
   return request(`/projects/${projectId}/guests`, { method: 'POST', body: JSON.stringify(body) });
 }
@@ -935,6 +978,8 @@ export function attachmentUrl(filePath: string): string {
 
 // ── Saved document versions (frozen PDF/Excel copies with history) ────────────
 export type SavedDocKind = "proposal" | "boq" | "rfq" | "po" | "resume";
+/** CR-P (83) - a produced document's lifecycle, wide enough for a proposal revision. */
+export type SavedDocStatus = "draft" | "final" | "sent" | "submitted" | "awarded" | "not-awarded";
 export interface ApiSavedDocument {
   _id: string;
   kind: SavedDocKind;
@@ -943,7 +988,7 @@ export interface ApiSavedDocument {
   version: number;
   title: string;
   note: string;
-  status: "draft" | "final";
+  status: SavedDocStatus;
   fileName: string;
   filePath: string;
   fileType: string;
@@ -951,7 +996,7 @@ export interface ApiSavedDocument {
   createdByName: string;
   createdAt: string;
 }
-interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: "draft" | "final" }
+interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus }
 
 async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): Promise<T> {
   const token = getAuthToken();
@@ -976,7 +1021,7 @@ export async function saveDocumentVersion(projectId: string, meta: SaveMeta, fil
   return postMultipart(`/api/projects/${projectId}/saved-documents`, fd);
 }
 
-export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: 'draft' | 'final' }) {
+export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus }) {
   return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
@@ -2004,33 +2049,56 @@ export type AgreementEntityType = "partner" | "subcontractor" | "vendor";
 export interface ApiAgreementParty { name: string; contactName: string; address: string; email: string; phone: string; logoUrl: string;
   /** CR-PR-09 — the Directory company this party is. Empty for employees and legacy rows. */
   companyId?: string }
-export interface ApiAgreementFile { _id: string; name: string; filePath: string; fileType: string; size: string; kind: string }
-export interface ApiAgreementSections { scope: string; terms: string; paymentConditions: string; deliveryConditions: string; ndaEnabled: boolean; ndaMode?: "text" | "file"; ndaText: string; ndaFile?: { name: string; url: string } | null }
+export interface ApiAgreementFile { _id: string; name: string; filePath: string; fileType: string; size: string; kind: string; print?: boolean; placement?: "after" | "end" }
+export interface ApiAgreementSections { scope: string; terms: string; paymentConditions: string; deliveryConditions: string;
+  ndaEnabled: boolean; ndaMode?: "text" | "file"; ndaText: string; ndaFile?: { name: string; url: string } | null;
+  /** CR-P (45) - standard terms & conditions, stapled after the signatures like the NDA. */
+  stdTermsEnabled?: boolean; stdTermsMode?: "text" | "file"; stdTermsText?: string; stdTermsFile?: { name: string; url: string } | null;
+}
 export interface ApiAgreement {
   _id: string;
   ownerContextType: "user" | "project" | "general";
   ownerUserId: string; ownerProjectId: string; ownerEntityType: "" | AgreementEntityType; ownerEntityId: string;
   name: string; title?: string; description?: string; agreementType: string; templateId: string;
+  /** CR-P (23) — AG-0001, AG-0002, … Assigned by the server at creation, never reused, read-only. */
+  agreementNo?: string;
   /** CR-PR-11 — projects this agreement covers (a general agreement may span several). */
-  linkedProjects?: Array<{ id: string; name: string }>;
+  linkedProjects?: Array<{ id: string; name: string; location?: string }>;
   effectiveDate: string; startDate: string; endDate: string;
+  // CR-P (21) — which dates print. A date shows only when its flag is on and it has a value.
+  datesShown?: { effective: boolean; start: boolean; end: boolean };
+  /** CR-P (33) - authoring status of the whole document (separate from the lifecycle `status`). */
+  docStatus?: string;
   status: AgreementStatus;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
+  /** CR-P (30) - the Directory company chosen as the JV partner behind a "jv" letterhead. */
+  jvPartnerId?: string; jvPartnerName?: string;
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
-  partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; contextLines: Array<{ label: string; value: string }> };
+  // CR-P (19) — extraParties holds party 3 and party 4 (max 2); party1/party2 stay as they were.
+  partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; extraParties?: ApiAgreementParty[]; contextLines: Array<{ label: string; value: string }> };
   sections: ApiAgreementSections;
   signatures: {
     company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
     recipient: { signerName: string; signatureUrl: string; stampUrl: string; signedAt: string; method: "" | "account" | "upload" };
+    /** CR-P (46) - parties 3 and 4, indexed to match partySnapshot.extraParties. */
+    extra?: Array<{ signerName: string; signerTitle?: string; signatureUrl: string; stampUrl: string; signedAt: string; method: "" | "account" | "upload" }>;
   };
   signedDocument: { name: string; filePath: string; fileType: string; size: string } | null;
   attachments: ApiAgreementFile[];
   activity: Array<{ at: string; actorName: string; action: string; note: string }>;
   sentAt: string; addedById: string; addedByName: string; createdAt?: string;
+  /** CR-P (62)/(63) - the parties allowed to see this agreement. */
+  visibleTo?: Array<{ companyId: string; name: string; email: string; grantedAt: string; grantedByName: string }>;
+  /** CR-P (61) - every send, so we know who already has it and when. */
+  shares?: Array<{ companyId: string; name: string; email: string; purpose: string; sentAt: string; sentByName: string; note: string }>;
+  /** CR-P (49) - last modified, shown as its own column in the agreements table. */
+  updatedAt?: string;
+  /** CR-P (52) - signed copies that were replaced, oldest first. */
+  signedDocumentHistory?: Array<{ name: string; filePath: string; fileType: string; size: string; replacedAt: string; replacedByName: string }>;
 }
 export interface ApiAgreementTemplate {
   _id: string; name: string; agreementType: string; contextType: "user" | "project" | "general";
@@ -2054,19 +2122,31 @@ export async function fetchAgreements(ctx: AgreementCtx, archived = false): Prom
   if (archived) parts.push("archived=true");
   return request(`${agrBase(ctx)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
+export interface SharePartyInput { companyId?: string; name: string; email?: string }
+/** CR-P (57)/(58) - share the agreement with chosen parties, for review or for signature. */
+export async function shareAgreement(ctx: AgreementCtx, aid: string, body: { parties: SharePartyInput[]; purpose: "review" | "signature"; note?: string }): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}/share`, { method: "POST", body: JSON.stringify(body) });
+}
+/** CR-P (63) - set exactly who can see the agreement, without sending anything. */
+export async function setAgreementVisibility(ctx: AgreementCtx, aid: string, parties: SharePartyInput[]): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}/visibility`, { method: "POST", body: JSON.stringify({ parties }) });
+}
 /** Archive or restore an agreement (hidden from the normal list). */
 export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archived: boolean): Promise<ApiAgreement> {
   return request(`${agrBase(ctx)}/${aid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
 export interface AgreementInput {
   name?: string; title?: string; description?: string; agreementType?: string; templateId?: string;
-  linkedProjects?: Array<{ id: string; name: string }>;
+  linkedProjects?: Array<{ id: string; name: string; location?: string }>;
   effectiveDate?: string; startDate?: string; endDate?: string;
+  docStatus?: string;
   letterhead?: "gt" | "jv"; jvLogoUrl?: string;
+  /** CR-P (30) - the Directory company chosen as the JV partner behind a "jv" letterhead. */
+  jvPartnerId?: string; jvPartnerName?: string;
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
@@ -2230,6 +2310,8 @@ export interface ApiBinItem {
   subtitle: string;
   projectId: string;
   projectName: string;
+  /** CR-P (75) - which module or project this came from, e.g. "Project · Ivory Coast" or "Directory". */
+  origin?: string;
   link?: string;
   updatedAt?: string;
   deletedByName?: string;
@@ -2237,8 +2319,13 @@ export interface ApiBinItem {
 }
 export async function fetchArchiveItems(): Promise<ApiBinItem[]> { return request(`/bin/archive`); }
 export async function fetchRecycleItems(): Promise<ApiBinItem[]> { return request(`/bin/recycle`); }
-export async function restoreArchiveItem(kind: string, id: string): Promise<void> { await request(`/bin/archive/${kind}/${id}/restore`, { method: "POST" }); }
-export async function restoreRecycleItem(id: string): Promise<void> { await request(`/bin/recycle/${id}/restore`, { method: "POST" }); }
+/** CR-P (73) - both restores report where the item landed, so the toast can offer to open it. */
+export async function restoreArchiveItem(kind: string, id: string, link = ""): Promise<{ link?: string }> {
+  return request(`/bin/archive/${kind}/${id}/restore`, { method: "POST", body: JSON.stringify({ link }) });
+}
+export async function restoreRecycleItem(id: string): Promise<{ link?: string; name?: string; kind?: string }> {
+  return request(`/bin/recycle/${id}/restore`, { method: "POST" });
+}
 export async function purgeRecycleItem(id: string): Promise<void> { await request(`/bin/recycle/${id}`, { method: "DELETE" }); }
 
 // ── Announcements (public hero banner; admin-managed) ────────────────────────
@@ -2607,6 +2694,8 @@ export async function verifyClassifiedPin(pin: string): Promise<{ token: string 
 // Company stamps (the classified Stamps tab) — readable by any staff to stamp a PO.
 export async function fetchStamps(): Promise<CompanyFile[]> { return request('/company/stamps'); }
 export async function fetchNdaFiles(): Promise<CompanyFile[]> { return request('/company/nda-files'); }
+/** CR-P (45) - the standard terms & conditions pool (its own Company Documents tab). */
+export async function fetchTermsFiles(): Promise<CompanyFile[]> { return request('/company/terms-files'); }
 
 export async function uploadCompanyFile(file: File, opts: { kind: "company" | "classified"; tabId?: string }): Promise<CompanyFile> {
   const fd = new FormData();

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2, ArrowLeft, Mail, Phone, Globe, MapPin, Pencil, Archive, RotateCcw, Trash2, Link2,
   Receipt, FileText, Truck, Award, BookOpen, Download, Eye, Upload, Loader2, Check, X, Landmark,
-  Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck, ExternalLink, Ban,
+  Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck,
 } from "lucide-react";
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
@@ -12,6 +11,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
 import TaskMiniBoard from "./TaskMiniBoard";
 import CompanyAccessManager from "./CompanyAccessManager";
 
@@ -39,7 +39,6 @@ export default function CompanyProfile({
   onResolvePending?: (c: ApiCompany, action: "approve" | "discard") => void;
   showArchived: boolean;
 }) {
-  const navigate = useNavigate();
   const { confirm, dialogs } = useDialogs();
   const [tab, setTab] = useState<ProfileTab>("activity");
   const [highlight, setHighlight] = useState<string | null>(null);   // CR-P (11) — stat-tile jump
@@ -87,12 +86,12 @@ export default function CompanyProfile({
   for (const p of links?.projects || []) if (p.projectId) projById[p.projectId] = p.name;
 
   // Clicking a stat tile jumps to its section (Documents is its own tab), with a brief highlight.
+  // Tiles/rows/sections come from profileBits (CR-P 16).
   const goTo = (key: string) => {
     if (key === "documents") { setTab("documents"); return; }
     setTab("activity");
     setHighlight(key);
-    window.setTimeout(() => document.getElementById(`cp-sec-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-    window.setTimeout(() => setHighlight((h) => (h === key ? null : h)), 1800);
+    jumpToSection("cp", key, setHighlight);
   };
 
   // Counts for the stat tiles.
@@ -108,51 +107,12 @@ export default function CompanyProfile({
     documents: files.length,
   }), [links, files]);
 
-  const stat = (label: string, value: number, Icon: typeof Building2, cls: string, onClick: () => void) => (
-    <button type="button" onClick={onClick} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5 text-left w-full transition-all hover:border-primary/40 hover:shadow-md cursor-pointer">
-      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${cls}`}><Icon size={15} /></div>
-      <div className="min-w-0"><p className="text-lg font-bold text-slate-900 leading-none tabular-nums">{value}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">{label}</p></div>
-    </button>
-  );
-
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
     <p className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
       <Icon size={14} className="text-slate-300 shrink-0" />
       {href ? <a href={href} target="_blank" rel="noreferrer" className="hover:text-primary truncate">{value}</a> : <span className="truncate">{value}</span>}
     </p>
   ) : null;
-
-  // A row that shows its project and deep-links into that project (optionally to a specific tab via
-  // `query`). If the project was deleted, the row is blurred and clicking it explains why. `self`
-  // is for the Projects section, where the row IS the project (no separate project label).
-  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string, query?: string, self = false) => {
-    const projName = !self && projectId ? projById[projectId] : undefined;
-    const deleted = !self && !!projectId && !projById[projectId];
-    const open = () => {
-      if (!projectId) return;
-      if (deleted) { toast("This project has been deleted, so you can't open it.", "info"); return; }
-      navigate(`/dashboard/projects/${projectId}${query ? `?${query}` : ""}`);
-    };
-    return (
-      <button key={key} onClick={open} disabled={!projectId}
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
-        title={deleted ? "The project for this item was deleted — you can't open it." : ""}>
-        <span className="min-w-0 flex flex-col">
-          <span className="font-bold text-slate-700 truncate flex items-center gap-1.5">{primary}</span>
-          {projName && <span className="text-[10px] font-bold text-slate-400 truncate flex items-center gap-1"><Building2 size={9} /> {projName}</span>}
-          {deleted && <span className="text-[10px] font-bold text-red-400 truncate flex items-center gap-1"><Ban size={9} /> Project deleted</span>}
-        </span>
-        <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
-      </button>
-    );
-  };
-
-  const section = (secKey: string, title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
-    <div id={`cp-sec-${secKey}`} className={`scroll-mt-24 rounded-xl transition-all ${highlight === secKey ? "ring-2 ring-primary/40 ring-offset-2" : ""}`}>
-      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Icon size={13} /> {title} ({count})</p>
-      {count === 0 ? <p className="text-xs text-slate-400 italic">{emptyHint}</p> : <div className="space-y-1.5">{rows}</div>}
-    </div>
-  );
 
   return (
     <div className="space-y-5">
@@ -210,15 +170,15 @@ export default function CompanyProfile({
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-        {stat("Projects", counts.projects, Briefcase, "bg-indigo-50 text-indigo-600", () => goTo("projects"))}
-        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600", () => goTo("agreements"))}
-        {stat("RFQs", counts.rfqs, ClipboardList, "bg-blue-50 text-blue-600", () => goTo("rfqs"))}
-        {stat("Quotes", counts.quotes, QuoteIcon, "bg-purple-50 text-purple-600", () => goTo("quotes"))}
-        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600", () => goTo("pos"))}
-        {stat("Invoices", counts.invoices, Receipt, "bg-emerald-50 text-emerald-600", () => goTo("invoices"))}
-        {stat("Shipments", counts.shipments, Truck, "bg-orange-50 text-orange-600", () => goTo("shipments"))}
-        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600", () => goTo("submittals"))}
-        {stat("Documents", counts.documents, BookOpen, "bg-slate-100 text-slate-500", () => goTo("documents"))}
+        <StatTile label="Projects" value={counts.projects} icon={Briefcase} cls="bg-indigo-50 text-indigo-600" onClick={() => goTo("projects")} />
+        <StatTile label="Agreements" value={counts.agreements} icon={FileText} cls="bg-teal-50 text-teal-600" onClick={() => goTo("agreements")} />
+        <StatTile label="RFQs" value={counts.rfqs} icon={ClipboardList} cls="bg-blue-50 text-blue-600" onClick={() => goTo("rfqs")} />
+        <StatTile label="Quotes" value={counts.quotes} icon={QuoteIcon} cls="bg-purple-50 text-purple-600" onClick={() => goTo("quotes")} />
+        <StatTile label="Purchase orders" value={counts.pos} icon={FileText} cls="bg-amber-50 text-amber-600" onClick={() => goTo("pos")} />
+        <StatTile label="Invoices" value={counts.invoices} icon={Receipt} cls="bg-emerald-50 text-emerald-600" onClick={() => goTo("invoices")} />
+        <StatTile label="Shipments" value={counts.shipments} icon={Truck} cls="bg-orange-50 text-orange-600" onClick={() => goTo("shipments")} />
+        <StatTile label="Submittals" value={counts.submittals} icon={PackageCheck} cls="bg-rose-50 text-rose-600" onClick={() => goTo("submittals")} />
+        <StatTile label="Documents" value={counts.documents} icon={BookOpen} cls="bg-slate-100 text-slate-500" onClick={() => goTo("documents")} />
       </div>
 
       {/* Tabs */}
@@ -241,30 +201,30 @@ export default function CompanyProfile({
             <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading activity…</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
-              {section("projects", "Projects involved", counts.projects, Building2,
-                (links.projects || []).map((p) => linkRow(p._id, p.name, p.status, p.projectId, undefined, true)),
-                "Not linked to any project yet.")}
-              {section("agreements", "Agreements", counts.agreements, FileText,
-                (links.agreements || []).map((a) => linkRow(a._id, a.name || "Agreement", a.status || "—", a.projectId)),
-                "No agreements with this company yet.")}
-              {section("rfqs", "RFQs", counts.rfqs, ClipboardList,
-                links.rfqs.map((r) => linkRow(r._id, `RFQ #${r.rfqNo}`, <>{r.title ? `${r.title} · ` : ""}{r.status}</>, r.projectId, "tab=procurement&proc=rfqs")),
-                "No RFQs sent to this company yet.")}
-              {section("quotes", "Quotes", counts.quotes, QuoteIcon,
-                (links.quotes || []).map((q) => linkRow(q._id, <>Quote{q.accepted ? " ✓" : ""}</>, <>{q.total || "—"}{q.status ? ` · ${q.status}` : ""}</>, q.projectId, "tab=procurement&proc=quotes")),
-                "No quotes received from this company yet.")}
-              {section("pos", "Purchase orders", counts.pos, FileText,
-                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId, "tab=procurement&proc=po")),
-                "No purchase orders for this company yet.")}
-              {section("invoices", "Invoices", counts.invoices, Receipt,
-                links.invoices.map((iv) => linkRow(iv._id, <>#{iv.number} <span className="text-slate-400 font-medium">· {iv.type}</span></>, <>{iv.amount} · {iv.status}</>, iv.projectId, "tab=finances")),
-                "No invoices linked to this company yet.")}
-              {section("shipments", "Shipments", counts.shipments, Truck,
-                (links.shipments || []).map((s) => linkRow(s._id, s.name || "Shipment", <>{s.status}{s.etaDate ? ` · ETA ${s.etaDate}` : ""}</>, s.projectId, "tab=procurement&proc=shipment")),
-                "No shipments handled by this company yet.")}
-              {section("submittals", "Submittals", counts.submittals, PackageCheck,
-                (links.submittals || []).map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId, "tab=procurement&proc=submittals")),
-                "No submittals for this company's products yet.")}
+              <ProfileSection prefix="cp" secKey="projects" title="Projects involved" count={counts.projects} icon={Building2} highlight={highlight}
+                rows={(links.projects || []).map((p) => <ActivityRow key={p._id} primary={p.name} secondary={p.status} projectId={p.projectId} self projById={projById} />)}
+                emptyHint="Not linked to any project yet." />
+              <ProfileSection prefix="cp" secKey="agreements" title="Agreements" count={counts.agreements} icon={FileText} highlight={highlight}
+                rows={(links.agreements || []).map((a) => <ActivityRow key={a._id} primary={a.name || "Agreement"} secondary={a.status || "—"} projectId={a.projectId} projById={projById} />)}
+                emptyHint="No agreements with this company yet." />
+              <ProfileSection prefix="cp" secKey="rfqs" title="RFQs" count={counts.rfqs} icon={ClipboardList} highlight={highlight}
+                rows={links.rfqs.map((r) => <ActivityRow key={r._id} primary={`RFQ #${r.rfqNo}`} secondary={<>{r.title ? `${r.title} · ` : ""}{r.status}</>} projectId={r.projectId} query="tab=procurement&proc=rfqs" projById={projById} />)}
+                emptyHint="No RFQs sent to this company yet." />
+              <ProfileSection prefix="cp" secKey="quotes" title="Quotes" count={counts.quotes} icon={QuoteIcon} highlight={highlight}
+                rows={(links.quotes || []).map((q) => <ActivityRow key={q._id} primary={<>Quote{q.accepted ? " ✓" : ""}</>} secondary={<>{q.total || "—"}{q.status ? ` · ${q.status}` : ""}</>} projectId={q.projectId} query="tab=procurement&proc=quotes" projById={projById} />)}
+                emptyHint="No quotes received from this company yet." />
+              <ProfileSection prefix="cp" secKey="pos" title="Purchase orders" count={counts.pos} icon={FileText} highlight={highlight}
+                rows={links.pos.map((po) => <ActivityRow key={po._id} primary={`PO #${po.poNo}`} secondary={<>{po.total || "—"} · {po.status}</>} projectId={po.projectId} query="tab=procurement&proc=po" projById={projById} />)}
+                emptyHint="No purchase orders for this company yet." />
+              <ProfileSection prefix="cp" secKey="invoices" title="Invoices" count={counts.invoices} icon={Receipt} highlight={highlight}
+                rows={links.invoices.map((iv) => <ActivityRow key={iv._id} primary={<>#{iv.number} <span className="text-slate-400 font-medium">· {iv.type}</span></>} secondary={<>{iv.amount} · {iv.status}</>} projectId={iv.projectId} query="tab=finances" projById={projById} />)}
+                emptyHint="No invoices linked to this company yet." />
+              <ProfileSection prefix="cp" secKey="shipments" title="Shipments" count={counts.shipments} icon={Truck} highlight={highlight}
+                rows={(links.shipments || []).map((s) => <ActivityRow key={s._id} primary={s.name || "Shipment"} secondary={<>{s.status}{s.etaDate ? ` · ETA ${s.etaDate}` : ""}</>} projectId={s.projectId} query="tab=procurement&proc=shipment" projById={projById} />)}
+                emptyHint="No shipments handled by this company yet." />
+              <ProfileSection prefix="cp" secKey="submittals" title="Submittals" count={counts.submittals} icon={PackageCheck} highlight={highlight}
+                rows={(links.submittals || []).map((s) => <ActivityRow key={s._id} primary={s.productName || "Submittal"} secondary={s.status || "—"} projectId={s.projectId} query="tab=procurement&proc=submittals" projById={projById} />)}
+                emptyHint="No submittals for this company's products yet." />
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-6">Records link here automatically when this company is chosen on an invoice / RFQ / PO / agreement / shipment, or matches a product's manufacturer. Click any row to open its project.</p>

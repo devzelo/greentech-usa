@@ -14,7 +14,9 @@ export interface ISavedDocument extends Document {
   version: number;
   title: string;
   note: string;
-  status: "draft" | "final"; // "final" = the copy sent to the client
+  // CR-P (83) — a proposal revision moves through more than draft/final: it gets sent, submitted,
+  // and eventually won or lost. "final" is kept as-is so nothing existing changes meaning.
+  status: "draft" | "final" | "sent" | "submitted" | "awarded" | "not-awarded";
   fileName: string;
   filePath: string;
   fileType: string;
@@ -32,7 +34,7 @@ const SavedDocumentSchema = new Schema<ISavedDocument>(
     version: { type: Number, default: 1 },
     title: { type: String, default: "" },
     note: { type: String, default: "" },
-    status: { type: String, enum: ["draft", "final"], default: "draft" },
+    status: { type: String, enum: ["draft", "final", "sent", "submitted", "awarded", "not-awarded"], default: "draft" },
     fileName: { type: String, default: "" },
     filePath: { type: String, default: "" },
     fileType: { type: String, default: "" },

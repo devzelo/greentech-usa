@@ -6,18 +6,11 @@ import path from "path";
 import User from "../models/User";
 import UserFile from "../models/UserFile";
 import Employee from "../models/Employee";
-import Project from "../models/Project";
-import Agreement from "../models/Agreement";
-import Expense from "../models/Expense";
-import Reminder from "../models/Reminder";
-import Submittal from "../models/Submittal";
-import ProcurementPO from "../models/ProcurementPO";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
+import { buildUserLinks } from "../lib/profileLinks";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest, requireAdmin } from "../middleware/auth";
-
-const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const humanFileSize = (bytes: number) => {
   if (!bytes) return "0 B";
@@ -161,39 +154,12 @@ router.delete("/:id", async (req: AuthedRequest, res: Response, next: NextFuncti
 });
 
 // ── CR-P-57 — everything related to this user (for the admin profile view) ──
+// CR-P (16) — the aggregation moved to lib/profileLinks so the self profile shares it.
 router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const user = await User.findById(req.params.id).select("name").lean();
     if (!user) return res.status(404).json({ error: "User not found." });
-    const uid = req.params.id;
-    const name = (user as { name?: string }).name || "";
-    const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
-
-    const [owned, guest, agreements, expenses, reminders, submittals, pos] = await Promise.all([
-      Project.find({ ownerId: uid }).select("projectId name status location").lean(),
-      Project.find({ "guests.userId": uid }).select("projectId name status location").lean(),
-      Agreement.find({ $or: [{ ownerUserId: uid }, { addedById: uid }] }).select("name agreementType status ownerProjectId").sort({ createdAt: -1 }).limit(60).lean(),
-      Expense.find({ addedById: uid }).select("description amount qty approval projectId category").sort({ createdAt: -1 }).limit(60).lean(),
-      Reminder.find({ userId: uid }).select("title dueAt projectId projectName").sort({ dueAt: -1 }).limit(60).lean(),
-      nameRx ? Submittal.find({ addedByName: nameRx }).select("productName status projectId").sort({ createdAt: -1 }).limit(60).lean() : [],
-      nameRx ? ProcurementPO.find({ $or: [{ addedByName: nameRx }, { assignedTo: nameRx }] }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(60).lean() : [],
-    ]);
-
-    // Merge owned + guest projects, de-duped by _id.
-    const seen = new Set<string>();
-    const projects = [...owned, ...guest].filter((p) => { const k = String((p as { _id: unknown })._id); if (seen.has(k)) return false; seen.add(k); return true; });
-
-    // CR-P (11) — resolve the name of every project referenced by the user's items, so each row can
-    // show its project. A referenced projectId that's missing here means that project was deleted.
-    const pidSet = new Set<string>();
-    for (const a of agreements as Array<{ ownerProjectId?: string }>) if (a.ownerProjectId) pidSet.add(a.ownerProjectId);
-    for (const arr of [expenses, reminders, submittals, pos] as Array<Array<{ projectId?: string }>>)
-      for (const r of arr) if (r.projectId) pidSet.add(r.projectId);
-    const projRows = pidSet.size ? await Project.find({ projectId: { $in: [...pidSet] } }).select("projectId name").lean() : [];
-    const projectNames: Record<string, string> = {};
-    for (const p of projRows as Array<{ projectId?: string; name?: string }>) if (p.projectId) projectNames[p.projectId] = p.name || "";
-
-    res.json({ projects, agreements, expenses, reminders, submittals, pos, projectNames });
+    res.json(await buildUserLinks(req.params.id, (user as { name?: string }).name || ""));
   } catch (err) { next(err); }
 });
 

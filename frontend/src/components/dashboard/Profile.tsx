@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Camera, Mail, User, Eye, EyeOff, Save, Phone, IdCard, Loader2, CheckCircle2, AlertCircle, Archive, Calendar, Send, Briefcase, PenLine, Upload } from "lucide-react";
+import { Camera, Mail, User, Eye, EyeOff, Save, Phone, IdCard, Loader2, CheckCircle2, AlertCircle, Archive, Calendar, Send, Briefcase, MapPin } from "lucide-react";
 import { motion } from "motion/react";
-import { fetchMe, updateMe, changePassword as apiChangePassword, uploadAvatar, uploadSignature, attachmentUrl, withFileToken, fetchBackupPreview, sendBackupNow, setAuthUser, getAuthUser, fetchMyExpenses, ApiUser, BackupPreview, MyExpense } from "../../lib/api";
+import { fetchMe, updateMe, changePassword as apiChangePassword, uploadAvatar, withFileToken, fetchBackupPreview, sendBackupNow, setAuthUser, getAuthUser, fetchMyExpenses, ApiUser, BackupPreview, MyExpense } from "../../lib/api";
 import AdminAnnouncements from "./AdminAnnouncements";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import ResumeBuilder from "./ResumeBuilder";
 import AgreementsPanel from "./agreements/AgreementsPanel";
 import PartnerProfileSection from "./PartnerProfileSection";
+import MyProfileOverview from "./MyProfileOverview";
+import SignatureManager from "./SignatureManager";
+import ResumeFileCard from "./ResumeFileCard";
 
 export default function Profile() {
   useMeta({ title: "My Profile", description: "Update your name, phone, employee ID, avatar, and password." });
@@ -155,18 +158,6 @@ export default function Profile() {
     } finally {
       setUploading(false);
     }
-  };
-
-  const [sigUploading, setSigUploading] = useState(false);
-  const handleSignatureChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { setError("Signature must be under 5 MB."); return; }
-    setSigUploading(true); setError(null);
-    try { setMe(await uploadSignature(file)); }
-    catch (err) { setError(err instanceof Error ? err.message : "Upload failed."); }
-    finally { setSigUploading(false); }
   };
 
   const handleChangePassword = async () => {
@@ -352,27 +343,25 @@ export default function Profile() {
           </div>
           )}
 
-          {/* Signature — staff sign purchase orders with it; subcontractors and partners sign
-              their agreements with it. Everyone needs to be able to upload one. */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              <PenLine size={12} /> Signature
-            </label>
-            <div className="flex items-center gap-3">
-              <div className="w-40 h-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
-                {me.signatureUrl ? <img src={attachmentUrl((me.signatureUrl || "").replace(/^\/+/, ""))} alt="Signature" className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-slate-400 italic">No signature</span>}
-              </div>
-              <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700 cursor-pointer hover:bg-slate-200">
-                {sigUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {me.signatureUrl ? "Replace" : "Upload"}
-                <input type="file" accept="image/*" className="hidden" onChange={handleSignatureChange} />
-              </label>
+          {/* CR-P (16) — admin-managed details, shown read-only wherever set */}
+          {me.jobTitle && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Briefcase size={12} /> Position</label>
+              <p className="text-sm font-medium text-slate-600 px-1">{me.jobTitle}</p>
             </div>
-            <p className="text-[10px] text-slate-400 px-1">
-              {isGuest
-                ? "Used when you sign an agreement sent to you. Use a transparent PNG for best results."
-                : "Uploaded to sign purchase orders and agreements. Use a transparent PNG for best results."}
-            </p>
-          </div>
+          )}
+          {me.personalEmail && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Mail size={12} /> Personal email</label>
+              <p className="text-sm font-medium text-slate-600 px-1">{me.personalEmail}</p>
+            </div>
+          )}
+          {me.homeAddress && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><MapPin size={12} /> Home address</label>
+              <p className="text-sm font-medium text-slate-600 px-1">{me.homeAddress}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -443,6 +432,19 @@ export default function Profile() {
           <p className="text-xs text-slate-400 mb-6">Agreements sent to you by GreenTech. Review each one, then sign or reject it — your saved signature above is used when you sign.</p>
           {getAuthUser()?.id && <AgreementsPanel ctx={{ kind: "user", userId: getAuthUser()!.id }} canManage={false} canSign />}
         </motion.div>
+      )}
+
+      {/* CR-P (16) — profile preview with clickable numbers for everyone except the admin */}
+      {me.role !== "admin" && (
+        <div className="lg:col-span-3"><MyProfileOverview isGuest={isGuest} /></div>
+      )}
+
+      {/* CR-P (16) — named signatures with a default (all roles; used on POs and agreements) */}
+      <div className="lg:col-span-3"><SignatureManager /></div>
+
+      {/* CR-P (16) — uploaded resume/CV (all non-admin roles; staff keep the builder below too) */}
+      {me.role !== "admin" && (
+        <div className="lg:col-span-3"><ResumeFileCard initial={me.resumeFile} /></div>
       )}
 
       {!isGuest && (<>

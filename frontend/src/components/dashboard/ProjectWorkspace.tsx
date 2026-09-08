@@ -4,14 +4,16 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Globe, Clock, ExternalLink, MapPin,
   Upload, Download, Eye, FileText, FileImage, FileCode,
-  Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Search,
+  Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Search,
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock,
 } from "lucide-react";
+import { PDFDocument } from "pdf-lib";
+import ShareMenu from "./ShareMenu";
 import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
-fetchSubAgreements, createSubAgreement, deleteSubAgreement, uploadSubAgreementFile, deleteSubAgreementFile, type ApiSubAgreement, type SubAgreementDocKind, fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
+fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
 import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind } from "../../lib/api";
 import { uploadProposalAsset, uploadInlineImage, setProjectArchived } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
@@ -47,7 +49,7 @@ import SavedVersionsPanel from "./SavedVersionsPanel";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
-import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
+import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
@@ -277,10 +279,6 @@ export default function ProjectWorkspace() {
   const [partnerTabs, setPartnerTabs] = useState<PartnerTab[]>([]);
   const [activePartnerTab, setActivePartnerTab] = useState<string>("");
   // Structured subcontractor agreements (name + description + agreement/offer/other docs).
-  const [subAgreements, setSubAgreements] = useState<ApiSubAgreement[]>([]);
-  const [agreementModal, setAgreementModal] = useState<{ subId: string } | null>(null);
-  const [agrForm, setAgrForm] = useState<{ name: string; description: string; agreement: File | null; offer: File | null; others: File[] }>({ name: "", description: "", agreement: null, offer: null, others: [] });
-  const [agrSaving, setAgrSaving] = useState(false);
   const [showAddTab, setShowAddTab] = useState(false);
   const [newTabName, setNewTabName] = useState("");
   const [newTabColor, setNewTabColor] = useState<string>("");
@@ -354,6 +352,8 @@ export default function ProjectWorkspace() {
   // employees through the project's tabAccess, subcontractors/partners through their guest record.
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [empAccessFor, setEmpAccessFor] = useState<string | null>(null);
+  // Pending View / Edit / Hidden choices in the tab-access modal, keyed by tab id.
+  const [empPerms, setEmpPerms] = useState<Record<string, "none" | "view" | "edit">>({});
   const [accessBusy, setAccessBusy] = useState<string | null>(null);
 
   // Project Nature
@@ -412,6 +412,10 @@ export default function ProjectWorkspace() {
                     if (c.phone || cp?.phone) updateJv("phone", c.phone || cp?.phone || "");
                     if (cp?.name) updateJv("contactName", cp.name);
                     if (c.address) updateJv("partnerAddress", c.address);
+                    // CR-P (31) — the partner's Directory logo becomes this project's JV
+                    // letterhead, so every agreement and document inside the project uses it
+                    // without anyone uploading a logo per project.
+                    if (c.logoUrl) updateJv("logo", c.logoUrl);
                   }}
                   placeholder="Search or add a partner from the Directory…"
                 />
@@ -428,9 +432,11 @@ export default function ProjectWorkspace() {
                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60" />
               </div>
             ))}
-            {/* Partner logo — a chosen file, not a link */}
+            {/* Partner logo — CR-P (31): filled in automatically from the Directory partner, so
+                the JV letterhead for this project exists the moment the partner is chosen.
+                Uploading here overrides it for this project only. */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo <span className="font-medium normal-case text-slate-400">— pulled from the Directory partner; used as this project's JV letterhead</span></label>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
                   {jvInfo.logo ? <img src={assetSrc(jvInfo.logo)} alt="Partner logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
@@ -496,6 +502,9 @@ export default function ProjectWorkspace() {
 
   // Employees
   const [employeePool, setEmployeePool] = useState<ApiEmployee[]>([]);
+  // CR-P (76)/(77) — assigning is now an explicit step: open a picker, tick people, assign.
+  const [empPickerOpen, setEmpPickerOpen] = useState(false);
+  const [empPicked, setEmpPicked] = useState<string[]>([]);
   const [assignedEmployees, setAssignedEmployees] = useState<string[]>([]);
   const [empSearch, setEmpSearch] = useState("");
 
@@ -518,7 +527,18 @@ export default function ProjectWorkspace() {
     technical: { submissionDate: "", status: "Draft" },
     financial: { submissionDate: "", status: "Draft" },
   });
-  const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"];
+  // CR-P (83) - the lifecycle of one produced proposal revision, as Reza listed it:
+// "is it sent, draft, completed, submitted, all those status items", plus the outcome.
+const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
+  draft: { label: "Draft", cls: "bg-slate-100 text-slate-500" },
+  final: { label: "Final", cls: "bg-indigo-50 text-indigo-600" },
+  sent: { label: "Sent", cls: "bg-blue-50 text-blue-600" },
+  submitted: { label: "Submitted", cls: "bg-amber-50 text-amber-700" },
+  awarded: { label: "Awarded", cls: "bg-emerald-50 text-emerald-700" },
+  "not-awarded": { label: "Not awarded", cls: "bg-red-50 text-red-600" },
+};
+
+const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"];
   const PROPOSAL_STATUS_COLOR: Record<string, string> = {
     Draft: "bg-amber-50 text-amber-600",
     Ready: "bg-indigo-50 text-indigo-600",
@@ -603,14 +623,145 @@ export default function ProjectWorkspace() {
   // CR-B-21 — the NEXT Saved-Versions revision number per document, so "Mark as Final" can name it
   // in the confirmation. Both "Mark as Final" entry points file into the same SavedDocument stream.
   const [nextFinalVer, setNextFinalVer] = useState<{ technical: number; financial: number }>({ technical: 1, financial: 1 });
+  // CR-P (82)-(87) — every saved revision of each proposal, so the overview can show a real table
+  // instead of two status cards. Three streams: technical, financial, and the combined pack that is
+  // what actually goes to the client.
+  const [propDocs, setPropDocs] = useState<{ technical: ApiSavedDocument[]; financial: ApiSavedDocument[]; combined: ApiSavedDocument[] }>({ technical: [], financial: [], combined: [] });
+  const [openRevs, setOpenRevs] = useState<Record<string, boolean>>({});   // which stream's older revisions are expanded
+  // CR-P (88) - file a proposal that was produced outside the platform. It joins the same
+  // revision stream, so an uploaded Rev 0 and a built Rev 1 sit in one history.
+  const uploadExistingProposal = async (which: "technical" | "financial" | "combined", file: File) => {
+    if (!id) return;
+    setProposalDownloading(`upload-${which}`);
+    try {
+      await saveDocumentVersion(
+        id,
+        { kind: "proposal", refId: which, title: file.name.replace(/\.[^.]+$/, ""), note: "Uploaded, produced outside the platform", status: "submitted" },
+        file,
+        file.name,
+      );
+      await loadNextFinalVer();
+      toast("Proposal uploaded and filed as a revision.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+    finally { setProposalDownloading(null); }
+  };
+
+  // CR-P (106) - the financial cover is the technical cover with a different title. Copying it is
+  // one action rather than re-entering the project name, RFP number and imagery by hand.
+  const copyTechnicalCover = async () => {
+    if (!(await brandedConfirm({
+      title: "Copy the technical cover?",
+      message: "The financial cover page is replaced with a copy of the technical one, with its title changed to Financial Proposal. Anything already on the financial cover is lost.",
+      confirmLabel: "Copy it across",
+    }))) return;
+    const title = (cover.title || "").replace(/technical/gi, "Financial").trim();
+    setCoverFinancial({ ...cover, title: title || "Financial Proposal" });
+    toast("Financial cover copied from the technical one.", "success");
+  };
+
+  // CR-P (87) - the combined pack: the technical and financial proposals merged into the single
+  // file the client actually receives. Built from the latest revision of each.
+  const buildCombinedProposal = async () => {
+    if (!id) return;
+    setProposalDownloading("combined");
+    try {
+      const [tech, fin] = await Promise.all([buildProposalBlob("technical", true), buildProposalBlob("financial", true)]);
+      const merged = await PDFDocument.create();
+      for (const blob of [tech, fin]) {
+        const src = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { ignoreEncryption: true });
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        pages.forEach((pg) => merged.addPage(pg));
+      }
+      const out = new Blob([await merged.save()], { type: "application/pdf" });
+      const safe = `${project?.name || "project"}_Combined_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
+
+      // CR-P (112) - "the maximum file that they want most of the time is 30 megabytes per file...
+      // if it is less than 30 we usually combine it together, or we just send it technical one PDF,
+      // financial the second PDF." Over the limit, the merged file is useless for email, so we say
+      // so rather than filing something that cannot be sent.
+      const MAX_EMAIL_BYTES = 30 * 1024 * 1024;
+      const overLimit = out.size > MAX_EMAIL_BYTES;
+      const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
+      if (overLimit && !(await brandedConfirm({
+        title: `The combined file is ${mb(out.size)}`,
+        message: `Most clients cap attachments at 30 MB, so this merged pack is likely too big to email as one file. You can still file it, but consider sending the technical (${mb(tech.size)}) and financial (${mb(fin.size)}) PDFs separately, or zipped.`,
+        confirmLabel: "File it anyway",
+        danger: false,
+      }))) { setProposalDownloading(null); return; }
+
+      // CR-P (113) - record exactly WHAT went into this pack, so later you can tell whether the
+      // client got technical only, financial only, or the combination, and which revisions.
+      const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
+      const finRev = Math.max(0, ((propDocs.financial[0]?.version) || 1) - 1);
+      const note = `Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(out.size)}${overLimit ? " · over the 30 MB email limit" : ""}`;
+      await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial", note, status: "draft" }, out, `${safe}.pdf`);
+      await loadNextFinalVer();
+      toast("Combined proposal created.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not combine the proposals.", "error"); }
+    finally { setProposalDownloading(null); }
+  };
+
+  // CR-P (83) - move one revision through its lifecycle from the table.
+  const setProposalDocStatus = async (d: ApiSavedDocument, status: SavedDocStatus) => {
+    if (!id) return;
+    try { await updateSavedDocument(id, d._id, { status }); await loadNextFinalVer(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not update the status.", "error"); }
+  };
+
+  // CR-P (86) - delete one revision. Asks first: a revision is a record of what went out.
+  const removeProposalDoc = async (d: ApiSavedDocument) => {
+    if (!id) return;
+    if (!(await brandedConfirm({
+      title: "Delete this revision?",
+      message: `Revision ${Math.max(0, (d.version || 1) - 1)}${d.title ? ` (${d.title})` : ""} and its file are removed. Other revisions are untouched.`,
+      confirmLabel: "Delete revision",
+    }))) return;
+    try { await deleteSavedDocument(id, d._id); await loadNextFinalVer(); toast("Revision deleted.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
+  };
+
+  // CR-P (92) - reusable SECTION templates (distinct from whole-proposal templates). Stored as
+  // proposal templates carrying a `section` marker, so no new collection was needed.
+  const [sectionTemplates, setSectionTemplates] = useState<ApiProposalTemplate[]>([]);
+  const loadSectionTemplates = async () => {
+    try {
+      const all = await fetchProposalTemplates();
+      setSectionTemplates(all.filter((t) => (t.content as { section?: boolean } | undefined)?.section));
+    } catch { /* the picker just stays empty */ }
+  };
+  useEffect(() => { void loadSectionTemplates(); }, []);
+  const applySectionTemplate = async (sectionId: string, t: ApiProposalTemplate) => {
+    const body = String((t.content as { body?: unknown } | undefined)?.body || "");
+    if (!body) { toast("That template has no content.", "info"); return; }
+    if (!(await brandedConfirm({
+      title: `Insert "${t.name}"?`,
+      message: "This replaces whatever is currently written in this section. Anything already there is lost.",
+      confirmLabel: "Insert template",
+    }))) return;
+    updateSectionRow(sectionId, "body", body);
+    toast("Template inserted.", "success");
+  };
+  const saveSectionAsTemplate = async (sec: { title?: string; body?: string }) => {
+    if (!String(sec.body || "").trim()) { toast("Write something in the section first.", "info"); return; }
+    const name = window.prompt("Name this section template", sec.title || "Section template");
+    if (name === null || !name.trim()) return;
+    try {
+      await saveProposalTemplate({ name: name.trim(), description: "Section template", content: { section: true, body: sec.body } as never });
+      await loadSectionTemplates();
+      toast("Section template saved.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save the template.", "error"); }
+  };
+
   const loadNextFinalVer = async () => {
     if (!id) return;
     try {
-      const [t, f] = await Promise.all([
+      const [t, f, c] = await Promise.all([
         fetchSavedDocuments(id, "proposal", "technical"),
         fetchSavedDocuments(id, "proposal", "financial"),
+        fetchSavedDocuments(id, "proposal", "combined"),
       ]);
       setNextFinalVer({ technical: ((t[0]?.version) || 0) + 1, financial: ((f[0]?.version) || 0) + 1 });
+      setPropDocs({ technical: t, financial: f, combined: c });
     } catch { /* ignore */ }
   };
   useEffect(() => { void loadNextFinalVer(); /* eslint-disable-next-line */ }, [id]);
@@ -1170,7 +1321,7 @@ export default function ProjectWorkspace() {
   };
   const removeVendor = async (v: ApiVendor) => {
     if (!id) return;
-    if (!(await dlgConfirm({ title: "Delete this vendor?", message: `Remove "${v.name || "vendor"}" from the shared supplier list? It disappears from Procurement → RFQs too. Existing RFQs/POs already sent keep their snapshot.`, confirmLabel: "Delete vendor", cancelLabel: "Cancel", danger: true }))) return;
+    if (!(await brandedConfirm({ title: "Delete this vendor?", message: `Remove "${v.name || "vendor"}" from the shared supplier list? It disappears from Procurement → RFQs too. Existing RFQs/POs already sent keep their snapshot.`, confirmLabel: "Delete vendor", cancelLabel: "Cancel", danger: true }))) return;
     try {
       await deleteVendor(id, v._id);
       setProjVendors((p) => { const next = p.filter((x) => x._id !== v._id); setActiveVendorId((cur) => (cur === v._id ? next[0]?._id || null : cur)); return next; });
@@ -1279,59 +1430,9 @@ export default function ProjectWorkspace() {
     });
   };
 
-  const handleUploadSubAgreement = async (subId: string, file: File) => {
-    if (!id) return;
-    try {
-      await uploadDocument(id, file, `subcontractor-${subId}`);
-      await refreshSubDocs();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Upload failed.", "error");
-    }
-  };
-
-  // Structured agreements: create with name + description, then attach the agreement / offer / other
-  // documents. Offers & agreements are merged into this one flow; many agreements per subcontractor.
-  const refreshSubAgreements = () => { if (id) fetchSubAgreements(id).then(setSubAgreements).catch(() => {}); };
-  useEffect(() => { refreshSubAgreements(); /* eslint-disable-next-line */ }, [id]);
-  const openAgreementModal = (subId: string) => { setAgrForm({ name: "", description: "", agreement: null, offer: null, others: [] }); setAgreementModal({ subId }); };
-  const submitAgreement = async () => {
-    if (!id || !agreementModal) return;
-    if (!agrForm.name.trim()) { toast("Give the agreement a name.", "error"); return; }
-    setAgrSaving(true);
-    try {
-      const created = await createSubAgreement(id, agreementModal.subId, agrForm.name.trim(), agrForm.description.trim());
-      const uploads: Array<[File, SubAgreementDocKind]> = [];
-      if (agrForm.agreement) uploads.push([agrForm.agreement, "agreement"]);
-      if (agrForm.offer) uploads.push([agrForm.offer, "offer"]);
-      for (const f of agrForm.others) uploads.push([f, "other"]);
-      for (const [file, kind] of uploads) { try { await uploadSubAgreementFile(id, created._id, file, kind); } catch { /* keep going */ } }
-      refreshSubAgreements();
-      setAgreementModal(null);
-      toast("Agreement created.", "success");
-    } catch (err) { toast(err instanceof Error ? err.message : "Could not create agreement.", "error"); }
-    finally { setAgrSaving(false); }
-  };
-  const removeAgreement = async (aid: string) => {
-    if (!id || !confirm("Delete this agreement and its documents?")) return;
-    try { await deleteSubAgreement(id, aid); refreshSubAgreements(); }
-    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
-  };
-  const removeAgreementFile = async (aid: string, fid: string) => {
-    if (!id) return;
-    try { const updated = await deleteSubAgreementFile(id, aid, fid); setSubAgreements((p) => p.map((a) => a._id === aid ? updated : a)); }
-    catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
-  };
-
-  const handleDeleteSubAgreement = async (docId: string) => {
-    if (!id) return;
-    if (!confirm("Delete this agreement file?")) return;
-    try {
-      await deleteDocument(id, docId);
-      await refreshSubDocs();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Delete failed.", "error");
-    }
-  };
+  // CR-P (69) — the "sub agreement bundle" flow (create a named bundle, attach agreement / offer /
+  // other files) is gone. It was a second, weaker agreement system sitting next to the real builder
+  // on the same tab. Agreements are created in AgreementsPanel and their files attach to sections.
 
   // §L — Subcontractor offers: upload negotiation offers, accept one (gates Agreement & Scope).
   const handleUploadSubOffer = async (subId: string, file: File) => {
@@ -1731,6 +1832,71 @@ export default function ProjectWorkspace() {
     setGName(""); setGEmail(""); setGPassword("");
   };
 
+  // CR-P (76) — assign the ticked employees in one go.
+  const assignPickedEmployees = async () => {
+    if (!id || !empPicked.length) { setEmpPickerOpen(false); return; }
+    const next = Array.from(new Set([...assignedEmployees, ...empPicked]));
+    setAssignedEmployees(next);
+    setEmpPickerOpen(false);
+    setEmpPicked([]);
+    try { await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>); toast(`${empPicked.length} employee${empPicked.length === 1 ? "" : "s"} assigned.`, "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not assign.", "error"); }
+  };
+  // CR-P (79) — "we'll remove it from there. It will ask you are you sure you want to remove it?"
+  const unassignEmployee = async (empIdStr: string, label: string) => {
+    if (!id) return;
+    if (!(await brandedConfirm({
+      title: "Remove from this project?",
+      message: `${label} loses access to this project. Their work stays where it is and comes back if you assign them again.`,
+      confirmLabel: "Remove",
+    }))) return;
+    const next = assignedEmployees.filter((e) => e !== empIdStr);
+    setAssignedEmployees(next);
+    try { await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>); toast("Removed from the project.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not remove.", "error"); }
+  };
+
+  // Save the tab access chosen for an assigned employee. Tabs left Hidden are simply absent from
+  // tabPermissions, which is exactly how the profile's Access page stores them. An employee with no
+  // guest record yet is granted one here (no password: they already have a login).
+  const saveEmpAccess = async (empIdStr: string) => {
+    if (!id) return;
+    const emp = employeePool.find((e) => e.empId === empIdStr);
+    const guest = emp?.id ? guestsList.find((g) => g.userId === emp.id) : undefined;
+    const merged: Record<string, "view" | "edit"> = {};
+    for (const t of allTabsAll) {
+      const v = empPerms[t.id] ?? (guest?.tabPermissions?.[t.id] as "view" | "edit" | undefined) ?? "none";
+      if (v === "view" || v === "edit") merged[t.id] = v;
+    }
+    setAccessBusy(empIdStr);
+    try {
+      if (guest) await updateGuest(id, guest.userId, { tabPermissions: merged });
+      else if (emp?.email) await createGuest(id, { name: emp.name, email: emp.email, password: "", tabPermissions: merged });
+      else { toast("This employee has no email on their account, so scoped access cannot be granted.", "error"); return; }
+      await refreshGuests();
+      setEmpAccessFor(null); setEmpPerms({});
+      toast("Tab access saved.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save access.", "error"); }
+    finally { setAccessBusy(null); }
+  };
+  // Drop the scoped grant so the employee sees the whole project again.
+  const restoreFullAccess = async (empIdStr: string) => {
+    if (!id) return;
+    const emp = employeePool.find((e) => e.empId === empIdStr);
+    const guest = emp?.id ? guestsList.find((g) => g.userId === emp.id) : undefined;
+    if (!guest) return;
+    if (!(await brandedConfirm({
+      title: "Restore full access?",
+      message: `${emp?.name || empIdStr} will be able to see every tab on this project again.`,
+      confirmLabel: "Restore full access",
+      danger: false,
+    }))) return;
+    setAccessBusy(empIdStr);
+    try { await removeGuest(id, guest.userId); await refreshGuests(); setEmpAccessFor(null); setEmpPerms({}); toast("Full access restored.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not restore access.", "error"); }
+    finally { setAccessBusy(null); }
+  };
+
   const openEditGuest = (guest: ApiGuest, asPartner = false) => {
     setGrantingPartner(asPartner);
     setEditingGuest(guest);
@@ -1969,11 +2135,15 @@ export default function ProjectWorkspace() {
 
   useEffect(() => {
     if (!id) return;
+    // CR-P (16) — only the project fetch may decide "not found". The side lists are permission-
+    // guarded per tab, so for a guest without (say) the Expenses or PO grant they return 403;
+    // without per-call fallbacks one such 403 failed the whole bundle and the guest saw
+    // "Project Not Found" on a project they DO have access to.
     Promise.all([
       fetchProject(id),
-      fetchEmployees(),
-      fetchExpenses(id),
-      fetchPurchaseOrders(id),
+      fetchEmployees().catch(() => []),
+      fetchExpenses(id).catch(() => []),
+      fetchPurchaseOrders(id).catch(() => []),
       fetchSubInvoices(id).catch(() => [] as ApiSubInvoice[]),
       fetchInvoices(id, "sent").catch(() => [] as ApiInvoice[]),
     ])
@@ -2280,11 +2450,6 @@ export default function ProjectWorkspace() {
     if (newTabs[0]) setActiveTab(newTabs[0].id);
   };
 
-  const toggleEmployee = (empId: string) =>
-    setAssignedEmployees((prev) =>
-      prev.includes(empId) ? prev.filter((e) => e !== empId) : [...prev, empId]
-    );
-
   const addCustomNature = () => {
     if (!customNatureInput.trim()) return;
     setCustomNatureTypes((prev) => [...prev, customNatureInput.trim()]);
@@ -2306,6 +2471,9 @@ export default function ProjectWorkspace() {
   const hasAnyAccess = isOwner || isAssigned || guestHasAccess;
   // CR-P-30 — Finances sub-tab permissions (expenses / invoice-sent / invoice-received), mirroring
   // the procurement model. Defined here so the active-tab edit flag can honour a per-sub-tab grant.
+  // hasAnyFinPerm must be declared BEFORE finPermFor runs (finNav calls it during this render) —
+  // guests crashed with a use-before-initialization error when it lived further down.
+  const hasAnyFinPerm = FIN_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
   const finPermFor = (key: string): "none" | "view" | "edit" => {
     if (!isGuest) return (isOwner || isAssigned) ? "edit" : "view";
     const p = hasAnyFinPerm ? myGuestPerms[FIN_PERM_BY_KEY[key]] : myGuestPerms["finances"];
@@ -2371,7 +2539,6 @@ export default function ProjectWorkspace() {
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
   const hasAnyProcPerm = PROC_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
-  const hasAnyFinPerm = FIN_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
   const allTabs = isOwner
     ? allTabsAll
     : isGuest
@@ -2558,6 +2725,50 @@ export default function ProjectWorkspace() {
 
   return (
     <div className="space-y-6 pb-20">
+      {/* CR-P (76)/(77) — assign employees: search, tick, assign. Scoped tab access is then set
+          per person with Manage access, which opens the same access modal the guest system uses. */}
+      {empPickerOpen && (
+        <div className="fixed inset-0 z-[90] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-12" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+              <p className="text-sm font-bold text-slate-900">Assign employees to this project</p>
+              <button onClick={() => setEmpPickerOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="Search by name or ID…" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 pl-9 pr-4 text-xs font-medium focus:ring-2 focus:ring-primary/10 outline-none" />
+              </div>
+              <div className="max-h-80 overflow-y-auto space-y-1">
+                {filteredEmployees.filter((e) => e.empId && !assignedEmployees.includes(e.empId)).length === 0 && (
+                  <p className="text-sm text-slate-400 italic text-center py-6">Everyone matching is already assigned.</p>
+                )}
+                {filteredEmployees.filter((e) => e.empId && !assignedEmployees.includes(e.empId)).map((emp) => {
+                  const on = empPicked.includes(emp.empId);
+                  return (
+                    <label key={emp.empId} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer ${on ? "border-primary bg-primary/5" : "border-slate-100 hover:bg-slate-50"}`}>
+                      <input type="checkbox" checked={on} onChange={(e) => setEmpPicked((p) => (e.target.checked ? [...p, emp.empId] : p.filter((x) => x !== emp.empId)))} className="w-3.5 h-3.5 accent-primary" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-slate-800 truncate">{emp.name}</span>
+                        <span className="block text-[10px] text-slate-400">{[emp.jobTitle, emp.empId].filter(Boolean).join(" · ")}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-400 italic">
+                Assigned employees see the project normally. To limit them to certain tabs, use
+                <span className="font-bold"> Manage access</span> on their row afterwards.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100">
+              <button onClick={() => setEmpPickerOpen(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold">Cancel</button>
+              <button onClick={() => void assignPickedEmployees()} disabled={!empPicked.length} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50">Assign {empPicked.length || ""}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {wsDialogs}
       {/* ── Header ── */}
       <div className="flex flex-col gap-5">
@@ -3117,7 +3328,9 @@ export default function ProjectWorkspace() {
                     onPrint={() => { if (dirty) void handleSave(true); setProposalPreview(which); }}
                     markCompleteLabel="Mark as Final"
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
-                    markCompleteMessage={`Are you sure you're done with this? It will be saved as Final revision ${nextFinalVer[which]} in this document's Saved Versions — a frozen PDF you can preview, print, or download. You can keep editing afterwards; this copy won't change.`}
+                    /* CR-P (109) — "are you sure you want to save it as final? You cannot change it later." The
+                       frozen copy is what went out, so it is explicitly immutable. */
+                    markCompleteMessage={`This files a frozen copy as revision ${Math.max(0, nextFinalVer[which] - 1)} in the proposals table. That copy can never be changed — it is the record of what was produced. You can keep editing the live proposal afterwards and file another revision later.`}
                     onMarkComplete={async () => {
                       if (!id) return;
                       try {
@@ -3179,54 +3392,149 @@ export default function ProjectWorkspace() {
               </div>
 
               {/* OVERVIEW */}
+              {/* CR-P (82)-(87) - the overview used to be two status cards, which said nothing
+                  about what had actually been produced. It is now a numbered table per stream:
+                  Technical, Financial and the Combined pack that goes to the client. The newest
+                  revision sits on the main row and older ones fold out underneath it. */}
               {proposalSub === "overview" && (
                 <div className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {([
                     { which: "technical" as const, title: "Technical Proposal", section: "proposals-technical" },
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
+                    { which: "combined" as const, title: "Combined Proposal", section: "proposals-combined" },
                   ]).map((p) => {
-                    // CR-B-19b — when the Financial Proposal is locked, non-owners get a placeholder
-                    // here too (no status, no Preview/Download, no attachments) — not just a disabled tab.
+                    // CR-B-19b - a locked Financial Proposal shows a placeholder to non-owners.
                     const finBlocked = p.which === "financial" && financialLocked && !isOwner;
                     if (finBlocked) return (
-                      <div key={p.which} className="space-y-4">
-                        <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center gap-3 min-h-[220px]">
-                          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center"><Lock size={20} className="text-amber-500" /></div>
-                          <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
-                          <p className="text-xs text-slate-400 max-w-[16rem]">This section is locked by the project owner. Contact <strong className="text-slate-600">{project.owner || "the owner"}</strong> for access.</p>
-                        </div>
+                      <div key={p.which} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center gap-3 min-h-[180px]">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center"><Lock size={20} className="text-amber-500" /></div>
+                        <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
+                        <p className="text-xs text-slate-400 max-w-[16rem]">This section is locked by the project owner. Contact <strong className="text-slate-600">{project.owner || "the owner"}</strong> for access.</p>
                       </div>
                     );
+                    const docs = propDocs[p.which] || [];          // newest first (server sorts by version desc)
+                    const latest = docs[0];
+                    const older = docs.slice(1);
+                    const expanded = !!openRevs[p.which];
+                    // CR-P (84) - "always start from revision zero": the first saved copy is Rev 0.
+                    const revNo = (d: ApiSavedDocument) => Math.max(0, (d.version || 1) - 1);
                     return (
-                    <div key={p.which} className="space-y-4">
-                      <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-display font-bold text-slate-900 text-lg flex items-center gap-2">{p.title}{p.which === "financial" && financialLocked && <Lock size={13} className="text-amber-500" />}</h4>
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${PROPOSAL_STATUS_COLOR[proposals[p.which].status] || "bg-slate-100 text-slate-500"}`}>
-                            {proposals[p.which].status || "Draft"}
-                          </span>
+                      <div key={p.which} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b border-slate-100">
+                          <h4 className="font-display font-bold text-slate-900 text-base flex items-center gap-2">
+                            {p.title}
+                            {p.which === "financial" && financialLocked && <Lock size={13} className="text-amber-500" />}
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{docs.length} revision{docs.length === 1 ? "" : "s"}</span>
+                          </h4>
+                          {canEdit && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* CR-P (88) - an already-awarded project's proposal is uploaded, not rebuilt. */}
+                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 cursor-pointer" title="Upload a proposal produced outside the platform">
+                                <Upload size={12} /> Upload existing
+                                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadExistingProposal(p.which, f); e.target.value = ""; }} />
+                              </label>
+                              {/* CR-P (89) - create opens the builder for this stream. */}
+                              {p.which !== "combined" ? (
+                                <button onClick={() => setProposalSub(p.which)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Create proposal</button>
+                              ) : (
+                                <button onClick={() => void buildCombinedProposal()} disabled={proposalDownloading === "combined"} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50" title="Merge the latest technical and financial proposals into one pack">
+                                  <Plus size={12} /> {proposalDownloading === "combined" ? "Merging..." : "Combine latest"}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <label className={lbl}>Submission Date</label>
-                            <input type="date" value={proposals[p.which].submissionDate} onChange={(e) => updateProposalField(p.which, "submissionDate", e.target.value)} disabled={!canEdit} className={inp} />
+
+                        {docs.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic px-5 py-6">
+                            Nothing produced yet. {p.which === "combined" ? "Combine the technical and financial proposals once both exist." : "Build it, then Mark as Final to file revision 0 here, or upload one that already exists."}
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[860px] text-left">
+                              <thead>
+                                <tr className="bg-slate-50/50 border-b border-slate-100">
+                                  <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Revision</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last modified</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</th>
+                                  <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {[latest, ...(expanded ? older : [])].filter(Boolean).map((d, i) => (
+                                  <tr key={d._id} className={i > 0 ? "bg-slate-50/20 hover:bg-slate-50/40" : "hover:bg-slate-50/40"}>
+                                    <td className="px-4 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
+                                    <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                                      <span className={i === 0 ? "text-xs font-bold text-slate-800" : "text-xs font-bold text-slate-500"}>Rev {revNo(d)}</span>
+                                      {i === 0 && older.length > 0 && <span className="ml-1.5 text-[9px] font-bold text-primary uppercase tracking-wide">current</span>}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-xs text-slate-700 align-top max-w-[16rem] truncate" title={d.title}>{d.title || <span className="text-slate-300">-</span>}</td>
+                                    <td className="px-3 py-2.5 align-top">
+                                      {canEdit ? (
+                                        <select
+                                          value={d.status}
+                                          onChange={(e) => void setProposalDocStatus(d, e.target.value as SavedDocStatus)}
+                                          className={`text-[10px] font-bold rounded-full pl-2 pr-5 py-1 border-0 cursor-pointer ${PROP_DOC_STATUS[d.status]?.cls || "bg-slate-100 text-slate-500"}`}
+                                        >
+                                          {Object.entries(PROP_DOC_STATUS).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
+                                        </select>
+                                      ) : (
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${PROP_DOC_STATUS[d.status]?.cls || "bg-slate-100 text-slate-500"}`}>{PROP_DOC_STATUS[d.status]?.label || d.status}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top whitespace-nowrap">
+                                      {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "-"}
+                                      {d.createdByName && <span className="block text-[10px] text-slate-400">by {d.createdByName}</span>}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top max-w-[12rem] truncate" title={d.note}>{d.note || <span className="text-slate-300">-</span>}</td>
+                                    <td className="px-3 py-2.5 align-top">
+                                      {/* CR-P (85)/(86) - any revision can be opened or downloaded, not just the newest. */}
+                                      <div className="flex items-center gap-1 justify-end">
+                                        <button onClick={() => window.open(savedDocUrl(d.filePath), "_blank")} title="Preview this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Eye size={14} /></button>
+                                        <a href={savedDocUrl(d.filePath)} download={d.fileName} title="Download this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Download size={14} /></a>
+                                        <ShareMenu fileName={d.fileName} fileUrl={savedDocUrl(d.filePath)} size={14} />
+                                        {canEdit && (
+                                          <button onClick={() => void removeProposalDoc(d)} title="Delete this revision" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {older.length > 0 && (
+                              <button onClick={() => setOpenRevs((o) => ({ ...o, [p.which]: !expanded }))} className="w-full px-4 py-2 text-[11px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-1.5">
+                                {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                {expanded ? "Hide older revisions" : `Show ${older.length} older revision${older.length === 1 ? "" : "s"}`}
+                              </button>
+                            )}
                           </div>
-                          <div className="space-y-1.5">
-                            <label className={lbl}>Status</label>
-                            <select value={proposals[p.which].status} onChange={(e) => updateProposalField(p.which, "status", e.target.value)} disabled={!canEdit} className={`${inp} appearance-none`}>
-                              {PROPOSAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                        )}
+
+                        {p.which !== "combined" && (
+                          <div className="px-5 py-4 border-t border-slate-100 space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <label className={lbl}>Submission Date</label>
+                                <input type="date" value={proposals[p.which].submissionDate} onChange={(e) => updateProposalField(p.which, "submissionDate", e.target.value)} disabled={!canEdit} className={inp} />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className={lbl}>Overall status</label>
+                                <select value={proposals[p.which].status} onChange={(e) => updateProposalField(p.which, "status", e.target.value)} disabled={!canEdit} className={`${inp} appearance-none`}>
+                                  {PROPOSAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <ActionButtons which={p.which} />
+                            <DocSection projectId={id} section={p.section} title={`${p.title} - Attachments`} canEdit={canEdit} canPublish={isOwner} />
                           </div>
-                        </div>
-                        <ActionButtons which={p.which} />
-                        <p className="text-[10px] text-slate-400">Build the proposal in its tab, then <strong>Preview</strong> or <strong>Download PDF</strong>. Edits persist when you click <strong>Save Workspace</strong>.</p>
+                        )}
                       </div>
-                      <DocSection projectId={id} section={p.section} title={`${p.title} — Attachments`} canEdit={canEdit} canPublish={isOwner} />
-                    </div>
                     );
                   })}
-                </div>
                 </div>
               )}
 
@@ -3366,6 +3674,31 @@ export default function ProjectWorkspace() {
                   if (!s) return null;
                   return (
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                      {/* CR-P (92) - "we need to maybe put here insert template... then you can add
+                          that first page later". A section can be seeded from a saved section
+                          template and any section can become one, so the standard wording (the
+                          transmittal letter, the key-staff blurb) is written once and reused. */}
+                      {canEdit && (
+                        <div className="flex flex-wrap items-center gap-2 pb-1">
+                          <select
+                            value=""
+                            onChange={(e) => { const t = sectionTemplates.find((x) => x._id === e.target.value); if (t) void applySectionTemplate(s.id, t); }}
+                            className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600"
+                            title="Replace this section's content with a saved template"
+                          >
+                            <option value="">Insert from template…</option>
+                            {sectionTemplates.length === 0 && <option value="" disabled>No section templates saved yet</option>}
+                            {sectionTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
+                          </select>
+                          <button
+                            onClick={() => void saveSectionAsTemplate(s)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"
+                            title="Save this section's content as a reusable template"
+                          >
+                            <Plus size={11} /> Save as template
+                          </button>
+                        </div>
+                      )}
                       <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
                       {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
                       {canEdit && (
@@ -3444,13 +3777,26 @@ export default function ProjectWorkspace() {
               {/* FINANCIAL BUILDER */}
               {/* FINANCIAL — Cover Page */}
               {proposalSub === "financial" && proposalDocTab === "cover" && (
-                <ProposalCoverBuilder
-                  projectId={id}
-                  project={project}
-                  cover={coverFinancial}
-                  onCoverChange={setCoverFinancial}
-                  canEdit={canEdit}
-                />
+                <div className="space-y-3">
+                  {/* CR-P (106) - "you can duplicate the technical cover page and just change it to
+                      financial. Everything is actually the same: project name, RFP number, pictures."
+                      One click copies it across and renames the title, instead of retyping it. */}
+                  {canEdit && (
+                    <div className="flex items-center gap-2 flex-wrap bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3">
+                      <span className="text-[11px] text-slate-500">The financial cover is usually the technical one with a different title.</span>
+                      <button onClick={() => void copyTechnicalCover()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary">
+                        <Copy size={12} /> Copy from technical cover
+                      </button>
+                    </div>
+                  )}
+                  <ProposalCoverBuilder
+                    projectId={id}
+                    project={project}
+                    cover={coverFinancial}
+                    onCoverChange={setCoverFinancial}
+                    canEdit={canEdit}
+                  />
+                </div>
               )}
 
               {/* FINANCIAL — Builder */}
@@ -3699,105 +4045,100 @@ export default function ProjectWorkspace() {
             </div>
 
             {/* ── ASSIGNED EMPLOYEES ── */}
+            {/* CR-P (76)-(79) — the team tab used to render the WHOLE employee pool as a
+                toggle list, so "assigned" and "not assigned" were mixed together and you could not
+                see at a glance who was actually on the project. It now starts empty, you add people
+                through an Assign employee picker, and the table lists only the assigned ones with
+                their position and their access. */}
             {subsSubTab === "employees" && (
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-                <div>
-                  <h3 className="text-lg font-display font-bold text-slate-900 mb-1">
-                    {isOwner ? "Assign Employees" : "Project Team"}
-                  </h3>
-                  <p className="text-xs font-medium text-slate-400">
-                    {isOwner
-                      ? "Toggle employees to assign or remove them from this project."
-                      : "Managed by the project owner. Only the owner can add or remove team members."}
-                  </p>
+              <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Project team</h3>
+                    <p className="text-xs font-medium text-slate-400">
+                      {isOwner
+                        ? "Only the employees assigned to this project appear here. Assign someone, then choose which tabs they can see."
+                        : "Managed by the project owner. Only the owner can add or remove team members."}
+                    </p>
+                  </div>
+                  {isOwner && (
+                    <button onClick={() => { setEmpPickerOpen(true); setEmpSearch(""); setEmpPicked([]); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
+                      <Plus size={13} /> Assign employee
+                    </button>
+                  )}
                 </div>
 
-                {isOwner ? (
-                  <>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
-                      <input
-                        type="text"
-                        value={empSearch}
-                        onChange={(e) => setEmpSearch(e.target.value)}
-                        placeholder="Search by name or ID..."
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 pl-9 pr-4 text-xs font-medium focus:ring-2 focus:ring-primary/10 outline-none"
-                      />
-                    </div>
-                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                      {filteredEmployees.map((emp) => {
-                        const assigned = assignedEmployees.includes(emp.empId);
-                        return (
-                          <div
-                            key={emp.empId}
-                            onClick={() => toggleEmployee(emp.empId)}
-                            className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${
-                              assigned ? "border-primary bg-primary/5" : "border-slate-100 bg-slate-50 hover:border-slate-200"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold ${assigned ? "bg-primary text-white" : "bg-white border border-slate-100 text-slate-400"}`}>
-                                {assigned ? <Check size={14} /> : emp.name[0]}
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">{emp.name}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{emp.empId}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                              {assigned && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setEmpAccessFor(emp.empId); }}
-                                  className="text-[10px] font-bold text-primary hover:underline"
-                                >
-                                  Manage access
-                                </button>
-                              )}
-                              <span className={`text-[10px] font-bold uppercase tracking-widest ${assigned ? "text-primary" : "text-slate-300"}`}>
-                                {assigned ? "Assigned" : "Unassigned"}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="pt-4 border-t border-slate-50 text-xs font-bold text-slate-400">
-                      {assignedEmployees.length} of {employeePool.filter((e) => e.empId).length} employees assigned
-                    </div>
-                  </>
+                {assignedEmployees.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-14 text-slate-400 bg-slate-50 rounded-3xl">
+                    <Users size={30} className="mb-2" />
+                    <p className="text-sm font-bold">Nobody assigned yet.</p>
+                    <p className="text-xs mt-1">{isOwner ? "Click Assign employee to add someone to this project." : "The project owner has not assigned anyone yet."}</p>
+                  </div>
                 ) : (
-                  <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                    {assignedEmployees.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">No team members assigned yet.</p>
-                    ) : (
-                      assignedEmployees.map((empIdStr) => {
-                        const emp = employeePool.find((e) => e.empId === empIdStr);
-                        const isMe = empIdStr === myEmpId;
-                        return (
-                          <div
-                            key={empIdStr}
-                            className="flex items-center justify-between p-4 rounded-2xl border-2 border-primary/30 bg-primary/5"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold bg-primary text-white">
-                                <Check size={14} />
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">
-                                  {emp?.name ?? empIdStr}
-                                  {isMe && <span className="ml-2 text-[10px] font-bold text-primary uppercase tracking-widest">(You)</span>}
-                                </p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{empIdStr}</p>
-                              </div>
-                            </div>
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Assigned</span>
-                          </div>
-                        );
-                      })
-                    )}
+                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                    <table className="w-full min-w-[720px] text-left">
+                      <thead>
+                        <tr className="bg-slate-50/50 border-b border-slate-100">
+                          <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
+                          <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
+                          <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Position</th>
+                          <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Employee ID</th>
+                          <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Access</th>
+                          {isOwner && <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {assignedEmployees.map((empIdStr, i) => {
+                          const emp = employeePool.find((e) => e.empId === empIdStr);
+                          const isMe = empIdStr === myEmpId;
+                          // A scoped guest record means restricted tab access; otherwise they get
+                          // the normal assigned-employee view of the project.
+                          const guest = emp?.id ? guestsList.find((g) => g.userId === emp.id) : undefined;
+                          // A scoped grant (guests[].tabPermissions) wins; otherwise fall back to
+                          // the per-tab allowlist, so the column always states what is really true.
+                          const visibleTabCount = guest
+                            ? allTabsAll.filter((t) => !!guest.tabPermissions?.[t.id]).length
+                            : allTabsAll.filter((t) => employeeCanSeeTab(empIdStr, t.id)).length;
+                          return (
+                            <tr key={empIdStr} className="hover:bg-slate-50/40">
+                              <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
+                              <td className="px-3 py-2.5 align-top">
+                                <span className="text-xs font-bold text-slate-800">{emp?.name ?? empIdStr}</span>
+                                {isMe && <span className="ml-1.5 text-[9px] font-bold text-primary uppercase tracking-widest">(You)</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{emp?.jobTitle || <span className="text-slate-300">—</span>}</td>
+                              <td className="px-3 py-2.5 text-[11px] font-bold text-slate-500 align-top tabular-nums">{empIdStr}</td>
+                              {/* Tab access is managed right here, the same way the profile's
+                                  Access page does it: how many of this project's tabs the person
+                                  can currently see, and Manage access to change it. */}
+                              <td className="px-3 py-2.5 align-top">
+                                {!guest && visibleTabCount === allTabsAll.length ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold whitespace-nowrap">All tabs</span>
+                                ) : visibleTabCount === 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{visibleTabCount} of {allTabsAll.length} tabs</span>
+                                )}
+                              </td>
+                              {isOwner && (
+                                <td className="px-3 py-2.5 align-top">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <button onClick={() => setEmpAccessFor(empIdStr)} title="Choose which tabs this person can see on this project" className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage access</button>
+                                    {guest && (
+                                      <button onClick={() => openEditGuest(guest)} title="Edit their scoped login" className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Login access</button>
+                                    )}
+                                    <button onClick={() => void unassignEmployee(empIdStr, emp?.name || empIdStr)} title="Remove from this project" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+                <p className="text-xs font-bold text-slate-400">{assignedEmployees.length} assigned</p>
               </div>
             )}
 
@@ -4182,11 +4523,9 @@ export default function ProjectWorkspace() {
                         </div>
                       )}
 
-                      {/* AGREEMENTS — offers & agreements merged; create multiple named agreements */}
-                      {subInnerTab === "agreement" && (() => {
-                        const myAgreements = subAgreements.filter((a) => a.subId === sub.subId);
-                        const KIND_LABEL: Record<string, string> = { agreement: "Agreement", offer: "Offer", other: "Other" };
-                        return (
+                      {/* AGREEMENTS — CR-P (69): the one shared agreement builder, the same engine
+                          as the General Agreements page and the employee profile. */}
+                      {subInnerTab === "agreement" && (
                         <div className="space-y-4">
                           {sub.scope && (
                             <div className="bg-slate-50 rounded-2xl p-4">
@@ -4214,45 +4553,14 @@ export default function ProjectWorkspace() {
                               }}
                             />
                           )}
-                          <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-4">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11} /> Uploaded agreements &amp; offers ({myAgreements.length})</p>
-                            {canEdit && <button onClick={() => openAgreementModal(sub.subId)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Upload bundle</button>}
-                          </div>
-                          {myAgreements.length === 0 ? (
-                            <p className="text-[11px] text-slate-400 italic">No agreements yet.{canEdit ? " Click “Create agreement”." : ""}</p>
-                          ) : (
-                            <div className="space-y-2.5">
-                              {myAgreements.map((a) => (
-                                <div key={a._id} className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-bold text-slate-800">{a.name || "Agreement"}</p>
-                                      {a.description && <p className="text-[11px] text-slate-500 mt-0.5 whitespace-pre-wrap">{a.description}</p>}
-                                    </div>
-                                    {canEdit && <button onClick={() => removeAgreement(a._id)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-white shrink-0" title="Delete agreement"><Trash2 size={14} /></button>}
-                                  </div>
-                                  {a.documents.length === 0 ? (
-                                    <p className="text-[10px] text-slate-400 italic">No documents attached.</p>
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5">
-                                      {a.documents.map((d) => (
-                                        <div key={d._id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100">
-                                          <span className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0 ${d.kind === "agreement" ? "bg-emerald-50 text-emerald-600" : d.kind === "offer" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>{KIND_LABEL[d.kind]}</span>
-                                          <a href={attachmentUrl(d.filePath)} target="_blank" rel="noreferrer" className="text-xs font-bold text-slate-700 hover:text-primary truncate flex-grow" title={d.name}>{d.name}</a>
-                                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{d.size}</span>
-                                          <a href={attachmentUrl(d.filePath)} download={d.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={12} /></a>
-                                          {canEdit && <button onClick={() => removeAgreementFile(a._id, d._id)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Remove file"><X size={12} /></button>}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          {/* CR-P (69) — a second, weaker agreement system ("upload a bundle of
+                              agreement / offer / other files") used to sit here under the real
+                              builder, so one tab offered two different ways to make an agreement.
+                              "You don't need this. Delete this completely. Use the exact same thing
+                              in here." Files that belong to an agreement are now attached to its
+                              sections in the builder above. */}
                         </div>
-                        );
-                      })()}
+                      )}
 
                       {/* INVOICES — per-row table (item # · description · amount · remarks · date · attachments) */}
                       {subInnerTab === "invoices" && (
@@ -5763,53 +6071,7 @@ export default function ProjectWorkspace() {
         )}
       </AnimatePresence>
 
-      {/* Create Agreement modal — name, description, agreement/offer/other documents */}
-      {agreementModal && (() => {
-        const fileRow = (label: string, hint: string, file: File | null, onPick: (f: File | null) => void) => (
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</label>
-            <div className="flex items-center gap-2">
-              <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200 shrink-0"><Upload size={12} /> Choose file<input type="file" className="hidden" onChange={(e) => { onPick(e.target.files?.[0] || null); e.target.value = ""; }} /></label>
-              {file ? <span className="text-[11px] font-bold text-slate-600 truncate flex items-center gap-1">{file.name}<button onClick={() => onPick(null)} className="text-slate-300 hover:text-red-500"><X size={12} /></button></span> : <span className="text-[10px] text-slate-400 italic">{hint}</span>}
-            </div>
-          </div>
-        );
-        return (
-          <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-10" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
-                <p className="text-sm font-bold text-slate-900">Create agreement</p>
-                <button onClick={() => !agrSaving && setAgreementModal(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
-              </div>
-              <div className="p-5 space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name *</label>
-                  <input autoFocus value={agrForm.name} onChange={(e) => setAgrForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Civil Works Contract" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/10" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</label>
-                  <textarea rows={2} value={agrForm.description} onChange={(e) => setAgrForm((p) => ({ ...p, description: e.target.value }))} placeholder="Short description of this agreement…" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-y" />
-                </div>
-                {fileRow("Agreement document", "The signed agreement", agrForm.agreement, (f) => setAgrForm((p) => ({ ...p, agreement: f })))}
-                {fileRow("Offer document", "The accepted offer", agrForm.offer, (f) => setAgrForm((p) => ({ ...p, offer: f })))}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Other documents</label>
-                  <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200 w-fit"><Upload size={12} /> Add files<input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) setAgrForm((p) => ({ ...p, others: [...p.others, ...fs] })); e.target.value = ""; }} /></label>
-                  {agrForm.others.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {agrForm.others.map((f, i) => <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600">{f.name}<button onClick={() => setAgrForm((p) => ({ ...p, others: p.others.filter((_, idx) => idx !== i) }))} className="text-slate-300 hover:text-red-500"><X size={11} /></button></span>)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={() => setAgreementModal(null)} disabled={agrSaving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Cancel</button>
-                  <button onClick={submitAgreement} disabled={agrSaving || !agrForm.name.trim()} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50">{agrSaving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Create agreement</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* CR-P (69) — the legacy "create agreement bundle" modal is gone with the list it fed. */}
 
       {/* Universal Document Viewer */}
       <AnimatePresence>
@@ -6164,26 +6426,72 @@ export default function ProjectWorkspace() {
       </AnimatePresence>
 
       {/* CR-P — Per-employee tab-access popup (owner picks which tabs one employee can access) */}
+      {/* Tab access for one assigned employee — CR-P: the SAME View / Edit / Hidden model the
+          profile's Access page uses, written to the project's guest permissions, rather than the
+          binary on/off toggle this used to be. An assigned employee has the whole project until
+          you deliberately limit them, and can be given it all back in one click. */}
       {empAccessFor && (() => {
         const empId = empAccessFor;
-        if (!empId) return null;
         const emp = employeePool.find((e) => e.empId === empId);
+        const guest = emp?.id ? guestsList.find((g) => g.userId === emp.id) : undefined;
+        const limited = !!guest;
+        const permOf = (tabId: string): "none" | "view" | "edit" =>
+          (empPerms[tabId] ?? (guest?.tabPermissions?.[tabId] as "view" | "edit" | undefined) ?? "none");
+        const setPerm = (tabId: string, v: "none" | "view" | "edit") => setEmpPerms((p) => ({ ...p, [tabId]: v }));
         return (
           <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => setEmpAccessFor(null)} />
-            <div className="relative bg-white rounded-[2rem] p-6 w-full max-w-md shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => { setEmpAccessFor(null); setEmpPerms({}); }} />
+            <div className="relative bg-white rounded-[2rem] p-6 w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-lg font-display font-bold text-slate-900">Tab access</h3>
-                <button onClick={() => setEmpAccessFor(null)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+                <button onClick={() => { setEmpAccessFor(null); setEmpPerms({}); }} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
-              <p className="text-xs text-slate-400 mb-4">Choose which tabs <span className="font-bold text-slate-600">{emp?.name ?? empId}</span> can access on this project.</p>
-              <div className="space-y-1 overflow-y-auto pr-1">
+              <p className="text-xs text-slate-400 mb-3">
+                Which tabs <span className="font-bold text-slate-600">{emp?.name ?? empId}</span> can use on this project.
+              </p>
+
+              {!limited && (
+                <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 mb-3">
+                  Right now they have <span className="font-bold">full access</span> to this project. Choose tabs below and
+                  save to limit them; anything left Hidden will not be visible to them.
+                </p>
+              )}
+
+              <div className="space-y-1 overflow-y-auto pr-1 flex-grow">
                 {allTabsAll.map((t) => {
                   const isChild = !!(customTabs.find((c) => c.id === t.id)?.parentId);
-                  return <AccessToggleRow key={t.id} label={t.label} indent={isChild} on={employeeCanSeeTab(empId, t.id)} onToggle={() => toggleEmployeeTab(empId, t.id)} />;
+                  const cur = permOf(t.id);
+                  return (
+                    <div key={t.id} className={`flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-50 ${isChild ? "pl-5" : ""}`}>
+                      <span className="text-xs font-bold text-slate-700 truncate">{isChild ? "↳ " : ""}{t.label}</span>
+                      <span className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-bold shrink-0">
+                        {([["none", "Hidden"], ["view", "View"], ["edit", "Edit"]] as const).map(([v, label]) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setPerm(t.id, v)}
+                            className={`px-2.5 py-1 ${cur === v
+                              ? (v === "none" ? "bg-red-500 text-white" : v === "view" ? "bg-slate-900 text-white" : "bg-emerald-600 text-white")
+                              : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                          >{label}</button>
+                        ))}
+                      </span>
+                    </div>
+                  );
                 })}
               </div>
-              <p className="text-[10px] text-slate-400 pt-3 mt-2 border-t border-slate-50">Changes save automatically.</p>
+
+              <div className="flex items-center justify-between gap-2 pt-3 mt-2 border-t border-slate-100">
+                {limited ? (
+                  <button onClick={() => void restoreFullAccess(empId)} className="text-[11px] font-bold text-slate-500 hover:text-slate-900">Restore full access</button>
+                ) : <span />}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEmpAccessFor(null); setEmpPerms({}); }} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold">Cancel</button>
+                  <button onClick={() => void saveEmpAccess(empId)} disabled={accessBusy === empId} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50">
+                    {accessBusy === empId ? "Saving…" : "Save access"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         );

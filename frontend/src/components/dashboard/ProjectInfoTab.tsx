@@ -13,7 +13,9 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 // Custom sub-tabs are stored as ProjectTable rows (tableKey "project-info-subtabs"); each row's id
 // gives a unique DocSection id "project-info-custom-<rowId>".
 
-type TopTab = "rfp" | "award" | "ntp";
+// CR-P (119) — "can you add one more default tab here in all the projects? Call it Post Award
+// Docs." What arrives WITH the award and what is produced AFTER it are different piles.
+type TopTab = "rfp" | "award" | "postaward" | "ntp";
 const SUBTAB_KEY = "project-info-subtabs";
 
 type SubTab = { k: string; label: string; section: string; hint: string; special?: "amendments" | "communications" };
@@ -28,6 +30,7 @@ const BUILTINS: Record<TopTab, SubTab[]> = {
     { k: "other", label: "Other", section: "project-info-other", hint: "Anything else received for this bid." },
   ],
   award: [{ k: "default", label: "Award Documents", section: "project-info-award", hint: "Award documents received from the client (award letter, contract, etc.)." }],
+  postaward: [{ k: "default", label: "Post Award Documents", section: "project-info-postaward", hint: "Documents produced after the award: bonds, insurance certificates, submittal registers, kick-off paperwork." }],
   ntp: [{ k: "default", label: "Notices to Proceed", section: "project-info-ntp", hint: "Notices to Proceed (NTPs) issued for this project." }],
 };
 
@@ -89,6 +92,7 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
         <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
           {topBtn("rfp", "RFP", FileText)}
           {topBtn("award", "Award Docs", Award)}
+          {topBtn("postaward", "Post Award Docs", FolderOpen)}
           {topBtn("ntp", "NTPs", FileCheck2)}
         </div>
       </div>

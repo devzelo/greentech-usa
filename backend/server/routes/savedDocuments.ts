@@ -81,7 +81,8 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
     const update: Record<string, unknown> = {};
     if (typeof req.body.title === "string") update.title = req.body.title.trim();
     if (typeof req.body.note === "string") update.note = req.body.note;
-    if (req.body.status === "draft" || req.body.status === "final") update.status = req.body.status;
+    // CR-P (83) — the wider proposal lifecycle.
+    if (["draft", "final", "sent", "submitted", "awarded", "not-awarded"].includes(req.body.status)) update.status = req.body.status;
     const doc = await SavedDocument.findOneAndUpdate(
       { _id: req.params.docId, projectId: req.params.id },
       update,

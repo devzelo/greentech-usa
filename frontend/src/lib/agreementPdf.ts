@@ -1,13 +1,114 @@
 import { PDFDocument, PDFFont, PDFImage, StandardFonts, degrees, rgb, type PDFPage } from "pdf-lib";
 import { attachmentUrl, type ApiAgreement } from "./api";
 import { GREENTECH, embedImage, drawFitted } from "./poPdf";
+import { PDF_COLORS, DOC_SIZES } from "./docStyle";
 
 // The shared agreement document — one formal layout for every context (employee, partner,
 // subcontractor, vendor). Multi-page: a paginated cursor wraps long section text onto new
 // pages automatically. Same visual language as the PO document.
 const PAGE_W = 595.28, PAGE_H = 841.89, M = 52;
-const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
-const LINE = rgb(0.8, 0.83, 0.87), HEADBG = rgb(0.95, 0.96, 0.97);
+// CR-P (41) — colours and type sizes come from the shared document style system, so an agreement,
+// the editor it was typed in, and every other GreenTech document agree by construction.
+const GREEN = PDF_COLORS.brand, INK = PDF_COLORS.ink, MUTED = PDF_COLORS.muted;
+const LINE = PDF_COLORS.line, HEADBG = PDF_COLORS.headBg, ROWALT = PDF_COLORS.rowAlt;
+
+// CR-P (37) — one stretch of text carrying the styling the editor applied to it.
+type RGB = ReturnType<typeof rgb>;
+type Run = { text: string; color: RGB; bg: RGB | null; bold: boolean };
+
+// CSS colours the editor can emit: #rgb, #rrggbb, rgb()/rgba(), and the few names it offers.
+const NAMED: Record<string, [number, number, number]> = {
+  black: [0, 0, 0], white: [255, 255, 255], red: [255, 0, 0], green: [0, 128, 0], blue: [0, 0, 255],
+  yellow: [255, 255, 0], orange: [255, 165, 0], purple: [128, 0, 128], gray: [128, 128, 128], grey: [128, 128, 128],
+};
+function parseCssColor(raw?: string | null): RGB | null {
+  const s = (raw || "").trim().toLowerCase();
+  if (!s || s === "inherit" || s === "initial" || s === "transparent" || s === "currentcolor") return null;
+  if (NAMED[s]) { const [r, g, b] = NAMED[s]; return rgb(r / 255, g / 255, b / 255); }
+  let m = /^#([0-9a-f]{3})$/.exec(s);
+  if (m) { const h = m[1]; return rgb(parseInt(h[0] + h[0], 16) / 255, parseInt(h[1] + h[1], 16) / 255, parseInt(h[2] + h[2], 16) / 255); }
+  m = /^#([0-9a-f]{6})$/.exec(s);
+  if (m) { const h = m[1]; return rgb(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255); }
+  m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(s);
+  if (m) {
+    // A fully transparent background is the browser's "no highlight" — treat it as none.
+    const alpha = /^rgba\(/.test(s) ? parseFloat((/,\s*([\d.]+)\s*\)$/.exec(s) || [])[1] || "1") : 1;
+    if (alpha === 0) return null;
+    return rgb(Math.min(255, +m[1]) / 255, Math.min(255, +m[2]) / 255, Math.min(255, +m[3]) / 255);
+  }
+  return null;
+}
+
+// CR-P (42) — staple one attached file into the document: a divider naming where it came from,
+// then the file itself. PDFs are merged page-for-page, images get their own page, and anything
+// else gets a stub page naming it so the reader knows a file exists even if it can't be shown.
+// The two callers hand in different kinds of location, and putting one through the other's
+// resolver produced a 404 that was swallowed silently (the file simply did not print):
+//  - a SECTION attachment stores an upload path, "uploads/agreements/x.pdf", which needs the
+//    /uploads route and a file token;
+//  - an NDA or standard-terms file stores an already-served URL, "/downloads/terms.pdf" or an
+//    "/uploads/...?token=" link from Company Documents, which must be used exactly as it is.
+function toDocUrl(p: string): string {
+  const raw = (p || "").replace(/\\/g, "/");
+  if (!raw) return "";
+  if (/^(https?:|data:|blob:)/.test(raw)) return raw;
+  if (raw.startsWith("/")) return raw;      // already a served URL
+  return attachmentUrl(raw);                 // a stored upload path
+}
+
+async function stapleAttachment(
+  doc: PDFDocument,
+  a: { name: string; filePath: string },
+  heading: string,
+  font: PDFFont,
+  bold: PDFFont,
+) {
+  const url = toDocUrl(a.filePath);
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const bytes = await res.arrayBuffer();
+    const ext = (a.name.split(".").pop() || "").toLowerCase();
+
+    // Resolve the content FIRST, so a file that cannot be parsed never leaves an orphaned
+    // divider page announcing an attachment that isn't there.
+    const srcDoc = ext === "pdf" ? await PDFDocument.load(bytes, { ignoreEncryption: true }) : null;
+    // CR-P (38) — go through embedImage so non-PNG/JPEG pictures are repainted, not dropped.
+    const img = !srcDoc && ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].includes(ext)
+      ? await embedImage(doc, url) : null;
+
+    const d = doc.addPage([PAGE_W, PAGE_H]);
+    d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
+    const h = heading.toUpperCase();
+    d.drawText(h, { x: (PAGE_W - bold.widthOfTextAtSize(h, 18)) / 2, y: PAGE_H / 2 + 16, size: 18, font: bold, color: INK });
+    d.drawText(a.name, { x: (PAGE_W - font.widthOfTextAtSize(a.name, 10)) / 2, y: PAGE_H / 2 - 24, size: 10, font, color: MUTED });
+
+    if (srcDoc) {
+      const pages = await doc.copyPages(srcDoc, srcDoc.getPageIndices());
+      pages.forEach((p) => doc.addPage(p));
+    } else if (img) {
+      addImagePage(doc, img);
+    } else {
+      const p = doc.addPage([PAGE_W, PAGE_H]);
+      p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
+      p.drawText("Attached file", { x: M, y: PAGE_H - 110, size: 13, font: bold, color: INK });
+      p.drawText(a.name, { x: M, y: PAGE_H - 132, size: 11, font, color: MUTED });
+      p.drawText("This file type cannot be shown inline — download the original from the agreement.", { x: M, y: PAGE_H - 152, size: 9, font, color: MUTED });
+    }
+  } catch { /* one unreadable attachment must not break the whole document */ }
+}
+
+// CR-P (39) — which logo belongs on a joint-venture letterhead.
+//
+// This used to fall back to the SECOND PARTY's logo when no JV logo was set, which is where
+// "why is here so it's returning as a logo" came from: on a teaming agreement the second party is
+// the counterparty, not the JV partner, so the wrong company's mark landed on our letterhead and
+// displaced the name. Only the partner explicitly chosen for the JV counts now (CR-P (30)); with
+// none chosen the header falls back to printing the JV partner's NAME, never a stray logo.
+function jvLetterheadLogo(ag: ApiAgreement): string {
+  return ag.jvLogoUrl || "";
+}
 
 // Greedy word-wrap for pdf-lib (drawText's own wrapping can't report height used).
 function wrap(font: PDFFont, text: string, size: number, maxW: number): string[] {
@@ -46,6 +147,37 @@ class Cursor {
       this.text(line, font, size, color);
     }
   }
+
+  // CR-P (37) — a paragraph made of styled runs. The editor lets people colour and highlight text,
+  // and all of that used to be flattened away because the renderer took `el.textContent` and drew
+  // it in one ink colour. Words are laid out one at a time so a colour or a highlight can change
+  // mid-line, with the highlight drawn as a rectangle behind the word.
+  runs(list: Run[], size: number, font: PDFFont, boldFont: PDFFont) {
+    const maxX = M + (PAGE_W - M * 2);
+    let x = M;
+    this.need(size + 4);
+    const newline = () => { this.y -= size + 4; this.need(size + 4); x = M; };
+    for (const run of list) {
+      const f = run.bold ? boldFont : font;
+      for (const tok of run.text.split(/(\s+)/)) {
+        if (!tok) continue;
+        if (/^\s+$/.test(tok)) {
+          // Collapse whitespace, and never start a line with it.
+          if (x > M) x += f.widthOfTextAtSize(" ", size);
+          continue;
+        }
+        let word = tok;
+        let w = f.widthOfTextAtSize(word, size);
+        if (x + w > maxX && x > M) newline();
+        // A single "word" wider than the page (a long URL): chop it to fit.
+        while (w > maxX - M && word.length > 1) { word = word.slice(0, -1); w = f.widthOfTextAtSize(word, size); }
+        if (run.bg) this.page.drawRectangle({ x: x - 0.5, y: this.y - 2.5, width: w + 1, height: size + 3.5, color: run.bg });
+        this.page.drawText(word, { x, y: this.y, size, font: f, color: run.color });
+        x += w;
+      }
+    }
+    this.y -= size + 4;
+  }
   gap(h: number) { this.y -= h; }
 
   // Place an image (from the rich-text editor) constrained to a max box, growing downward.
@@ -71,7 +203,10 @@ class Cursor {
       const rowH = lineCount * lh + 2 * pad;
       this.need(rowH);
       const yTop = this.y;
+      // CR-P (41) — header rows take the brand tint, body rows alternate, so a table is legible
+      // and recognisably ours instead of plain grey.
       if (isHead) this.page.drawRectangle({ x: M, y: yTop - rowH, width: contentW, height: rowH, color: HEADBG });
+      else if (ri % 2 === 0) this.page.drawRectangle({ x: M, y: yTop - rowH, width: contentW, height: rowH, color: ROWALT });
       for (let ci = 0; ci < cols; ci++) {
         const cx = M + ci * colW;
         this.page.drawLine({ start: { x: cx, y: yTop }, end: { x: cx, y: yTop - rowH }, thickness: 0.5, color: LINE });
@@ -88,11 +223,39 @@ class Cursor {
 }
 
 // Render a rich-text HTML body (from the editor) into the agreement, supporting paragraphs,
-// headings, lists, images and tables. Inline bold/italic is flattened to plain text (agreements
-// were plain text before this, so only the block structure + media matter). Falls back cleanly:
-// plain-text bodies with no tags render as ordinary paragraphs.
+// headings, lists, images and tables. CR-P (37): inline colour, highlight and bold are carried
+// through instead of being flattened. Falls back cleanly: plain-text bodies with no tags render
+// as ordinary paragraphs.
 async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDFFont, bold: PDFFont) {
   const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+
+  // Walk a block's inline children, carrying colour / highlight / bold down the tree so a nested
+  // <span style="color:red"><b>word</b></span> keeps both.
+  const BOLD_TAGS = /^(B|STRONG|TH)$/;
+  const collectRuns = (node: ChildNode, inherited: Omit<Run, "text">): Run[] => {
+    if (node.nodeType === 3) {
+      const text = node.textContent || "";
+      return text ? [{ ...inherited, text }] : [];
+    }
+    if (node.nodeType !== 1) return [];
+    const el = node as HTMLElement;
+    const style = el.style;
+    const next: Omit<Run, "text"> = {
+      color: parseCssColor(style?.color) || parseCssColor(el.getAttribute("color")) || inherited.color,
+      // <mark> is the editor's highlight when it doesn't use inline CSS.
+      bg: parseCssColor(style?.backgroundColor) || (el.tagName === "MARK" ? rgb(1, 0.95, 0.4) : inherited.bg),
+      bold: inherited.bold || BOLD_TAGS.test(el.tagName),
+    };
+    return Array.from(el.childNodes).flatMap((c) => collectRuns(c, next));
+  };
+  const baseRun: Omit<Run, "text"> = { color: INK, bg: null, bold: false };
+  // Draw an element's text with its styling; returns false when there was nothing to draw.
+  const drawStyled = (el: ChildNode, size: number, boldByDefault = false): boolean => {
+    const list = collectRuns(el, { ...baseRun, bold: boldByDefault }).filter((r) => r.text);
+    if (!list.some((r) => r.text.trim())) return false;
+    cur.runs(list, size, font, bold);
+    return true;
+  };
 
   const drawImg = async (el: HTMLElement) => {
     const src = el.getAttribute("src"); if (!src) return;
@@ -108,12 +271,23 @@ async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDF
       rows.push(cells.map((c) => (c.textContent || "").trim()));
       heads.push(cells.some((c) => c.tagName === "TH"));
     }
-    if (rows.length) cur.table(rows, heads, font, bold);
+    if (!rows.length) return;
+    // CR-P (40) — the table's caption prints immediately above it, with a 3pt gap rather than a
+    // paragraph's worth of space, so the title reads as belonging to the table.
+    const caption = (tbl.querySelector("caption")?.textContent || "").trim();
+    if (caption) {
+      cur.need(DOC_SIZES.small + 6 + 24);   // keep the title with at least the first row
+      cur.text(caption, bold, DOC_SIZES.small, PDF_COLORS.ink);
+      cur.y += 3;                           // pull the table up tight under its title
+    }
+    cur.table(rows, heads, font, bold);
   };
   const drawList = (el: HTMLElement, ordered: boolean) => {
     Array.from(el.children).forEach((li, i) => {
-      const t = (li.textContent || "").trim(); if (!t) return;
-      cur.para(`${ordered ? `${i + 1}.` : "•"}  ${t}`, font, 9, INK);
+      if (!(li.textContent || "").trim()) return;
+      // The marker keeps the default ink; the item's own text keeps whatever styling it carries.
+      const marker: Run = { text: `${ordered ? `${i + 1}.` : "•"}  `, color: INK, bg: null, bold: false };
+      cur.runs([marker, ...collectRuns(li, baseRun)], 9, font, bold);
     });
   };
   const walk = async (nodes: ChildNode[]) => {
@@ -125,17 +299,35 @@ async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDF
       if (tag === "TABLE") { drawTbl(el); continue; }
       if (tag === "UL" || tag === "OL") { drawList(el, tag === "OL"); continue; }
       if (tag === "BR") { cur.gap(6); continue; }
-      if (/^H[1-6]$/.test(tag)) { const t = (el.textContent || "").trim(); if (t) { cur.gap(4); cur.text(t.slice(0, 120), bold, 10, INK); cur.gap(2); } continue; }
+      // CR-P (41) — a real heading scale. Every heading used to print at one flat size, so H1 and
+      // H4 were indistinguishable on paper even though they looked different while being typed.
+      if (/^H[1-6]$/.test(tag)) {
+        const level = Number(tag[1]);
+        const size = level <= 1 ? DOC_SIZES.subtitle : level === 2 ? DOC_SIZES.heading : DOC_SIZES.subheading;
+        cur.gap(level <= 2 ? 6 : 4);
+        if (drawStyled(el, size, true)) cur.gap(level <= 2 ? 3 : 2);
+        continue;
+      }
       // A container that wraps media/lists: recurse so nested images/tables are drawn in order.
       if (el.querySelector && el.querySelector("img, table, ul, ol")) { await walk(Array.from(el.childNodes)); continue; }
-      const t = el.textContent || "";
-      if (t.trim()) cur.para(t, font, 9, INK);
+      drawStyled(el, 9);
     }
   };
   await walk(Array.from(parsed.body.childNodes));
 }
 
-const fmt = (d?: string) => (d ? d : "—");
+// CR-P (21) — the dates this document carries. A date prints only when its box is ticked AND it
+// holds a value, so an unticked or empty date is absent rather than shown as "—". Agreements saved
+// before the flags existed have none, and every date they hold still prints.
+export function shownDates(ag: ApiAgreement): Array<{ label: string; value: string }> {
+  const f = ag.datesShown;
+  const on = (k: "effective" | "start" | "end") => (f ? !!f[k] : true);
+  return [
+    { label: "Effective", value: on("effective") ? ag.effectiveDate : "" },
+    { label: "Start", value: on("start") ? ag.startDate : "" },
+    { label: "End", value: on("end") ? ag.endDate : "" },
+  ].filter((d) => (d.value || "").trim());
+}
 
 // The document heading — the agreement type. Many types already contain the document word
 // (e.g. "Service Agreement", "Change Order", "NDA"), so we only append "AGREEMENT" when it
@@ -164,8 +356,13 @@ async function drawUploadedCover(doc: PDFDocument, ag: ApiAgreement, font: PDFFo
   const gtLogo = await embedImage(doc, "/gt-usa-logo-new.png");
   if (gtLogo) drawFitted(p, gtLogo, M, PAGE_H - 62, 150, 40);
   if (ag.letterhead === "jv") {
-    const jvLogo = await embedImage(doc, ag.jvLogoUrl || ag.partySnapshot?.party2?.logoUrl);
+    const jvLogo = await embedImage(doc, jvLetterheadLogo(ag));
     if (jvLogo) { const s = Math.min(150 / jvLogo.width, 40 / jvLogo.height, 1); drawFitted(p, jvLogo, PAGE_W - M - jvLogo.width * s, PAGE_H - 62, 150, 40); }
+    else if (ag.jvPartnerName) {
+      // CR-P (39) — the JV partner's name, never the counterparty's logo.
+      const n = ag.jvPartnerName.slice(0, 26);
+      p.drawText(n, { x: PAGE_W - M - bold.widthOfTextAtSize(n, 12), y: PAGE_H - 40, size: 12, font: bold, color: INK });
+    }
   }
   let y = PAGE_H - 170;
   const center = (text: string, f: PDFFont, size: number, color = INK, gapAfter = size * 0.6) => {
@@ -177,7 +374,17 @@ async function drawUploadedCover(doc: PDFDocument, ag: ApiAgreement, font: PDFFo
     }
     y -= gapAfter;
   };
-  center(agreementHeading(ag), bold, 20, GREEN, 18);
+  center(agreementHeading(ag), bold, 20, GREEN, 6);
+  if (ag.agreementNo) center(`Agreement No: ${ag.agreementNo}`, font, 9.5, MUTED, 10);  // CR-P (23)
+  // CR-P (25) — same running order as the built document: type, title, description, projects.
+  if (ag.title) center(ag.title, bold, 13, INK, 6);
+  if (ag.description) center(ag.description, font, 9.5, INK, 14);
+  const projects = (ag.linkedProjects || []).filter((p) => (p?.name || "").trim());
+  if (projects.length) {
+    center(projects.length === 1 ? "Project" : "Projects", bold, 9, MUTED, 4);
+    for (const p of projects) center(`${p.name}${p.location ? `, ${p.location}` : ""}`, font, 9.5, INK, 0);
+    y -= 14;
+  }
   const p1 = ag.partySnapshot?.party1, p2 = ag.partySnapshot?.party2;
   center("This agreement is made between", font, 9, MUTED, 8);
   if (p1?.name) center(p1.name, bold, 12, INK, 2);
@@ -187,11 +394,14 @@ async function drawUploadedCover(doc: PDFDocument, ag: ApiAgreement, font: PDFFo
   if (p2?.name) center(p2.name, bold, 12, INK, 2);
   for (const l of [p2?.contactName ? `Attn: ${p2.contactName}` : "", p2?.address, p2?.email, p2?.phone].filter(Boolean) as string[]) center(l, font, 9, MUTED, 0);
   y -= 16;
-  const dates = [ag.effectiveDate ? `Effective: ${ag.effectiveDate}` : "", ag.startDate ? `Start: ${ag.startDate}` : "", ag.endDate ? `End: ${ag.endDate}` : ""].filter(Boolean).join("      ");
+  // CR-P (21) — only the ticked dates, same rule as the built document.
+  const dates = shownDates(ag).map((d) => `${d.label}: ${d.value}`).join("      ");
   if (dates) center(dates, font, 9, MUTED, 12);
-  if (ag.description) { center("Description / Remarks", bold, 9, INK, 4); center(ag.description, font, 9.5, INK, 12); }
+  // The description is already printed under the title above (CR-P (25)), so it is not repeated
+  // here. Project info lines are dropped when the projects block above covered them (CR-P (27)).
   for (const cl of ag.partySnapshot?.contextLines || []) {
     if (!cl.label && !cl.value) continue;
+    if (projects.length && cl.label === "Project") continue;
     center(`${cl.label}${cl.label && cl.value ? ": " : ""}${cl.value}`, font, 9, INK, 0);
   }
   y -= 18;
@@ -244,27 +454,63 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   if (gtLogo) drawFitted(cur.page, gtLogo, M, cur.y + 8, 150, 40);
   else cur.page.drawText(GREENTECH.name, { x: M, y: cur.y - 10, size: 16, font: bold, color: INK });
   if (ag.letterhead === "jv") {
-    const jvLogo = await embedImage(doc, ag.jvLogoUrl || ag.partySnapshot?.party2?.logoUrl);
+    const jvLogo = await embedImage(doc, jvLetterheadLogo(ag));
     if (jvLogo) { const s = Math.min(150 / jvLogo.width, 40 / jvLogo.height, 1); drawFitted(cur.page, jvLogo, PAGE_W - M - jvLogo.width * s, cur.y + 8, 150, 40); }
-    else if (ag.partySnapshot?.party2?.name) cur.page.drawText(ag.partySnapshot.party2.name.slice(0, 26), { x: PAGE_W - M - bold.widthOfTextAtSize(ag.partySnapshot.party2.name.slice(0, 26), 12), y: cur.y - 8, size: 12, font: bold, color: INK });
+    else if (ag.jvPartnerName) {
+      // CR-P (30)/(39) — no logo on the Directory partner, so the letterhead carries the JV
+      // partner's own name. Never the counterparty's name or logo: they are different companies.
+      const n = ag.jvPartnerName.slice(0, 26);
+      cur.page.drawText(n, { x: PAGE_W - M - bold.widthOfTextAtSize(n, 12), y: cur.y - 8, size: 12, font: bold, color: INK });
+    }
   }
   cur.gap(50);
 
+  // CR-P (25)/(28) — the document opens with the agreement TYPE, then its TITLE, then the short
+  // description, with nothing wedged in between. The reference data (agreement number, dates,
+  // status) is stacked right-aligned beside the heading instead of interrupting that run, which
+  // is what "remove these lines" between the type and the title meant.
+  // CR-P (21) — the effective date is part of that header stack.
+  // CR-P (24) — `name` is the FILE name and is printed nowhere, in any context.
+  const dates = shownDates(ag);
+  const headingY = cur.y;
   cur.text(agreementHeading(ag), bold, 16, GREEN);
-  // General agreements show only the type as the heading — the GT- code stays an internal
-  // reference and is not printed on the document (CR-P-45).
-  if (ag.name && ag.ownerContextType !== "general") cur.text(ag.name, bold, 10, INK);
-  cur.text(
-    [`Effective: ${fmt(ag.effectiveDate)}`, `Start: ${fmt(ag.startDate)}`, `End: ${fmt(ag.endDate)}`, `Status: ${ag.status}`].join("     "),
-    font, 8.5, MUTED
-  );
+  {
+    const meta = [
+      ...(ag.agreementNo ? [`Agreement No: ${ag.agreementNo}`] : []),
+      ...dates.map((d) => `${d.label}: ${d.value}`),
+      `Status: ${ag.status}`,
+    ];
+    let my = headingY + 4;
+    for (const line of meta) {
+      cur.page.drawText(line, { x: PAGE_W - M - font.widthOfTextAtSize(line, 8.5), y: my, size: 8.5, font, color: MUTED });
+      my -= 11;
+    }
+    // Start the body below whichever ran longer, the heading or the meta stack.
+    cur.y = Math.min(cur.y, my + 11 - 4);
+  }
+
+  // The title, immediately after the type — this is what the agreement is FOR.
+  if (ag.title) { cur.gap(6); cur.para(ag.title, bold, 13, INK); }
+  // The short description: plain text, not bold, one or two lines (CR-P (25)/(26)).
+  if (ag.description) { cur.gap(4); cur.para(ag.description, font, 9.5, INK); }
   cur.gap(10);
 
-  // 2) Parties — two columns
+  // CR-P (27) — the projects this agreement covers, name and location, straight from the project
+  // record. Optional: an agreement that is not project related simply has no block here.
+  const projs = (ag.linkedProjects || []).filter((p) => (p?.name || "").trim());
+  if (projs.length) {
+    cur.need(24 + projs.length * 13);
+    cur.text(projs.length === 1 ? "PROJECT" : "PROJECTS", bold, 8, MUTED);
+    for (const p of projs) cur.para(`${p.name}${p.location ? `, ${p.location}` : ""}`, font, 9.5, INK);
+    cur.gap(10);
+  }
+
+  // 2) Parties — two per row. CR-P (19): an agreement can name up to 4 parties (party 1, the
+  // counterparty, and up to two more), so they are laid out as a 2-column grid that wraps.
   {
     const colW = (PAGE_W - M * 2 - 24) / 2;
-    const drawParty = (x: number, heading: string, p?: ApiAgreement["partySnapshot"]["party1"]): number => {
-      let y = cur.y;
+    const drawParty = (x: number, top: number, heading: string, p?: ApiAgreement["partySnapshot"]["party1"]): number => {
+      let y = top;
       cur.page.drawText(heading, { x, y, size: 8, font: bold, color: MUTED }); y -= 13;
       const lines = [p?.name, p?.contactName ? `Attn: ${p.contactName}` : "", p?.address, p?.email, p?.phone].filter(Boolean) as string[];
       lines.forEach((l, i) => {
@@ -274,14 +520,28 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
       });
       return y;
     };
-    cur.need(90);
-    const e1 = drawParty(M, "PARTY 1", ag.partySnapshot?.party1 || ({ name: GREENTECH.name, address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone } as never));
-    const e2 = drawParty(M + colW + 24, "PARTY 2", ag.partySnapshot?.party2);
-    cur.y = Math.min(e1, e2) - 10;
+    const parties = [
+      ag.partySnapshot?.party1 || ({ name: GREENTECH.name, address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone } as never),
+      ag.partySnapshot?.party2,
+      ...(ag.partySnapshot?.extraParties || []).filter((p) => (p?.name || "").trim()),
+    ];
+    for (let i = 0; i < parties.length; i += 2) {
+      // need() can break to a new page, so read the cursor only after it.
+      cur.need(90);
+      const top = cur.y;
+      const eL = drawParty(M, top, `PARTY ${i + 1}`, parties[i]);
+      const eR = parties[i + 1] ? drawParty(M + colW + 24, top, `PARTY ${i + 2}`, parties[i + 1]) : top;
+      cur.y = Math.min(eL, eR) - 10;
+    }
   }
 
   // 3) Context information block
-  const ctxLines = (ag.partySnapshot?.contextLines || []).filter((l) => l.value);
+  // CR-P (27) — agreements saved before the projects block existed still carry their projects as
+  // "Project" info lines. Those are dropped here so such an agreement lists its projects once,
+  // in the new block above, rather than twice.
+  const ctxLines = (ag.partySnapshot?.contextLines || [])
+    .filter((l) => l.value)
+    .filter((l) => !(projs.length && l.label === "Project"));
   if (ctxLines.length) {
     cur.need(30 + ctxLines.length * 13);
     cur.text(
@@ -321,9 +581,15 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     if ((s as { hidden?: boolean }).hidden) continue; // CR-B-17 — hidden sections aren't printed
     if (!s.title && !s.body?.trim()) continue;
     await renderSection(s.title || "Section", s.body || "");
+    // CR-P (42) — "after this section I'm gonna upload this and then the next page I'm gonna
+    // continue this agreement". Files marked to print here are stapled in straight away, then the
+    // body resumes on a fresh page so the running order stays section, its files, next section.
+    const inline = (s.attachments || []).filter((a) => a.print !== false && a.placement !== "end");
+    for (const a of inline) await stapleAttachment(doc, a, s.title || "Attachment", font, bold);
+    if (inline.length) cur.addPage();
   }
 
-  // NDA — always the last numbered section before the signatures.
+  // NDA, then the standard terms — the last numbered sections before the signatures (CR-P (45)).
   if (ag.sections?.ndaEnabled) {
     if (ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.name) {
       await renderSection("Non-Disclosure (NDA)", `A Non-Disclosure Agreement ("${ag.sections.ndaFile.name}") is attached to and forms part of this agreement.`);
@@ -331,95 +597,88 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
       await renderSection("Non-Disclosure (NDA)", ag.sections?.ndaText || "");
     }
   }
+  if (ag.sections?.stdTermsEnabled) {
+    if (ag.sections?.stdTermsMode === "file" && ag.sections?.stdTermsFile?.name) {
+      await renderSection("Standard Terms & Conditions", `The Standard Terms & Conditions ("${ag.sections.stdTermsFile.name}") are attached to and form part of this agreement.`);
+    } else {
+      await renderSection("Standard Terms & Conditions", ag.sections?.stdTermsText || "");
+    }
+  }
 
-  // 9) Signature blocks — signature + stamp kept together with each party's details.
-  cur.gap(18);
-  cur.need(130);
+  // 9) Signature blocks — CR-P (46): ONE PER PARTY, up to four, two to a row.
+  // CR-P (47): a party with no signature on file still gets a full block with a ruled line, so the
+  // document can be printed, signed by hand and scanned back. Contact details come from the party
+  // snapshot, i.e. from the Directory record the party was picked from.
   {
     const colW = (PAGE_W - M * 2 - 24) / 2;
-    const topY = cur.y;
-    const drawSig = async (x: number, heading: string, s: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string }) => {
+    const recipient = ag.signatures?.recipient;
+    const blocks: Array<{ party?: { name?: string; contactName?: string; email?: string; phone?: string }; sig: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string } }> = [
+      { party: ag.partySnapshot?.party1, sig: ag.signatures?.company || {} },
+      {
+        party: ag.partySnapshot?.party2,
+        sig: {
+          signerName: recipient?.signerName, signatureUrl: recipient?.signatureUrl,
+          stampUrl: recipient?.stampUrl, signedAt: recipient?.signedAt,
+        },
+      },
+      ...(ag.partySnapshot?.extraParties || [])
+        .filter((p) => (p?.name || "").trim())
+        .map((p, i) => ({ party: p, sig: (ag.signatures?.extra || [])[i] || {} })),
+    ];
+
+    const drawSig = async (
+      x: number,
+      topY: number,
+      party: { name?: string; contactName?: string; email?: string; phone?: string } | undefined,
+      s: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string },
+    ) => {
       let y = topY;
-      cur.page.drawText(heading, { x, y, size: 8, font: bold, color: MUTED }); y -= 14;
+      const heading = `For ${party?.name || "Party"}`;
+      for (const line of wrap(bold, heading, 8, colW - 4)) { cur.page.drawText(line, { x, y, size: 8, font: bold, color: MUTED }); y -= 10; }
+      y -= 4;
       const sigTop = y;
       const sig = await embedImage(doc, s.signatureUrl);
       if (sig) { drawFitted(cur.page, sig, x, y, colW - 70, 38); y -= 42; }
       else { cur.page.drawLine({ start: { x, y: y - 28 }, end: { x: x + colW - 70, y: y - 28 }, thickness: 1, color: INK }); y -= 38; }
       const stamp = await embedImage(doc, s.stampUrl);
       if (stamp) drawFitted(cur.page, stamp, x + colW - 60, sigTop + 4, 54, 54);
-      cur.page.drawText(s.signerName || "—", { x, y, size: 10, font: bold, color: INK }); y -= 12;
+      // The signer, falling back to the party's contact person so the line is never blank.
+      cur.page.drawText((s.signerName || party?.contactName || "—").slice(0, 40), { x, y, size: 10, font: bold, color: INK }); y -= 12;
       if (s.signerTitle) { cur.page.drawText(s.signerTitle.slice(0, 50), { x, y, size: 8, font, color: MUTED }); y -= 11; }
+      for (const line of [party?.email, party?.phone].filter(Boolean) as string[]) {
+        cur.page.drawText(line.slice(0, 46), { x, y, size: 8, font, color: MUTED }); y -= 10;
+      }
       cur.page.drawText(s.signedAt ? `Signed: ${s.signedAt}` : "Date: ____________", { x, y, size: 8, font, color: MUTED }); y -= 11;
       return y;
     };
-    const e1 = await drawSig(M, `For ${ag.partySnapshot?.party1?.name || GREENTECH.name}`, ag.signatures?.company || {});
-    const e2 = await drawSig(M + colW + 24, `For ${ag.partySnapshot?.party2?.name || "Party 2"}`, {
-      signerName: ag.signatures?.recipient?.signerName,
-      signatureUrl: ag.signatures?.recipient?.signatureUrl,
-      stampUrl: ag.signatures?.recipient?.stampUrl,
-      signedAt: ag.signatures?.recipient?.signedAt,
-    });
-    cur.y = Math.min(e1, e2) - 8;
+
+    for (let i = 0; i < blocks.length; i += 2) {
+      cur.gap(18);
+      cur.need(150);           // a block must never be split across a page
+      const topY = cur.y;
+      const eL = await drawSig(M, topY, blocks[i].party, blocks[i].sig);
+      const eR = blocks[i + 1] ? await drawSig(M + colW + 24, topY, blocks[i + 1].party, blocks[i + 1].sig) : topY;
+      cur.y = Math.min(eL, eR) - 8;
+    }
   }
 
-  // Staple the attached NDA file after the agreement so it forms part of the document.
+  // CR-P (45) — the NDA and the standard terms & conditions are stapled after the signatures,
+  // in that order, exactly as described on the call: "nda and then the terms and conditions just
+  // come going at the end". Both reuse the shared stapler, so both gain the picture-format fix.
   if (ag.sections?.ndaEnabled && ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.url) {
-    try {
-      const res = await fetch(ag.sections.ndaFile.url);
-      if (res.ok) {
-        const bytes = await res.arrayBuffer();
-        const ext = (ag.sections.ndaFile.name.split(".").pop() || "").toLowerCase();
-        // Divider page, then the NDA itself (PDF pages copied, images fitted to a page).
-        const d = doc.addPage([PAGE_W, PAGE_H]);
-        d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
-        d.drawText("NON-DISCLOSURE AGREEMENT", { x: (PAGE_W - bold.widthOfTextAtSize("NON-DISCLOSURE AGREEMENT", 20)) / 2, y: PAGE_H / 2 + 16, size: 20, font: bold, color: INK });
-        d.drawText(ag.sections.ndaFile.name, { x: (PAGE_W - font.widthOfTextAtSize(ag.sections.ndaFile.name, 10)) / 2, y: PAGE_H / 2 - 24, size: 10, font, color: MUTED });
-        if (ext === "pdf") {
-          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          const pages = await doc.copyPages(src, src.getPageIndices());
-          pages.forEach((p) => doc.addPage(p));
-        } else if (["png", "jpg", "jpeg"].includes(ext)) {
-          const img = ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-          const p = doc.addPage([PAGE_W, PAGE_H]);
-          const scale = Math.min((PAGE_W - M * 2) / img.width, (PAGE_H - M * 2) / img.height, 1);
-          p.drawImage(img, { x: (PAGE_W - img.width * scale) / 2, y: (PAGE_H - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
-        }
-      }
-    } catch { /* best-effort — the reference note in the NDA section still stands */ }
+    await stapleAttachment(doc, { name: ag.sections.ndaFile.name, filePath: ag.sections.ndaFile.url }, "Non-Disclosure Agreement", font, bold);
+  }
+  if (ag.sections?.stdTermsEnabled && ag.sections?.stdTermsMode === "file" && ag.sections?.stdTermsFile?.url) {
+    await stapleAttachment(doc, { name: ag.sections.stdTermsFile.name, filePath: ag.sections.stdTermsFile.url }, "Standard Terms & Conditions", font, bold);
   }
 
-  // CR-PR-10 — files attached to a section are part of the agreement, so they print too:
-  // PDFs are merged page-for-page, images get their own page, anything else gets a stub page
-  // naming the file. Each is introduced by a divider so it is obvious which section it came from.
+  // CR-P (42) — attachments held back to the end as appendices. Everything set to "after" was
+  // already stapled in directly behind its own section, up in the body above.
   for (const s of ag.extraSections || []) {
     if ((s as { hidden?: boolean }).hidden) continue;
     for (const a of s.attachments || []) {
-      try {
-        const res = await fetch(attachmentUrl(a.filePath));
-        if (!res.ok) continue;
-        const bytes = await res.arrayBuffer();
-        const ext = (a.name.split(".").pop() || "").toLowerCase();
-
-        const d = doc.addPage([PAGE_W, PAGE_H]);
-        d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
-        const heading = (s.title || "Attachment").toUpperCase();
-        d.drawText(heading, { x: (PAGE_W - bold.widthOfTextAtSize(heading, 18)) / 2, y: PAGE_H / 2 + 16, size: 18, font: bold, color: INK });
-        d.drawText(a.name, { x: (PAGE_W - font.widthOfTextAtSize(a.name, 10)) / 2, y: PAGE_H / 2 - 24, size: 10, font, color: MUTED });
-
-        if (ext === "pdf") {
-          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          const pages = await doc.copyPages(src, src.getPageIndices());
-          pages.forEach((p) => doc.addPage(p));
-        } else if (["png", "jpg", "jpeg"].includes(ext)) {
-          addImagePage(doc, ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes));
-        } else {
-          const p = doc.addPage([PAGE_W, PAGE_H]);
-          p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
-          p.drawText("Attached file", { x: M, y: PAGE_H - 110, size: 13, font: bold, color: INK });
-          p.drawText(a.name, { x: M, y: PAGE_H - 132, size: 11, font, color: MUTED });
-          p.drawText("This file type cannot be shown inline — download the original from the agreement.", { x: M, y: PAGE_H - 152, size: 9, font, color: MUTED });
-        }
-      } catch { /* one unreadable attachment must not break the whole document */ }
+      if (a.print === false || a.placement !== "end") continue;
+      await stapleAttachment(doc, a, s.title || "Appendix", font, bold);
     }
   }
 

@@ -28,16 +28,53 @@ function toFetchUrl(p?: string): string {
   return s.startsWith("/") ? s : `/${s}`;
 }
 
+// CR-P (38) — pdf-lib only understands PNG and JPEG. A picture pasted or uploaded from a phone or
+// a screenshot tool is very often WebP, GIF, AVIF or SVG, and those used to throw here and be
+// silently dropped: the image showed in the editor but was missing from the preview and the print.
+// Anything that is not already PNG/JPEG is repainted through a canvas into PNG first.
+async function repaintAsPng(src: string): Promise<ArrayBuffer | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        if (!canvas.width || !canvas.height) return resolve(null);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((b) => { if (!b) return resolve(null); void b.arrayBuffer().then(resolve).catch(() => resolve(null)); }, "image/png");
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
 export async function embedImage(doc: PDFDocument, url?: string): Promise<PDFImage | null> {
   if (!url) return null;
+  const src = toFetchUrl(url);
   try {
-    const res = await fetch(toFetchUrl(url));
+    const res = await fetch(src);
     if (!res.ok) return null;
     const bytes = await res.arrayBuffer();
     const head = new Uint8Array(bytes.slice(0, 4));
-    const isPng = head[0] === 0x89 && head[1] === 0x50;
-    return isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-  } catch { return null; }
+    const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+    const isJpg = head[0] === 0xff && head[1] === 0xd8;
+    if (isPng) return await doc.embedPng(bytes);
+    if (isJpg) return await doc.embedJpg(bytes);
+    // Some other format (WebP / GIF / AVIF / SVG): let the browser decode it, then hand pdf-lib PNG.
+    const png = await repaintAsPng(src);
+    return png ? await doc.embedPng(png) : null;
+  } catch {
+    // A malformed PNG/JPEG can still fail to embed — the canvas route often rescues it.
+    try {
+      const png = await repaintAsPng(src);
+      return png ? await doc.embedPng(png) : null;
+    } catch { return null; }
+  }
 }
 
 // Draw an image constrained to a max box, anchored at (x, topY) growing downward. Returns height used.

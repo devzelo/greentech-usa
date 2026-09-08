@@ -1,11 +1,14 @@
 // Shared per-section status options (client CR-B-15) so EVERY builder — RFIs, Agreements,
 // Proposal, Submittals — uses the exact same colour-coded set. Locked/Unlocked is a separate
 // toggle (a section can be e.g. "Complete" AND locked).
-export type SectionStatus = "" | "NotStarted" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
+export type SectionStatus = "" | "NotStarted" | "Draft" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
 
 export const SECTION_STATUS_OPTS: { v: SectionStatus; label: string; cls: string }[] = [
   { v: "", label: "No status", cls: "bg-slate-100 text-slate-400" },
   { v: "NotStarted", label: "Not Started", cls: "bg-slate-100 text-slate-500" },
+  // CR-P (32) — "Draft" sits between not-started and in-progress: something is written, but it is
+  // not yet being actively worked through.
+  { v: "Draft", label: "Draft", cls: "bg-slate-100 text-slate-600" },
   { v: "InProgress", label: "In Progress", cls: "bg-amber-50 text-amber-600" },
   { v: "WaitingInfo", label: "Waiting for Info", cls: "bg-orange-50 text-orange-600" },
   { v: "UnderReview", label: "Under Review", cls: "bg-blue-50 text-blue-600" },

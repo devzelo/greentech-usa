@@ -2,6 +2,7 @@
 import bcrypt from "bcryptjs";
 import Project from "../models/Project";
 import User from "../models/User";
+import Company from "../models/Company";
 import Expense from "../models/Expense";
 import multer from "multer";
 import fs from "fs";
@@ -131,8 +132,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     if (scope === "mine") {
       // CR-P-18b — an owner sees ALL their own projects here (including their private Drafts, via
       // the Draft status filter); assigned employees still never see someone else's drafts.
+      // CR-P (16) — a staff member granted scoped guest access also sees that project here,
+      // otherwise a grant made from their profile's Access tab leads nowhere.
       const ownerClause: Record<string, unknown>[] = [{ ownerId: userId }];
       if (empId) ownerClause.push({ assignedEmployees: empId, status: { $ne: "Draft" } });
+      ownerClause.push({ "guests.userId": userId, status: { $ne: "Draft" } });
       filter = { $or: ownerClause, ...archiveClause };
     } else if (scope === "drafts") {
       // Drafts are private to their creator
@@ -275,27 +279,24 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
     if (!isOwner) {
       const me = await User.findById(userId).lean();
       const empId = (me as { empId?: string } | null)?.empId || "";
-      const role = (me as { role?: string } | null)?.role || req.user!.role;
       const isAssigned = !!empId && existing.assignedEmployees.includes(empId);
 
-      let allowed = isAssigned;
-      if (!allowed && role === "subcontractor") {
+      // CR-P (16) — a scoped guest grant with any edit tab also allows saving, for staff guests
+      // too (previously only global-role subcontractors were checked, so an employee granted
+      // Edit from the Access tab was refused every save).
+      if (!isAssigned) {
         const guest = (existing.guests || []).find((g) => String(g.userId) === userId);
         const hasEditTab = !!guest && Object.values(guest.tabPermissions || {}).includes("edit");
         if (!hasEditTab) {
           return res.status(403).json({ error: "You do not have permission to edit this project." });
         }
-        allowed = true;
-        // Guests can never touch guest assignments or tab access.
-        delete req.body.guests;
+        // Guests can never touch tab access.
         delete req.body.tabAccess;
       }
 
-      if (!allowed) {
-        return res.status(403).json({ error: "You do not have permission to edit this project." });
-      }
-
-      // Strip identity fields â€” assignees/guests can only edit tab content
+      // Strip identity fields — assignees/guests can only edit tab content. Guest assignments
+      // are managed by the dedicated /guests routes, never through a blanket PUT.
+      delete req.body.guests;
       for (const f of Object.keys(req.body)) {
         if (IDENTITY_FIELDS.has(f)) delete req.body[f];
       }
@@ -433,11 +434,12 @@ router.post("/:id/guests", async (req: AuthedRequest, res: Response, next: NextF
     const project = await requireOwnedProject(req, res);
     if (!project) return;
 
-    const { name, email, password, tabPermissions, alsoAssignProjectIds, expiresAt } = req.body as {
+    const { name, email, password, tabPermissions, alsoAssignProjectIds, expiresAt, companyId } = req.body as {
       name?: string; email?: string; password?: string;
       tabPermissions?: Record<string, "view" | "edit">;
       alsoAssignProjectIds?: string[];
       expiresAt?: string | null;
+      companyId?: string;
     };
 
     if (!email) return res.status(400).json({ error: "Email is required." });
@@ -466,6 +468,35 @@ router.post("/:id/guests", async (req: AuthedRequest, res: Response, next: NextF
       });
     }
 
+    // CR-P (16) — hard-link the login to its Directory company (the modal passes companyId;
+    // project-side grants fall back to an email match) so profiles and access stay in sync
+    // even if an email is later edited.
+    let company: InstanceType<typeof Company> | null = null;
+    if (user.role === "subcontractor") {
+      company = companyId ? await Company.findById(companyId) : await Company.findOne({ email: cleanEmail });
+      if (company && String(user.companyId || "") !== String(company._id)) {
+        user.companyId = company._id as never;
+        await user.save();
+      }
+    }
+    // A subcontractor-category company granted access must also exist as a subcontractors[] row,
+    // so the project's Subs tab, sub-invoices and expenses all see them (both ends linked).
+    const cats: string[] = company ? [...(company.categories || []), company.category].filter(Boolean).map(String) : [];
+    const syncSubRow = (proj: typeof project) => {
+      if (!company || !cats.includes("subcontractor")) return;
+      const rows = (proj.subcontractors || []) as Array<{ email?: string; userId?: string; name?: string; contact?: string; phone?: string }>;
+      const row = rows.find((s) => String(s.userId || "") === String(user!._id) || (s.email || "").toLowerCase() === cleanEmail);
+      if (row) { if (!row.userId) row.userId = String(user!._id); }
+      else {
+        proj.subcontractors.push({
+          name: company.name || user!.name, scope: "", subId: `SUB-${String(Date.now()).slice(-4)}`,
+          contact: "", email: cleanEmail, phone: company.phone || "", notes: "", invoiceAmount: "",
+          userId: String(user!._id),
+        } as never);
+      }
+      proj.markModified("subcontractors");
+    };
+
     // Upsert the subcontractor access entry on this project (with optional expiry).
     const upsertGuest = (proj: typeof project) => {
       const existing = (proj.guests || []).find((g) => String(g.userId) === String(user!._id));
@@ -474,6 +505,7 @@ router.post("/:id/guests", async (req: AuthedRequest, res: Response, next: NextF
       proj.markModified("guests");
     };
     upsertGuest(project);
+    syncSubRow(project);
     await project.save();
 
     // Assign to additional projects the requester also owns (same permissions).
@@ -482,6 +514,7 @@ router.post("/:id/guests", async (req: AuthedRequest, res: Response, next: NextF
       const proj = await Project.findOne({ projectId: pid });
       if (proj && proj.ownerId && String(proj.ownerId) === req.user!.userId) {
         upsertGuest(proj);
+        syncSubRow(proj);
         await proj.save();
       }
     }

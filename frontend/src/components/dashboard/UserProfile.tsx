@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft, Pencil, KeyRound, Trash2, Mail, Phone, IdCard, Briefcase, Shield, Building2,
-  FileText, Receipt, Bell, Eye, Download, Loader2, ExternalLink, PackageCheck, Ban, MapPin,
+  FileText, Receipt, Bell, Eye, Download, Loader2, PackageCheck, MapPin,
 } from "lucide-react";
 import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
-import { toast } from "../../lib/toast";
+import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
 import TaskMiniBoard from "./TaskMiniBoard";
 import UserAccessManager from "./UserAccessManager";
 
@@ -25,7 +24,6 @@ export default function UserProfile({
   onDelete: (u: AdminUser) => void;
   isSelf: boolean;
 }) {
-  const navigate = useNavigate();
   const [tab, setTab] = useState<"activity" | "tasks" | "documents" | "access">("activity");
   const [highlight, setHighlight] = useState<string | null>(null);
   const [links, setLinks] = useState<UserLinks | null>(null);
@@ -54,60 +52,19 @@ export default function UserProfile({
   }), [links, files]);
 
   // Clicking a stat tile jumps to its section: most live under the Activity tab (scroll + brief
-  // highlight); Documents is its own tab.
+  // highlight); Documents is its own tab. Tiles/rows/sections come from profileBits (CR-P 16).
   const goTo = (key: "projects" | "agreements" | "pos" | "submittals" | "expenses" | "reminders" | "documents") => {
     if (key === "documents") { setTab("documents"); return; }
     setTab("activity");
     setHighlight(key);
-    window.setTimeout(() => document.getElementById(`up-sec-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-    window.setTimeout(() => setHighlight((h) => (h === key ? null : h)), 1800);
+    jumpToSection("up", key, setHighlight);
   };
-  const stat = (label: string, value: number, Icon: typeof Building2, cls: string, onClick: () => void) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5 flex items-center gap-2.5 text-left w-full transition-all hover:border-primary/40 hover:shadow-md cursor-pointer"
-    >
-      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${cls}`}><Icon size={15} /></div>
-      <div className="min-w-0"><p className="text-lg font-bold text-slate-900 leading-none tabular-nums">{value}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">{label}</p></div>
-    </button>
-  );
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
     <p className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
       <Icon size={14} className="text-slate-300 shrink-0" />
       {href ? <a href={href} className="hover:text-primary truncate">{value}</a> : <span className="truncate">{value}</span>}
     </p>
   ) : null;
-  // A row that shows its project, and deep-links into that project (optionally to a specific tab via
-  // `query`). If the project was deleted, the row is blurred and clicking it explains why. Pass
-  // `self` for the Projects section, where the row IS the project (no separate project label).
-  const linkRow = (key: string, primary: ReactNode, secondary: ReactNode, projectId?: string, query?: string, self = false) => {
-    const projName = !self && projectId ? projById[projectId] : undefined;
-    const deleted = !self && !!projectId && !projById[projectId];
-    const open = () => {
-      if (!projectId) return;
-      if (deleted) { toast("This project has been deleted, so you can't open it.", "info"); return; }
-      navigate(`/dashboard/projects/${projectId}${query ? `?${query}` : ""}`);
-    };
-    return (
-      <button key={key} onClick={open} disabled={!projectId}
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
-        title={deleted ? "The project for this item was deleted — you can't open it." : ""}>
-        <span className="min-w-0 flex flex-col">
-          <span className="font-bold text-slate-700 truncate flex items-center gap-1.5">{primary}</span>
-          {projName && <span className="text-[10px] font-bold text-slate-400 truncate flex items-center gap-1"><Building2 size={9} /> {projName}</span>}
-          {deleted && <span className="text-[10px] font-bold text-red-400 truncate flex items-center gap-1"><Ban size={9} /> Project deleted</span>}
-        </span>
-        <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
-      </button>
-    );
-  };
-  const section = (secKey: string, title: string, count: number, Icon: typeof Building2, rows: ReactNode[], emptyHint: string) => (
-    <div id={`up-sec-${secKey}`} className={`scroll-mt-24 rounded-xl transition-all ${highlight === secKey ? "ring-2 ring-primary/40 ring-offset-2" : ""}`}>
-      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Icon size={13} /> {title} ({count})</p>
-      {count === 0 ? <p className="text-xs text-slate-400 italic">{emptyHint}</p> : <div className="space-y-1.5">{rows}</div>}
-    </div>
-  );
 
   return (
     <div className="space-y-5">
@@ -145,13 +102,13 @@ export default function UserProfile({
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-        {stat("Projects", counts.projects, Building2, "bg-indigo-50 text-indigo-600", () => goTo("projects"))}
-        {stat("Agreements", counts.agreements, FileText, "bg-teal-50 text-teal-600", () => goTo("agreements"))}
-        {stat("Purchase orders", counts.pos, FileText, "bg-amber-50 text-amber-600", () => goTo("pos"))}
-        {stat("Submittals", counts.submittals, PackageCheck, "bg-rose-50 text-rose-600", () => goTo("submittals"))}
-        {stat("Expenses", counts.expenses, Receipt, "bg-emerald-50 text-emerald-600", () => goTo("expenses"))}
-        {stat("Reminders", counts.reminders, Bell, "bg-blue-50 text-blue-600", () => goTo("reminders"))}
-        {stat("Documents", counts.documents, FileText, "bg-slate-100 text-slate-500", () => goTo("documents"))}
+        <StatTile label="Projects" value={counts.projects} icon={Building2} cls="bg-indigo-50 text-indigo-600" onClick={() => goTo("projects")} />
+        <StatTile label="Agreements" value={counts.agreements} icon={FileText} cls="bg-teal-50 text-teal-600" onClick={() => goTo("agreements")} />
+        <StatTile label="Purchase orders" value={counts.pos} icon={FileText} cls="bg-amber-50 text-amber-600" onClick={() => goTo("pos")} />
+        <StatTile label="Submittals" value={counts.submittals} icon={PackageCheck} cls="bg-rose-50 text-rose-600" onClick={() => goTo("submittals")} />
+        <StatTile label="Expenses" value={counts.expenses} icon={Receipt} cls="bg-emerald-50 text-emerald-600" onClick={() => goTo("expenses")} />
+        <StatTile label="Reminders" value={counts.reminders} icon={Bell} cls="bg-blue-50 text-blue-600" onClick={() => goTo("reminders")} />
+        <StatTile label="Documents" value={counts.documents} icon={FileText} cls="bg-slate-100 text-slate-500" onClick={() => goTo("documents")} />
       </div>
 
       {/* Tabs */}
@@ -167,24 +124,24 @@ export default function UserProfile({
             <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading activity…</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
-              {section("projects", "Projects", counts.projects, Building2,
-                links.projects.map((p) => linkRow(p._id, p.name, p.status, p.projectId, undefined, true)),
-                "Not on any project yet.")}
-              {section("agreements", "Agreements", counts.agreements, FileText,
-                links.agreements.map((a) => linkRow(a._id, a.name || a.agreementType, a.status || "—", a.ownerProjectId)),
-                "No agreements linked to this user.")}
-              {section("pos", "Purchase orders", counts.pos, FileText,
-                links.pos.map((po) => linkRow(po._id, `PO #${po.poNo}`, <>{po.total || "—"} · {po.status}</>, po.projectId, "tab=procurement&proc=po")),
-                "No purchase orders added by this user.")}
-              {section("submittals", "Submittals", counts.submittals, PackageCheck,
-                links.submittals.map((s) => linkRow(s._id, s.productName || "Submittal", s.status || "—", s.projectId, "tab=procurement&proc=submittals")),
-                "No submittals added by this user.")}
-              {section("expenses", "Expenses", counts.expenses, Receipt,
-                links.expenses.map((e) => linkRow(e._id, e.description || "Expense", <>{e.amount || "—"}{e.approval ? ` · ${e.approval}` : ""}</>, e.projectId, "tab=finances")),
-                "No expenses submitted by this user.")}
-              {section("reminders", "Reminders", counts.reminders, Bell,
-                links.reminders.map((r) => linkRow(r._id, r.title || "Reminder", <>{r.dueAt ? new Date(r.dueAt).toLocaleDateString() : ""}</>, r.projectId)),
-                "No reminders for this user.")}
+              <ProfileSection prefix="up" secKey="projects" title="Projects" count={counts.projects} icon={Building2} highlight={highlight}
+                rows={links.projects.map((p) => <ActivityRow key={p._id} primary={p.name} secondary={p.status} projectId={p.projectId} self projById={projById} />)}
+                emptyHint="Not on any project yet." />
+              <ProfileSection prefix="up" secKey="agreements" title="Agreements" count={counts.agreements} icon={FileText} highlight={highlight}
+                rows={links.agreements.map((a) => <ActivityRow key={a._id} primary={a.name || a.agreementType} secondary={a.status || "—"} projectId={a.ownerProjectId} projById={projById} />)}
+                emptyHint="No agreements linked to this user." />
+              <ProfileSection prefix="up" secKey="pos" title="Purchase orders" count={counts.pos} icon={FileText} highlight={highlight}
+                rows={links.pos.map((po) => <ActivityRow key={po._id} primary={`PO #${po.poNo}`} secondary={<>{po.total || "—"} · {po.status}</>} projectId={po.projectId} query="tab=procurement&proc=po" projById={projById} />)}
+                emptyHint="No purchase orders added by this user." />
+              <ProfileSection prefix="up" secKey="submittals" title="Submittals" count={counts.submittals} icon={PackageCheck} highlight={highlight}
+                rows={links.submittals.map((s) => <ActivityRow key={s._id} primary={s.productName || "Submittal"} secondary={s.status || "—"} projectId={s.projectId} query="tab=procurement&proc=submittals" projById={projById} />)}
+                emptyHint="No submittals added by this user." />
+              <ProfileSection prefix="up" secKey="expenses" title="Expenses" count={counts.expenses} icon={Receipt} highlight={highlight}
+                rows={links.expenses.map((e) => <ActivityRow key={e._id} primary={e.description || "Expense"} secondary={<>{e.amount || "—"}{e.approval ? ` · ${e.approval}` : ""}</>} projectId={e.projectId} query="tab=finances" projById={projById} />)}
+                emptyHint="No expenses submitted by this user." />
+              <ProfileSection prefix="up" secKey="reminders" title="Reminders" count={counts.reminders} icon={Bell} highlight={highlight}
+                rows={links.reminders.map((r) => <ActivityRow key={r._id} primary={r.title || "Reminder"} secondary={<>{r.dueAt ? new Date(r.dueAt).toLocaleDateString() : ""}</>} projectId={r.projectId} projById={projById} />)}
+                emptyHint="No reminders for this user." />
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-6">Projects, agreements, expenses and reminders are linked by account; purchase orders and submittals are matched by name. Click a row to open its project.</p>

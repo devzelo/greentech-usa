@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import Agreement, { IAgreement, AgreementStatus, AgreementEntityType } from "../models/Agreement";
 import AgreementTemplate from "../models/AgreementTemplate";
+import { nextSequence } from "../models/Counter";
 import Project from "../models/Project";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
@@ -27,7 +28,64 @@ import { moveToTrash } from "../lib/recycleBin";
 type Ctx = "user" | "project" | "general";
 
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const today = () => new Date().toISOString().slice(0, 10);
+
+// CR-P (19) — an agreement holds at most 4 parties: party1, party2 and up to 2 extras.
+// A bonding application needs three signatories (bank, company, surety); a JV can add one more.
+const MAX_EXTRA_PARTIES = 2;
+const cleanParty = (v: unknown) => {
+  const o = (v || {}) as Record<string, unknown>;
+  return {
+    name: String(o.name ?? "").slice(0, 200),
+    contactName: String(o.contactName ?? "").slice(0, 160),
+    address: String(o.address ?? "").slice(0, 400),
+    email: String(o.email ?? "").slice(0, 200),
+    phone: String(o.phone ?? "").slice(0, 60),
+    logoUrl: String(o.logoUrl ?? "").slice(0, 2000),
+    companyId: String(o.companyId ?? "").slice(0, 60),
+  };
+};
+// Keeps party1/party2/contextLines as sent, and clamps extraParties to the 2-slot cap.
+const cleanPartySnapshot = (v: unknown) => {
+  const b = (v || {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...b };
+  if ("extraParties" in b) {
+    out.extraParties = Array.isArray(b.extraParties)
+      ? (b.extraParties as unknown[]).slice(0, MAX_EXTRA_PARTIES).map(cleanParty).filter((p) => p.name)
+      : [];
+  }
+  return out;
+};
+
+// CR-P (23) — the next agreement reference, AG-0001, AG-0002, … The counter is standalone so a
+// cancelled or deleted agreement never hands its number to the next one. On a database that
+// already holds numbered agreements, the counter is seeded past the highest one the first time.
+async function nextAgreementNo(): Promise<string> {
+  let startAt = 0;
+  const highest = await Agreement.findOne({ agreementNo: /^AG-\d+$/ }).sort({ agreementNo: -1 }).select("agreementNo").lean();
+  if (highest?.agreementNo) startAt = parseInt(highest.agreementNo.slice(3), 10) || 0;
+  const n = await nextSequence("agreementNo", startAt);
+  return `AG-${String(n).padStart(4, "0")}`;
+}
+
+// CR-P (27) — the projects an agreement covers, name and location snapshotted so the printed
+// document keeps the details it was issued with.
+const cleanLinkedProjects = (v: unknown) =>
+  Array.isArray(v)
+    ? (v as Array<{ id?: unknown; name?: unknown; location?: unknown }>)
+        .map((p) => ({ id: String(p?.id || ""), name: String(p?.name || "").slice(0, 200), location: String(p?.location || "").slice(0, 200) }))
+        .filter((p) => p.id)
+    : [];
+
+// CR-P (21) — which dates the document carries. Anything missing stays on (a date with no value
+// never prints anyway), so agreements written before this existed are unaffected.
+const cleanDatesShown = (v: unknown) => {
+  const o = (v || {}) as Record<string, unknown>;
+  const on = (k: string) => (k in o ? !!o[k] : true);
+  return { effective: on("effective"), start: on("start"), end: on("end") };
+};
+
 // Custom named rich-text sections on an agreement (title + HTML body).
 const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>; history: Array<{ at: string; by: string; text: string }> }> =>
   Array.isArray(v)
@@ -45,6 +103,10 @@ const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; st
           attachments: Array.isArray((o as { attachments?: unknown })?.attachments)
             ? ((o as { attachments: Array<Record<string, unknown>> }).attachments).slice(0, 50).map((a) => ({
                 name: String(a?.name ?? ""), filePath: String(a?.filePath ?? ""), fileType: String(a?.fileType ?? ""), size: String(a?.size ?? ""), kind: String(a?.kind ?? "other"),
+                // CR-P (42)/(44) — carry the print flag and placement through a whole-draft save.
+                // Absent means "print, after its section": that is what every existing file did.
+                print: a?.print === undefined ? true : !!a.print,
+                placement: a?.placement === "end" ? "end" : "after",
               }))
             : [],
           // CR-B-17 — carry the per-section change history (View History).
@@ -58,27 +120,46 @@ const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; st
        .filter((s) => s.title || s.body).slice(0, 20)
     : [];
 
+// CR-P (52) — a replaced signed copy is kept, not deleted. The old file stays on disk and is
+// listed under the current one, so we can always show what we held before and when it changed.
+function archiveSignedCopy(ag: IAgreement, byName: string) {
+  const cur = ag.signedDocument;
+  if (!cur?.filePath) return;
+  ag.signedDocumentHistory = ag.signedDocumentHistory || [];
+  ag.signedDocumentHistory.push({
+    name: cur.name, filePath: cur.filePath, fileType: cur.fileType, size: cur.size,
+    replacedAt: new Date().toISOString(), replacedByName: byName,
+  });
+}
+
 function act(ag: IAgreement, actorName: string, action: string, note = "") {
   ag.activity.push({ at: new Date(), actorName, action, note });
 }
 
-interface Perms { staff: boolean; self: boolean; mySubIds: string[]; isPartner: boolean }
+// `email` is carried so a party that was SHARED an agreement (CR-P (63)) can be recognised as its
+// recipient and sign it, which is what CR-P (64) asks for.
+interface Perms { staff: boolean; self: boolean; mySubIds: string[]; isPartner: boolean; email: string }
 
 // Resolve what the requester may do in this context.
 async function resolvePerms(ctx: Ctx, req: AuthedRequest): Promise<Perms | null> {
   const userId = req.user!.userId;
+  const meDoc = await User.findById(userId).select("empId email").lean();
+  const myEmail = String((meDoc as { email?: string } | null)?.email || "").trim().toLowerCase();
   if (ctx === "user") {
-    return { staff: req.user!.role === "admin", self: String(userId) === String(req.params.uid), mySubIds: [], isPartner: false };
+    return { staff: req.user!.role === "admin", self: String(userId) === String(req.params.uid), mySubIds: [], isPartner: false, email: myEmail };
   }
   if (ctx === "general") {
-    // Company-wide agreements with an outside party — staff only, no recipient login exists.
+    // CR-P (64) — an outside party used to be locked out of general agreements entirely ("the
+    // counterparty has no login"). They can have one now, so they are let through as NON-staff:
+    // the list is already filtered to agreements shared with them (CR-P (62)), and every
+    // single-agreement action is guarded by isRecipient below.
     const staff = req.user!.role === "admin" || req.user!.role === "employee";
-    return staff ? { staff: true, self: false, mySubIds: [], isPartner: false } : null;
+    return { staff, self: false, mySubIds: [], isPartner: false, email: myEmail };
   }
   const project = await Project.findOne({ projectId: req.params.id })
     .select("ownerId assignedEmployees guests subcontractors jointVenture").lean();
   if (!project) return null;
-  const me = await User.findById(userId).select("empId email").lean();
+  const me = meDoc;
   const access = getProjectAccess(project, userId, (me as { empId?: string } | null)?.empId || "");
   if (access.role === "none") return null;
   // Match the sub record by its hard link (userId) OR by email — the same two-way rule the
@@ -94,13 +175,17 @@ async function resolvePerms(ctx: Ctx, req: AuthedRequest): Promise<Perms | null>
   // the same rule the Partners tab uses to show the partner's account.
   const jvEmail = String(project.jointVenture?.email || "").trim().toLowerCase();
   const isPartner = !!project.jointVenture?.enabled && !!jvEmail && jvEmail === myEmailLower;
-  return { staff: access.role === "owner" || access.role === "employee", self: false, mySubIds, isPartner };
+  return { staff: access.role === "owner" || access.role === "employee", self: false, mySubIds, isPartner, email: myEmailLower };
 }
 
 // Is the requester the agreement's recipient (the one who signs)?
 function isRecipient(ctx: Ctx, ag: IAgreement, p: Perms): boolean {
+  // CR-P (64) — a party the agreement was SHARED with is its recipient and may sign or reject it,
+  // whatever context it lives in. This is what lets a subcontractor or partner sign from their own
+  // profile instead of us signing on their behalf.
+  if (p.email && (ag.visibleTo || []).some((v) => (v.email || "").trim().toLowerCase() === p.email)) return true;
   if (ctx === "user") return p.self;
-  if (ctx === "general") return false;   // the counterparty has no login — signed copies are uploaded
+  if (ctx === "general") return false;   // not named on it and not shared it — no standing to sign
   if (ag.ownerEntityType === "partner") return p.isPartner;
   return ag.ownerEntityType === "subcontractor" && p.mySubIds.includes(ag.ownerEntityId);
 }
@@ -127,7 +212,10 @@ async function recipientUserId(ctx: Ctx, ag: IAgreement): Promise<string | null>
   return (sub as { userId?: string } | undefined)?.userId || null;
 }
 
-const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "linkedProjects", "effectiveDate", "startDate", "endDate"] as const;
+// Plain string fields an editor may change. `linkedProjects` used to be listed here, but the loop
+// below coerces every entry with String(), which turned the array into "[object Object]" — it is
+// handled on its own now (CR-P (27)).
+const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
 
 function buildAgreementRouter(ctx: Ctx): Router {
   const router = Router({ mergeParams: true });
@@ -138,7 +226,9 @@ function buildAgreementRouter(ctx: Ctx): Router {
     try {
       const p = await resolvePerms(ctx, req);
       if (!p) return res.status(ctx === "project" ? 404 : 403).json({ error: ctx === "project" ? "Project not found or no access." : "No access." });
-      if (!p.staff && !p.self && !p.isPartner && p.mySubIds.length === 0) return res.status(403).json({ error: "You do not have access to these agreements." });
+      // A shared outside party has no sub/partner standing, so the guard cannot reject on that
+      // alone any more; the list filter and isRecipient do the real work (CR-P (62)/(64)).
+      if (!p.staff && !p.self && !p.isPartner && p.mySubIds.length === 0 && !p.email) return res.status(403).json({ error: "You do not have access to these agreements." });
       (req as AuthedRequest & { agPerms?: Perms }).agPerms = p;
       next();
     } catch (err) { next(err); }
@@ -183,7 +273,21 @@ function buildAgreementRouter(ctx: Ctx): Router {
           filter.$or = scopes;
         }
       }
-      const list = await Agreement.find(filter).sort({ createdAt: -1 });
+      let list = await Agreement.find(filter).sort({ createdAt: -1 });
+      // CR-P (62) — being NAMED on an agreement is not the same as having been GIVEN it. Until the
+      // agreement is shared, it is internal: "we don't want them to see... you are adding some
+      // restricted information here". So a recipient only sees agreements whose visibleTo list
+      // includes them. Agreements from before this existed have an empty list and are matched the
+      // old way (they were already issued to this recipient), so nothing disappears retroactively.
+      if (!p.staff) {
+        const me = await User.findById(req.user!.userId).select("email").lean();
+        const myEmail = String((me as { email?: string } | null)?.email || "").toLowerCase();
+        list = list.filter((ag) => {
+          const shared = ag.visibleTo || [];
+          if (!shared.length) return (ag.shares || []).length === 0;   // legacy: never shared explicitly
+          return shared.some((v) => (v.email || "").toLowerCase() === myEmail);
+        });
+      }
       // Recipient opening their list marks freshly-sent agreements as Viewed.
       if (!p.staff) {
         for (const ag of list) {
@@ -215,17 +319,18 @@ function buildAgreementRouter(ctx: Ctx): Router {
         ownerEntityType: entityType as AgreementEntityType,
         ownerEntityId: ctx === "project" ? String(b.ownerEntityId || "") : "",
         name: String(b.name || "").slice(0, 160),
+        agreementNo: await nextAgreementNo(),   // CR-P (23) — server-assigned, never from the client
         title: String(b.title || "").slice(0, 200),
         description: String(b.description || "").slice(0, 4000),
         agreementType: String(b.agreementType || "Custom").slice(0, 60),
         templateId: String(b.templateId || ""),
-        linkedProjects: Array.isArray(b.linkedProjects)
-          ? (b.linkedProjects as Array<{ id?: unknown; name?: unknown }>).map((p) => ({ id: String(p?.id || ""), name: String(p?.name || "") })).filter((p) => p.id)
-          : [],
+        linkedProjects: cleanLinkedProjects(b.linkedProjects),
         effectiveDate: String(b.effectiveDate || ""),
         startDate: String(b.startDate || ""),
         endDate: String(b.endDate || ""),
-        partySnapshot: b.partySnapshot || {},
+        datesShown: cleanDatesShown(b.datesShown),  // CR-P (21)
+        docStatus: String(b.docStatus || "").slice(0, 20),   // CR-P (33)
+        partySnapshot: cleanPartySnapshot(b.partySnapshot),
         sections: b.sections || {},
         extraSections: cleanExtraSections(b.extraSections),
         sectionAssignees: {
@@ -236,9 +341,16 @@ function buildAgreementRouter(ctx: Ctx): Router {
         },
         letterhead: b.letterhead === "jv" ? "jv" : "gt",
         jvLogoUrl: String(b.jvLogoUrl || ""),
+        jvPartnerId: String(b.jvPartnerId || "").slice(0, 60),        // CR-P (30)
+        jvPartnerName: String(b.jvPartnerName || "").slice(0, 200),   // CR-P (30)
         documentMode: b.documentMode === "uploaded" ? "uploaded" : "built",
         // Accept the company signer at creation so the client needs ONE call (no half-made record).
-        signatures: b.companySignature ? { company: b.companySignature } : (b.signatures || {}),
+        // CR-P (16) — the counterparty's stored signature can be attached the same way.
+        signatures: {
+          ...(b.signatures || {}),
+          ...(b.companySignature ? { company: b.companySignature } : {}),
+          ...(b.recipientSignature ? { recipient: b.recipientSignature } : {}),
+        },
         status: "Draft",
         addedById: req.user!.userId,
         addedByName: req.user!.name || "",
@@ -261,8 +373,14 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (ag.status === "Signed") return res.status(400).json({ error: "A signed agreement is locked. Only cancel/expire are possible." });
       const b = req.body || {};
       for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : f === "description" ? 4000 : 200);
+      if (Array.isArray(b.linkedProjects)) ag.linkedProjects = cleanLinkedProjects(b.linkedProjects);  // CR-P (27)
+      if (b.datesShown && typeof b.datesShown === "object") ag.datesShown = cleanDatesShown(b.datesShown);  // CR-P (21)
+      if (typeof b.docStatus === "string") ag.docStatus = b.docStatus.slice(0, 20);  // CR-P (33)
       if (b.letterhead === "gt" || b.letterhead === "jv") ag.letterhead = b.letterhead;
       if (typeof b.jvLogoUrl === "string") ag.jvLogoUrl = b.jvLogoUrl;
+      // CR-P (30) — the picked Directory partner behind the JV letterhead.
+      if (typeof b.jvPartnerId === "string") ag.jvPartnerId = b.jvPartnerId.slice(0, 60);
+      if (typeof b.jvPartnerName === "string") ag.jvPartnerName = b.jvPartnerName.slice(0, 200);
       if (b.documentMode === "built" || b.documentMode === "uploaded") ag.documentMode = b.documentMode;
       if (b.sections && typeof b.sections === "object") ag.sections = { ...ag.sections, ...b.sections };
       if (Array.isArray(b.extraSections)) ag.extraSections = cleanExtraSections(b.extraSections);
@@ -279,10 +397,15 @@ function buildAgreementRouter(ctx: Ctx): Router {
       // Once sent it is silently ignored so that editing the TERMS of a sent/rejected agreement
       // (and re-sending it) still works.
       if (b.partySnapshot && typeof b.partySnapshot === "object" && ag.status === "Draft") {
-        ag.partySnapshot = { ...ag.partySnapshot, ...b.partySnapshot };
+        ag.partySnapshot = { ...ag.partySnapshot, ...cleanPartySnapshot(b.partySnapshot) };
       }
       if (b.companySignature && typeof b.companySignature === "object") {
         ag.signatures.company = { ...ag.signatures.company, ...b.companySignature };
+      }
+      // CR-P (16) — staff can attach the counterparty's stored signature (named signatures the
+      // subcontractor/partner uploaded on their profile) before or after sending.
+      if (b.recipientSignature && typeof b.recipientSignature === "object") {
+        ag.signatures.recipient = { ...ag.signatures.recipient, ...b.recipientSignature };
       }
       if (b.status === "PendingSignature" && ["Sent", "Viewed"].includes(ag.status)) {
         ag.status = "PendingSignature";
@@ -317,6 +440,92 @@ function buildAgreementRouter(ctx: Ctx): Router {
     } catch (err) { next(err); }
   });
 
+  // ── Share with the parties (CR-P (57)/(58)/(59)/(61)/(63)) ────────────────
+  // Replaces the old one-shot "Send". Staff pick WHICH parties receive it and why, the chosen
+  // parties gain visibility, everyone picked is notified, and the send is logged. It stays
+  // available afterwards, so the same agreement can go out again after a revision.
+  router.post("/:aid/share", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can share agreements." });
+      const ag = await findAg(req);
+      if (!ag) return res.status(404).json({ error: "Not found" });
+      if (ag.status === "Cancelled") return res.status(400).json({ error: "A cancelled agreement cannot be shared." });
+
+      const body = req.body || {};
+      const purpose = body.purpose === "signature" ? "signature" : "review";
+      const note = String(body.note || "").slice(0, 500);
+      const picked = Array.isArray(body.parties) ? body.parties : [];
+      if (!picked.length) return res.status(400).json({ error: "Choose at least one party to share with." });
+
+      const stamp = new Date().toISOString();
+      const by = req.user!.name || "";
+      ag.visibleTo = ag.visibleTo || [];
+      ag.shares = ag.shares || [];
+
+      for (const raw of picked.slice(0, 10)) {
+        const party = {
+          companyId: String((raw as { companyId?: unknown })?.companyId || "").slice(0, 60),
+          name: String((raw as { name?: unknown })?.name || "").slice(0, 200),
+          email: String((raw as { email?: unknown })?.email || "").slice(0, 200),
+        };
+        if (!party.name) continue;
+        // Visibility is a set: sharing again must not duplicate the grant, only log the send.
+        const already = ag.visibleTo.some((v) =>
+          (party.companyId && v.companyId === party.companyId) ||
+          (!party.companyId && v.name.toLowerCase() === party.name.toLowerCase()));
+        if (!already) ag.visibleTo.push({ ...party, grantedAt: stamp, grantedByName: by });
+        ag.shares.push({ ...party, purpose, sentAt: stamp, sentByName: by, note });
+
+        // Notify anyone whose login matches the party's email.
+        if (party.email) {
+          // Emails are matched case-insensitively; escape first so a "+" tag can't break the regex.
+          const user = await User.findOne({ email: new RegExp(`^${escapeRegex(party.email)}$`, "i") }).select("_id").lean();
+          if (user) {
+            await createNotification({
+              userId: String(user._id), type: "general",
+              title: purpose === "signature" ? "Agreement awaiting your signature" : "Agreement shared with you for review",
+              message: `${by || "GreenTech USA"} shared "${ag.agreementNo || ag.name || ag.agreementType}" with you.${note ? ` Note: ${note}` : ""}`,
+              link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
+            });
+          }
+        }
+      }
+
+      // A draft that has gone out is no longer a draft.
+      if (["Draft", "Rejected"].includes(ag.status)) { ag.status = purpose === "signature" ? "PendingSignature" : "Sent"; ag.sentAt = today(); }
+      act(ag, by, "shared", `${purpose === "signature" ? "For signature" : "For review"}: ${picked.map((x: { name?: string }) => x?.name).filter(Boolean).join(", ")}`);
+      await ag.save();
+      res.json(ag);
+    } catch (err) { next(err); }
+  });
+
+  // Set exactly who can see this agreement (the "Visible to" list) without sending anything.
+  router.post("/:aid/visibility", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can change visibility." });
+      const ag = await findAg(req);
+      if (!ag) return res.status(404).json({ error: "Not found" });
+      const stamp = new Date().toISOString();
+      const by = req.user!.name || "";
+      const before = new Set((ag.visibleTo || []).map((v) => v.companyId || v.name.toLowerCase()));
+      ag.visibleTo = (Array.isArray(req.body?.parties) ? req.body.parties : []).slice(0, 10).map((raw: Record<string, unknown>) => {
+        const companyId = String(raw?.companyId || "").slice(0, 60);
+        const name = String(raw?.name || "").slice(0, 200);
+        const prev = (ag.visibleTo || []).find((v) => (companyId && v.companyId === companyId) || (!companyId && v.name.toLowerCase() === name.toLowerCase()));
+        return {
+          companyId, name, email: String(raw?.email || "").slice(0, 200),
+          grantedAt: prev?.grantedAt || stamp, grantedByName: prev?.grantedByName || by,
+        };
+      }).filter((v: { name: string }) => v.name);
+      const after = new Set(ag.visibleTo.map((v) => v.companyId || v.name.toLowerCase()));
+      const added = [...after].filter((k) => !before.has(k)).length;
+      const removed = [...before].filter((k) => !after.has(k)).length;
+      act(ag, by, "visibility", `${added} granted, ${removed} removed`);
+      await ag.save();
+      res.json(ag);
+    } catch (err) { next(err); }
+  });
+
   // ── Sign (the recipient, from their own account) ──────────────────────────
   router.post("/:aid/sign", async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
@@ -325,10 +534,19 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!ag) return res.status(404).json({ error: "Not found" });
       if (!isRecipient(ctx, ag, p)) return res.status(403).json({ error: "Only the agreement's recipient can sign it." });
       if (!["Sent", "Viewed", "PendingSignature"].includes(ag.status)) return res.status(400).json({ error: `Cannot sign an agreement in status ${ag.status}.` });
+      // CR-P (16) — the signer picks one of their named signatures; only images stored on their
+      // own account are accepted (default signature when nothing is chosen).
+      const signer = await User.findById(req.user!.userId).select("signatureUrl signatures").lean();
+      const mine = new Set<string>([
+        ...(((signer as { signatures?: Array<{ url?: string }> } | null)?.signatures) || []).map((s) => s.url || ""),
+        (signer as { signatureUrl?: string } | null)?.signatureUrl || "",
+      ].filter(Boolean));
+      const requested = String(req.body?.signatureUrl || "");
+      const signatureUrl = requested && mine.has(requested) ? requested : ((signer as { signatureUrl?: string } | null)?.signatureUrl || "");
       ag.signatures.recipient = {
         ...ag.signatures.recipient,
         signerName: String(req.body?.signerName || req.user!.name || "").slice(0, 120),
-        signatureUrl: String(req.body?.signatureUrl || ""),
+        signatureUrl,
         signedAt: today(),
         method: "account",
       };
@@ -355,14 +573,18 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!ag) return res.status(404).json({ error: "Not found" });
       if (!isRecipient(ctx, ag, p)) return res.status(403).json({ error: "Only the agreement's recipient can reject it." });
       if (!["Sent", "Viewed", "PendingSignature"].includes(ag.status)) return res.status(400).json({ error: `Cannot reject an agreement in status ${ag.status}.` });
+      // CR-P (65) — "then they must give a reason". A rejection with no reason tells us nothing
+      // and leaves the agreement stuck, so the reason is required, not optional.
+      const reason = String(req.body?.note || "").trim().slice(0, 500);
+      if (!reason) return res.status(400).json({ error: "A reason is required when rejecting an agreement." });
       ag.status = "Rejected";
-      act(ag, req.user!.name || "", "rejected", String(req.body?.note || "").slice(0, 500));
+      act(ag, req.user!.name || "", "rejected", reason);
       await ag.save();
       if (ag.addedById) {
         await createNotification({
           userId: ag.addedById, type: "general",
           title: "Agreement rejected",
-          message: `${req.user!.name || "The recipient"} rejected "${ag.name || ag.agreementType}".${req.body?.note ? ` Note: ${String(req.body.note).slice(0, 200)}` : ""}`,
+          message: `${req.user!.name || "The recipient"} rejected "${ag.agreementNo || ag.name || ag.agreementType}". Reason: ${reason.slice(0, 200)}`,
           link: `${ctx === "user" ? "/dashboard/users" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
@@ -431,7 +653,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       const ag = await findAg(req);
       if (!ag) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Not found" }); }
       if (!p.staff && !isRecipient(ctx, ag, p)) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: "No access." }); }
-      if (ag.signedDocument?.filePath) fs.unlink(path.resolve(ag.signedDocument.filePath), () => {});
+      archiveSignedCopy(ag, req.user!.name || "");
       ag.signedDocument = fileMeta(req.file);
       act(ag, req.user!.name || "", "snapshot-frozen", req.file.originalname);
       await ag.save();
@@ -497,22 +719,28 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!ag) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Not found" }); }
       // Only an issued, not-yet-settled agreement can receive a counter-signed copy — the same
       // states the UI offers the upload in (a Signed one is immutable; Draft must be sent first).
-      if (!["Sent", "Viewed", "PendingSignature", "Rejected"].includes(ag.status)) {
+      // CR-P (52) — "Signed" is included so the signed copy can be REPLACED with a corrected
+      // scan. Only that file changes; the agreement's terms stay locked.
+      if (!["Sent", "Viewed", "PendingSignature", "Rejected", "Signed"].includes(ag.status)) {
         fs.unlink(req.file.path, () => {});
-        return res.status(400).json({ error: `Cannot mark a ${ag.status} agreement as signed. Send it first, and note that a signed agreement is locked.` });
+        return res.status(400).json({ error: `Cannot mark a ${ag.status} agreement as signed. Send it first.` });
       }
+      const replacing = ag.status === "Signed" && !!ag.signedDocument?.filePath;
       const meta = fileMeta(req.file);
       ag.attachments.push({ ...meta, kind: "signed" });
-      if (ag.signedDocument?.filePath) fs.unlink(path.resolve(ag.signedDocument.filePath), () => {});
+      archiveSignedCopy(ag, req.user!.name || "");
       ag.signedDocument = meta;
       ag.signatures.recipient = {
         ...ag.signatures.recipient,
         signerName: String(req.body?.signerName || ag.partySnapshot?.party2?.contactName || ag.partySnapshot?.party2?.name || "").slice(0, 120),
+        // CR-P (16) — keep/accept the counterparty's stored signature image so it still renders
+        // on the frozen document even when the signed copy arrived outside the platform.
+        signatureUrl: String(req.body?.signatureUrl || ag.signatures.recipient?.signatureUrl || ""),
         signedAt: today(),
         method: "upload",
       };
       ag.status = "Signed";
-      act(ag, req.user!.name || "", "signed", "Counter-signed copy uploaded");
+      act(ag, req.user!.name || "", replacing ? "signed-copy-replaced" : "signed", replacing ? `Signed copy replaced with ${req.file.originalname}` : "Counter-signed copy uploaded");
       await ag.save();
       res.status(201).json(ag);
     } catch (err) { next(err); }

@@ -18,6 +18,9 @@ export default function UserAccessManager({ user }: { user: AdminUser }) {
 
   const [owned, setOwned] = useState<Array<{ id: string; name: string }>>([]);
   const [access, setAccess] = useState<Array<{ projectId: string; name: string; guest: ApiGuest }>>([]);
+  // CR-P (16) — projects where this user is on the assigned team (set from the project workspace).
+  // Shown here so both grant paths stay visible in one place.
+  const [assigned, setAssigned] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
 
   const [modalProject, setModalProject] = useState<{ id: string; name: string } | null>(null);
@@ -35,8 +38,12 @@ export default function UserAccessManager({ user }: { user: AdminUser }) {
     setLoading(true);
     try {
       const mine = await fetchProjects("mine");
-      const ownedList = mine.filter((p) => p.ownerId === myId).map((p) => ({ id: p.id, name: p.name }));
+      const ownedFull = mine.filter((p) => p.ownerId === myId);
+      const ownedList = ownedFull.map((p) => ({ id: p.id, name: p.name }));
       setOwned(ownedList);
+      setAssigned(user.empId
+        ? ownedFull.filter((p) => (p.assignedEmployees || []).includes(user.empId!)).map((p) => ({ id: p.id, name: p.name }))
+        : []);
       const found: Array<{ projectId: string; name: string; guest: ApiGuest }> = [];
       await Promise.all(ownedList.map(async (p) => {
         try {
@@ -137,9 +144,28 @@ export default function UserAccessManager({ user }: { user: AdminUser }) {
         </button>
       </div>
 
+      {/* CR-P (16) — team assignments made from inside the project workspace, so this tab shows
+          the full picture regardless of where access was granted. */}
+      {!loading && assigned.length > 0 && (
+        <div className="border-t border-slate-50 pt-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Assigned to the project team</p>
+          <div className="space-y-2">
+            {assigned.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-slate-100 bg-slate-50/50">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800 truncate">{p.name}</p>
+                  <p className="text-[11px] text-slate-400">Full project access as team member. Manage their tab visibility from the project workspace.</p>
+                </div>
+                <span className="shrink-0 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-widest">Assigned</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Existing access */}
       <div className="border-t border-slate-50 pt-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Projects with access</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Projects with scoped access</p>
         {loading ? (
           <div className="flex items-center gap-2 text-slate-400 text-xs py-6 justify-center"><Loader2 size={15} className="animate-spin" /> Loading…</div>
         ) : access.length === 0 ? (

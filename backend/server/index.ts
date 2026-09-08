@@ -44,6 +44,8 @@ import shipmentRoutes from "./routes/shipments";
 import projectRequestRoutes from "./routes/projectRequests";
 import technicalDocRoutes from "./routes/technicalDocs";
 import projectTableRoutes from "./routes/projectTables";
+import Agreement from "./models/Agreement";
+import { nextSequence } from "./models/Counter";
 import subAgreementRoutes from "./routes/subAgreements";
 import { userAgreementRouter, projectAgreementRouter, generalAgreementRouter, agreementTemplateRouter, expireOverdueAgreements } from "./routes/agreements";
 import savedDocumentRoutes from "./routes/savedDocuments";
@@ -52,6 +54,7 @@ import companiesRoutes, { publicCompanyRouter } from "./routes/companies";
 import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import stickyNoteRoutes from "./routes/stickyNotes";
+import myProfileRoutes from "./routes/myProfile";
 import draftRoutes from "./routes/drafts";
 import binRoutes from "./routes/bin";
 import { startBackupCron } from "./services/backupCron";
@@ -119,6 +122,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/sticky-notes", stickyNoteRoutes);
 app.use("/api/my-board", myBoardRoutes);
+app.use("/api/me", myProfileRoutes);                     // CR-P (16) — self profile preview
+
 app.use("/api/drafts", draftRoutes);
 app.use("/api/bin", binRoutes);
 app.use("/api/resume", resumeRoutes);
@@ -135,7 +140,10 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use(errorHandler);
 
 // ── Start ────────────────────────────────────────────────────────────────────
-connectDB().then(async () => {
+// One-time migrations + idempotent seeding. Runs AFTER the port opens (CR-P 16): on a slow
+// database link these round trips used to hold the port closed for minutes on every restart,
+// which the frontend surfaced as "internal server error".
+async function runBootstrapTasks() {
   // One-time migration: the "guest" role is now called "subcontractor".
   try {
     const UserModel = (await import("./models/User")).default;
@@ -259,6 +267,24 @@ connectDB().then(async () => {
     console.error("Agreement template seeding failed:", err);
   }
 
+  // CR-P (23) — agreements written before AG- numbers existed get one now, oldest first, so the
+  // list has no gaps. Runs once: after the backfill every agreement has a number and the query
+  // below matches nothing.
+  try {
+    const unnumbered = await Agreement.find({ $or: [{ agreementNo: "" }, { agreementNo: { $exists: false } }] })
+      .sort({ createdAt: 1 }).select("_id").lean();
+    for (const a of unnumbered) {
+      const n = await nextSequence("agreementNo");
+      await Agreement.updateOne({ _id: a._id }, { $set: { agreementNo: `AG-${String(n).padStart(4, "0")}` } });
+    }
+    if (unnumbered.length) console.log(`🔢 Backfilled ${unnumbered.length} agreement number(s).`);
+  } catch (err) {
+    console.error("Agreement number backfill failed:", err);
+  }
+
+}
+
+connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 API server running on http://localhost:${PORT}`);
     startBackupCron();
@@ -275,6 +301,7 @@ connectDB().then(async () => {
       } catch (err) { console.error("Agreement expiry sweep failed:", err); }
     });
   });
+  void runBootstrapTasks();
 }).catch((err) => {
   // A clear, one-line reason instead of an unhandled-rejection topology dump. The usual cause
   // in production is the database host not being reachable — check MONGO_URI and that the host's

@@ -84,11 +84,11 @@ router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunc
       Company.find({ archived: true }).select("name category updatedAt").sort({ updatedAt: -1 }).lean(),
     ]);
     const items = [
-      ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),
-      ...agreements.map((a) => ({ kind: "agreement", id: String(a._id), refId: String(a._id), name: a.name || `${a.agreementType} agreement`, subtitle: `${a.agreementType || "Agreement"}`, projectId: a.ownerProjectId || "", projectName: nameById[a.ownerProjectId] || "", updatedAt: (a as { updatedAt?: unknown }).updatedAt, link: a.ownerProjectId ? `/dashboard/projects/${a.ownerProjectId}` : "/dashboard/agreements" })),
-      ...submittals.map((s) => ({ kind: "submittal", id: String(s._id), refId: String(s._id), name: s.productName || s.title || "Submittal", subtitle: "Submittal", projectId: s.projectId, projectName: nameById[s.projectId] || "", updatedAt: (s as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${s.projectId}?tab=procurement&proc=submittals` })),
-      ...rfqs.map((r) => ({ kind: "rfq", id: String(r._id), refId: String(r._id), name: r.title || r.rfqNo || "RFQ", subtitle: `RFQ ${r.rfqNo || ""}`.trim(), projectId: r.projectId, projectName: nameById[r.projectId] || "", updatedAt: (r as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${r.projectId}?tab=procurement&proc=rfqs` })),
-      ...companies.map((c) => ({ kind: "company", id: String(c._id), refId: String(c._id), name: c.name || "Company", subtitle: c.category || "Company", projectId: "", projectName: "Directory", updatedAt: (c as { updatedAt?: unknown }).updatedAt, link: "/dashboard/directory" })),
+      ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", origin: "Projects", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),
+      ...agreements.map((a) => ({ kind: "agreement", id: String(a._id), refId: String(a._id), name: a.name || `${a.agreementType} agreement`, subtitle: `${a.agreementType || "Agreement"}`, projectId: a.ownerProjectId || "", projectName: nameById[a.ownerProjectId] || "", origin: a.ownerProjectId ? `Project · ${nameById[a.ownerProjectId] || a.ownerProjectId}` : "General Agreements", updatedAt: (a as { updatedAt?: unknown }).updatedAt, link: a.ownerProjectId ? `/dashboard/projects/${a.ownerProjectId}` : "/dashboard/agreements" })),
+      ...submittals.map((s) => ({ kind: "submittal", id: String(s._id), refId: String(s._id), name: s.productName || s.title || "Submittal", subtitle: "Submittal", projectId: s.projectId, projectName: nameById[s.projectId] || "", origin: `Project · ${nameById[s.projectId] || s.projectId} · Submittals`, updatedAt: (s as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${s.projectId}?tab=procurement&proc=submittals` })),
+      ...rfqs.map((r) => ({ kind: "rfq", id: String(r._id), refId: String(r._id), name: r.title || r.rfqNo || "RFQ", subtitle: `RFQ ${r.rfqNo || ""}`.trim(), projectId: r.projectId, projectName: nameById[r.projectId] || "", origin: `Project · ${nameById[r.projectId] || r.projectId} · RFQs`, updatedAt: (r as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${r.projectId}?tab=procurement&proc=rfqs` })),
+      ...companies.map((c) => ({ kind: "company", id: String(c._id), refId: String(c._id), name: c.name || "Company", subtitle: c.category || "Company", projectId: "", projectName: "Directory", origin: "Directory", updatedAt: (c as { updatedAt?: unknown }).updatedAt, link: "/dashboard/directory" })),
     ];
     items.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
     res.json(items);
@@ -101,17 +101,53 @@ router.post("/archive/:kind/:id/restore", async (req: AuthedRequest, res: Respon
     const Model = ARCHIVE_MODELS[req.params.kind];
     if (!Model || !mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Unknown item." });
     await Model.updateOne({ _id: req.params.id }, { $set: { archived: false } });
-    res.json({ message: "Restored" });
+    // CR-P (73) — "it should give us like a link, so you can click it."
+    res.json({ message: "Restored", link: String(req.body?.link || "") });
   } catch (err) { next(err); }
 });
 
 // ── Recycle Bin tab ──────────────────────────────────────────────────────────
+// CR-P (73)/(75) — where a binned item CAME FROM, and where it will be once restored.
+// "The second tab should be original location, so we can see where it was, where did we archive it
+// from." A bin row that only says "Agreement" tells you nothing about which one.
+function binOrigin(kind: string, projectName: string): string {
+  if (projectName) return `Project · ${projectName}`;
+  switch (kind) {
+    case "company": case "vendor": return "Directory";
+    case "user": return "Users";
+    case "agreement": return "General Agreements";
+    case "announcement": return "Announcements";
+    case "template": case "proposal-template": return "Templates";
+    case "document": case "technical-doc": case "rfp-document": return "Documents";
+    default: return "Company-wide";
+  }
+}
+function binLink(kind: string, projectId: string): string {
+  if (projectId) {
+    if (["submittal", "rfq", "po", "shipment", "procurement-section", "procurement-item"].includes(kind)) {
+      return `/dashboard/projects/${projectId}?tab=procurement`;
+    }
+    return `/dashboard/projects/${projectId}`;
+  }
+  switch (kind) {
+    case "company": case "vendor": return "/dashboard/directory";
+    case "user": return "/dashboard/users";
+    case "agreement": return "/dashboard/agreements";
+    case "announcement": return "/dashboard/announcements";
+    case "project": return "/dashboard/projects";
+    default: return "";
+  }
+}
+
 router.get("/recycle", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const entries = await RecycleBin.find().sort({ createdAt: -1 }).limit(300).lean();
     res.json(entries.map((e) => ({
       id: String(e._id), kind: e.kind, name: e.name, subtitle: e.subtitle,
       projectId: e.projectId, projectName: e.projectName,
+      origin: binOrigin(e.kind, e.projectName),
+      // CR-P (73) — so the restore toast can offer "Open" and take you straight there.
+      link: e.kind === "project" ? `/dashboard/projects/${e.refId || ""}` : binLink(e.kind, e.projectId),
       deletedByName: e.deletedByName, deletedAt: (e as { createdAt?: unknown }).createdAt,
     })));
   } catch (err) { next(err); }
@@ -130,8 +166,9 @@ router.post("/recycle/:id/restore", async (req: AuthedRequest, res: Response, ne
     if (entry.kind === "submittal" && Array.isArray(entry.extra)) {
       for (const rev of entry.extra as object[]) { try { await SubmittalRevision.create(rev); } catch { /* skip */ } }
     }
+    const link = entry.kind === "project" ? `/dashboard/projects/${entry.refId || ""}` : binLink(entry.kind, entry.projectId);
     await entry.deleteOne();
-    res.json({ message: "Restored" });
+    res.json({ message: "Restored", link, name: entry.name, kind: entry.kind });
   } catch (err) { next(err); }
 });
 

@@ -137,7 +137,12 @@ export async function renderHtml(cur: PdfCursor, doc: PDFDocument, html: string,
       rows.push(cells.map((c) => (c.textContent || "").trim()));
       heads.push(cells.some((c) => c.tagName === "TH"));
     }
-    if (rows.length) cur.table(rows, heads, font, bold);
+    if (!rows.length) return;
+    // CR-P (40) — table titles come from the same editor, so they must print here too, tight
+    // above the table rather than a paragraph away from it.
+    const caption = (tbl.querySelector("caption")?.textContent || "").trim();
+    if (caption) { cur.text(caption, bold, 8.5, INK); cur.y += 3; }
+    cur.table(rows, heads, font, bold);
   };
   const drawList = (el: HTMLElement, ordered: boolean) => {
     Array.from(el.children).forEach((li, i) => {

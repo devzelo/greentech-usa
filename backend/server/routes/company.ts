@@ -132,6 +132,17 @@ router.post("/classified-access/verify", async (req: AuthedRequest, res: Respons
 const STAMP_TAB_ID = "classified-stamps";
 // The dedicated classified tab that holds reusable NDA files, picked when building an agreement.
 const NDA_TAB_ID = "classified-nda";
+// CR-P (45) — the standard terms & conditions get their OWN Company Documents tab. They are not
+// NDAs and must not be picked out of the NDA folder, which is what the first cut did.
+const TERMS_TAB_ID = "company-terms";
+// The company's standing PO terms, seeded so a fresh install already has them to attach.
+const SEED_TERMS = [
+  {
+    name: "GT-Standard Terms and Conditions.pdf",
+    url: "/downloads/gt-standard-terms-and-conditions.pdf",
+    description: "Purchase order standard terms and conditions for commercial supplies and services (Attachment A, Revision 2).",
+  },
+];
 
 const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "tab";
@@ -242,6 +253,20 @@ async function ensureSeeded() {
     // stored urls are unchanged; only the `kind` (which area lists them) moves.
     await CompanyTab.updateOne({ tabId: NDA_TAB_ID, kind: { $ne: "company" } }, { $set: { kind: "company" } });
     await CompanyFile.updateMany({ tabId: NDA_TAB_ID, kind: { $ne: "company" } }, { $set: { kind: "company" } });
+
+    // CR-P (45) — Terms & Conditions tab, beside NDA Files under Company documents. Agreement
+    // authors attach the standard terms from here; the company's own set is seeded in once.
+    await CompanyTab.updateOne(
+      { tabId: TERMS_TAB_ID },
+      { $setOnInsert: { tabId: TERMS_TAB_ID, label: "Terms & Conditions", parentId: "", order: 901, system: true, kind: "company" } },
+      { upsert: true }
+    );
+    if (!(await CompanyFile.countDocuments({ tabId: TERMS_TAB_ID }))) {
+      await CompanyFile.insertMany(SEED_TERMS.map((d) => ({
+        kind: "company", tabId: TERMS_TAB_ID, name: d.name, url: d.url,
+        fileType: extOf(d.name), size: "—", description: d.description, uploadedByName: "System",
+      })));
+    }
   })();
   try { await seeding; } finally { seeding = null; }
 }
@@ -360,6 +385,18 @@ router.get("/nda-files", async (_req: AuthedRequest, res: Response, next: NextFu
     await ensureSeeded();
     // Kind-agnostic (tabId is unique to NDA) so it works before/after the classified → company move.
     const files = await CompanyFile.find({ tabId: NDA_TAB_ID }).sort({ createdAt: -1 }).lean();
+    res.json(files);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/company/terms-files — the standard terms & conditions an agreement can attach.
+// CR-P (45): a separate pool from the NDAs, so the two are never confused.
+router.get("/terms-files", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    await ensureSeeded();
+    const files = await CompanyFile.find({ tabId: TERMS_TAB_ID, archived: { $ne: true } }).sort({ createdAt: -1 }).lean();
     res.json(files);
   } catch (err) {
     next(err);

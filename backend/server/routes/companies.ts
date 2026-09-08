@@ -5,12 +5,11 @@ import path from "path";
 import fs from "fs";
 import Company, { COMPANY_CATEGORIES } from "../models/Company";
 import CompanyFile from "../models/CompanyFile";
-import Invoice from "../models/Invoice";
-import Rfq from "../models/Rfq";
-import ProcurementPO from "../models/ProcurementPO";
+import User from "../models/User";
 import Project from "../models/Project";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
+import { buildCompanyLinks } from "../lib/profileLinks";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
@@ -226,46 +225,18 @@ router.get("/:id/tasks", async (req: AuthedRequest, res: Response, next: NextFun
 });
 
 // CR-PR-05 — records that reference this company (auto-linked into its profile).
+// CR-P (16) — aggregation moved to lib/profileLinks; it now also surfaces projects where the
+// company sits in subcontractors[] or its login is a guest, so the Access tab sees every
+// involvement regardless of which side the grant was made from.
 router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const c = await Company.findById(req.params.id).select("name").lean();
+    const c = await Company.findById(req.params.id).select("name email").lean();
     const name = (c as { name?: string } | null)?.name || "";
-    const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
-    const Shipment = (await import("../models/Shipment")).default;
-    const Vendor = (await import("../models/Vendor")).default;
-    const VendorQuote = (await import("../models/VendorQuote")).default;
-    const Agreement = (await import("../models/Agreement")).default;
-    const Submittal = (await import("../models/Submittal")).default;
-    // CR-PR-05 / CR-PR-08 — received quotes. Vendors picked from the Directory carry a hard
-    // companyId link; legacy rows entered by hand only match on name, so we accept either.
-    const vendorMatch: Record<string, unknown>[] = [{ companyId: req.params.id }];
-    if (nameRx) vendorMatch.push({ name: nameRx });
-    const vendorIds = (await Vendor.find({ $or: vendorMatch }).select("_id").lean()).map((v) => String(v._id));
-    const [invoices, rfqs, pos, shipments, quotes, agreements, submittals] = await Promise.all([
-      // Invoices link by companyId (receiver picker) OR by matching party name.
-      Invoice.find(nameRx ? { $or: [{ companyId: req.params.id }, { party: nameRx }] } : { companyId: req.params.id }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
-      Rfq.find({ "recipients.companyId": req.params.id }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
-      // POs store the vendor NAME — match the company's name to surface them under the profile.
-      nameRx ? ProcurementPO.find({ vendorName: nameRx }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
-      // CR-P-06b — shipping/delivery records: shipments whose logistics agency is this company.
-      nameRx ? Shipment.find({ agencyName: nameRx }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
-      vendorIds.length ? VendorQuote.find({ vendorId: { $in: vendorIds } }).select("rfqId total status accepted projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
-      // CR-P-06b — agreements/contracts with this company (matched on the counterparty name).
-      Agreement.find(nameRx
-        ? { $or: [{ "partySnapshot.party2.companyId": req.params.id }, { "partySnapshot.party2.name": nameRx }] }
-        : { "partySnapshot.party2.companyId": req.params.id }).select("name status projectId").sort({ createdAt: -1 }).limit(200).lean(),
-      // CR-P-06b — submittals for this company's products (matched on manufacturer/brand).
-      nameRx ? Submittal.find({ manufacturer: nameRx }).select("productName manufacturer status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
-    ]);
-    // CR-P-06b — "projects they have been involved with": every project referenced by any of the
-    // linked records above (invoices / RFQs / POs / shipments), resolved to name + status.
-    const pidSet = new Set<string>();
-    for (const arr of [invoices, rfqs, pos, shipments, quotes, agreements, submittals] as Array<Array<{ projectId?: string }>>)
-      for (const r of arr) if (r.projectId) pidSet.add(r.projectId);
-    const projects = pidSet.size
-      ? await Project.find({ projectId: { $in: [...pidSet] } }).select("projectId name status").limit(200).lean()
-      : [];
-    res.json({ invoices, rfqs, pos, shipments, quotes, agreements, submittals, projects });
+    const email = (c as { email?: string } | null)?.email || "";
+    const login = await User.findOne(email
+      ? { $or: [{ companyId: req.params.id }, { email: email.toLowerCase() }] }
+      : { companyId: req.params.id }).select("_id").lean();
+    res.json(await buildCompanyLinks(req.params.id, name, email, login ? String(login._id) : ""));
   } catch (err) { next(err); }
 });
 
