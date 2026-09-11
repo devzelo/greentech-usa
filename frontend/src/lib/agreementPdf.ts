@@ -589,20 +589,14 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     if (inline.length) cur.addPage();
   }
 
-  // NDA, then the standard terms — the last numbered sections before the signatures (CR-P (45)).
-  if (ag.sections?.ndaEnabled) {
-    if (ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.name) {
-      await renderSection("Non-Disclosure (NDA)", `A Non-Disclosure Agreement ("${ag.sections.ndaFile.name}") is attached to and forms part of this agreement.`);
-    } else {
-      await renderSection("Non-Disclosure (NDA)", ag.sections?.ndaText || "");
-    }
-  }
-  if (ag.sections?.stdTermsEnabled) {
-    if (ag.sections?.stdTermsMode === "file" && ag.sections?.stdTermsFile?.name) {
-      await renderSection("Standard Terms & Conditions", `The Standard Terms & Conditions ("${ag.sections.stdTermsFile.name}") are attached to and form part of this agreement.`);
-    } else {
-      await renderSection("Standard Terms & Conditions", ag.sections?.stdTermsText || "");
-    }
+  // CR-P (45) — the NDA and the standard terms are not body sections any more: both are attached
+  // at the very end, after the signatures (see below). The body only says they form part of it.
+  const ndaOn = !!ag.sections?.ndaEnabled && (ag.sections?.ndaMode === "file" ? !!ag.sections?.ndaFile?.url : !!(ag.sections?.ndaText || "").trim());
+  const termsOn = !!ag.sections?.stdTermsEnabled && (ag.sections?.stdTermsMode === "file" ? !!ag.sections?.stdTermsFile?.url : !!(ag.sections?.stdTermsText || "").trim());
+  if (ndaOn || termsOn) {
+    const what = [ndaOn ? "the Non-Disclosure Agreement" : "", termsOn ? "the Standard Terms & Conditions" : ""].filter(Boolean).join(" and ");
+    cur.gap(8);
+    cur.para(`Attached after the signatures, and forming part of this agreement: ${what}.`, font, 9, INK);
   }
 
   // 9) Signature blocks — CR-P (46): ONE PER PARTY, up to four, two to a row.
@@ -662,16 +656,6 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     }
   }
 
-  // CR-P (45) — the NDA and the standard terms & conditions are stapled after the signatures,
-  // in that order, exactly as described on the call: "nda and then the terms and conditions just
-  // come going at the end". Both reuse the shared stapler, so both gain the picture-format fix.
-  if (ag.sections?.ndaEnabled && ag.sections?.ndaMode === "file" && ag.sections?.ndaFile?.url) {
-    await stapleAttachment(doc, { name: ag.sections.ndaFile.name, filePath: ag.sections.ndaFile.url }, "Non-Disclosure Agreement", font, bold);
-  }
-  if (ag.sections?.stdTermsEnabled && ag.sections?.stdTermsMode === "file" && ag.sections?.stdTermsFile?.url) {
-    await stapleAttachment(doc, { name: ag.sections.stdTermsFile.name, filePath: ag.sections.stdTermsFile.url }, "Standard Terms & Conditions", font, bold);
-  }
-
   // CR-P (42) — attachments held back to the end as appendices. Everything set to "after" was
   // already stapled in directly behind its own section, up in the body above.
   for (const s of ag.extraSections || []) {
@@ -681,6 +665,26 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
       await stapleAttachment(doc, a, s.title || "Appendix", font, bold);
     }
   }
+
+  // CR-P (45) — the NDA and the standard terms & conditions come at the VERY END, after the
+  // signatures and after any appendices: "nda and then the terms and conditions just come going at
+  // the end". A file picked from Company Documents is stapled in as it is; text written into the
+  // agreement gets its own page. (Written-in text used to print as a numbered section BEFORE the
+  // signatures.) The cursor's new pages are appended, so they land after anything stapled above.
+  const endDocument = async (title: string, mode: string | undefined, file: { name: string; url: string } | null | undefined, text: string | undefined) => {
+    if (mode === "file") {
+      if (file?.url) await stapleAttachment(doc, { name: file.name, filePath: file.url }, title, font, bold);
+      return;
+    }
+    if (!(text || "").trim()) return;
+    cur.addPage();
+    cur.text(title, bold, 13, GREEN);
+    cur.gap(8);
+    if (/<[a-z][\s\S]*>/i.test(text || "")) await renderHtml(cur, doc, text || "", font, bold);
+    else cur.para(text || "", font, 9, INK);
+  };
+  if (ag.sections?.ndaEnabled) await endDocument("Non-Disclosure Agreement", ag.sections.ndaMode, ag.sections.ndaFile, ag.sections.ndaText);
+  if (ag.sections?.stdTermsEnabled) await endDocument("Standard Terms & Conditions", ag.sections.stdTermsMode, ag.sections.stdTermsFile, ag.sections.stdTermsText);
 
   const out = await doc.save();
   return new Blob([out], { type: "application/pdf" });

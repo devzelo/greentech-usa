@@ -132,7 +132,8 @@ const BLANK_PARTY: ApiAgreementParty = { name: "", contactName: "", address: "",
 const MAX_PARTIES = 4;
 const BLANK_SECTIONS: ApiAgreementSections = {
   scope: "", terms: "", paymentConditions: "", deliveryConditions: "",
-  ndaEnabled: false, ndaMode: "text", ndaText: "", ndaFile: null,
+  // CR-P (45) — the NDA defaults to the file from Company Documents' NDA folder, like the terms.
+  ndaEnabled: false, ndaMode: "file", ndaText: "", ndaFile: null,
   // CR-P (45) — the standard terms default to "select a file": they are a standing document we
   // already hold, not something retyped per agreement.
   stdTermsEnabled: false, stdTermsMode: "file", stdTermsText: "", stdTermsFile: null,
