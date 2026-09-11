@@ -1,11 +1,14 @@
 import { PDFDocument, PDFFont, PDFImage, PDFPage, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import { embedImage } from "./poPdf";
 
 // A reusable paginated cursor + rich-text (HTML) renderer for pdf-lib documents. Renders the HTML
 // produced by RichTextEditor — paragraphs, headings, lists, images and tables — flowing onto new
 // pages as needed. Used by the Contract Admin request PDF (and available to any pdf-lib document).
-const INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
-const LINE = rgb(0.8, 0.83, 0.87), HEADBG = rgb(0.95, 0.96, 0.97);
+// CR-P (41) — the one GreenTech palette (lib/docStyle). Table headers get the brand tint, the same
+// as in the editor, instead of a plain grey.
+const { ink: INK, muted: MUTED } = PDF_COLORS;
+const { line: LINE, headBg: HEADBG } = PDF_COLORS;
 
 // Parse an inline CSS color (#rgb, #rrggbb, rgb()/rgba()) into a pdf-lib color, so
 // text the user coloured in the editor keeps its colour in the exported PDF.

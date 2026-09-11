@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import type { ApiRfq, ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { GREENTECH } from "./poPdf";
@@ -14,7 +15,7 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const page = doc.addPage([1190.55, 841.89]); // CR-PR-01 — A3 landscape so all columns + full text fit
   const { width, height } = page.getSize();
-  const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
+  const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;   // CR-P (41) — one palette
   const M = 48;
   let y = height - 56;
 

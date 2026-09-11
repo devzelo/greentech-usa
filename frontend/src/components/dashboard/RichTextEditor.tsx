@@ -5,7 +5,7 @@ import {
   Image as ImageIcon, Table as TableIcon, Loader2, Baseline, Highlighter,
   Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2,
 } from "lucide-react";
-import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS } from "../../lib/docStyle";
+import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS, DOC_COLORS } from "../../lib/docStyle";
 
 /**
  * Rich-text editor backed by a contentEditable surface. Emits HTML via onChange
@@ -319,7 +319,8 @@ export default function RichTextEditor({
     const on = !/border:1px/.test(t.rows[0]?.cells[0]?.getAttribute("style") || "");
     Array.from(t.rows).forEach((row) => Array.from(row.cells).forEach((cell) => {
       const isHead = cell.tagName === "TH";
-      const base = isHead ? "padding:6px;min-width:60px;background:#f1f5f9;font-weight:700;text-align:left;" : "padding:6px;min-width:60px;";
+      // CR-P (41) — the header keeps the brand tint from lib/docStyle (it was reset to a plain grey).
+      const base = isHead ? `padding:6px;min-width:60px;background:${DOC_COLORS.headBg};font-weight:700;text-align:left;` : "padding:6px;min-width:60px;";
       cell.setAttribute("style", (on ? "border:1px solid #cbd5e1;" : "border:none;") + base);
     }));
     emit();

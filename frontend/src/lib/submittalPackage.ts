@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import { attachmentUrl, type ApiSubmittal, type ApiSubmittalRevision, type ApiSubmittalAttachment } from "./api";
 
 // Submittal packages are assembled in this conventional order.
@@ -31,7 +32,7 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
   // ── Title page ──
   const title = doc.addPage([PW, PH]);
   const { width, height } = title.getSize();
-  const draw = (text: string, y: number, size: number, f = font, color = rgb(0.06, 0.09, 0.16)) =>
+  const draw = (text: string, y: number, size: number, f = font, color = PDF_COLORS.ink) =>
     title.drawText(text, { x: 56, y, size, font: f, color });
   title.drawRectangle({ x: 0, y: height - 8, width, height: 8, color: rgb(0.06, 0.72, 0.51) });
   draw("SUBMITTAL PACKAGE", height - 120, 12, bold, rgb(0.06, 0.72, 0.51));

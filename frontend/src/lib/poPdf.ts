@@ -1,4 +1,5 @@
 import { PDFDocument, PDFFont, PDFImage, StandardFonts, rgb, type PDFPage } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import { attachmentUrl, type ApiProcurementPO, type ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
@@ -7,7 +8,8 @@ const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) ||
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
 const PAGE_W = 1190.55, PAGE_H = 841.89, M = 48; // CR-PR-01 — A3 landscape (all columns + full text fit)
-const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
+// CR-P (41) — the one GreenTech palette (lib/docStyle), shared by every generated document.
+const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;
 
 // GreenTech's own company details (constant — the "our company" side of the PO & RFQ).
 export const GREENTECH = {

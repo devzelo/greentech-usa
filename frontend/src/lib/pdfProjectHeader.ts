@@ -1,4 +1,5 @@
 import { PDFFont, PDFPage, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import type { ApiProject } from "./api";
 import { projectCategories } from "./api";
 import { composeSiteAddress } from "./address";
@@ -40,7 +41,7 @@ export function projectPdfInfo(p?: Pick<ApiProject, "id" | "name" | "location" |
 // Returns the new y (below the block). No-op-ish when info is empty.
 export function drawProjectInfo(page: PDFPage, font: PDFFont, info: ProjectPdfInfo | undefined, x: number, y: number, maxWidth: number): number {
   if (!info || (!info.name && !info.number && !info.location)) return y;
-  const MUTED = rgb(0.39, 0.45, 0.55), INK = rgb(0.06, 0.09, 0.16);
+  const { muted: MUTED, ink: INK } = PDF_COLORS;   // CR-P (41) — one palette
   const parts = [
     info.name ? `Project: ${info.name}` : "",
     info.number ? `No: ${info.number}` : "",

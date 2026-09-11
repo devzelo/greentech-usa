@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import { type ApiInvoice } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { drawWrapped } from "./pdfText";
@@ -10,7 +11,7 @@ import { embedImage, drawFitted, GREENTECH } from "./poPdf";
 const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 const PAGE_W = 595.28, PAGE_H = 841.89, M = 48;
-const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55), LINE = rgb(0.9, 0.92, 0.95);
+const { brand: GREEN, ink: INK, muted: MUTED, line: LINE } = PDF_COLORS;   // CR-P (41) — one palette
 
 const lineTotal = (inv: ApiInvoice) => (inv.lineItems || []).reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);
 const invoiceAmount = (inv: ApiInvoice) => ((inv.lineItems || []).length ? lineTotal(inv) : n(inv.amount));

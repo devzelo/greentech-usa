@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import type { ApiProcurementSection, ApiProcurementItem } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 
@@ -17,7 +18,7 @@ export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiP
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const GREEN = rgb(0.06, 0.72, 0.51), INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55);
+  const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;   // CR-P (41) — one palette
   const M = 40;
   const PW = 1190.55, PH = 841.89; // A3 landscape (CR-P-16 — fits all columns + full text)
 

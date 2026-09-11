@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDF_COLORS } from "./docStyle";
 import { tableRowFileUrl, type ApiTableRow } from "./api";
 
 // Combine every uploaded closeout document into ONE PDF to send the client (client request:
@@ -6,7 +7,7 @@ import { tableRowFileUrl, type ApiTableRow } from "./api";
 // A cover page lists the contents, then each document gets a labeled divider page followed by its
 // pages (PDFs page-by-page, images as a full page). Non-embeddable files (docx/xlsx) are skipped
 // and reported so the user knows to convert them.
-const INK = rgb(0.06, 0.09, 0.16), GREEN = rgb(0.06, 0.72, 0.51), GREY = rgb(0.39, 0.45, 0.55);
+const { ink: INK, brand: GREEN, muted: GREY } = PDF_COLORS;   // CR-P (41) — one palette
 
 export async function buildCloseoutPackage(rows: ApiTableRow[], projectName = ""): Promise<{ blob: Blob; skipped: string[]; included: number }> {
   const doc = await PDFDocument.create();
