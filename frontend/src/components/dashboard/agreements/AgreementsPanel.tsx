@@ -421,27 +421,30 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   );
 
   const slug = (s: string) => (s || "").trim().replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const autoName = (type: string): string => {
-    const year = new Date().getFullYear();
-    const typeCode = (type || "AGREEMENT").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    const p2 = abbr(draft?.party2.name || defaults?.party2?.name || "");
-    let base: string;
-    if (ctx.kind === "general") {
-      // CR-P-45 — GT-<2nd party name>-<service type>-<Mon YYYY>.
-      const d = draft?.effectiveDate ? new Date(draft.effectiveDate) : new Date();
-      const stamp = `${d.toLocaleString("en-US", { month: "short" })}-${d.getFullYear()}`;
-      const p2full = slug(draft?.party2.name || defaults?.party2?.name || "") || "NAME";
-      base = `GT-${p2full}-${slug(type) || "AGREEMENT"}-${stamp}`;
-    } else if (ctx.kind === "user") {
-      base = `GT-EMP-${p2 || "NAME"}-${typeCode}-${year}`;
-    } else {
-      base = `GT-${abbr(defaults?.projectNo || "") || abbr(defaults?.projectName || "") || "PROJ"}-${ENTITY_CODE[ctx.entityType]}-${p2 || "NAME"}-${typeCode}-${year}`;
-    }
-    // De-duplicate against existing agreements with a serial suffix.
+  // CR-P (24) — "It auto fills from the second party name plus the date": the file name is exactly
+  // that, e.g. "Farmer-Group-2026-09-11", for every kind of agreement. It names the downloaded file
+  // only and never prints. A clash with another agreement gets a serial suffix.
+  const autoNameFor = (partyName: string, date: string): string => {
+    const base = `${slug(partyName) || "Agreement"}-${(date || new Date().toISOString()).slice(0, 10)}`;
     let name = base, n = 2;
     while (list.some((a) => a.name === name && a._id !== editor?.aid)) name = `${base}-${n++}`;
     return name;
   };
+  const autoName = (_type?: string): string =>
+    autoNameFor(draft?.party2.name || defaults?.party2?.name || "", draft?.effectiveDate || "");
+  // The name last filled in automatically. While the field still holds it, the name follows the
+  // party and the date; once someone types their own, it is left alone. An existing agreement's
+  // name is never rewritten on its own (openEdit sets a value no name can equal).
+  const autoNameRef = useRef("");
+  useEffect(() => {
+    if (!draft || draft.name !== autoNameRef.current) return;
+    const next = autoNameFor(draft.party2.name, draft.effectiveDate);
+    if (next === draft.name) return;
+    autoNameRef.current = next;
+    const was = draft.name;
+    setDraft((d) => (d && d.name === was ? { ...d, name: next } : d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.party2.name, draft?.effectiveDate]);
 
   const loadPickers = () => {
     if (!templates.length) fetchAgreementTemplates().then(setTemplates).catch(() => {});
@@ -451,8 +454,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   const openCreate = async () => {
     allDoneRef.current = null;
+    // CR-P (24) — a new agreement starts with its automatic file name, which then follows the party.
+    const firstName = autoNameFor(defaults?.party2?.name || "", new Date().toISOString().slice(0, 10));
+    autoNameRef.current = firstName;
     setDraft({
-      name: "", title: "", description: "", remark: "",
+      name: firstName, title: "", description: "", remark: "",
       // CR-P (69) — names from the one grouped type list every agreement now uses.
       agreementType: ctx.kind === "user" ? "Employment Agreement" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supplier Agreement" : ctx.entityType === "partner" ? "Partnership Agreement" : "Subcontract Agreement",
       // A project's own agreement covers that project from the start (it can be changed).
@@ -487,6 +493,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   const openEdit = (ag: ApiAgreement) => {
     allDoneRef.current = null;
+    autoNameRef.current = " ";   // CR-P (24) — an existing name is never rewritten on its own
     // CR-P (33) — the status rule is applied to the draft as it opens, so the "unchanged" snapshot
     // already holds it and opening an agreement never counts as an unsaved change.
     setDraft(withAutoStatus({
@@ -1558,7 +1565,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">File name <span className="font-medium normal-case text-slate-400">(not printed)</span>
                     <div className="flex gap-2 mt-1">
                       <input className={inp} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={autoName(draft.agreementType)} />
-                      <button onClick={() => setDraft({ ...draft, name: autoName(draft.agreementType) })} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 whitespace-nowrap shrink-0" title="Build the file name from the second party and the date">Auto</button>
+                      <button onClick={() => { const n = autoName(); autoNameRef.current = n; setDraft({ ...draft, name: n }); }} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 whitespace-nowrap shrink-0" title="Build the file name from the second party and the date (it then follows them)">Auto</button>
                     </div>
                     <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">Built from the second party and the date. Names the downloaded file only.</span>
                   </label>
