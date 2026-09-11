@@ -71,6 +71,7 @@ import RevisionManage from "./RevisionManage";
 import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposal";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
+import ProjectProgress from "./ProjectProgress";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
@@ -3483,6 +3484,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </>
                 )}
               </div>
+
+              {/* CR-P (120) — the progress bar from the My Projects cards, inside the project too,
+                  with the percentage editable right here by whoever runs the project. */}
+              <ProjectProgress
+                progress={project.progress}
+                canEdit={canManage}
+                className="mt-3 max-w-3xl"
+                onSave={async (pct) => {
+                  if (!id) return;
+                  try { const u = await updateProject(id, { progress: pct }); setProject(u); toast(`Progress set to ${pct}%.`, "success"); }
+                  catch (e) { toast(e instanceof Error ? e.message : "Could not save the progress.", "error"); throw e; }
+                }}
+              />
 
               {/* CR-PR-14 — time left between the project's start and end dates (not the contract date,
                   which can differ from when work actually starts). Collapsed to one line; click to expand. */}

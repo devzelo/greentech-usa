@@ -309,6 +309,10 @@ const IDENTITY_FIELDS = new Set([
   "financialProposalLocked",  // CR-B-19b — restrict the Financial Proposal to the owner
 ]);
 
+// CR-P (120) — the project's progress is kept up to date by whoever runs the project: the owner and
+// the assigned employees. Guests (subcontractors, vendors) still cannot change it.
+const SCHEDULE_FIELDS = new Set(["progress"]);
+
 // PUT /api/projects/:id â€” owner: full edit; assignee: tab-content only; else 403.
 router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
@@ -340,6 +344,7 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
       // are managed by the dedicated /guests routes, never through a blanket PUT.
       delete req.body.guests;
       for (const f of Object.keys(req.body)) {
+        if (isAssigned && SCHEDULE_FIELDS.has(f)) continue;
         if (IDENTITY_FIELDS.has(f)) delete req.body[f];
       }
     }
