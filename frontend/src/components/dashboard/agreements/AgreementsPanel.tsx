@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
 import {
-  fetchAgreements, createAgreement, updateAgreement, deleteAgreement, setAgreementArchived,
+  fetchAgreements, fetchAgreement, createAgreement, updateAgreement, deleteAgreement, setAgreementArchived,
   signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument, uploadAgreementShareCopy, logAgreementEmail,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchTermsFiles, fetchMe, fetchMySignatures, type ApiSignature,
   attachmentUrl, companyFileUrl,
@@ -15,6 +15,7 @@ import { buildAgreementPdf, buildUploadedAgreementPdf, shownDates, agreementHead
 import { AGREEMENT_TYPE_GROUPS, AGREEMENT_TYPES_FLAT } from "../../../lib/agreementTypes";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
 import { unfinishedSections as unfinishedOf, allSectionsComplete, autoDocStatus } from "../../../lib/agreementStatus";
+import { mergeSections, newSectionId, withSectionIds } from "../../../lib/sectionMerge";
 import { useSectionPresence } from "../../../lib/usePresence";
 import PresenceBar from "../PresenceBar";
 import BuilderActions from "../BuilderActions";
@@ -153,7 +154,7 @@ type Draft = {
   extraParties: ApiAgreementParty[];   // CR-P (19) — party 3 and party 4
   contextLines: Array<{ label: string; value: string }>;
   sections: ApiAgreementSections;
-  extraSections: Array<{ title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections: Array<{ id?: string; title: string; body: string; status?: SectionStatus; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   company: { signerName: string; signerTitle: string; signerEmail: string; signerPhone: string; signatureUrl: string; stampUrl: string; signedAt: string };
 };
@@ -182,6 +183,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // CR-B-20 — while an agreement editor is open, warn before closing the window / leaving the site.
   useUnsavedGuard(!!editor);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // CR-P (36) — the latest draft for async work (the autosave merges into it before saving).
+  const draftRef = useRef<Draft | null>(null);
+  draftRef.current = draft;
   // CR-PR-09 — Party 2 is picked from the Companies Directory (one party, never several),
   // exactly like an RFQ receiver. Employee agreements keep their own auto-filled details.
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
@@ -483,7 +487,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       // CR-P (68) — ONE section to start with. Four pre-made ones ("no need to put multiple
       // sections here because it's going to confuse the people") made a new agreement look like a
       // form to fill in rather than a document to write. Add Section adds more when they are wanted.
-      extraSections: [{ title: "Scope / Description", body: "" }],
+      extraSections: [{ id: newSectionId(), title: "Scope / Description", body: "" }],
       sectionAssignees: { ...BLANK_ASSIGNEES },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "" },
     });
@@ -527,8 +531,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       extraSections: [
         ...(([["scope", "Scope / Description"], ["terms", "Terms & Conditions"], ["paymentConditions", "Payment Conditions"], ["deliveryConditions", "Delivery Conditions"]] as const)
           .filter(([k]) => String(ag.sections?.[k] || "").trim())
-          .map(([k, label]) => ({ title: label, body: String(ag.sections?.[k] || ""), status: "" as SectionStatus }))),
-        ...(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+          // CR-P (36) — fixed ids, so everyone who opens the agreement gets the same ones.
+          .map(([k, label]) => ({ id: `fixed-${k}`, title: label, body: String(ag.sections?.[k] || ""), status: "" as SectionStatus }))),
+        ...withSectionIds(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
       ],
       sectionAssignees: { ...BLANK_ASSIGNEES, ...(ag.sectionAssignees || {}) },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
@@ -554,7 +559,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     if (!t) { setDraft({ ...draft, templateId: tid }); return; }
     const fromTemplate = ([["Scope / Description", t.sections.scope], ["Terms & Conditions", t.sections.terms], ["Payment Conditions", t.sections.paymentConditions], ["Delivery Conditions", t.sections.deliveryConditions]] as const)
       .filter(([, body]) => (body || "").trim())
-      .map(([title, body]) => ({ title, body: body || "", status: "" as SectionStatus }));
+      .map(([title, body]) => ({ id: newSectionId(), title, body: body || "", status: "" as SectionStatus }));
     setDraft({
       ...draft, templateId: tid, agreementType: t.agreementType || draft.agreementType,
       extraSections: [...draft.extraSections.filter((s) => s.body.trim()), ...fromTemplate],
@@ -569,31 +574,35 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   // `isDraftStatus` — the party snapshot is only editable before the agreement is issued; sending
   // it later is silently ignored server-side, but we simply don't send it.
-  const draftBody = (isDraftStatus = true) => ({
-    name: draft!.name || autoName(draft!.agreementType),
-    title: draft!.title, description: draft!.description, remark: draft!.remark,
-    agreementType: draft!.agreementType, templateId: draft!.templateId,
-    linkedProjects: draft!.linkedProjects,
-    effectiveDate: draft!.effectiveDate, startDate: draft!.startDate, endDate: draft!.endDate,
-    datesShown: draft!.datesShown,
-    docStatus: draft!.docStatus,
-    letterhead: draft!.letterhead, jvLogoUrl: draft!.jvLogoUrl,
-    jvPartnerId: draft!.jvPartnerId, jvPartnerName: draft!.jvPartnerName,
-    documentMode: draft!.documentMode,
-    ...(isDraftStatus ? { partySnapshot: {
-      party1: party1(), party2: draft!.party2,
-      // CR-P (19) — blank extra slots are dropped, so an unused "Add party" row prints nothing.
-      extraParties: draft!.extraParties.filter((p) => p.name.trim()),
-      // CR-P (27) — linked projects used to be flattened into these info lines, which printed
-      // them AFTER the parties. They are their own block before the parties now, built straight
-      // from linkedProjects (which carries the location), so nothing is injected here any more.
-      contextLines: draft!.contextLines.filter((l) => l.label || l.value),
-    } } : {}),
-    sections: draft!.sections,
-    extraSections: draft!.extraSections.filter((s) => s.title || s.body),
-    sectionAssignees: draft!.sectionAssignees,
-    companySignature: draft!.company,
-  });
+  // CR-P (36) — `dd` lets the autosave send a draft it has just merged, not the rendered one.
+  const draftBody = (isDraftStatus = true, dd?: Draft) => {
+    const d = dd || draft!;
+    return {
+      name: d.name || autoName(d.agreementType),
+      title: d.title, description: d.description, remark: d.remark,
+      agreementType: d.agreementType, templateId: d.templateId,
+      linkedProjects: d.linkedProjects,
+      effectiveDate: d.effectiveDate, startDate: d.startDate, endDate: d.endDate,
+      datesShown: d.datesShown,
+      docStatus: d.docStatus,
+      letterhead: d.letterhead, jvLogoUrl: d.jvLogoUrl,
+      jvPartnerId: d.jvPartnerId, jvPartnerName: d.jvPartnerName,
+      documentMode: d.documentMode,
+      ...(isDraftStatus ? { partySnapshot: {
+        party1: party1(), party2: d.party2,
+        // CR-P (19) — blank extra slots are dropped, so an unused "Add party" row prints nothing.
+        extraParties: d.extraParties.filter((p) => p.name.trim()),
+        // CR-P (27) — linked projects used to be flattened into these info lines, which printed
+        // them AFTER the parties. They are their own block before the parties now, built straight
+        // from linkedProjects (which carries the location), so nothing is injected here any more.
+        contextLines: d.contextLines.filter((l) => l.label || l.value),
+      } } : {}),
+      sections: d.sections,
+      extraSections: d.extraSections.filter((s) => s.title || s.body),
+      sectionAssignees: d.sectionAssignees,
+      companySignature: d.company,
+    };
+  };
 
   // Returns whether the save actually went through, so a caller that wants to close afterwards
   // (CR-P (48)) never closes over a failure and throws the work away.
@@ -639,16 +648,36 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const agSave = useSaveStatus();
   const autoSaveRef = useRef<() => void>(() => {});
   autoSaveRef.current = () => {
-    if (!draft || !editor?.aid || saving) return;
+    // CR-P (36) — only when there is something of ours to save.
+    if (!draft || !editor?.aid || saving || !isDirty()) return;
     const cur = list.find((a) => a._id === editor.aid);
     if (cur?.status === "Signed") return; // locked once signed
-    void agSave.track(updateAgreement(ctx, editor.aid, draftBody((cur?.status || "Draft") === "Draft")))
-      .then((ag) => { patch(ag); baseRef.current = ag; savedSnapRef.current = snapOf(draft); })   // our save becomes the new baseline
-      .catch(() => {});
+    const aid = editor.aid;
+    const isDraftStatus = (cur?.status || "Draft") === "Draft";
+    void agSave.track((async () => {
+      // CR-P (36) — pull the latest copy and merge it in FIRST, so a colleague's edits to other
+      // sections or fields go out with this save instead of being overwritten by our older copy.
+      let d = draftRef.current || draft;
+      const base = baseRef.current;
+      const fresh = await fetchAgreement(ctx, aid).catch(() => null);
+      if (fresh && base) {
+        const m = mergeDraft(d, fresh, base);
+        if (m.changed) {
+          d = m.next;
+          setDraft((live) => (live ? mergeDraft(live, fresh, base).next : live));
+          setLiveNote({ changed: m.changed, blocked: m.blocked });
+        }
+        baseRef.current = fresh;
+      }
+      const ag = await updateAgreement(ctx, aid, draftBody(isDraftStatus, d));
+      patch(ag); baseRef.current = ag; savedSnapRef.current = snapOf(d);   // our save is the new baseline
+      return ag;
+    })()).catch(() => {});
   };
   useEffect(() => {
     if (!editor?.aid) return;
-    const t = setInterval(() => autoSaveRef.current(), 20000);
+    // CR-P (36) — every 8 seconds (it was 20): how quickly a colleague sees your edits.
+    const t = setInterval(() => autoSaveRef.current(), 8000);
     return () => clearInterval(t);
   }, [editor?.aid]);
 
@@ -671,18 +700,23 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [liveNote, setLiveNote] = useState<{ changed: number; blocked: number } | null>(null);
   const differs = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
 
-  const mergeFromServer = (fresh: ApiAgreement) => {
-    const base = baseRef.current;
-    if (!base) { baseRef.current = fresh; return; }
-    setDraft((d) => {
-      if (!d) return d;
+  // The three-way merge itself, as a plain function of (our draft, the server copy, the copy we both
+  // started from), so the poll and the autosave use exactly the same rules.
+  const mergeDraft = (d: Draft, fresh: ApiAgreement, base: ApiAgreement): { next: Draft; changed: number; blocked: number } => {
       const next: Draft = { ...d };
       let changed = 0, blocked = 0;
       const adopt = <K extends keyof Draft>(key: K, serverVal: Draft[K], baseVal: unknown) => {
         if (!differs(serverVal, baseVal)) return;         // the other side didn't touch it
-        if (differs(d[key], baseVal)) { blocked++; return; } // we changed it too — keep ours
+        if (differs(d[key], baseVal)) { if (differs(d[key], serverVal)) blocked++; return; } // we changed it too — keep ours
         next[key] = serverVal; changed++;
       };
+      // CR-P (36) — the parties, the info lines and the GreenTech signer sync live as well.
+      const partyOf = (p?: ApiAgreementParty): ApiAgreementParty => ({ ...BLANK_PARTY, ...(p || {}) });
+      adopt("party2", partyOf(fresh.partySnapshot?.party2), partyOf(base.partySnapshot?.party2));
+      adopt("extraParties", (fresh.partySnapshot?.extraParties || []).map(partyOf), (base.partySnapshot?.extraParties || []).map(partyOf));
+      adopt("contextLines", (fresh.partySnapshot?.contextLines || []).map((l) => ({ ...l })), (base.partySnapshot?.contextLines || []).map((l) => ({ ...l })));
+      const signerOf = (a: ApiAgreement): Draft["company"] => ({ signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(a.signatures?.company || {}) });
+      adopt("company", signerOf(fresh), signerOf(base));
       adopt("name", fresh.name, base.name);
       adopt("title", fresh.title || "", base.title || "");
       adopt("description", fresh.description || "", base.description || "");
@@ -699,20 +733,32 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       if (fresh.datesShown && base.datesShown) adopt("datesShown", { ...fresh.datesShown }, base.datesShown);
       adopt("linkedProjects", fresh.linkedProjects || [], base.linkedProjects || []);
       adopt("sections", { ...BLANK_SECTIONS, ...(fresh.sections || {}) }, { ...BLANK_SECTIONS, ...(base.sections || {}) });
-      // The whole section list moves as one unit. There is no stable id per section, so merging
-      // them individually would guess wrong the moment someone inserts or reorders one; taking the
-      // list wholesale (only when we have not touched it) is always right.
-      adopt(
-        "extraSections",
-        (fresh.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
-        (base.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
-      );
-      baseRef.current = fresh;
-      // Adopting their change is not our unsaved work, so it must not make the editor look dirty.
-      if (changed) savedSnapRef.current = snapOf(next);
-      if (changed || blocked) setLiveNote({ changed, blocked });
-      return changed ? next : d;
+      // CR-P (36) — sections merge one by one on their stable ids (lib/sectionMerge): a colleague's
+      // edit to one section is taken while ours to another is kept. The whole list used to move as
+      // one unit, so the last save won.
+      const secsOf = (a: ApiAgreement) => withSectionIds((a.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })));
+      const secs = mergeSections(d.extraSections, secsOf(fresh), secsOf(base));
+      if (secs.changed) next.extraSections = secs.list;
+      changed += secs.changed; blocked += secs.blocked;
+      return { next, changed, blocked };
+  };
+
+  const mergeFromServer = (fresh: ApiAgreement) => {
+    const base = baseRef.current;
+    if (!base) { baseRef.current = fresh; return; }
+    setDraft((d) => {
+      if (!d) return d;
+      const m = mergeDraft(d, fresh, base);
+      // Adopting their change is not OUR unsaved work: the "saved" copy takes it too, so only what
+      // we changed ourselves still counts as unsaved. (Setting the snapshot to the whole merged
+      // draft, as before, also marked our own unsaved edits as saved.)
+      if (m.changed && savedSnapRef.current) {
+        try { savedSnapRef.current = snapOf(mergeDraft(JSON.parse(savedSnapRef.current) as Draft, fresh, base).next); } catch { /* keep */ }
+      }
+      if (m.changed || m.blocked) setLiveNote({ changed: m.changed, blocked: m.blocked });
+      return m.changed ? m.next : d;
     });
+    baseRef.current = fresh;
   };
 
   // Skipped while a save is in flight so a merge can never race our own write.
@@ -727,11 +773,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     const tick = async () => {
       if (savingRef.current) return;
       try {
-        const fresh = (await fetchAgreements(ctx, showArchived)).find((a) => a._id === aid);
+        // CR-P (36) — just this agreement (it used to fetch the whole list), every 4 seconds.
+        const fresh = await fetchAgreement(ctx, aid);
         if (alive && fresh) { patch(fresh); mergeFromServer(fresh); }
       } catch { /* offline or a blip — try again next tick */ }
     };
-    const id = setInterval(tick, 10000);
+    const id = setInterval(tick, 4000);
     return () => { alive = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor?.aid, showArchived]);
@@ -1882,7 +1929,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 // Per-section update / reorder / duplicate helpers (CR-B-15/17) on the draft.
                 const upd = (patch: Partial<typeof s>) => setDraft({ ...draft, extraSections: draft.extraSections.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
                 const move = (dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= count) return; const arr = [...draft.extraSections]; [arr[i], arr[j]] = [arr[j], arr[i]]; setDraft({ ...draft, extraSections: arr }); };
-                const dup = () => { const arr = [...draft.extraSections]; arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "" }); setDraft({ ...draft, extraSections: arr }); };
+                const dup = () => { const arr = [...draft.extraSections]; arr.splice(i + 1, 0, { ...s, id: newSectionId(), title: s.title ? `${s.title} (copy)` : "" }); setDraft({ ...draft, extraSections: arr }); };
                 // CR-B-18 — attach/remove a pre-made file on this section (needs the agreement saved first).
                 const uploadFile = async (file: File) => {
                   if (!editor?.aid) { toast("Save the agreement first, then attach files to a section.", "info"); return; }
@@ -1990,7 +2037,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 </div>
                 );
               })}
-              <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
+              <button onClick={() => setDraft({ ...draft, extraSections: [...draft.extraSections, { id: newSectionId(), title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 w-fit"><Plus size={13} /> Add section</button>
 
               {/* NDA — always the last section before the signature (CR-B-04). */}
               <EditorBox title="NDA" summary={draft.sections.ndaEnabled ? (draft.sections.ndaFile?.name || "Written inline") : "Not included"}>

@@ -98,7 +98,8 @@ export interface IAgreement extends Document {
   };
   // CR-P (42)/(44) — a section attachment prints by default, right after its own section, and
   // can instead be pushed to the back as an appendix or held back from the document entirely.
-  extraSections: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string; print?: boolean; placement?: string }>; history?: Array<{ at: string; by: string; text: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
+  // CR-P (36) — `id` is a stable section id, so live changes merge section by section.
+  extraSections: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string; print?: boolean; placement?: string }>; history?: Array<{ at: string; by: string; text: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
   // CR-P-49 — colleague tagged to review each fixed section (parallels extraSections.assignedTo).
   sectionAssignees: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
 
@@ -202,7 +203,7 @@ const AgreementSchema = new Schema<IAgreement>(
       stdTermsText: { type: String, default: "" },
       stdTermsFile: { type: { name: String, url: String }, default: null },
     },
-    extraSections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, hidden: { type: Boolean, default: false }, notes: { type: String, default: "" }, assignedTo: { type: String, default: "" }, attachments: { type: [FileSchema], default: [] }, history: { type: [{ at: String, by: String, text: String }], default: [] } }], default: [] },
+    extraSections: { type: [{ id: { type: String, default: "" }, title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, hidden: { type: Boolean, default: false }, notes: { type: String, default: "" }, assignedTo: { type: String, default: "" }, attachments: { type: [FileSchema], default: [] }, history: { type: [{ at: String, by: String, text: String }], default: [] } }], default: [] },
     // CR-P-49 — tagged reviewer per fixed section.
     sectionAssignees: {
       scope: { type: String, default: "" },

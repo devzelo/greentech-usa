@@ -2248,7 +2248,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   // CR-P (19) — extraParties holds party 3 and party 4 (max 2); party1/party2 stay as they were.
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; extraParties?: ApiAgreementParty[]; contextLines: Array<{ label: string; value: string }> };
@@ -2324,7 +2324,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";
@@ -2338,6 +2338,10 @@ export async function updateAgreement(ctx: AgreementCtx, aid: string, body: Agre
 }
 export async function deleteAgreement(ctx: AgreementCtx, aid: string): Promise<void> {
   await request(`${agrBase(ctx)}/${aid}`, { method: "DELETE" });
+}
+// CR-P (36) — one agreement, for the open editor's live refresh (staff).
+export async function fetchAgreement(ctx: AgreementCtx, aid: string): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}`);
 }
 // CR-P (61) — log an agreement emailed from the share menu in its send log.
 export async function logAgreementEmail(ctx: AgreementCtx, aid: string, to: string): Promise<ApiAgreement> {

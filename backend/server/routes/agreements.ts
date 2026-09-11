@@ -88,11 +88,13 @@ const cleanDatesShown = (v: unknown) => {
 };
 
 // Custom named rich-text sections on an agreement (title + HTML body).
-const cleanExtraSections = (v: unknown): Array<{ title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>; history: Array<{ at: string; by: string; text: string }> }> =>
+const cleanExtraSections = (v: unknown): Array<{ id: string; title: string; body: string; status: string; locked: boolean; hidden: boolean; notes: string; assignedTo: string; attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>; history: Array<{ at: string; by: string; text: string }> }> =>
   Array.isArray(v)
     ? v.map((s) => {
         const o = s as { title?: unknown; body?: unknown; status?: unknown; locked?: unknown; hidden?: unknown; notes?: unknown };
         return {
+          // CR-P (36) — the section's stable id, carried through every save (live merge key).
+          id: String((o as { id?: unknown })?.id ?? "").slice(0, 40),
           title: String(o?.title ?? "").slice(0, 120),
           body: String(o?.body ?? "").slice(0, 20000),
           status: String(o?.status ?? "").slice(0, 20),
@@ -309,6 +311,17 @@ function buildAgreementRouter(ctx: Ctx): Router {
         }
       }
       res.json(p.staff ? list : list.map((ag) => forParty(ag, p)));
+    } catch (err) { next(err); }
+  });
+
+  // CR-P (36) — one agreement, for the open editor's live refresh. The editor used to fetch the
+  // whole list every few seconds just to read this one. Staff only: only staff edit.
+  router.get("/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!permsOf(req).staff) return res.status(403).json({ error: "No access." });
+      const ag = await findAg(req);
+      if (!ag) return res.status(404).json({ error: "Not found" });
+      res.json(ag);
     } catch (err) { next(err); }
   });
 
