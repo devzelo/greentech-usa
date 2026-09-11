@@ -191,9 +191,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [newPartyOpen, setNewPartyOpen] = useState<number | null>(null);
   // CR-B-17 — which section's change-history panel is open.
   const [secHistFor, setSecHistFor] = useState<number | null>(null);
-  // CR-B-16 — live "who is in this section" while the agreement editor is open.
-  const [activeSection, setActiveSection] = useState<string | null>(null);
-  const sectionPeers = useSectionPresence(editor ? `agreements:${ctx.kind === "project" ? ctx.projectId : ctx.kind}:${editor.aid || "new"}` : null, activeSection);
+  // CR-B-16 — live presence while the agreement editor is open: WHO else has it open (the bar in the
+  // header). CR-P (35) — "showing which section the other person is in is not needed", so no
+  // section is reported and no per-section chip is drawn.
+  const sectionPeers = useSectionPresence(editor ? `agreements:${ctx.kind === "project" ? ctx.projectId : ctx.kind}:${editor.aid || "new"}` : null, null);
   // CR-B-1 — notify when a new colleague joins this agreement editor.
   const prevPeers = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -434,8 +435,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     autoNameFor(draft?.party2.name || defaults?.party2?.name || "", draft?.effectiveDate || "");
   // The name last filled in automatically. While the field still holds it, the name follows the
   // party and the date; once someone types their own, it is left alone. An existing agreement's
-  // name is never rewritten on its own (openEdit sets a value no name can equal).
-  const autoNameRef = useRef("");
+  // name is never rewritten on its own (openEdit switches it off).
+  const autoNameRef = useRef<string | null>("");
   useEffect(() => {
     if (!draft || draft.name !== autoNameRef.current) return;
     const next = autoNameFor(draft.party2.name, draft.effectiveDate);
@@ -493,7 +494,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   const openEdit = (ag: ApiAgreement) => {
     allDoneRef.current = null;
-    autoNameRef.current = " ";   // CR-P (24) — an existing name is never rewritten on its own
+    autoNameRef.current = null;   // CR-P (24) — an existing name is never rewritten on its own
     // CR-P (33) — the status rule is applied to the draft as it opens, so the "unchanged" snapshot
     // already holds it and opening an agreement never counts as an unsaved change.
     setDraft(withAutoStatus({
@@ -1899,19 +1900,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   catch { /* ignore */ }
                 };
                 const st = SECTION_STATUS_OPTS.find((o) => o.v === (s.status || "")) || SECTION_STATUS_OPTS[0];
-                const peers = sectionPeers.filter((u) => u.section === String(i));
                 return (
-                <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`} onFocusCapture={() => setActiveSection(String(i))}>
+                <div key={i} className={`space-y-1.5 border-l-2 pl-3 ${locked ? "border-amber-300" : "border-primary/30"}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     {locked
                       ? <p className="text-xs font-bold text-slate-700 flex-grow min-w-[8rem]">{s.title || "Untitled section"}<Lock size={11} className="inline ml-1 text-amber-500" /></p>
                       : <input className={`${inp} font-bold flex-grow min-w-[8rem]`} placeholder="Section title (e.g. Confidentiality, Warranty)" value={s.title} onChange={(e) => upd({ title: e.target.value })} />}
-                    {/* CR-B-16 — live: who else is in this section right now. */}
-                    {peers.length > 0 && (
-                      <span className="inline-flex items-center gap-1 shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5" title={`${peers.map((u) => u.name).join(", ")} editing this section`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{peers.map((u) => u.name).join(", ")}
-                      </span>
-                    )}
                     {/* CR-B-15 — colour-coded per-section status (logs a history entry, CR-B-17). */}
                     <select value={s.status || ""} onChange={(e) => { const v = e.target.value as SectionStatus; const label = SECTION_STATUS_OPTS.find((o) => o.v === v)?.label || "No status"; upd({ status: v, history: [...(s.history || []), { at: new Date().toISOString(), by: getAuthUser()?.name || "Someone", text: `Status → ${label}` }] }); }} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
                       {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
