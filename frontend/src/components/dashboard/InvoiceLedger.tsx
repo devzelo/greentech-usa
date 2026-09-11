@@ -61,13 +61,16 @@ type BuilderDraft = {
   sections: Array<{ title: string; body: string }>; rfqId: string;
   signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
   contractRef: { source: string; agreementId: string; label: string };   // CR-P (168)
+  amount: string;   // the total when the invoice is uploaded rather than built from lines (CR-P 169)
 };
 
-export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId, projectValue }: {
+export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId, projectValue, onRowsChange }: {
   projectId: string; kind: "sent" | "received"; canEdit: boolean;
   projectInfo?: ProjectPdfInfo;
   /** CR-P (168) — the project's contract value, used when an invoice bills the project's contract. */
   projectValue?: string;
+  /** Every change to the list, so the project's five-number strip stays current (audit fix). */
+  onRowsChange?: (rows: ApiInvoice[]) => void;
   /** CR-P (161) — a new invoice sent goes to the project's client unless another receiver is picked. */
   clientName?: string;
   clientCompanyId?: string;
@@ -154,6 +157,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       // CR-P (169) — an invoice received is usually their PDF: a new one starts on Upload.
       mode: fresh ? (isSent ? "build" : "upload") : (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
       lineItems: inv.lineItems?.length ? inv.lineItems : [{ description: "", qty: "1", unitPrice: "" }],
+      amount: inv.amount || "",
       bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
       sections: inv.sections ? inv.sections.map((s) => ({ ...s })) : [], rfqId: inv.rfqId || "",
       signerName: inv.signerName || "", signerTitle: inv.signerTitle || "", signatureUrl: inv.signatureUrl || "",
@@ -177,7 +181,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       signerName: d.signerName, signerTitle: d.signerTitle, signatureUrl: d.signatureUrl,
       contractTotal: d.contractRef.source ? d.contractTotal : "", contractRef: d.contractRef,
     };
-    if (d.mode === "build") body.amount = String(lineTotal(d.lineItems));
+    body.amount = d.mode === "build" ? String(lineTotal(d.lineItems)) : d.amount;
     return body;
   };
   const saveBuilder = async (status?: string) => {
@@ -272,6 +276,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, kind]);
 
   const patch = (inv: ApiInvoice) => setRows((p) => p.map((x) => (x._id === inv._id ? inv : x)));
+  // A payment, a status change or a new invoice here changes the project's five numbers at once.
+  useEffect(() => { if (!loading) onRowsChange?.(rows); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [rows, loading]);
   const edit = (id: string, field: keyof ApiInvoice, value: string) =>
     setRows((p) => p.map((r) => (r._id === id ? { ...r, [field]: value } : r)));
   const save = (id: string, field: keyof ApiInvoice, value: string) =>
@@ -326,7 +332,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     setFreshId(null);
     const cur = rows.find((r) => r._id === id);
     const empty = !d.lineItems.some((it) => it.description.trim() || n(it.unitPrice)) && !(cur?.attachments?.length) && !d.description.trim();
-    if (empty) { try { await deleteInvoice(projectId, id); setRows((p) => p.filter((r) => r._id !== id)); } catch { /* keep it */ } }
+    // CR-P (169) — an invoice received is only logged with its file.
+    const noFile = !isSent && !(cur?.attachments?.length);
+    if (empty || noFile) {
+      try { await deleteInvoice(projectId, id); setRows((p) => p.filter((r) => r._id !== id)); if (noFile && !empty) toast("Not logged: an invoice received needs the invoice file attached.", "info"); } catch { /* keep it */ }
+    }
   };
   const submitNew = async () => {
     setSaving(true);
@@ -379,6 +389,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       title: isSent ? "Mark as received?" : "Mark as paid?",
       message: `Record ${money(left)} as ${isSent ? "received from" : "paid to"} ${row.party || (isSent ? "the client" : "the vendor")} today.${isSent ? "" : " It is added to Expenses; upload the bank receipt on the payment."}`,
       confirmLabel: isSent ? "Mark received" : "Mark paid",
+      danger: false,
     }))) return;
     try {
       patch(await addInvoicePayment(projectId, row._id, { amount: String(left), date: new Date().toISOString().slice(0, 10), method: "Bank transfer", reference: "", notes: isSent ? "Marked as received" : "Marked as paid" }));
@@ -467,7 +478,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     <td className={`px-3 py-2 font-bold whitespace-nowrap ${rLeft > 0 ? (isSent ? "text-blue-600" : "text-amber-600") : "text-slate-400"}`}>{n(row.amount) ? money(rLeft) : "—"}</td>
                     <td className="px-1 py-1"><input type="date" className={inp} value={row.date} disabled={!canEdit} onChange={(e) => edit(row._id, "date", e.target.value)} onBlur={(e) => save(row._id, "date", e.target.value)} /></td>
                     <td className="px-1 py-1">
-                      <select className={`${inp} font-bold`} value={row.status} disabled={!canEdit} onChange={(e) => { edit(row._id, "status", e.target.value); save(row._id, "status", e.target.value); }}>
+                      {/* CR-P (164) — the status shows its colour (paid green, part paid blue, unpaid amber …). */}
+                      <select className={`${inp} font-bold rounded-full ${STATUS_CLS[row.status] || ""}`} value={row.status} disabled={!canEdit} onChange={(e) => { edit(row._id, "status", e.target.value); save(row._id, "status", e.target.value); }}>
                         {statusOpts.map((o) => <option key={o} value={o}>{o}</option>)}
                         {!statusOpts.includes(row.status) && <option value={row.status}>{row.status}</option>}
                       </select>
@@ -599,7 +611,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       {/* CR-I-03/04/07 — the full invoice builder */}
       {builderId && bDraft && (() => {
         const cur = rows.find((r) => r._id === builderId);
-        const thisAmount = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(cur?.amount);
+        const thisAmount = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(bDraft.amount);
         // CR-P (167)/(168) — only the invoices on the same contract count as previously invoiced.
         const pa = cur ? payApplication({ ...cur, party: bDraft.party, companyId: bDraft.companyId, contractTotal: bDraft.contractTotal, contractRef: bDraft.contractRef, date: bDraft.date }, rows, thisAmount) : null;
         const contract = pa?.contract || 0;
@@ -687,7 +699,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                       {(cur?.attachments || []).length === 0 && <span className="text-[10px] text-slate-400 italic">No file yet.</span>}
                       <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f && cur) { try { const srv = await uploadInvoiceFile(projectId, cur._id, f); patch(srv); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} /></label>
                     </div>
-                    <p className="text-[10px] text-slate-400">Enter the invoice total on the row after uploading (or switch to “Build line items”).</p>
+                    {/* CR-P (169) — the total of the uploaded invoice, entered here. */}
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest max-w-xs">Invoice total
+                      <input className={`${finp} mt-1 font-bold`} value={bDraft.amount} onChange={(e) => setB({ amount: e.target.value })} placeholder="0.00" inputMode="decimal" /></label>
                   </div>
                 )}
 
@@ -848,7 +862,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => {
-                    const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractRef.source ? bDraft.contractTotal : "", contractRef: bDraft.contractRef, companyId: bDraft.companyId };
+                    const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : bDraft.amount, bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractRef.source ? bDraft.contractTotal : "", contractRef: bDraft.contractRef, companyId: bDraft.companyId };
                     setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
                   {/* CR-B-14a — Word export. */}
@@ -867,7 +881,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><FileText size={13} /> Word</button>
                   {/* CR-B-14a — confirm before closing so changes aren't lost accidentally. */}
                   <button onClick={async () => { if (await confirm({ title: "Are you sure you want to close?", message: "Any unsaved changes to this invoice will be lost.", confirmLabel: "Close", cancelLabel: "Keep editing", danger: true })) { void closeBuilder(); } }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
-                  <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>
+                  {/* A draft is ours only: an invoice received is a real bill (a payable) from the start. */}
+                  {isSent && <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>}
                   <button onClick={() => saveBuilder()} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
                   {isSent && <button onClick={sendInvoiceEmail} disabled={saving} title="Save, mark Sent, and email the invoice PDF" className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Send</button>}
                 </div>

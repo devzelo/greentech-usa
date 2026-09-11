@@ -76,7 +76,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
     }));
     // CR-P (160) — invoices received that are not fully paid: money we owe, shown as pending.
     received.forEach((inv) => {
-      if (NON_REVENUE.includes(inv.status || "")) return;
+      if (inv.isTemplate || NON_REVENUE.includes(inv.status || "")) return;
       const left = Math.max(0, invTotal(inv) - invoicePaid(inv));
       if (left <= 0) return;
       list.push({ kind: "payable", id: `inv-${inv._id}`, no: rows.length + list.length + 1, description: `${inv.party || "Invoice"}${inv.description ? `: ${inv.description}` : ""}`, date: inv.date || "", total: left, status: "pending", addedBy: inv.addedByName || "", inv });
@@ -111,7 +111,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
 
   // Payables and invoice payments are changed where they come from (CR-P 160).
   const explainSource = async (title: string, message: string) => {
-    if (await confirm({ title, message, confirmLabel: "Open Invoice Received", cancelLabel: "Close" })) onOpenReceived();
+    if (await confirm({ title, message, confirmLabel: "Open Invoice Received", cancelLabel: "Close", danger: false })) onOpenReceived();
   };
   const openEntry = (x: Entry) => {
     if (x.kind === "payable") {
@@ -345,7 +345,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   };
   const requestClose = async () => {
     if (editable && dirty && (expense || total || description.trim())) {
-      if (await confirm({ title: "Save your changes?", message: "This expense has changes that are not saved yet.", confirmLabel: "Save and close", cancelLabel: "Discard" })) { await save(true); return; }
+      if (await confirm({ title: "Save your changes?", message: "This expense has changes that are not saved yet.", confirmLabel: "Save and close", cancelLabel: "Discard", danger: false })) { await save(true); return; }
     }
     onClose();
   };

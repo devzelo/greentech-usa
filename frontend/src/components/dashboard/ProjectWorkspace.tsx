@@ -5943,7 +5943,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           {/* INVOICE SENT / RECEIVED — one ledger component, with payments + totals */}
           {activeTab === "finances" && (finActive === "invoice-sent" || finActive === "invoice-received") && id && (
             <div className="space-y-6">
-              <InvoiceLedger projectId={id} kind={finActive === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} clientName={project?.clientInfo?.name} clientCompanyId={project?.clientInfo?.companyId} projectValue={project?.value} />
+              <InvoiceLedger projectId={id} kind={finActive === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} clientName={project?.clientInfo?.name} clientCompanyId={project?.clientInfo?.companyId} projectValue={project?.value} onRowsChange={(list) => (finActive === "invoice-sent" ? setSentInvoices(list) : setReceivedInvoices(list))} />
               <DocSection
                 projectId={id}
                 section={finActive === "invoice-sent" ? "invoice-sent-documents" : "invoice-received-documents"}
@@ -5972,7 +5972,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {procActive === "rfqs" && id && <ProcurementRFQ projectId={id} canEdit={procPermFor("rfqs") === "edit"} projectInfo={projectPdfInfo(project)} onGoToPO={() => setProcSub("po")} openRfqId={openRfqId} onOpenedRfq={() => setOpenRfqId(undefined)} />}
               {procActive === "quotes" && id && <ProcurementQuotes projectId={id} canEdit={procPermFor("quotes") === "edit"} />}
               {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} onGoToQuotes={() => setProcSub("quotes")} />}
-              {procActive === "invoices" && id && <ProcurementInvoices projectId={id} projectName={project?.name} onGoToPO={() => setProcSub("po")} onGoToReceived={() => { setActiveTab("finances"); setFinSub("invoice-received"); }} />}
+              {procActive === "invoices" && id && <ProcurementInvoices projectId={id} projectName={project?.name} canEdit={procPermFor("po") === "edit"} onGoToPO={() => setProcSub("po")} onGoToReceived={() => { setActiveTab("finances"); setFinSub("invoice-received"); }} />}
               {procActive === "shipment" && id && <ProcurementShipment projectId={id} canEdit={procPermFor("shipment") === "edit"} projectInfo={projectPdfInfo(project)} />}
 
               {procActive === "legacy" && (

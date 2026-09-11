@@ -10,13 +10,16 @@ import type { ApiInvoice } from "./api";
  */
 
 const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
-const NOT_BILLED = ["Cancelled", "Canceled", "Rejected"];
+// Never sent (a draft), or withdrawn: not billed, so never "previously invoiced".
+const NOT_BILLED = ["Draft", "Cancelled", "Canceled", "Rejected"];
 
 export const invoiceTotal = (inv: Pick<ApiInvoice, "lineItems" | "amount">) =>
   (inv.lineItems || []).length ? (inv.lineItems || []).reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0) : n(inv.amount);
 
-export function contractKey(inv: Pick<ApiInvoice, "contractRef" | "companyId" | "party">): string {
+export function contractKey(inv: Pick<ApiInvoice, "_id" | "contractRef" | "companyId" | "party" | "contractTotal">): string {
   const r = inv.contractRef;
+  // No payment application at all: belongs to no contract (never grouped with another invoice).
+  if (!r?.source && !n(inv.contractTotal)) return `none:${inv._id}`;
   if (r?.source === "project") return "project";
   if (r?.source === "agreement" && r.agreementId) return `agr:${r.agreementId}`;
   return `manual:${(inv.companyId || inv.party || "").trim().toLowerCase()}`;

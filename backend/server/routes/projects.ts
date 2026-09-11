@@ -83,10 +83,10 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
     const [expenses, subInvoices, sentInvoices, receivedInvoices] = await Promise.all([
       Expense.find({ projectId: { $in: ids } }).select("projectId qty amount invoiceId description approval").lean(),
       SubInvoice.find({ projectId: { $in: ids } }).select("projectId amount").lean(),
-      Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE } })
+      Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE }, isTemplate: { $ne: true } })
         .select("projectId amount lineItems payments").lean(),
       // CR-I-10 — received invoices (vendor/sub bills) are a project cost (accrual), regardless of payment.
-      Invoice.find({ projectId: { $in: ids }, type: "received", status: { $nin: NON_REVENUE } })
+      Invoice.find({ projectId: { $in: ids }, type: "received", status: { $nin: NON_REVENUE }, isTemplate: { $ne: true } })
         .select("projectId amount lineItems payments").lean(),
     ]);
     // CR-P-15 — per-project 5-number overview + the legacy income/expenses (accrual) fields.

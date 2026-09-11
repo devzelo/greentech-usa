@@ -100,12 +100,15 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     }
     if (items) applyItems(changes, items);
     Object.assign(row, changes);
+    // CR-P (153) — an outside login may edit its expense, but a changed expense needs approving again.
+    if (!isStaff(req) && (Object.keys(changes).length || items) && row.approval === "approved") row.approval = "pending";
 
     // Approval: staff only. CR-P (156) — a rejection needs a reason, and the author is told.
     const approval = b.approval;
     if (isStaff(req) && APPROVAL_VALUES.includes(approval) && approval !== row.approval) {
       if (approval === "rejected") {
-        const reason = String(b.rejectReason ?? "").trim() || row.rejectReason.trim();
+        // A reason for THIS rejection (an old one from an earlier rejection does not count).
+        const reason = String(b.rejectReason ?? "").trim();
         if (!reason) return res.status(400).json({ error: "Say why the expense is rejected." });
         row.rejectReason = reason.slice(0, 1000);
       }

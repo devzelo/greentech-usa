@@ -29,12 +29,12 @@ export function fiveFromRaw(expenses: ApiExpense[], sentInvoices: ApiInvoice[], 
   // CR-P (160) — what is still owed on an invoice received is a payable, counted with the pending
   // expenses (what has been paid is already an expense row, recorded with the payment).
   for (const inv of receivedInvoices) {
-    if (NON_REVENUE.includes(inv.status || "")) continue;
+    if (inv.isTemplate || NON_REVENUE.includes(inv.status || "")) continue;   // a saved template is not a bill
     pendingExpenses += Math.max(0, invTotal(inv) - invoicePaid(inv));
   }
   let totalInvoiced = 0, incomeReceived = 0;
   for (const inv of sentInvoices) {
-    if (NON_REVENUE.includes(inv.status || "")) continue;
+    if (inv.isTemplate || NON_REVENUE.includes(inv.status || "")) continue;   // a saved template is not income
     totalInvoiced += invTotal(inv);
     incomeReceived += invoicePaid(inv);
   }

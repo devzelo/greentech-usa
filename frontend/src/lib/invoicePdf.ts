@@ -122,7 +122,9 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   // Page 2 — Payment Application. CR-P (167)/(168) — against one contract (the project's contract,
   // an agreement, or a value typed in), with the history of every invoice on it.
   const contract = n(inv.contractTotal);
-  if (contract > 0 && (inv.contractRef?.source ?? "manual") !== "") {
+  // (An invoice set to "No payment application" has no contract value, so it has no page 2; an older
+  // invoice with a contract total and no contract choice still gets it.)
+  if (contract > 0) {
     const p2 = doc.addPage([PAGE_W, PAGE_H]);
     let y2 = PAGE_H - M;
     p2.drawText("PAYMENT APPLICATION", { x: M, y: y2 - 4, size: 14, font: bold, color: INK }); y2 -= 20;
