@@ -79,6 +79,9 @@ const styles = StyleSheet.create({
   tocNum: { width: 30, fontSize: 9.5, fontWeight: 700, color: BRAND.emerald },
   tocText: { flex: 1, fontSize: 9.5, color: BRAND.slate },
   tocRef: { fontSize: 8.5, color: BRAND.s500 },
+  tocSubRow: { paddingVertical: 4, paddingLeft: 14 },
+  tocSubNum: { fontWeight: 400, color: BRAND.s500, fontSize: 9 },
+  tocSubText: { fontSize: 9, color: BRAND.s600 },
 
   // Employee / project cards
   card: { backgroundColor: BRAND.mist, borderRadius: 6, padding: 10, marginBottom: 7, borderLeft: `3 solid ${BRAND.emerald}` },
@@ -404,6 +407,19 @@ type SeqItem = { page: ReactElement } | { files: SectionFile[] };
 type TechArgs = { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] };
 /** Does editor HTML hold anything printable (text, an image or a table)? */
 const htmlHasContent = (h: string) => !!h.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() || /<(img|table)\b/i.test(h);
+/** A section's subsections that have a title or text (empty ones are skipped in print). */
+const printableSubs = (s?: { subsections?: Array<{ id: string; heading: string; body: string }> }) =>
+  (s?.subsections || []).filter((x) => x.heading.trim() || htmlHasContent(x.body));
+
+/** "1.1  Subsection title", the second heading level inside a section. */
+function SubHeading({ label, title }: { label?: string; title: string }) {
+  return (
+    <View minPresenceAhead={40} style={{ flexDirection: "row", alignItems: "baseline", marginTop: 12, marginBottom: 5 }}>
+      {!!label && <Text style={{ fontSize: 10, fontWeight: 700, color: BRAND.emerald, marginRight: 6 }}>{label}</Text>}
+      <Text style={{ fontSize: 10, fontWeight: 700, color: BRAND.slate, flex: 1 }}>{title}</Text>
+    </View>
+  );
+}
 
 function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [] }: TechArgs): SeqItem[] {
   const LABEL = "Technical Proposal";
@@ -423,7 +439,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         if (!s) return false;
         // Government forms and external documents print only their upload (and separator page).
         if (m.pageType === "government" || m.pageType === "external") return !!s.attachments?.length || !!m.divider;
-        return !!(s.heading || s.body || s.attachments?.length);
+        return !!(s.heading || s.body || s.attachments?.length || s.subsections?.length);
       }
       case "blank": return true;
       default: return false;
@@ -439,13 +455,14 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const numbering = content.numbering || "numbers";
   const word = content.levelName || "Section";
   const letterOf = (n: number) => { let s = ""; for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s; return s; };
-  const labelById = new Map<string, { short: string; heading: string; divider: string; toc: string }>();
+  // `sub` is the base for subsection numbers: 1.1 / A.1, and appendix 2 gives 2.1.
+  const labelById = new Map<string, { short: string; heading: string; divider: string; toc: string; sub: string }>();
   let mainN = 0, appxN = 0;
   for (const m of visible) {
     if (m.kind === "blank") continue;
     if (m.appendix) {
       const n = ++appxN;
-      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}`, toc: String(n) });
+      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}`, toc: String(n), sub: String(n) });
     } else {
       const n = ++mainN;
       const short = numbering === "letters" ? letterOf(n) : numbering === "numbers" ? String(n).padStart(2, "0") : "";
@@ -454,6 +471,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         heading: short ? `${short}.` : "",
         divider: short ? `${word} ${short}` : "",
         toc: short ? (word === "Section" ? short : `${word} ${short}`) : "",
+        sub: numbering === "letters" ? letterOf(n) : numbering === "numbers" ? String(n) : "",
       });
     }
   }
@@ -479,7 +497,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     // Spec 4 - a Government form or external document prints only as uploaded, after a separator
     // page when one is switched on. A designed section holding only files gets a divider anyway.
     const original = m.pageType === "government" || m.pageType === "external";
-    const filesOnly = original || (m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || ""));
+    const filesOnly = original || (m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || "") && printableSubs(s).length === 0);
     if (m.divider || (filesOnly && !original)) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
     if (!filesOnly) {
       if (!curGrp || curGrp.lh !== elh || m.pageBreakBefore) {
@@ -541,13 +559,33 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         ))}
       </View>
     );
+    // A custom section may run over several pages (it used to be held on one, so long text
+    // overflowed); the heading keeps room below it so it is never left alone at a page foot.
     const s = sectionFor(m.refId);
+    const base = labelById.get(m.id)?.sub || "";
     return (
-      <View key={m.id} wrap={false}>
+      <View key={m.id}>
         {heading}
         <RichText html={s?.body || ""} keyBase={`sec-${m.id}`} />
+        {printableSubs(s).map((ss, k) => (
+          <View key={ss.id}>
+            <SubHeading label={base ? `${base}.${k + 1}` : undefined} title={ss.heading} />
+            <RichText html={ss.body} keyBase={`sub-${ss.id}`} />
+          </View>
+        ))}
       </View>
     );
+  };
+  // Subsection rows under a section in the contents (designed sections only).
+  const subRows = (m: ProposalSectionMeta, w: number) => {
+    if (m.kind !== "custom" || m.pageType === "government" || m.pageType === "external") return [];
+    const base = labelById.get(m.id)?.sub || "";
+    return printableSubs(sectionFor(m.refId)).map((ss, k) => (
+      <View key={ss.id} style={[styles.tocRow, styles.tocSubRow]}>
+        {w > 0 && <Text style={[styles.tocNum, styles.tocSubNum, { width: w }]}>{base ? `${base}.${k + 1}` : ""}</Text>}
+        <Text style={[styles.tocText, styles.tocSubText]}>{ss.heading || "Untitled"}</Text>
+      </View>
+    ));
   };
 
   const seq: SeqItem[] = [];
@@ -567,9 +605,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     page(
       <Sheet lh={lh} label={LABEL} note={note}>
         <SectionHeading title="Table of Contents" />
-        {tocMain.map((m) => row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, tocW))}
+        {tocMain.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, tocW), ...subRows(m, tocW)])}
         {(tocAppx.length > 0 || resumes.length > 0) && <Subhead>APPENDICES</Subhead>}
-        {tocAppx.map((m) => row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, 30))}
+        {tocAppx.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, 30), ...subRows(m, 30)])}
         {resumes.length > 0 && row("resumes", String(resumeAppx), "Team Resumes", undefined, 30)}
       </Sheet>,
     );

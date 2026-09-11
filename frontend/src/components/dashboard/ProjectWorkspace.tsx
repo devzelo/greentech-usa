@@ -46,6 +46,7 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
+import type { ProposalSubsection } from "../../lib/api";
 import { isOriginalPageType } from "../../lib/proposalLibrary";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
@@ -927,6 +928,26 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-B-18 — attach / remove pre-made files (resume/excel/pdf/picture) on a proposal section.
   const setSectionAttachments = (sid: string, atts: Array<{ name: string; url: string }>) =>
     setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, attachments: atts } : s)));
+  // Spec 1 - unlimited subsections under a section, numbered in print (1.1, 1.2 / A.1, A.2).
+  const setSubsections = (sid: string, subs: ProposalSubsection[]) =>
+    setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, subsections: subs } : s)));
+  const subsOf = (sid: string) => technical.sections.find((s) => s.id === sid)?.subsections || [];
+  const addSub = (sid: string) => setSubsections(sid, [...subsOf(sid), { id: uid(), heading: "", body: "" }]);
+  const updateSub = (sid: string, subId: string, p: Partial<ProposalSubsection>) =>
+    setSubsections(sid, subsOf(sid).map((x) => (x.id === subId ? { ...x, ...p } : x)));
+  const moveSub = (sid: string, k: number, dir: -1 | 1) => {
+    const a = subsOf(sid).slice();
+    const j = k + dir;
+    if (j < 0 || j >= a.length) return;
+    [a[k], a[j]] = [a[j], a[k]];
+    setSubsections(sid, a);
+  };
+  const removeSub = async (sid: string, subId: string) => {
+    const x = subsOf(sid).find((y) => y.id === subId);
+    const hasText = !!(x?.heading.trim() || (x?.body || "").replace(/<[^>]*>/g, "").trim());
+    if (hasText && !(await brandedConfirm({ title: "Delete this subsection?", message: `"${x?.heading || "Untitled"}" and its text are removed.`, confirmLabel: "Delete subsection" }))) return;
+    setSubsections(sid, subsOf(sid).filter((y) => y.id !== subId));
+  };
   const uploadSectionDoc = async (sid: string, file: File) => {
     if (!id) return;
     try {
@@ -972,7 +993,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const src = p.sections.find((s) => s.id === meta.refId);
       if (!src) return p;
       const newId = uid();
-      const section = { id: newId, heading: `${src.heading} (copy)`, body: src.body };
+      const section = { id: newId, heading: `${src.heading} (copy)`, body: src.body, subsections: (src.subsections || []).map((x) => ({ ...x, id: uid() })) };
       const resolved = resolveProposalLayout(p);
       const at = resolved.findIndex((m) => m.id === meta.id);
       const newMeta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: `${meta.title} (copy)`, hidden: meta.hidden, pageType: meta.pageType, appendix: meta.appendix, divider: meta.divider, libraryKey: meta.libraryKey, guide: meta.guide, rfpRef: meta.rfpRef };
@@ -3858,6 +3879,31 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         </div>
                       )}
                       {!original && <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />}
+                      {/* Spec 1 - unlimited subsections, numbered automatically in print (1.1, 1.2 / A.1, A.2). */}
+                      {!original && (
+                        <div className="space-y-3 pt-1">
+                          {(s.subsections || []).map((ss, k, arr) => (
+                            <div key={ss.id} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-3 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-primary shrink-0">Subsection {k + 1}</span>
+                                <input value={ss.heading} onChange={(e) => updateSub(s.id, ss.id, { heading: e.target.value })} disabled={!canEdit} placeholder="Subsection title" aria-label={`Subsection ${k + 1} title`}
+                                  className="flex-1 min-w-0 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
+                                {canEdit && (
+                                  <>
+                                    <button onClick={() => moveSub(s.id, k, -1)} disabled={k === 0} aria-label="Move subsection up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronUp size={13} /></button>
+                                    <button onClick={() => moveSub(s.id, k, 1)} disabled={k === arr.length - 1} aria-label="Move subsection down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronDown size={13} /></button>
+                                    <button onClick={() => void removeSub(s.id, ss.id)} aria-label="Delete subsection" className="p-1 rounded text-slate-300 hover:text-red-500"><Trash2 size={12} /></button>
+                                  </>
+                                )}
+                              </div>
+                              <RichTextEditor value={ss.body} onChange={(html) => updateSub(s.id, ss.id, { body: html })} disabled={!canEdit} placeholder="Subsection content…" minHeight={100} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
+                            </div>
+                          ))}
+                          {canEdit && (
+                            <button onClick={() => addSub(s.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Plus size={12} /> Add subsection</button>
+                          )}
+                        </div>
+                      )}
                       {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
                       {canEdit && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
