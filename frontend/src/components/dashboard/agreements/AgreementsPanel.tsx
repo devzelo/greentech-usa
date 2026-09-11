@@ -14,6 +14,7 @@ import {
 import { buildAgreementPdf, buildUploadedAgreementPdf, shownDates, agreementHeading } from "../../../lib/agreementPdf";
 import { AGREEMENT_TYPE_GROUPS, AGREEMENT_TYPES_FLAT } from "../../../lib/agreementTypes";
 import { SECTION_STATUS_OPTS, type SectionStatus } from "../../../lib/sectionStatus";
+import { unfinishedSections as unfinishedOf, allSectionsComplete, autoDocStatus } from "../../../lib/agreementStatus";
 import { useSectionPresence } from "../../../lib/usePresence";
 import PresenceBar from "../PresenceBar";
 import BuilderActions from "../BuilderActions";
@@ -279,8 +280,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // CR-P (33)/(34) — the whole document has an authoring status of its own, alongside the
   // per-section ones. The sections that count are the visible ones: a hidden section is not part
   // of the document being issued, so it cannot hold the document back.
-  const countedSections = (d: Draft) => d.extraSections.filter((s) => !s.hidden && (s.title.trim() || s.body.trim()));
-  const unfinishedSections = (d: Draft) => countedSections(d).filter((s) => (s.status || "") !== "Complete");
+  const unfinishedSections = (d: Draft) => unfinishedOf(d.extraSections);
   const setDocStatus = async (next: DocStatus) => {
     if (!draft) return;
     // CR-P (51) — marking the document "Completed and signed" is a claim that a signed copy
@@ -310,16 +310,26 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     }
     setDraft((d) => (d ? { ...d, docStatus: next } : d));
   };
-  // "As soon as we start it, it's already showing in progress." Once anything is written, a
-  // document sitting at no-status / not-started moves itself to In Progress.
+  // CR-P (33) — the document status follows the work (the rule lives in lib/agreementStatus): In
+  // progress once something is actually written, Complete when every section becomes Complete.
+  // The old check ran only on opening and counted the blank defaults as work, so every agreement,
+  // even a new blank one, showed In progress straight away, and nothing ever set Complete.
+  const withAutoStatus = (d: Draft, sectionsJustCompleted: boolean): Draft => {
+    const next = autoDocStatus(d, sectionsJustCompleted) as DocStatus;
+    return next === d.docStatus ? d : { ...d, docStatus: next };
+  };
+  // Whether every section was complete at the last change, so Complete is applied at the moment
+  // they BECOME complete. A status chosen by hand after that is respected.
+  const allDoneRef = useRef<boolean | null>(null);
   useEffect(() => {
-    setDraft((d) => {
-      if (!d) return d;
-      if (d.docStatus && d.docStatus !== "NotStarted") return d;
-      const started = d.extraSections.some((s) => s.body.trim()) || Object.values(d.sections).some((v) => typeof v === "string" && v.trim());
-      return started ? { ...d, docStatus: "InProgress" } : d;
-    });
-  }, [editor?.aid]);
+    if (!draft) { allDoneRef.current = null; return; }
+    const done = allSectionsComplete(draft);
+    const justCompleted = done && allDoneRef.current === false;
+    allDoneRef.current = done;
+    const next = withAutoStatus(draft, justCompleted);
+    if (next !== draft) setDraft((d) => (d ? { ...d, docStatus: next.docStatus } : d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   // CR-P (20) — every company party goes through the Directory, so the same company carries the
   // same details everywhere. A party prefilled from a project record (subcontractor / vendor / JV)
@@ -431,6 +441,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     if (!termsFiles.length) fetchTermsFiles().then(setTermsFiles).catch(() => {});
   };
   const openCreate = async () => {
+    allDoneRef.current = null;
     setDraft({
       name: "", title: "", description: "",
       agreementType: ctx.kind === "user" ? "Employment" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supply" : ctx.entityType === "partner" ? "Partnership" : "Service",
@@ -462,7 +473,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     loadPickers();
   };
   const openEdit = (ag: ApiAgreement) => {
-    setDraft({
+    allDoneRef.current = null;
+    // CR-P (33) — the status rule is applied to the draft as it opens, so the "unchanged" snapshot
+    // already holds it and opening an agreement never counts as an unsaved change.
+    setDraft(withAutoStatus({
       name: ag.name, title: ag.title || "", description: ag.description || "", agreementType: ag.agreementType, templateId: ag.templateId,
       linkedProjects: ag.linkedProjects || [],
       effectiveDate: ag.effectiveDate, startDate: ag.startDate, endDate: ag.endDate,
@@ -499,7 +513,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         : (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
       sectionAssignees: { ...BLANK_ASSIGNEES, ...(ag.sectionAssignees || {}) },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
-    });
+    }, true));
     baseRef.current = ag;   // CR-P (36) — the live-merge baseline for this editing session
     savedSnapRef.current = "";  // CR-P (48) — filled by the effect below once the draft is in state
     setEditor({ aid: ag._id });
