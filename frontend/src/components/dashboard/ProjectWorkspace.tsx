@@ -8,7 +8,7 @@ import {
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
-  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock,
+  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -46,6 +46,7 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
+import RevisionCompare, { isComparable } from "./RevisionCompare";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
@@ -629,6 +630,16 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
   // what actually goes to the client.
   const [propDocs, setPropDocs] = useState<{ technical: ApiSavedDocument[]; financial: ApiSavedDocument[]; combined: ApiSavedDocument[] }>({ technical: [], financial: [], combined: [] });
   const [openRevs, setOpenRevs] = useState<Record<string, boolean>>({});   // which stream's older revisions are expanded
+  // CR-P (85) - comparing two revisions of one stream. Opening from a row compares it with the
+  // revision just before it (or just after, for the oldest).
+  const [compareRevs, setCompareRevs] = useState<{ which: string; fromId: string; toId: string } | null>(null);
+  const openCompare = (which: string, docs: ApiSavedDocument[], d: ApiSavedDocument) => {
+    const pdfs = docs.filter(isComparable);   // newest first
+    const at = pdfs.findIndex((x) => x._id === d._id);
+    const older = pdfs[at + 1];
+    if (older) setCompareRevs({ which, fromId: older._id, toId: d._id });
+    else if (pdfs[at - 1]) setCompareRevs({ which, fromId: d._id, toId: pdfs[at - 1]._id });
+  };
   // CR-P (88) - file a proposal that was produced outside the platform. It joins the same
   // revision stream, so an uploaded Rev 0 and a built Rev 1 sit in one history.
   const uploadExistingProposal = async (which: "technical" | "financial" | "combined", file: File) => {
@@ -3514,6 +3525,9 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                       <div className="flex items-center gap-1 justify-end">
                                         <button onClick={() => window.open(savedDocUrl(d.filePath), "_blank")} title="Preview this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Eye size={14} /></button>
                                         <a href={savedDocUrl(d.filePath)} download={d.fileName} title="Download this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Download size={14} /></a>
+                                        {isComparable(d) && docs.filter(isComparable).length > 1 && (
+                                          <button onClick={() => openCompare(p.which, docs, d)} title="Compare with another revision" aria-label={`Compare Rev ${revNo(d)} with another revision`} className="p-1.5 rounded text-slate-400 hover:text-primary"><GitCompareArrows size={14} /></button>
+                                        )}
                                         <ShareMenu fileName={d.fileName} fileUrl={savedDocUrl(d.filePath)} size={14} />
                                         {canEdit && (
                                           <button onClick={() => void removeProposalDoc(d)} title="Delete this revision" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
@@ -3531,6 +3545,10 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                               </button>
                             )}
                           </div>
+
+                        {compareRevs?.which === p.which && (
+                          <RevisionCompare title={p.title} docs={docs} fromId={compareRevs.fromId} toId={compareRevs.toId} onClose={() => setCompareRevs(null)} />
+                        )}
 
                         {p.which !== "combined" && (
                           <div className="px-5 py-4 border-t border-slate-100 space-y-4">
