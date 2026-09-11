@@ -193,12 +193,16 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         <AggregateBoard />
       ) : (
       <>
-      {/* Privacy mode — the Show / Hide financial numbers switch, beside the figures it controls. */}
+      {/* The financial figures as one block: a header row (title left, the Show / Hide financial
+          numbers switch right), then the portfolio value and the five-number overview under it. */}
       {(showValues || showFinance) && !loading && (
-        <div className="flex justify-end -mb-2"><FiguresToggle variant="inline" /></div>
-      )}
+      <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Financial overview</p>
+        <FiguresToggle variant="inline" />
+      </div>
       {/* Portfolio value — All Projects, staff only. Total = GT-only + JV. */}
-      {showValues && !loading && (
+      {showValues && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-primary/5 border border-primary/10">
             <span className="text-lg font-display font-bold text-primary leading-none"><Fig>{money(valueTotals.total)}</Fig></span>
@@ -216,8 +220,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       )}
 
       {/* CR-P-15/33 — five-number financial overview across the shown projects (My & All Projects). */}
-      {showFinance && !loading && (
-        <FinanceStrip five={fiveTotals} />
+      {showFinance && <FinanceStrip five={fiveTotals} />}
+      </div>
       )}
 
       {/* Status filters — their own row under the header. The colour key IS the filter. */}
