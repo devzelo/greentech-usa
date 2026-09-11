@@ -214,6 +214,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   });
 
   const heading = isSent ? "Invoices Sent" : "Invoices Received";
+  // CR-P (165) — the amount still outstanding: money coming in (Receivable) or going out (Payable).
+  const leftLabel = isSent ? "Receivable" : "Payable";
   const partyLabel = isSent ? "Client" : "Vendor / Subcontractor";
   const numLabel = isSent ? "Invoice #" : "Bill #";
   const dateLabel = isSent ? "Date sent" : "Date received";
@@ -252,7 +254,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // CR-I-01/T1 — export the ledger to CSV (opens in Excel). PDF export lives per-invoice in the builder.
   const exportCsv = () => {
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const header = [numLabel, partyLabel, "Kind", dateLabel, "Amount", "Paid", "Remaining", "Status"];
+    const header = [numLabel, partyLabel, "Kind", dateLabel, "Amount", isSent ? "Received" : "Paid", leftLabel, "Status"];
     const lines = rows.map((r) => [r.number, r.party, r.receiverKind || "", r.date, n(r.amount), invoicePaid(r), invoiceRemaining(r), r.status].map(esc).join(","));
     const csv = [header.map(esc).join(","), ...lines].join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -337,34 +339,34 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         </div>
       </div>
 
-      {/* Totals — how much was invoiced, paid and is still outstanding */}
-      {rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-lg font-display font-bold text-slate-700 leading-none">{rows.length}</span>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoices</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
-            <span className="text-lg font-display font-bold text-primary leading-none"><Fig>{money(total)}</Fig></span>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Total invoiced" : "Total billed"}</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
-            <span className="text-lg font-display font-bold text-emerald-600 leading-none"><Fig>{money(paid)}</Fig></span>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Received" : "Paid"}</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100">
-            <span className="text-lg font-display font-bold text-amber-600 leading-none"><Fig>{money(remaining)}</Fig></span>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remaining</span>
-          </span>
-        </div>
-      )}
+      {/* Totals — how much was invoiced, paid and is still outstanding. CR-P (166) — shown from the
+          start, at 0, before anything is entered. CR-P (165) — what is still to come in is the
+          Receivable (blue, incoming money); what we still owe is the Payable. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
+          <span className="text-lg font-display font-bold text-slate-700 leading-none">{rows.length}</span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoices</span>
+        </span>
+        <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+          <span className="text-lg font-display font-bold text-primary leading-none"><Fig>{money(total)}</Fig></span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Total invoiced" : "Total billed"}</span>
+        </span>
+        <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
+          <span className="text-lg font-display font-bold text-emerald-600 leading-none"><Fig>{money(paid)}</Fig></span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Received" : "Paid"}</span>
+        </span>
+        <span className={`inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl border ${isSent ? "bg-blue-50 border-blue-100" : "bg-amber-50 border-amber-100"}`}>
+          <span className={`text-lg font-display font-bold leading-none ${isSent ? "text-blue-600" : "text-amber-600"}`}><Fig>{money(remaining)}</Fig></span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{leftLabel}</span>
+        </span>
+      </div>
 
       <div className="overflow-x-auto border border-slate-100 rounded-2xl">
         <table className="w-full min-w-[1000px] text-xs">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
               <th className="w-8 px-3 py-3" />
-              {[numLabel, partyLabel, "Description", "Total", "Paid", "Remaining", dateLabel, "Status", ""].map((h) => (
+              {[numLabel, partyLabel, "Description", "Total", isSent ? "Received" : "Paid", leftLabel, dateLabel, "Status", ""].map((h) => (
                 <th key={h} className="text-left px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -387,7 +389,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     <td className="px-1 py-1"><input className={inp} value={row.description} disabled={!canEdit} onChange={(e) => edit(row._id, "description", e.target.value)} onBlur={(e) => save(row._id, "description", e.target.value)} placeholder="—" /></td>
                     <td className="px-1 py-1"><input className={`${inp} font-bold`} value={row.amount} disabled={!canEdit} onChange={(e) => edit(row._id, "amount", e.target.value)} onBlur={(e) => save(row._id, "amount", e.target.value)} placeholder="0.00" /></td>
                     <td className="px-3 py-2 font-bold text-emerald-600 whitespace-nowrap">{rPaid ? money(rPaid) : "—"}</td>
-                    <td className={`px-3 py-2 font-bold whitespace-nowrap ${rLeft > 0 ? "text-amber-600" : "text-slate-400"}`}>{n(row.amount) ? money(rLeft) : "—"}</td>
+                    <td className={`px-3 py-2 font-bold whitespace-nowrap ${rLeft > 0 ? (isSent ? "text-blue-600" : "text-amber-600") : "text-slate-400"}`}>{n(row.amount) ? money(rLeft) : "—"}</td>
                     <td className="px-1 py-1"><input type="date" className={inp} value={row.date} disabled={!canEdit} onChange={(e) => edit(row._id, "date", e.target.value)} onBlur={(e) => save(row._id, "date", e.target.value)} /></td>
                     <td className="px-1 py-1">
                       <select className={`${inp} font-bold`} value={row.status} disabled={!canEdit} onChange={(e) => { edit(row._id, "status", e.target.value); save(row._id, "status", e.target.value); }}>
