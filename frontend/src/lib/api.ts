@@ -2339,6 +2339,10 @@ export async function updateAgreement(ctx: AgreementCtx, aid: string, body: Agre
 export async function deleteAgreement(ctx: AgreementCtx, aid: string): Promise<void> {
   await request(`${agrBase(ctx)}/${aid}`, { method: "DELETE" });
 }
+// CR-P (61) — log an agreement emailed from the share menu in its send log.
+export async function logAgreementEmail(ctx: AgreementCtx, aid: string, to: string): Promise<ApiAgreement> {
+  return request(`${agrBase(ctx)}/${aid}/sends`, { method: "POST", body: JSON.stringify({ to }) });
+}
 export async function signAgreement(ctx: AgreementCtx, aid: string, body: { signerName?: string; signatureUrl?: string }): Promise<ApiAgreement> {
   return request(`${agrBase(ctx)}/${aid}/sign`, { method: "POST", body: JSON.stringify(body) });
 }

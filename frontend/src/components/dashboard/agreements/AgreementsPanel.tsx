@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
 import {
   fetchAgreements, createAgreement, updateAgreement, deleteAgreement, setAgreementArchived,
-  signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument, uploadAgreementShareCopy,
+  signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument, uploadAgreementShareCopy, logAgreementEmail,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchTermsFiles, fetchMe, fetchMySignatures, type ApiSignature,
   attachmentUrl, companyFileUrl,
   fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile, getAuthUser,
@@ -1035,6 +1035,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
           fileName={`${ag.agreementNo || ag.name || "agreement"}.pdf`}
           fileUrl={storedShareFile(ag) ? attachmentUrl(storedShareFile(ag).replace(/^\/+/, "")) : ""}
           prepareFile={storedShareFile(ag) ? undefined : () => shareCopyUrl(ag)}
+          // CR-P (61) — an emailed copy goes in the send log too.
+          onSent={(e) => { void logAgreementEmail(ctx, ag._id, e.to).then(patch).catch(() => {}); }}
           size={14}
         />
       )}
@@ -1145,6 +1147,17 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                             ))}
                           </div>
                         )}
+                        {/* CR-P (61) — the send log, summarised on the row: who got it last, and when. */}
+                        {canManage && (ag.shares || []).length > 0 && (() => {
+                          const log = ag.shares || [];
+                          const last = log[log.length - 1];
+                          return (
+                            <span className="block mt-1 text-[10px] text-slate-400 max-w-[16rem] truncate" title={log.map((s) => `${s.purpose === "email" ? "Emailed to" : "Sent to"} ${s.name} on ${s.sentAt ? new Date(s.sentAt).toLocaleDateString() : ""}`).join("\n")}>
+                              {last.purpose === "email" ? "Emailed to" : "Sent to"} {last.name} on {last.sentAt ? new Date(last.sentAt).toLocaleDateString() : ""}
+                              {log.length > 1 ? ` (+${log.length - 1} earlier)` : ""}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2.5 align-top">{actionButtons(ag)}</td>
                     </tr>
@@ -2119,7 +2132,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Send log</p>
                         {(cur.shares || []).slice().reverse().map((h, k) => (
                           <p key={k} className="text-[10px] text-slate-500">
-                            Sent to <span className="font-bold text-slate-600">{h.name}</span> {h.purpose === "signature" ? "for signature" : "for review"} on {h.sentAt ? new Date(h.sentAt).toLocaleDateString() : ""}{h.sentByName ? ` by ${h.sentByName}` : ""}{h.note ? `: "${h.note}"` : ""}
+                            {h.purpose === "email"
+                              ? <>Emailed to <span className="font-bold text-slate-600">{h.name}</span></>
+                              : <>Sent to <span className="font-bold text-slate-600">{h.name}</span> {h.purpose === "signature" ? "for signature" : "for review"}</>}
+                            {" "}on {h.sentAt ? new Date(h.sentAt).toLocaleDateString() : ""}{h.sentByName ? ` by ${h.sentByName}` : ""}{h.note ? `: "${h.note}"` : ""}
                           </p>
                         ))}
                       </div>

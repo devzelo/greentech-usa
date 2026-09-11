@@ -293,7 +293,8 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!p.staff) {
         list = list.filter((ag) => {
           const shared = ag.visibleTo || [];
-          if (!shared.length) return (ag.shares || []).length === 0;   // legacy: never shared explicitly
+          // Legacy: never shared explicitly. An emailed copy (CR-P (61)) is not a share with a party.
+          if (!shared.length) return !(ag.shares || []).some((s) => s.purpose !== "email");
           return isSharedWith(ag, p);   // by the login's email or its Directory company
         });
       }
@@ -524,6 +525,25 @@ function buildAgreementRouter(ctx: Ctx): Router {
           });
         }
       }
+      res.json(ag);
+    } catch (err) { next(err); }
+  });
+
+  // CR-P (61) — "sent to Farmer on [date]": an agreement emailed from the share menu is logged in
+  // the same send log, so Manage and the row show who already has it and when. An email is not
+  // access to the platform, so "Visible to" is untouched.
+  router.post("/:aid/sends", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can log a send." });
+      const ag = await findAg(req);
+      if (!ag) return res.status(404).json({ error: "Not found" });
+      const to = String(req.body?.to || "").trim().slice(0, 200);
+      if (!to) return res.status(400).json({ error: "Say who it was sent to." });
+      const by = req.user!.name || "";
+      ag.shares = ag.shares || [];
+      ag.shares.push({ companyId: "", name: to, email: to, purpose: "email", sentAt: new Date().toISOString(), sentByName: by, note: "" });
+      act(ag, by, "emailed", to);
+      await ag.save();
       res.json(ag);
     } catch (err) { next(err); }
   });

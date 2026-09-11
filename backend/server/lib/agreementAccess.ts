@@ -10,7 +10,7 @@ type Shareable = {
   status?: string;
   archived?: boolean;
   visibleTo?: Array<{ email?: string; companyId?: string; name?: string }>;
-  shares?: unknown[];
+  shares?: Array<{ purpose?: string }>;
 };
 
 /** The login's email and Directory company, for matching against an agreement's visibleTo list. */
@@ -36,7 +36,8 @@ export function partyMaySee(ag: Shareable, me: PartyIdentity): boolean {
   if (ag.archived) return false;
   if (ag.status === "Draft" || ag.status === "Cancelled") return false;
   if ((ag.visibleTo || []).length) return isSharedWith(ag, me);
-  return (ag.shares || []).length === 0;
+  // An emailed copy (CR-P (61)) is logged in `shares` too, but it is not a share with a party.
+  return !(ag.shares || []).some((s) => s?.purpose !== "email");
 }
 
 // ── CR-P (64) — signing, one slot per party ──────────────────────────────────────────────────
