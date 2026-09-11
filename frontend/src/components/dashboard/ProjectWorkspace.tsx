@@ -542,7 +542,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   "not-awarded": { label: "Not awarded", cls: "bg-red-50 text-red-600" },
 };
 
-const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"];
   const PROPOSAL_STATUS_COLOR: Record<string, string> = {
     Draft: "bg-amber-50 text-amber-600",
     Ready: "bg-indigo-50 text-indigo-600",
@@ -550,11 +549,6 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
     Awarded: "bg-emerald-50 text-emerald-600",
     Rejected: "bg-red-50 text-red-500",
   };
-  const updateProposalField = (
-    which: "technical" | "financial",
-    field: keyof ProposalMeta,
-    value: string,
-  ) => setProposals((prev) => ({ ...prev, [which]: { ...prev[which], [field]: value } }));
   const [exporting, setExporting] = useState(false);
 
   // ── Proposal Builder ───────────────────────────────────────────────────────
@@ -578,7 +572,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
     const owner = !!(project && cu && (project as ApiProject & { ownerId?: string }).ownerId === cu.id);
     if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
   }, [financialLocked, project, proposalSub]);
-  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "builder" | "versions">("builder"); // inner tab inside Technical/Financial
+  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "builder" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
@@ -3323,12 +3317,6 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
             const ActionButtons = ({ which }: { which: "technical" | "financial" }) => (
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => setProposalSub(which)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors"
-                >
-                  <Edit2 size={13} /> {canEdit ? "Open builder" : "Open"}
-                </button>
-                <button
                   onClick={() => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); }}  /* CR-B-14b — autosave before preview */
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors"
                 >
@@ -3630,24 +3618,10 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                           />
                         )}
 
-                        {p.which !== "combined" && (
-                          <div className="px-5 py-4 border-t border-slate-100 space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <label className={lbl}>Submission Date</label>
-                                <input type="date" value={proposals[p.which].submissionDate} onChange={(e) => updateProposalField(p.which, "submissionDate", e.target.value)} disabled={!canEdit} className={inp} />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={lbl}>Overall status</label>
-                                <select value={proposals[p.which].status} onChange={(e) => updateProposalField(p.which, "status", e.target.value)} disabled={!canEdit} className={`${inp} appearance-none`}>
-                                  {PROPOSAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                            </div>
-                            <ActionButtons which={p.which} />
-                            <DocSection projectId={id} section={p.section} title={`${p.title} - Attachments`} canEdit={canEdit} canPublish={isOwner} />
-                          </div>
-                        )}
+                        {/* The old per-proposal block that sat here (submission date, overall status,
+                            builder buttons, attachments) is gone: the table carries date and status
+                            per revision, the buttons already live in the builder, and attachments
+                            have their own sub-tab there. */}
                       </div>
                     );
                   })}
@@ -3660,6 +3634,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                   {([
                     { k: "cover" as const, label: "Cover Page" },
                     { k: "builder" as const, label: "Builder" },
+                    { k: "attachments" as const, label: "Attachments" },
                     { k: "versions" as const, label: "Saved Versions" },
                   ]).map((t) => (
                     <button
@@ -3673,6 +3648,18 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* Proposal attachments, merged into the PDF (Download + attachments, Mark as Final). They
+                  used to sit under the overview table; they belong with the document they go into. */}
+              {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "attachments" && (
+                <DocSection
+                  projectId={id}
+                  section={proposalSub === "technical" ? "proposals-technical" : "proposals-financial"}
+                  title={`${proposalSub === "technical" ? "Technical" : "Financial"} Proposal - Attachments`}
+                  canEdit={canEdit}
+                  canPublish={isOwner}
+                />
               )}
 
               {/* TECHNICAL / FINANCIAL — Saved Versions (each document keeps its own history) */}
