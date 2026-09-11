@@ -117,7 +117,8 @@ export default function AdminAnnouncements() {
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-400 italic text-center py-6">No announcements yet. Add one above or load this year's holidays.</p>
       ) : (
-        <div className="space-y-2">
+        // Scrolls inside the card once the list outgrows it, instead of stretching the profile page.
+        <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {items.map((a) => (
             <div key={a._id} className={`flex items-center gap-3 p-3 rounded-2xl border ${a.active ? "border-slate-100 bg-white" : "border-slate-100 bg-slate-50 opacity-60"}`}>
               <span className="text-2xl w-8 text-center shrink-0">{a.emoji || "📣"}</span>
