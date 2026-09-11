@@ -471,14 +471,14 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
       {showReport && (
         <PdfPreviewModal
-          title={mode === "my" ? "My Projects — Quick Report" : "All Projects — Quick Report"}
+          title={mode === "my" ? "Quick Report · My Projects" : "Quick Report · All Projects"}
           fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
           build={() => pdf(
             <PortfolioReportPDF
               projects={reportProjects}
               financials={financials}
               logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
-              title={mode === "my" ? "My Projects — Portfolio Report" : "All Projects — Portfolio Report"}
+              scope={mode === "my" ? "My Projects" : "All Projects"}
             />
           ).toBlob()}
           onClose={() => setShowReport(false)}

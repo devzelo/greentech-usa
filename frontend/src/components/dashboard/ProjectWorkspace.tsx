@@ -7781,7 +7781,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
       {showReport && project && (
         <PdfPreviewModal
-          title={`Quick Report — ${project.name || "Project"}`}
+          title={`Quick Report · ${project.name || "Project"}`}
           fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
           build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />).toBlob()}
           onClose={() => setShowReport(false)}
