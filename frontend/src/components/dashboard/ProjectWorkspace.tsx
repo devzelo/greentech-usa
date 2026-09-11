@@ -45,6 +45,8 @@ import ReminderButton from "./ReminderButton";
 import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
+import type { SectionAddOpts } from "./SectionLibraryPicker";
+import { isOriginalPageType } from "../../lib/proposalLibrary";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
@@ -955,11 +957,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setLayout(next);
   };
   // Add a custom section (optionally with a standard-section title) and append it to the layout.
-  const addLayoutSection = (title: string, body = "") =>
+  // Spec 2/5 - a section from the library carries its identity (libraryKey), guidance, page type and
+  // appendix flag; a custom one is plain designed content.
+  const addLayoutSection = (title: string, body = "", opts: SectionAddOpts = {}) =>
     setTechnical((p) => {
       const newId = uid();
       const section = { id: newId, heading: title || "New Section", body };
-      const layout = [...resolveProposalLayout(p), { id: `m-${newId}`, kind: "custom" as const, refId: newId, title: title || "New Section", hidden: false }];
+      const meta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: title || "New Section", hidden: false, ...opts };
+      const layout = [...resolveProposalLayout(p), meta];
       return { ...p, sections: [...p.sections, section], layout };
     });
   const duplicateLayoutSection = (meta: ProposalSectionMeta) =>
@@ -970,7 +975,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const section = { id: newId, heading: `${src.heading} (copy)`, body: src.body };
       const resolved = resolveProposalLayout(p);
       const at = resolved.findIndex((m) => m.id === meta.id);
-      const newMeta = { id: `m-${newId}`, kind: "custom" as const, refId: newId, title: `${meta.title} (copy)`, hidden: meta.hidden };
+      const newMeta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: `${meta.title} (copy)`, hidden: meta.hidden, pageType: meta.pageType, appendix: meta.appendix, divider: meta.divider, libraryKey: meta.libraryKey, guide: meta.guide, rfpRef: meta.rfpRef };
       const layout = [...resolved.slice(0, at + 1), newMeta, ...resolved.slice(at + 1)];
       return { ...p, sections: [...p.sections, section], layout };
     });
@@ -3809,16 +3814,29 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     ))}
                   </div>
                 );
-                const customEditor = (refId?: string) => {
-                  const s = technical.sections.find((x) => x.id === refId);
+                const customEditor = (m: ProposalSectionMeta) => {
+                  const s = technical.sections.find((x) => x.id === m.refId);
                   if (!s) return null;
+                  // Spec 4 - Government forms and external documents are inserted as uploaded: no text
+                  // page of ours, so the editor is the upload, not a text box.
+                  const original = isOriginalPageType(m.pageType);
                   return (
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                      {!!m.guide && (
+                        <p className="text-[11px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2"><span className="font-bold text-slate-600">What goes here: </span>{m.guide}</p>
+                      )}
+                      {original && (
+                        <div className="rounded-2xl border-2 border-dashed border-slate-200 p-4 space-y-1.5">
+                          <p className="text-xs font-bold text-slate-700">{m.pageType === "government" ? "Government form" : "External document"}: inserted exactly as uploaded, never on our letterhead.</p>
+                          <p className="text-[11px] text-slate-500">{m.divider ? "A GT/JV separator page prints before it." : "No separator page. Turn one on with the divider icon in Sections."} Upload PDFs or images below; save Word or Excel files as PDF first.</p>
+                          {(s.attachments || []).length === 0 && <p className="text-[11px] font-bold text-amber-600">Nothing uploaded yet: this section prints {m.divider ? "only its separator page" : "nothing"}.</p>}
+                        </div>
+                      )}
                       {/* CR-P (92) - "we need to maybe put here insert template... then you can add
                           that first page later". A section can be seeded from a saved section
                           template and any section can become one, so the standard wording (the
                           transmittal letter, the key-staff blurb) is written once and reused. */}
-                      {canEdit && (
+                      {canEdit && !original && (
                         <div className="flex flex-wrap items-center gap-2 pb-1">
                           <select
                             value=""
@@ -3839,7 +3857,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           </button>
                         </div>
                       )}
-                      <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
+                      {!original && <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />}
                       {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
                       {canEdit && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -3866,7 +3884,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     case "personnel": return personnelEditor;
                     case "pastPerformance": return pastPerfEditor;
                     case "timeline": return timelineEditor;
-                    case "custom": return customEditor(m.refId);
+                    case "custom": return customEditor(m);
                     default: return <div className="bg-white p-5 rounded-[2rem] border border-dashed border-slate-200 text-[11px] text-slate-400 italic">Blank page — no content (a spacer in the exported PDF).</div>;
                   }
                 };
@@ -3885,7 +3903,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <ProposalSectionManager
                     layout={techLayout}
                     onLayoutChange={setLayout}
-                    onAdd={addLayoutSection}
+                    onAdd={(title, opts) => addLayoutSection(title, "", opts)}
                     onAddBlank={addBlankPage}
                     onDuplicate={duplicateLayoutSection}
                     onRemove={removeLayoutSection}
@@ -3897,6 +3915,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     userName={getAuthUser()?.name}
                     numbering={technical.numbering || "numbers"}
                     onNumberingChange={(n) => setTech("numbering", n)}
+                    levelName={technical.levelName || "Section"}
+                    onLevelNameChange={(n) => setTech("levelName", n)}
                   />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}

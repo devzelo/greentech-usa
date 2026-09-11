@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, FileX, ChevronDown, ChevronRight, History } from "lucide-react";
-import { PROPOSAL_STANDARD_SECTIONS, type ProposalSectionMeta } from "../../lib/api";
+import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, History } from "lucide-react";
+import type { ProposalPageType, ProposalSectionMeta, TechnicalProposalContent } from "../../lib/api";
 import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
+import { PAGE_TYPES, isOriginalPageType } from "../../lib/proposalLibrary";
+import SectionLibraryPicker, { type SectionAddOpts } from "./SectionLibraryPicker";
+
+type Numbering = NonNullable<TechnicalProposalContent["numbering"]>;
+type LevelName = NonNullable<TechnicalProposalContent["levelName"]>;
+const LEVEL_NAMES: LevelName[] = ["Section", "Tab", "Factor", "Volume", "Part"];
 
 const KIND_BADGE: Record<string, string> = {
   description: "Built-in", personnel: "Built-in", pastPerformance: "Built-in", timeline: "Built-in", custom: "Custom", blank: "Blank",
@@ -9,13 +15,15 @@ const KIND_BADGE: Record<string, string> = {
 
 export default function ProposalSectionManager({
   layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, userName,
-  numbering = "numbers", onNumberingChange,
+  numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
 }: {
-  numbering?: "numbers" | "letters";                    // CR-P (95) - 1, 2, 3 or Section A, B, C
-  onNumberingChange?: (n: "numbers" | "letters") => void;
+  numbering?: Numbering;                                 // CR-P (95) - 1, 2, 3 / A, B, C / off
+  onNumberingChange?: (n: Numbering) => void;
+  levelName?: LevelName;                                 // spec 1 - Section, Tab, Factor, Volume, Part
+  onLevelNameChange?: (n: LevelName) => void;
   layout: ProposalSectionMeta[];
   onLayoutChange: (next: ProposalSectionMeta[]) => void;
-  onAdd: (title: string) => void;
+  onAdd: (title: string, opts?: SectionAddOpts) => void;
   onAddBlank: () => void;
   onDuplicate: (meta: ProposalSectionMeta) => void;
   onRemove: (meta: ProposalSectionMeta) => void;
@@ -50,41 +58,38 @@ export default function ProposalSectionManager({
           )}
           <div>
             <h4 className="font-bold text-slate-800 text-sm">Sections</h4>
-            <p className="text-[10px] text-slate-400 mt-0.5">Reorder with the ↑ ↓ arrows on each section below, or expand this list. The document follows this order.</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Add from the library, rename anything, set each section's page type. The document follows this order.</p>
           </div>
         </div>
-        {/* CR-P (95) - the client's proposals label sections A, B, C ("Section A: Performance Schedule"). */}
+        {/* CR-P (95) / spec 1 - numbering 1, 2, 3 or A, B, C ("Section A: Performance Schedule"), or off;
+            and what a top-level section is called (Tab A, Factor 2, Volume I). */}
         {onNumberingChange && (
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 ml-auto mr-2" role="radiogroup" aria-label="Section numbering">
-            {([["numbers", "1, 2, 3"], ["letters", "A, B, C"]] as const).map(([v, l]) => (
-              <button key={v} type="button" role="radio" aria-checked={numbering === v} disabled={!canEdit} onClick={() => onNumberingChange(v)}
-                className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${numbering === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>{l}</button>
-            ))}
+          <div className="flex items-center gap-2 ml-auto mr-2 flex-wrap justify-end">
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="Section numbering">
+              {([["numbers", "1, 2, 3"], ["letters", "A, B, C"], ["none", "Off"]] as const).map(([v, l]) => (
+                <button key={v} type="button" role="radio" aria-checked={numbering === v} disabled={!canEdit} onClick={() => onNumberingChange(v)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${numbering === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>{l}</button>
+              ))}
+            </div>
+            {onLevelNameChange && (
+              <select value={levelName} onChange={(e) => onLevelNameChange(e.target.value as LevelName)} disabled={!canEdit} aria-label="What a top-level section is called"
+                title="What a top-level section is called on divider pages and in the contents" className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white">
+                {LEVEL_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            )}
           </div>
         )}
         {canEdit && (
-          <div className="relative flex items-center gap-2">
-            <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800"><Plus size={12} /> Add section</button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-[150]" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 mt-2 w-64 max-h-80 overflow-y-auto bg-white rounded-2xl shadow-2xl border border-slate-100 z-[160] p-2">
-                  <button onClick={() => { onAdd(""); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-primary hover:bg-primary/5">+ Blank section (text)</button>
-                  <button onClick={() => { onAddBlank(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-1.5"><FileX size={12} /> Blank page (no letterhead)</button>
-                  {/* CR-P (94/103) - client forms, SAM printouts, certificates: uploaded PDFs printed in place, as they are. */}
-                  <button onClick={() => { onAdd("Uploaded Documents"); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">
-                    + Uploaded documents
-                    <span className="block text-[10px] font-medium text-slate-400">Client forms, SAM printouts, certificates. PDFs print in place, as uploaded.</span>
-                  </button>
-                  <div className="my-1 border-t border-slate-100" />
-                  <p className="px-3 py-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Standard sections</p>
-                  {PROPOSAL_STANDARD_SECTIONS.map((s) => (
-                    <button key={s} onClick={() => { onAdd(s); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50">{s}</button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <button onClick={() => setMenuOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800"><Plus size={12} /> Add section</button>
+        )}
+        {/* Spec 5 - Add Section opens the Section Library (and the Appendix Library). */}
+        {menuOpen && (
+          <SectionLibraryPicker
+            usedKeys={new Set(layout.map((m) => m.libraryKey).filter((k): k is string => !!k))}
+            onPick={(title, opts) => onAdd(title, opts)}
+            onBlankPage={onAddBlank}
+            onClose={() => setMenuOpen(false)}
+          />
         )}
       </div>
 
@@ -118,6 +123,19 @@ export default function ProposalSectionManager({
                 title="The RFP paragraph this section answers, e.g. L.5.5.3.1. Printed in the table of contents."
                 className="w-20 bg-transparent text-[11px] text-slate-500 outline-none border-b border-slate-100 focus:border-primary/30 py-1"
               />
+            )}
+            {/* Spec 4 - the page type: our designed pages, a Government form, or an external document. */}
+            {m.kind === "custom" && (
+              <select
+                value={m.pageType || "designed"}
+                onChange={(e) => { const v = e.target.value as ProposalPageType; patch(i, { pageType: v, ...(isOriginalPageType(v) && m.divider === undefined ? { divider: true } : {}) }); }}
+                disabled={!canEdit || locked}
+                aria-label={`Page type for ${m.title}`}
+                title={PAGE_TYPES.find((p) => p.v === (m.pageType || "designed"))?.hint}
+                className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer disabled:opacity-60"
+              >
+                {PAGE_TYPES.map((p) => <option key={p.v} value={p.v}>{p.short}</option>)}
+              </select>
             )}
             {/* CR-B-15 — colour-coded per-section status. */}
             {canEdit && (

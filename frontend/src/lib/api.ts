@@ -194,6 +194,8 @@ export interface ProposalSection { id: string; heading: string; body: string; at
 export type ProposalLetterhead = "gt" | "jv" | "custom" | "none";
 export type ProposalSectionLetterhead = ProposalLetterhead | "inherit"; // "inherit" = use the proposal default
 export type ProposalSectionKind = "description" | "personnel" | "pastPerformance" | "timeline" | "custom" | "blank";
+/** Spec section 4: GT/JV designed content, a Government form, or an external supporting document. */
+export type ProposalPageType = "designed" | "government" | "external";
 export interface ProposalSectionMeta {
   id: string;
   kind: ProposalSectionKind;
@@ -205,6 +207,10 @@ export interface ProposalSectionMeta {
   pageBreakBefore?: boolean;              // force this section to start on a new page
   appendix?: boolean;                     // CR-P (95/103) - numbered apart as Appendix 1, 2, ... (client samples)
   rfpRef?: string;                        // the RFP paragraph this section answers, e.g. "L.5.5.3.1" (shown in the TOC)
+  // Proposal Builder spec (sections 2, 4, 6):
+  pageType?: ProposalPageType;            // designed (our letterhead) | government form | external document
+  libraryKey?: string;                    // the Section/Appendix Library entry it came from (stable, for the future AI)
+  guide?: string;                         // what goes in it, from the library (shown in the editor, never printed)
   status?: string;                        // CR-B-15 — per-section status (colour-coded)
   locked?: boolean;                       // CR-B-17 — locked sections aren't reordered/edited
   notes?: string;                         // CR-B-17 — internal notes (not printed)
@@ -223,7 +229,8 @@ export interface TechnicalProposalContent {
   timeline: ProposalTimelinePhase[];
   sections: ProposalSection[];
   layout?: ProposalSectionMeta[]; // section order / visibility / titles
-  numbering?: "numbers" | "letters"; // CR-P (95) - sections labelled 1, 2, 3 or A, B, C (client samples use letters)
+  numbering?: "numbers" | "letters" | "none"; // CR-P (95) - 1, 2, 3 / A, B, C (client samples) / off (spec 1)
+  levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part"; // what a top-level section is called ("Tab A", "Factor 2")
 }
 export interface FinancialLineItem { id: string; itemNo: string; description: string; qty: string; unit: string; rate: string; amount: string }
 

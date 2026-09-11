@@ -412,13 +412,19 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Does a section have any content to render?
   const sectionFor = (refId?: string) => content.sections.find((s) => s.id === refId);
-  const hasContent = (m: { kind: string; refId?: string }) => {
+  const hasContent = (m: ProposalSectionMeta) => {
     switch (m.kind) {
       case "description": return !!content.description?.trim();
       case "personnel": return content.employees.length > 0;
       case "pastPerformance": return content.similarProjects.length > 0;
       case "timeline": return content.timeline.length > 0;
-      case "custom": { const s = sectionFor(m.refId); return !!s && !!(s.heading || s.body || s.attachments?.length); }
+      case "custom": {
+        const s = sectionFor(m.refId);
+        if (!s) return false;
+        // Government forms and external documents print only their upload (and separator page).
+        if (m.pageType === "government" || m.pageType === "external") return !!s.attachments?.length || !!m.divider;
+        return !!(s.heading || s.body || s.attachments?.length);
+      }
       case "blank": return true;
       default: return false;
     }
@@ -428,21 +434,31 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   // CR-P (95/103) - labels. Main sections run 1, 2, 3, or A, B, C when the proposal uses letters
   // (as the client's samples do: "Section A: Performance Schedule"). Appendices are numbered apart,
   // Appendix 1, 2, 3. Blank pages get no label.
-  const letters = content.numbering === "letters";
+  // Spec 1 - numbering can be off, and a top-level section can be called a Tab, Factor, Volume or
+  // Part ("Tab A", "Factor 2") instead of a Section.
+  const numbering = content.numbering || "numbers";
+  const word = content.levelName || "Section";
   const letterOf = (n: number) => { let s = ""; for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s; return s; };
-  const labelById = new Map<string, { short: string; heading: string; divider: string }>();
+  const labelById = new Map<string, { short: string; heading: string; divider: string; toc: string }>();
   let mainN = 0, appxN = 0;
   for (const m of visible) {
     if (m.kind === "blank") continue;
     if (m.appendix) {
       const n = ++appxN;
-      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}` });
+      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}`, toc: String(n) });
     } else {
       const n = ++mainN;
-      const short = letters ? letterOf(n) : String(n).padStart(2, "0");
-      labelById.set(m.id, { short, heading: `${short}.`, divider: `Section ${short}` });
+      const short = numbering === "letters" ? letterOf(n) : numbering === "numbers" ? String(n).padStart(2, "0") : "";
+      labelById.set(m.id, {
+        short,
+        heading: short ? `${short}.` : "",
+        divider: short ? `${word} ${short}` : "",
+        toc: short ? (word === "Section" ? short : `${word} ${short}`) : "",
+      });
     }
   }
+  // Width of the contents' label column: none when numbering is off, wider for "Tab A" style labels.
+  const tocW = numbering === "none" ? 0 : word === "Section" ? 30 : 58;
   const tocMain = visible.filter((m) => m.kind !== "blank" && !m.appendix);
   const tocAppx = visible.filter((m) => m.kind !== "blank" && m.appendix);
   const resumeAppx = appxN + 1;   // team resumes close the appendices
@@ -460,8 +476,11 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     // divider page, then the documents, with no empty text page in between.
     const s = m.kind === "custom" ? sectionFor(m.refId) : undefined;
     const files = (s?.attachments || []).filter((f) => !!f.url);
-    const filesOnly = m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || "");
-    if (m.divider || filesOnly) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
+    // Spec 4 - a Government form or external document prints only as uploaded, after a separator
+    // page when one is switched on. A designed section holding only files gets a divider anyway.
+    const original = m.pageType === "government" || m.pageType === "external";
+    const filesOnly = original || (m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || ""));
+    if (m.divider || (filesOnly && !original)) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
     if (!filesOnly) {
       if (!curGrp || curGrp.lh !== elh || m.pageBreakBefore) {
         curGrp = { t: "content", lh: elh, items: [m] };
@@ -475,7 +494,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
   const renderSection = (m: typeof visible[number]) => {
-    const heading = <SectionHeading label={labelById.get(m.id)?.heading} title={m.title} />;
+    const heading = <SectionHeading label={labelById.get(m.id)?.heading || undefined} title={m.title} />;
     if (m.kind === "description") return (
       <View key={m.id}>{heading}<RichText html={content.description} keyBase="desc" /></View>
     );
@@ -539,19 +558,19 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Table of contents: main sections with their RFP reference, then the appendices.
   if (tocMain.length || tocAppx.length || resumes.length) {
-    const row = (key: string, num: string, title: string, ref?: string) => (
+    const row = (key: string, num: string, title: string, ref: string | undefined, w: number) => (
       <View key={key} style={styles.tocRow}>
-        <Text style={styles.tocNum}>{num}</Text>
+        {w > 0 && <Text style={[styles.tocNum, { width: w }]}>{num}</Text>}
         <Text style={styles.tocText}>{title}{ref?.trim() ? <Text style={styles.tocRef}>{`  (reference ${ref.trim()})`}</Text> : null}</Text>
       </View>
     );
     page(
       <Sheet lh={lh} label={LABEL} note={note}>
         <SectionHeading title="Table of Contents" />
-        {tocMain.map((m) => row(m.id, labelById.get(m.id)?.short || "", m.title, m.rfpRef))}
+        {tocMain.map((m) => row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, tocW))}
         {(tocAppx.length > 0 || resumes.length > 0) && <Subhead>APPENDICES</Subhead>}
-        {tocAppx.map((m) => row(m.id, labelById.get(m.id)?.short || "", m.title, m.rfpRef))}
-        {resumes.length > 0 && row("resumes", String(resumeAppx), "Team Resumes")}
+        {tocAppx.map((m) => row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, 30))}
+        {resumes.length > 0 && row("resumes", String(resumeAppx), "Team Resumes", undefined, 30)}
       </Sheet>,
     );
   }
@@ -567,7 +586,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
           <View style={styles.dividerWrap}>
             <Eyebrow>{LABEL.toUpperCase()}</Eyebrow>
-            {!!lbl && <Text style={styles.dividerKicker}>{lbl.divider}:</Text>}
+            {!!lbl?.divider && <Text style={styles.dividerKicker}>{lbl.divider}:</Text>}
             <Text style={styles.dividerTitle}>{g.m.title}</Text>
             {!!g.m.rfpRef?.trim() && <Text style={styles.dividerRef}>Reference {g.m.rfpRef.trim()}</Text>}
             <GradBar w={120} h={4} r={2} id={`divider-${gi}`} />
