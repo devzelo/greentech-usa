@@ -184,7 +184,15 @@ export interface ApiProject {
 }
 
 // ── Proposal Builder ─────────────────────────────────────────────────────────
-export interface ProposalEmployee { id: string; name: string; role: string; resumeName?: string; empId?: string; userId?: string }
+export interface ProposalEmployee {
+  id: string; name: string; role: string; resumeName?: string; empId?: string; userId?: string;
+  // Item 97 / technical sample - the key staff table. Empty values fall back to the person's resume.
+  firm?: string;          // Contractor / Subcontractor
+  nationality?: string;
+  years?: string;         // years of experience
+  keyStaff?: boolean;     // false = listed under Non-Key Staff (default key)
+  subResumeId?: string;   // a subcontractor person's resume from the company-wide library
+}
 export interface ProposalSimilarProject { id: string; name: string; client: string; value: string; year: string; summary: string }
 export interface ProposalTimelinePhase { phase: string; start: string; end: string }
 export interface ProposalSection { id: string; heading: string; body: string; attachments?: ProposalAttachment[]; subsections?: ProposalSubsection[] } // body is HTML; CR-B-18 per-section files
@@ -235,6 +243,9 @@ export interface TechnicalProposalContent {
   layout?: ProposalSectionMeta[]; // section order / visibility / titles
   numbering?: "numbers" | "letters" | "none"; // CR-P (95) - 1, 2, 3 / A, B, C (client samples) / off (spec 1)
   levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part"; // what a top-level section is called ("Tab A", "Factor 2")
+  // Item 98 - print each person's resume in the GT format (default on). Off when the solicitation
+  // wants its own form (e.g. SF 330 uploaded as a Government form section).
+  printResumes?: boolean;
 }
 export interface FinancialLineItem { id: string; itemNo: string; description: string; qty: string; unit: string; rate: string; amount: string }
 
@@ -2514,7 +2525,7 @@ export async function shareDocumentWithEmployee(body: {
 // ── Resume builder ───────────────────────────────────────────────────────────
 
 export interface ResumeExperience { company: string; role: string; start: string; end: string; description: string }
-export interface ResumeProject { name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string }
+export interface ResumeProject { name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string; value?: string }
 export interface ResumeEducation { school: string; degree: string; field: string; start: string; end: string }
 export interface ResumeCertification { name: string; issuer: string; year: string }
 export interface ResumeLanguage { name: string; level: string }
@@ -2608,6 +2619,25 @@ export async function updateSubResume(id: string, body: SubResumeInput): Promise
 
 export async function deleteSubResume(id: string): Promise<{ message: string }> {
   return request(`/resume/sub/${id}`, { method: "DELETE" });
+}
+
+/** One subcontractor person's resume, for a proposal's key staff. Null if gone or not visible. */
+export async function fetchSubResume(id: string): Promise<ApiSubResume | null> {
+  try { return await request(`/resume/sub/${encodeURIComponent(id)}`); } catch { return null; }
+}
+
+// A partner (guest) login's own people: the same resume builder, in their profile.
+export async function fetchMySubResumes(): Promise<{ resumes: ApiSubResume[]; companyName: string }> {
+  return request(`/resume/sub-mine`);
+}
+export async function createMySubResume(body: SubResumeInput): Promise<ApiSubResume> {
+  return request(`/resume/sub-mine`, { method: "POST", body: JSON.stringify(body) });
+}
+export async function updateMySubResume(id: string, body: SubResumeInput): Promise<ApiSubResume> {
+  return request(`/resume/sub-mine/${id}`, { method: "PUT", body: JSON.stringify(body) });
+}
+export async function deleteMySubResume(id: string): Promise<{ message: string }> {
+  return request(`/resume/sub-mine/${id}`, { method: "DELETE" });
 }
 
 // ── RFP / Spec library ────────────────────────────────────────────────────────

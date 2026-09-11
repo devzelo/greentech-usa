@@ -1,47 +1,55 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
-import type { ApiResume } from "../../lib/api";
+import type { ReactNode } from "react";
+import type { ApiResume, ResumeProject } from "../../lib/api";
 import { withFileToken } from "../../lib/api";
+import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter } from "../pdf/brand";
 
-const PRIMARY = "#10B981";
-const INK = "#0f172a";
-const MUTED = "#64748b";
-const LINE = "#e7ebf0";
-const SOFT = "#f8fafc";
+registerBrandFonts();
 
+/**
+ * A resume in the client's "KEY PERSONNEL – RESUME DATA" format (GT Resume Template): the numbered
+ * fields 1 to 9, the relevant-projects table and the other-experience table, set in the brand kit's
+ * design. Compact (item 98: "fit to one page, two maximum, smaller font, tighter spacing") so every
+ * resume in a proposal looks the same.
+ */
 const styles = StyleSheet.create({
-  page: { paddingTop: 44, paddingHorizontal: 44, paddingBottom: 60, fontSize: 10, color: INK, fontFamily: "Helvetica", lineHeight: 1.5 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 22, borderBottom: `2 solid ${PRIMARY}` },
-  brandLogo: { width: 92, height: 47, objectFit: "contain" },
-  headerRight: { alignItems: "flex-end", justifyContent: "center" },
-  reportLabel: { fontSize: 8, color: MUTED, letterSpacing: 2 },
-  reportDate: { fontSize: 9, color: INK, marginTop: 3 },
+  // No lineHeight on the page (or a wrapping View): the page number would inherit it and then
+  // never print. Each text style below sets its own.
+  page: { ...LETTERHEAD_PAGE, fontFamily: "Inter", fontSize: 9, color: BRAND.s700 },
+  // react-pdf never prints a render-prop Text that has ANY lineHeight (own or inherited), so this
+  // one has none; the font's own leading puts it 0.8 pt lower to share the footer note's baseline.
+  pageNoRow: { position: "absolute", left: GUTTER, right: GUTTER, bottom: 17.2, flexDirection: "row", justifyContent: "flex-end" },
+  pageNo: { fontSize: 7.5, color: BRAND.s500 },
 
-  // Identity row
-  idRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
-  photo: { width: 64, height: 64, borderRadius: 8, objectFit: "cover", marginRight: 14 },
-  name: { fontSize: 22, fontWeight: 700 },
-  jobTitle: { fontSize: 11, color: PRIMARY, fontWeight: 700, marginTop: 2 },
-  contactLine: { fontSize: 9, color: MUTED, marginTop: 4 },
+  docTitle: { fontFamily: "Outfit", fontSize: 13, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.4, lineHeight: 1.3, marginBottom: 8 },
 
-  sectionTitle: { fontSize: 12, fontWeight: 700, color: INK, marginBottom: 6, marginTop: 14, paddingBottom: 4, borderBottom: `1 solid ${LINE}` },
-  para: { fontSize: 10, marginBottom: 6, color: "#1f2937" },
+  // Numbered field grid (fields 1 to 6)
+  grid: { borderTop: `0.8 solid ${BRAND.border}`, borderLeft: `0.8 solid ${BRAND.border}`, marginBottom: 10 },
+  gridRow: { flexDirection: "row" },
+  field: { flex: 1, paddingVertical: 5, paddingHorizontal: 7, borderRight: `0.8 solid ${BRAND.border}`, borderBottom: `0.8 solid ${BRAND.border}` },
+  fieldLabel: { fontSize: 6.6, fontWeight: 700, color: BRAND.s500, letterSpacing: 0.8, lineHeight: 1.3, marginBottom: 2 },
+  fieldValue: { fontSize: 9.2, fontWeight: 700, color: BRAND.slate, lineHeight: 1.35 },
+  fieldText: { fontSize: 8.6, color: BRAND.s700, lineHeight: 1.35 },
+  nameRow: { flexDirection: "row", alignItems: "center" },
+  photo: { width: 30, height: 30, borderRadius: 4, objectFit: "cover", marginRight: 7 },
 
-  // Key Personnel data grid (GT template header block)
-  keyGrid: { borderTop: `1 solid ${LINE}`, borderBottom: `1 solid ${LINE}`, paddingVertical: 6, marginBottom: 6 },
-  keyRow: { flexDirection: "row", paddingVertical: 2 },
-  keyLabel: { width: "38%", fontSize: 9, color: MUTED },
-  keyValue: { flex: 1, fontSize: 9.5, color: INK, fontWeight: 700 },
+  // Numbered headings (7, 8, 9)
+  heading: { flexDirection: "row", alignItems: "baseline", borderBottom: `1.2 solid ${BRAND.emerald}`, paddingBottom: 3, marginTop: 8, marginBottom: 5 },
+  headingNum: { fontSize: 9.5, fontWeight: 700, color: BRAND.emerald, lineHeight: 1.3, marginRight: 5 },
+  headingText: { fontSize: 9.5, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.4, lineHeight: 1.3 },
+  para: { fontSize: 8.8, color: BRAND.s700, marginBottom: 4, lineHeight: 1.45 },
 
-  card: { backgroundColor: SOFT, borderRadius: 6, padding: 10, marginBottom: 7, borderLeft: `3 solid ${PRIMARY}` },
-  cardTitle: { fontSize: 11, fontWeight: 700 },
-  cardMeta: { fontSize: 9, color: MUTED, marginTop: 2 },
-  cardBody: { fontSize: 9.5, color: "#1f2937", marginTop: 4 },
+  // Tables (8, 9)
+  tHead: { flexDirection: "row", backgroundColor: BRAND.slate },
+  th: { fontSize: 6.8, fontWeight: 700, color: BRAND.white, letterSpacing: 0.6, lineHeight: 1.3, paddingVertical: 4, paddingHorizontal: 5 },
+  tRow: { flexDirection: "row", borderBottom: `0.6 solid ${BRAND.border}` },
+  tRowAlt: { backgroundColor: BRAND.mist },
+  td: { fontSize: 8.3, color: BRAND.slate, paddingVertical: 4, paddingHorizontal: 5, lineHeight: 1.35 },
+  kv: { fontSize: 8.3, color: BRAND.s700, lineHeight: 1.35 },
+  kvKey: { fontWeight: 700, color: BRAND.slate },
+  bullet: { fontSize: 8.3, color: BRAND.s700, lineHeight: 1.35, paddingLeft: 7 },
 
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-  chip: { backgroundColor: SOFT, borderRadius: 4, paddingVertical: 3, paddingHorizontal: 8, fontSize: 9, color: INK, marginRight: 4, marginBottom: 4 },
-
-  footer: { position: "absolute", bottom: 24, left: 44, right: 44, flexDirection: "row", justifyContent: "space-between", borderTop: `1 solid ${LINE}`, paddingTop: 8 },
-  footerText: { fontSize: 8, color: MUTED },
+  extra: { fontSize: 8.3, color: BRAND.s700, lineHeight: 1.45, marginBottom: 2 },
 });
 
 export interface ResumePerson {
@@ -51,156 +59,162 @@ export interface ResumePerson {
   avatarUrl?: string;
 }
 
-const span = (start: string, end: string) => [start, end].filter(Boolean).join(" → ") || "";
+const span = (start: string, end: string) => [start, end].filter(Boolean).join(" – ");
+const val = (s?: string) => (s && s.trim()) || "";
+
+function Field({ n, label, children }: { n: number; label: string; children: ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{n}. {label.toUpperCase()}</Text>
+      {children}
+    </View>
+  );
+}
+
+function Heading({ n, title }: { n?: number; title: string }) {
+  return (
+    <View style={styles.heading} minPresenceAhead={70}>
+      {n !== undefined && <Text style={styles.headingNum}>{n}.</Text>}
+      <Text style={styles.headingText}>{title.toUpperCase()}</Text>
+    </View>
+  );
+}
+
+/** The Project Name / Scope cell: Project, Client, Solicitation #, Contract #, Scope, value, cost. */
+function ProjectCell({ p }: { p: ResumeProject }) {
+  const kv = ([["Project", p.name], ["Client", p.client], ["Solicitation #", p.solicitationNo], ["Contract #", p.contractNo]] as Array<[string, string | undefined]>)
+    .filter(([, v]) => !!val(v));
+  const scope = val(p.description).split(/\n+/).map((l) => l.replace(/^[\s•▪\-*]+/, "").trim()).filter(Boolean);
+  return (
+    <View>
+      {kv.map(([k, v]) => <Text key={k} style={styles.kv}><Text style={styles.kvKey}>{k}: </Text>{v}</Text>)}
+      {scope.length > 0 && <Text style={styles.kv}><Text style={styles.kvKey}>Scope:</Text></Text>}
+      {scope.map((l, i) => <Text key={i} style={styles.bullet}>•  {l}</Text>)}
+      {!!val(p.value) && <Text style={styles.kv}><Text style={styles.kvKey}>Project value: </Text>{p.value}</Text>}
+      {!!val(p.cost) && <Text style={styles.kv}><Text style={styles.kvKey}>Cost: </Text>{p.cost}</Text>}
+    </View>
+  );
+}
 
 /**
- * The body of one resume (no Document/Page) — used by the standalone resume PDF
- * and embedded in the technical proposal's "Team Resumes" pages.
+ * The body of one resume (no Document/Page), used by the standalone resume PDF and on the
+ * proposal's team-resume pages. `assignment` overrides field 3 with the role in this proposal.
  */
-export function ResumeBlock({ resume, person }: { resume: ApiResume; person: ResumePerson }) {
+export function ResumeBlock({ resume, person, assignment }: { resume: ApiResume; person: ResumePerson; assignment?: string }) {
   const photo = resume.showPhoto === false ? "" : (resume.photoUrl || person.avatarUrl || "");
-  const contact = [
-    resume.contact?.email || person.email,
-    resume.contact?.phone || person.phone,
-    resume.contact?.location,
-  ].filter(Boolean).join("   ·   ");
-  // GT "Key Personnel Data" rows (only render the ones that are filled in).
-  const keyRows: Array<[string, string]> = ([
-    ["Assignment on this project", resume.assignmentOnProject || ""],
-    ["Years of experience", resume.yearsOfExperience || ""],
-    ["Citizenship / Residency", resume.citizenship || ""],
-    ["Remark", resume.remark || ""],
-  ] as Array<[string, string]>).filter(([, v]) => !!v && v.trim());
+  const education = resume.education
+    .map((e) => [[e.degree, e.field].filter(Boolean).join(" "), e.school, e.end || e.start].filter(Boolean).join(", "))
+    .filter(Boolean);
+  const citizen = val(resume.citizenship);
+  const remark = [val(resume.remark), citizen && !val(resume.remark).toLowerCase().includes(citizen.toLowerCase()) ? `Citizenship: ${citizen}` : ""].filter(Boolean);
+  const summary = val(resume.summary).split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+  const extras = [
+    ...resume.certifications.map((c) => [c.name, c.issuer, c.year].filter(Boolean).join(", ")).filter(Boolean).map((t) => ({ k: "Certification", t })),
+    ...(resume.languages.length ? [{ k: "Languages", t: resume.languages.map((l) => [l.name, l.level].filter(Boolean).join(" (") + (l.level ? ")" : "")).join(", ") }] : []),
+    ...(resume.skills.length ? [{ k: "Skills", t: resume.skills.join(", ") }] : []),
+  ];
+  const custom = resume.customSections.filter((s) => val(s.heading) || val(s.body));
 
   return (
     <View>
-      {/* Identity */}
-      <View style={styles.idRow}>
-        {!!photo && <Image src={withFileToken(photo)} style={styles.photo} />}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{person.name || "—"}</Text>
-          {!!resume.title && <Text style={styles.jobTitle}>{resume.title}</Text>}
-          {!!contact && <Text style={styles.contactLine}>{contact}</Text>}
+      <Text style={styles.docTitle}>KEY PERSONNEL – RESUME DATA</Text>
+
+      <View style={styles.grid}>
+        <View style={styles.gridRow}>
+          <Field n={1} label="Name">
+            <View style={styles.nameRow}>
+              {!!photo && <Image src={withFileToken(photo)} style={styles.photo} />}
+              <Text style={styles.fieldValue}>{person.name || "-"}</Text>
+            </View>
+          </Field>
+          <Field n={2} label="Title"><Text style={styles.fieldValue}>{val(resume.title) || "-"}</Text></Field>
+        </View>
+        <View style={styles.gridRow}>
+          <Field n={3} label="Assignment on this project"><Text style={styles.fieldValue}>{val(assignment) || val(resume.assignmentOnProject) || "-"}</Text></Field>
+          <Field n={4} label="Years of experience"><Text style={styles.fieldValue}>{val(resume.yearsOfExperience) || "-"}</Text></Field>
+        </View>
+        <View style={styles.gridRow}>
+          <Field n={5} label="Education (degree, year)">{education.length ? education.map((e, i) => <Text key={i} style={styles.fieldText}>{e}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
+          <Field n={6} label="Remark">{remark.length ? remark.map((r, i) => <Text key={i} style={styles.fieldText}>{r}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
         </View>
       </View>
 
-      {keyRows.length > 0 && (
-        <View style={styles.keyGrid}>
-          {keyRows.map(([k, v], i) => (
-            <View key={i} style={styles.keyRow}>
-              <Text style={styles.keyLabel}>{k}</Text>
-              <Text style={styles.keyValue}>{v}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {!!resume.summary?.trim() && (
+      {summary.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <Text style={styles.para}>{resume.summary}</Text>
+          <Heading n={7} title="Summary" />
+          {summary.map((s, i) => <Text key={i} style={styles.para}>{s}</Text>)}
         </>
       )}
 
       {resume.projects.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>List of Relevant Projects</Text>
-          {resume.projects.map((p, i) => {
-            const idLine = [p.client ? `Client: ${p.client}` : "", p.solicitationNo ? `Solicitation #${p.solicitationNo}` : "", p.contractNo ? `Contract #${p.contractNo}` : ""].filter(Boolean).join("  ·  ");
-            const metaLine = [p.employer, p.role, span(p.start, p.end)].filter(Boolean).join("  ·  ");
-            return (
-              <View key={i} style={styles.card} wrap={false}>
-                <Text style={styles.cardTitle}>{p.name || "—"}</Text>
-                {!!metaLine && <Text style={styles.cardMeta}>{metaLine}</Text>}
-                {!!idLine && <Text style={styles.cardMeta}>{idLine}</Text>}
-                {!!p.description && <Text style={styles.cardBody}>{p.description}</Text>}
-                {!!p.cost && <Text style={styles.cardMeta}>Cost: {p.cost}</Text>}
-              </View>
-            );
-          })}
+          {/* Heading and column heads never part; the first row follows them. */}
+          <View wrap={false} minPresenceAhead={40}>
+            <Heading n={8} title="List of relevant projects" />
+            <View style={styles.tHead}>
+            <Text style={[styles.th, { width: "16%" }]}>YEAR</Text>
+            <Text style={[styles.th, { width: "16%" }]}>EMPLOYER</Text>
+            <Text style={[styles.th, { width: "18%" }]}>POSITION HELD</Text>
+            <Text style={[styles.th, { width: "50%" }]}>PROJECT NAME / SCOPE</Text>
+            </View>
+          </View>
+          {resume.projects.map((p, i) => (
+            <View key={i} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+              <Text style={[styles.td, { width: "16%" }]}>{span(p.start, p.end) || "-"}</Text>
+              <Text style={[styles.td, { width: "16%" }]}>{val(p.employer) || "-"}</Text>
+              <Text style={[styles.td, { width: "18%" }]}>{val(p.role) || "-"}</Text>
+              <View style={[styles.td, { width: "50%" }]}><ProjectCell p={p} /></View>
+            </View>
+          ))}
         </>
       )}
 
       {resume.experience.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>Other Professional Experience</Text>
+          <View wrap={false} minPresenceAhead={40}>
+            <Heading n={9} title="Other professional experience" />
+            <View style={styles.tHead}>
+            <Text style={[styles.th, { width: "14%" }]}>FROM</Text>
+            <Text style={[styles.th, { width: "14%" }]}>TO</Text>
+            <Text style={[styles.th, { width: "72%" }]}>EMPLOYER / TITLE</Text>
+            </View>
+          </View>
           {resume.experience.map((e, i) => (
-            <View key={i} style={styles.card} wrap={false}>
-              <Text style={styles.cardTitle}>{e.role || "—"}{e.company ? ` — ${e.company}` : ""}</Text>
-              {!!span(e.start, e.end) && <Text style={styles.cardMeta}>{span(e.start, e.end)}</Text>}
-              {!!e.description && <Text style={styles.cardBody}>{e.description}</Text>}
+            <View key={i} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+              <Text style={[styles.td, { width: "14%" }]}>{val(e.start) || "-"}</Text>
+              <Text style={[styles.td, { width: "14%" }]}>{val(e.end) || "-"}</Text>
+              <View style={[styles.td, { width: "72%" }]}>
+                <Text style={styles.kv}><Text style={styles.kvKey}>Employer: </Text>{val(e.company) || "-"}</Text>
+                <Text style={styles.kv}><Text style={styles.kvKey}>Title: </Text>{val(e.role) || "-"}</Text>
+                {!!val(e.description) && <Text style={styles.kv}>{e.description}</Text>}
+              </View>
             </View>
           ))}
         </>
       )}
 
-      {resume.education.length > 0 && (
+      {/* Anything else on the record (licences, languages, skills, extra sections) stays, briefly. */}
+      {(extras.length > 0 || custom.length > 0) && (
         <>
-          <Text style={styles.sectionTitle}>Education</Text>
-          {resume.education.map((e, i) => (
-            <View key={i} style={styles.card} wrap={false}>
-              <Text style={styles.cardTitle}>{[e.degree, e.field].filter(Boolean).join(", ") || "—"}</Text>
-              <Text style={styles.cardMeta}>{[e.school, span(e.start, e.end)].filter(Boolean).join("  ·  ")}</Text>
-            </View>
-          ))}
+          <Heading title="Additional information" />
+          {extras.map((x, i) => <Text key={i} style={styles.extra}><Text style={styles.kvKey}>{x.k}: </Text>{x.t}</Text>)}
+          {custom.map((s, i) => <Text key={`c-${i}`} style={styles.extra}><Text style={styles.kvKey}>{val(s.heading) || "More"}: </Text>{s.body}</Text>)}
         </>
       )}
-
-      {resume.skills.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Skills</Text>
-          <View style={styles.chipRow}>
-            {resume.skills.map((s, i) => <Text key={i} style={styles.chip}>{s}</Text>)}
-          </View>
-        </>
-      )}
-
-      {resume.certifications.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Certifications & Licenses</Text>
-          {resume.certifications.map((c, i) => (
-            <Text key={i} style={styles.para}>•  {[c.name, c.issuer, c.year].filter(Boolean).join("  ·  ")}</Text>
-          ))}
-        </>
-      )}
-
-      {resume.languages.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Languages</Text>
-          <Text style={styles.para}>{resume.languages.map((l) => [l.name, l.level].filter(Boolean).join(" — ")).join("   ·   ")}</Text>
-        </>
-      )}
-
-      {resume.customSections.map((s, i) => (
-        (s.heading || s.body) ? (
-          <View key={`cs-${i}`}>
-            <Text style={styles.sectionTitle}>{s.heading || "More"}</Text>
-            <Text style={styles.para}>{s.body}</Text>
-          </View>
-        ) : null
-      ))}
     </View>
   );
 }
 
-/** Standalone branded resume PDF, downloaded from the profile page. */
-export default function ResumePDF({ resume, person, logoUrl }: { resume: ApiResume; person: ResumePerson; logoUrl?: string }) {
+/** Standalone resume PDF, downloaded from a profile: on the client-approved letterhead. */
+export default function ResumePDF({ resume, person }: { resume: ApiResume; person: ResumePerson; logoUrl?: string }) {
   return (
-    <Document>
+    <Document title={`${person.name || "Resume"} - Resume`} author="GreenTech USA LLC">
       <Page size="A4" style={styles.page} wrap>
-        <View style={styles.header} fixed>
-          {logoUrl ? <Image src={logoUrl} style={styles.brandLogo} /> : <Text style={{ fontWeight: 700 }}>GreenTech USA</Text>}
-          <View style={styles.headerRight}>
-            <Text style={styles.reportLabel}>RESUME</Text>
-            <Text style={styles.reportDate}>{new Date().toISOString().slice(0, 10)}</Text>
-          </View>
-        </View>
-
+        <LetterheadHeader />
         <ResumeBlock resume={resume} person={person} />
-
-        <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>GreenTech USA — Construction & Engineering</Text>
-          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+        <LetterheadFooter note={`Resume · ${person.name || ""}`} />
+        <View fixed style={styles.pageNoRow}>
+          <Text style={styles.pageNo} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
         </View>
       </Page>
     </Document>

@@ -135,6 +135,9 @@ const NDA_TAB_ID = "classified-nda";
 // CR-P (45) — the standard terms & conditions get their OWN Company Documents tab. They are not
 // NDAs and must not be picked out of the NDA folder, which is what the first cut did.
 const TERMS_TAB_ID = "company-terms";
+// Proposal step 5 (item 99) - "resumes are stored in Company Documents under Resumes and selected
+// rather than re-uploaded each time". Files uploaded here are typed as resumes automatically.
+const RESUMES_TAB_ID = "company-resumes";
 // The company's standing PO terms, seeded so a fresh install already has them to attach.
 const SEED_TERMS = [
   {
@@ -259,6 +262,11 @@ async function ensureSeeded() {
     await CompanyTab.updateOne(
       { tabId: TERMS_TAB_ID },
       { $setOnInsert: { tabId: TERMS_TAB_ID, label: "Terms & Conditions", parentId: "", order: 901, system: true, kind: "company" } },
+      { upsert: true }
+    );
+    await CompanyTab.updateOne(
+      { tabId: RESUMES_TAB_ID },
+      { $setOnInsert: { tabId: RESUMES_TAB_ID, label: "Resumes", parentId: "", order: 902, system: true, kind: "company" } },
       { upsert: true }
     );
     if (!(await CompanyFile.countDocuments({ tabId: TERMS_TAB_ID }))) {
@@ -455,6 +463,7 @@ router.post("/files", upload.single("file"), async (req: AuthedRequest, res: Res
       size: humanSize(req.file.size),
       filePath,
       uploadedByName: req.user!.name || "",
+      libraryKey: tabId === RESUMES_TAB_ID ? "appx-resumes" : "",
     });
     res.status(201).json(file);
   } catch (err) {

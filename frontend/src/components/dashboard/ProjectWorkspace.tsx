@@ -33,7 +33,7 @@ import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
-import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
+import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
 import * as XLSX from "xlsx";
 import DocSection from "./DocSection";
@@ -821,22 +821,40 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // Fetch each named team member's resume from their profile — by account id (works even with
   // no empId, e.g. admins), falling back to empId. Members without a saved resume are skipped.
+  // Subcontractor people come from the subcontractor resume library instead (step 5). Keyed on
+  // who is listed, not on the other cells, so typing a position or nationality doesn't refetch.
+  const staffKey = technical.employees.map((e) => [e.id, e.userId || "", e.empId || "", e.subResumeId || "", e.subResumeId ? "" : e.name].join(":")).join("|");
   useEffect(() => {
     let cancelled = false;
     const rows = technical.employees.map((e) => {
+      if (e.subResumeId) return { rowId: e.id, name: e.name, role: e.role, subResumeId: e.subResumeId, userId: "", empId: "" };
       const pool = employeePool.find((p) => (e.userId && p.id === e.userId) || (e.empId && p.empId === e.empId) || p.name === e.name);
-      return { name: e.name, role: e.role, userId: e.userId || pool?.id || "", empId: e.empId || pool?.empId || "" };
-    }).filter((r) => r.userId || r.empId);
+      return { rowId: e.id, name: e.name, role: e.role, subResumeId: "", userId: e.userId || pool?.id || "", empId: e.empId || pool?.empId || "" };
+    }).filter((r) => r.subResumeId || r.userId || r.empId);
     if (!rows.length) { setTeamResumes([]); return; }
     (async () => {
-      const results = await Promise.all(rows.map(async (r) => {
+      const results = await Promise.all(rows.map(async (r): Promise<ProposalTeamResume | null> => {
+        if (r.subResumeId) {
+          const s = await fetchSubResume(r.subResumeId);
+          return s ? { rowId: r.rowId, name: r.name, role: r.role, firm: s.subcontractorName, data: { resume: s, user: { name: s.personName, email: s.contact?.email || "", phone: s.contact?.phone || "", avatarUrl: s.photoUrl || "" } } } : null;
+        }
         const data = (r.userId ? await fetchResumeByUser(r.userId) : null) || (r.empId ? await fetchResumeByEmp(r.empId) : null);
-        return data ? { name: r.name, role: r.role, data } : null;
+        return data ? { rowId: r.rowId, name: r.name, role: r.role, data } : null;
       }));
       if (!cancelled) setTeamResumes(results.filter((r): r is ProposalTeamResume => r !== null));
     })();
     return () => { cancelled = true; };
-  }, [technical.employees, employeePool]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staffKey, employeePool]);
+
+  // Subcontractor staff picker: people from the subcontractor resume library.
+  const [subStaffOpen, setSubStaffOpen] = useState(false);
+  const [subStaffPool, setSubStaffPool] = useState<ApiSubResume[] | null>(null);
+  const openSubStaffPicker = async () => {
+    setSubStaffOpen(true);
+    setSubStaffPool(null);
+    try { setSubStaffPool(await fetchSubResumes()); } catch { setSubStaffPool([]); }
+  };
 
   const setTech = <K extends keyof TechnicalProposalContent>(key: K, value: TechnicalProposalContent[K]) =>
     setTechnical((p) => ({ ...p, [key]: value }));
@@ -908,10 +926,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // Technical proposal list helpers
-  const addEmployeeRow = (name = "", role = "", empId = "", userId = "") =>
-    setTech("employees", [...technical.employees, { id: uid(), name, role, resumeName: "", empId, userId }]);
-  const updateEmployeeRow = (eid: string, field: "name" | "role" | "resumeName", value: string) =>
+  const addEmployeeRow = (name = "", role = "", empId = "", userId = "", extra: Partial<TechnicalProposalContent["employees"][number]> = {}) =>
+    setTech("employees", [...technical.employees, { id: uid(), name, role, resumeName: "", empId, userId, ...extra }]);
+  const updateEmployeeRow = (eid: string, field: "name" | "role" | "resumeName" | "firm" | "nationality" | "years", value: string) =>
     setTech("employees", technical.employees.map((e) => (e.id === eid ? { ...e, [field]: value } : e)));
+  const setEmployeeKey = (eid: string, key: boolean) =>
+    setTech("employees", technical.employees.map((e) => (e.id === eid ? { ...e, keyStaff: key } : e)));
   const removeEmployeeRow = (eid: string) => setTech("employees", technical.employees.filter((e) => e.id !== eid));
 
   const addSimilarRow = (data?: Partial<{ name: string; client: string; value: string; year: string; summary: string }>) =>
@@ -3788,29 +3808,48 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 );
                 const personnelEditor = (
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <h4 className="font-bold text-slate-800 text-sm">Key Personnel</h4>
                       {canEdit && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button onClick={() => setShowEmployeePicker(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 text-[11px] font-bold hover:bg-indigo-100"><Users size={12} /> Import from team</button>
+                          <button onClick={openSubStaffPicker} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 text-[11px] font-bold hover:bg-indigo-100"><Users size={12} /> Subcontractor staff</button>
                           <button onClick={() => addEmployeeRow()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Plus size={12} /> Add</button>
                         </div>
                       )}
                     </div>
+                    <p className="text-[11px] text-slate-400">Prints as the key staff table: Name, Position, Contractor/Subcontractor, Nationality and Years of Experience. Leave a cell blank to use the person's résumé.</p>
                     {technical.employees.length === 0 && <p className="text-xs text-slate-400">No personnel added yet.</p>}
                     {technical.employees.map((e) => {
-                      const hasResume = teamResumes.some((tr) => tr.name === e.name);
+                      const tr = teamResumes.find((t) => t.rowId === e.id);
+                      const res = tr?.data.resume;
                       return (
-                      <div key={e.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr_auto] gap-2 items-center">
-                        <input value={e.name} onChange={(ev) => updateEmployeeRow(e.id, "name", ev.target.value)} disabled={!canEdit} placeholder="Name" className={inp} />
-                        <input value={e.role} onChange={(ev) => updateEmployeeRow(e.id, "role", ev.target.value)} disabled={!canEdit} placeholder="Role / Title" className={inp} />
-                        <span className={`text-[11px] font-bold flex items-center gap-1.5 px-2 ${hasResume ? "text-emerald-600" : "text-slate-400"}`} title="Resumes are pulled automatically from each person's profile and attached to the PDF">
-                          {hasResume ? <><Check size={13} /> Résumé attached</> : "No résumé on profile"}
-                        </span>
-                        {canEdit && <button onClick={() => removeEmployeeRow(e.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>}
+                      <div key={e.id} className="rounded-2xl border border-slate-100 p-3 bg-slate-50/50 space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1.2fr_1fr_auto] gap-2 items-center">
+                          <input value={e.name} onChange={(ev) => updateEmployeeRow(e.id, "name", ev.target.value)} disabled={!canEdit} placeholder="Name" className={inp} />
+                          <input value={e.role} onChange={(ev) => updateEmployeeRow(e.id, "role", ev.target.value)} disabled={!canEdit} placeholder={res?.title ? `Position (résumé: ${res.title})` : "Position on this project"} className={inp} />
+                          <input value={e.firm || ""} onChange={(ev) => updateEmployeeRow(e.id, "firm", ev.target.value)} disabled={!canEdit} placeholder={tr?.firm || "GreenTech USA LLC"} title="Contractor / Subcontractor" className={inp} />
+                          {canEdit && <button onClick={() => removeEmployeeRow(e.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-[1fr_0.8fr_auto_1fr] gap-2 items-center">
+                          <input value={e.nationality || ""} onChange={(ev) => updateEmployeeRow(e.id, "nationality", ev.target.value)} disabled={!canEdit} placeholder={res?.citizenship ? `Nationality (résumé: ${res.citizenship})` : "Nationality"} className={inp} />
+                          <input value={e.years || ""} onChange={(ev) => updateEmployeeRow(e.id, "years", ev.target.value)} disabled={!canEdit} placeholder={res?.yearsOfExperience ? `Years (résumé: ${res.yearsOfExperience})` : "Years of experience"} className={inp} />
+                          <select value={e.keyStaff === false ? "non" : "key"} onChange={(ev) => setEmployeeKey(e.id, ev.target.value === "key")} disabled={!canEdit} className={`${inp} md:w-40`}>
+                            <option value="key">Key staff</option>
+                            <option value="non">Non-key staff</option>
+                          </select>
+                          <span className={`text-[11px] font-bold flex items-center gap-1.5 px-2 ${tr ? "text-emerald-600" : "text-slate-400"}`} title="Resumes are pulled from each person's profile, or from the subcontractor resume library">
+                            {tr ? <><Check size={13} /> {e.subResumeId ? "Subcontractor résumé" : "Résumé attached"}</> : e.subResumeId ? "Résumé not found" : "No résumé on profile"}
+                          </span>
+                        </div>
                       </div>
                       );
                     })}
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer pt-1">
+                      <input type="checkbox" checked={technical.printResumes !== false} onChange={(ev) => setTech("printResumes", ev.target.checked)} disabled={!canEdit} className="rounded" />
+                      Print each person's résumé in the GreenTech format
+                    </label>
+                    <p className="text-[11px] text-slate-400">Résumés print in the "Resumes of Key Personnel" section when the layout has one, otherwise as the last appendix. Turn this off when the solicitation wants its own form, and upload that (for example SF 330) as a Government form section.</p>
                   </div>
                 );
                 const pastPerfEditor = (
@@ -4208,6 +4247,43 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </div>
                 </div>
               )}
+
+              {/* Subcontractor staff picker: people from the subcontractor resume library, this
+                  project's subcontractors first. */}
+              {subStaffOpen && (() => {
+                const onProject = new Set(subcontractors.map((s) => s.name));
+                const pool = (subStaffPool || []).slice().sort((a, b) =>
+                  Number(onProject.has(b.subcontractorName)) - Number(onProject.has(a.subcontractorName))
+                  || a.subcontractorName.localeCompare(b.subcontractorName) || a.personName.localeCompare(b.personName));
+                return (
+                  <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-lg max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-display font-bold text-slate-900">Add subcontractor staff</h3>
+                        <button onClick={() => setSubStaffOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mb-4">Resumes built under a subcontractor (Subs & Employees tab), or by the partner in their own profile.</p>
+                      {subStaffPool === null && <p className="text-xs text-slate-400">Loading…</p>}
+                      {subStaffPool?.length === 0 && <p className="text-xs text-slate-400">No subcontractor resumes yet. Build them under a subcontractor in the Subs & Employees tab.</p>}
+                      <div className="space-y-1">
+                        {pool.map((r) => {
+                          const added = technical.employees.some((e) => e.subResumeId === r._id);
+                          return (
+                            <button key={r._id} disabled={added} onClick={() => { addEmployeeRow(r.personName, r.assignmentOnProject || r.title, "", "", { firm: r.subcontractorName, subResumeId: r._id }); toast(`Added ${r.personName}.`, "success"); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-left disabled:opacity-50">
+                              <span className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xs font-bold shrink-0">{(r.personName || "?").charAt(0)}</span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-800 truncate">{r.personName || "Untitled"}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{[r.subcontractorName, r.title].filter(Boolean).join(" · ")}{onProject.has(r.subcontractorName) ? "  ·  on this project" : ""}</p>
+                              </div>
+                              {added ? <Check size={14} className="ml-auto text-emerald-500" /> : <Plus size={14} className="ml-auto text-slate-300" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Import past-performance project picker */}
               {showSimilarPicker && (

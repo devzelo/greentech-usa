@@ -7,12 +7,84 @@ import SubResume from "../models/SubResume";
 import SavedDocument from "../models/SavedDocument";
 import Project from "../models/Project";
 import User from "../models/User";
+import Company from "../models/Company";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 
 const router = Router();
 router.use(requireAuth);
-router.use(blockGuests); // guests have no access to resumes
+
+// ── A partner's own people (proposal step 5, spec 9 to 11) ────────────────────
+// "Subcontractors and partners fill in the same resume builder in their own profile." A guest
+// login keeps the resumes of its company's people here, in the GreenTech format; staff see them
+// under that subcontractor on a project (same library, matched by company name) and can pick them
+// for a proposal. Each login sees and edits only the resumes it created. Registered before
+// blockGuests on purpose.
+const MINE_EDITABLE = [
+  "personName", "title", "summary", "citizenship",
+  "assignmentOnProject", "yearsOfExperience", "remark", "showPhoto", "contact", "photoUrl",
+  "experience", "projects", "education", "skills", "certifications", "languages", "customSections",
+] as const;
+function pickMine(body: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const f of MINE_EDITABLE) if (f in body) out[f] = body[f];
+  return out;
+}
+/** The company a login belongs to: its Directory company, else its own name. */
+async function companyNameOf(userId: string) {
+  const u = await User.findById(userId).select("name companyId").lean() as { name?: string; companyId?: unknown } | null;
+  if (u?.companyId) {
+    const c = await Company.findById(u.companyId).select("name").lean() as { name?: string } | null;
+    if (c?.name) return c.name;
+  }
+  return u?.name || "";
+}
+
+router.get("/sub-mine", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const [resumes, companyName] = await Promise.all([
+      SubResume.find({ ownerId: req.user!.userId }).sort({ updatedAt: -1 }).lean(),
+      companyNameOf(req.user!.userId),
+    ]);
+    res.json({ resumes, companyName });
+  } catch (err) { next(err); }
+});
+
+router.post("/sub-mine", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const subcontractorName = await companyNameOf(req.user!.userId);
+    const resume = await SubResume.create({ ...pickMine(req.body), subcontractorName, ownerId: req.user!.userId });
+    res.status(201).json(resume);
+  } catch (err) { next(err); }
+});
+
+router.put("/sub-mine/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const resume = await SubResume.findOneAndUpdate(
+      { _id: req.params.id, ownerId: req.user!.userId }, { $set: pickMine(req.body) }, { new: true, runValidators: true }
+    );
+    if (!resume) return res.status(404).json({ error: "Resume not found." });
+    res.json(resume);
+  } catch (err) { next(err); }
+});
+
+router.delete("/sub-mine/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const resume = await SubResume.findOne({ _id: req.params.id, ownerId: req.user!.userId });
+    if (!resume) return res.status(404).json({ error: "Resume not found." });
+    await recycleAndDelete(resume, {
+      kind: "sub-resume",
+      name: resume.personName,
+      subtitle: `Resume · ${resume.subcontractorName || "Partner"}`,
+      projectId: "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
+    res.json({ message: "Resume deleted." });
+  } catch (err) { next(err); }
+});
+
+router.use(blockGuests); // everything below is staff-only
 
 const EMPTY_RESUME = {
   title: "",

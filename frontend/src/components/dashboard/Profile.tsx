@@ -6,6 +6,7 @@ import AdminAnnouncements from "./AdminAnnouncements";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import ResumeBuilder from "./ResumeBuilder";
+import SubcontractorResumes from "./SubcontractorResumes";
 import AgreementsPanel from "./agreements/AgreementsPanel";
 import PartnerProfileSection from "./PartnerProfileSection";
 import MyProfileOverview from "./MyProfileOverview";
@@ -413,6 +414,21 @@ export default function Profile() {
               </table>
             </div>
           )}
+        </motion.div>
+      )}
+
+      {/* Proposal step 5 - a partner builds its own people's resumes here, in the GreenTech
+          format, so GreenTech's proposal team can pick them instead of re-typing them. */}
+      {isGuest && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12 }}
+          className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-8 lg:p-10 lg:col-span-3"
+        >
+          <h2 className="text-xl font-display font-bold text-slate-900 mb-1">My Team's Resumes</h2>
+          <p className="text-xs text-slate-400 mb-6">Resumes of your people who work on GreenTech projects, in the GreenTech format. GreenTech's proposal team picks them for proposals. Only you can edit them.</p>
+          <SubcontractorResumes mode="mine" subcontractorName="" canManage />
         </motion.div>
       )}
 

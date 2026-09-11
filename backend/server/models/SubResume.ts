@@ -18,7 +18,7 @@ export interface ISubResume extends Document {
   contact: { email: string; phone: string; location: string };
   photoUrl: string;
   experience: Array<{ company: string; role: string; start: string; end: string; description: string }>;
-  projects: Array<{ name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string }>;
+  projects: Array<{ name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string; value?: string }>;
   education: Array<{ school: string; degree: string; field: string; start: string; end: string }>;
   skills: string[];
   certifications: Array<{ name: string; issuer: string; year: string }>;
@@ -45,7 +45,7 @@ const SubResumeSchema = new Schema<ISubResume>(
     },
     photoUrl: { type: String, default: "" },
     experience: [{ company: String, role: String, start: String, end: String, description: String }],
-    projects: [{ name: String, role: String, start: String, end: String, description: String, projectId: String, employer: String, client: String, solicitationNo: String, contractNo: String, cost: String }],
+    projects: [{ name: String, role: String, start: String, end: String, description: String, projectId: String, employer: String, client: String, solicitationNo: String, contractNo: String, cost: String, value: String }],
     education: [{ school: String, degree: String, field: String, start: String, end: String }],
     skills: [{ type: String }],
     certifications: [{ name: String, issuer: String, year: String }],

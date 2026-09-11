@@ -28,12 +28,18 @@ function lhConfig(letterhead: ProposalLetterhead | undefined, customLetterheadUr
   }
 }
 
-/** A proposal team member whose full resume gets appended as extra pages. */
+/** A proposal team member whose full resume prints in the proposal. */
 export interface ProposalTeamResume {
   name: string;
   role: string;
   data: TeamResume;
+  rowId?: string;   // the key-personnel row it belongs to (matching by name is the fallback)
+  firm?: string;    // a subcontractor person's company
 }
+
+// Library sections that hold the resumes: when the layout has one (a designed page), the resumes
+// print there, in the RFP's order ("Tab C, Key Personnel Resumes"), not as a closing appendix.
+const RESUME_SECTION_KEYS = new Set(["resumes", "appx-resumes"]);
 
 const BODY = { fontSize: 9.5, color: BRAND.s700, fontFamily: "Inter", lineHeight: 1.5 } as const;
 
@@ -96,6 +102,8 @@ const styles = StyleSheet.create({
   tRow: { flexDirection: "row", borderBottom: `0.6 solid ${BRAND.border}` },
   tRowAlt: { backgroundColor: BRAND.mist },
   td: { fontSize: 8.5, padding: 6, color: BRAND.slate },
+  staffBand: { backgroundColor: "#ECFDF5", paddingVertical: 3, paddingHorizontal: 6, borderBottom: `0.6 solid ${BRAND.border}` },
+  staffBandText: { fontSize: 7, fontWeight: 700, color: "#047857", letterSpacing: 0.8 },
   totalRow: { flexDirection: "row", marginTop: 8, justifyContent: "flex-end" },
   totalBox: { backgroundColor: BRAND.mist, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 16, borderLeft: `3 solid ${BRAND.emerald}` },
   totalLabel: { fontSize: 7.5, color: BRAND.s500, letterSpacing: 1 },
@@ -430,9 +438,20 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const note = footNote(LABEL, project);
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
+  // Item 97/98 - the key personnel with their resumes, key staff first, in the list's order.
+  const staff = content.employees.map((e) => ({ e, r: resumes.find((x) => x.rowId === e.id) || resumes.find((x) => !x.rowId && x.name === e.name) }));
+  const keyStaff = staff.filter(({ e }) => e.keyStaff !== false);
+  const nonKeyStaff = staff.filter(({ e }) => e.keyStaff === false);
+  const built = content.printResumes === false ? [] : [...keyStaff, ...nonKeyStaff].flatMap(({ e, r }) => (r ? [{ e, r }] : []));
+
   // Does a section have any content to render?
   const sectionFor = (refId?: string) => content.sections.find((s) => s.id === refId);
+  const isOriginal = (m: ProposalSectionMeta) => m.pageType === "government" || m.pageType === "external";
+  const resumeHost = built.length
+    ? resolveProposalLayout(content).find((m) => !m.hidden && m.kind === "custom" && !isOriginal(m) && RESUME_SECTION_KEYS.has(m.libraryKey || "") && !!sectionFor(m.refId))
+    : undefined;
   const hasContent = (m: ProposalSectionMeta) => {
+    if (resumeHost && m.id === resumeHost.id) return true;
     switch (m.kind) {
       case "description": return !!content.description?.trim();
       case "personnel": return content.employees.length > 0;
@@ -483,11 +502,17 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const tocW = numbering === "none" ? 0 : word === "Section" ? 30 : 58;
   const tocMain = visible.filter((m) => m.kind !== "blank" && !m.appendix);
   const tocAppx = visible.filter((m) => m.kind !== "blank" && m.appendix);
-  const resumeAppx = appxN + 1;   // team resumes close the appendices
+  // Without a Resumes section in the layout, the resumes close the appendices.
+  const resumeAppx = appxN + 1;
+  const trailingResumes = !resumeHost && built.length > 0;
+  const resumesWhere = resumeHost
+    ? (labelById.get(resumeHost.id)?.divider ? `${labelById.get(resumeHost.id)!.divider}, ${resumeHost.title}` : resumeHost.title)
+    : `Appendix ${resumeAppx}, Key Personnel Resumes`;
 
   // Effective per-section letterhead, then group consecutive same-letterhead sections onto shared pages.
   const eff = (m: ProposalSectionMeta): ProposalLetterhead => (m.letterhead && m.letterhead !== "inherit" ? m.letterhead : (letterhead || "gt"));
-  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[]; key: string };
+  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[]; key: string }
+    | { t: "resumes"; m: ProposalSectionMeta; lh: ProposalLetterhead; headed: boolean };
   const groups: Grp[] = [];
   let curGrp: Extract<Grp, { t: "content" }> | null = null;
   for (const m of visible) {
@@ -500,10 +525,17 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     const files = (s?.attachments || []).filter((f) => !!f.url);
     // Spec 4 - a Government form or external document prints only as uploaded, after a separator
     // page when one is switched on. A designed section holding only files gets a divider anyway.
-    const original = m.pageType === "government" || m.pageType === "external";
-    const filesOnly = original || (m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || "") && printableSubs(s).length === 0);
-    if (m.divider || (filesOnly && !original)) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
-    if (!filesOnly) {
+    const original = isOriginal(m);
+    const hasText = htmlHasContent(s?.body || "") || printableSubs(s).length > 0;
+    const filesOnly = original || (m.kind === "custom" && files.length > 0 && !hasText);
+    // The Resumes section: its own text (if any) first, then one resume per page.
+    const isHost = !!resumeHost && m.id === resumeHost.id;
+    if (m.divider || (filesOnly && !original && !isHost)) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
+    if (isHost) {
+      if (hasText) groups.push({ t: "content", lh: elh, items: [m] });
+      groups.push({ t: "resumes", m, lh: elh, headed: !hasText });
+      curGrp = null;
+    } else if (!filesOnly) {
       if (!curGrp || curGrp.lh !== elh || m.pageBreakBefore) {
         curGrp = { t: "content", lh: elh, items: [m] };
         groups.push(curGrp);
@@ -520,20 +552,37 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     if (m.kind === "description") return (
       <View key={m.id}>{heading}<RichText html={content.description} keyBase="desc" /></View>
     );
-    if (m.kind === "personnel") return (
-      <View key={m.id}>
-        {heading}
-        {content.employees.map((e) => {
-          const hasResume = resumes.some((r) => r.name === e.name);
-          return (
-            <View key={e.id} style={styles.card} wrap={false}>
-              <Text style={styles.cardTitle}>{e.name || "-"}</Text>
-              <Text style={styles.cardMeta}>{e.role || "-"}{hasResume ? "  ·  Full resume in Appendix: Team Resumes" : e.resumeName ? `  ·  Resume: ${e.resumeName}` : ""}</Text>
-            </View>
-          );
-        })}
-      </View>
-    );
+    if (m.kind === "personnel") {
+      // As on the technical sample: one table, Key Staff then Non-Key Staff. Blank cells fall back
+      // to the person's resume, then to GreenTech for our own staff.
+      const cols: Array<[string, string]> = [["NO.", "6%"], ["NAME", "22%"], ["POSITION", "24%"], ["CONTRACTOR / SUBCONTRACTOR", "20%"], ["NATIONALITY", "14%"], ["YEARS OF EXPERIENCE", "14%"]];
+      let n = 0;
+      const row = ({ e, r }: typeof staff[number]) => {
+        n += 1;
+        const res = r?.data.resume;
+        const cells = [String(n), e.name || "-", e.role || res?.title || "-", e.firm || r?.firm || COMPANY.name, e.nationality || res?.citizenship || "-", e.years || res?.yearsOfExperience || "-"];
+        return (
+          <View key={e.id} style={[styles.tRow, n % 2 === 0 ? styles.tRowAlt : {}]} wrap={false}>
+            {cells.map((c, k) => <Text key={k} style={[styles.td, { width: cols[k][1] }, k === 1 ? { fontWeight: 700 } : {}]}>{c}</Text>)}
+          </View>
+        );
+      };
+      const band = (label: string) => <View style={styles.staffBand} wrap={false}><Text style={styles.staffBandText}>{label}</Text></View>;
+      const bands = nonKeyStaff.length > 0;
+      return (
+        <View key={m.id}>
+          {heading}
+          <View style={styles.tHead} wrap={false}>
+            {cols.map(([l, w]) => <Text key={l} style={[styles.th, { width: w }]}>{l}</Text>)}
+          </View>
+          {bands && keyStaff.length > 0 && band("KEY STAFF")}
+          {keyStaff.map(row)}
+          {bands && band("NON-KEY STAFF")}
+          {nonKeyStaff.map(row)}
+          {built.length > 0 && <Text style={[styles.cardMeta, { marginTop: 6 }]}>Resumes of the proposed personnel: {resumesWhere}.</Text>}
+        </View>
+      );
+    }
     if (m.kind === "pastPerformance") return (
       <View key={m.id}>
         {heading}
@@ -601,7 +650,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   if (coverLetter?.enabled) page(<CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />);
 
   // Table of contents: main sections with their RFP reference, then the appendices.
-  if (tocMain.length || tocAppx.length || resumes.length) {
+  if (tocMain.length || tocAppx.length || trailingResumes) {
     // The page column has a fixed width, so filling in the numbers on the second pass moves nothing.
     const row = (key: string, num: string, title: string, ref: string | undefined, w: number) => (
       <View key={key} style={styles.tocRow}>
@@ -614,9 +663,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       <Sheet lh={lh} label={LABEL} note={note}>
         <SectionHeading title="Table of Contents" />
         {tocMain.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, tocW), ...subRows(m, tocW)])}
-        {(tocAppx.length > 0 || resumes.length > 0) && <Subhead>APPENDICES</Subhead>}
+        {(tocAppx.length > 0 || trailingResumes) && <Subhead>APPENDICES</Subhead>}
         {tocAppx.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, 30), ...subRows(m, 30)])}
-        {resumes.length > 0 && row("resumes", String(resumeAppx), "Team Resumes", undefined, 30)}
+        {trailingResumes && row("resumes", String(resumeAppx), "Key Personnel Resumes", undefined, 30)}
       </Sheet>,
     );
   }
@@ -624,6 +673,16 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   // Body: one page group per letterhead run, with divider / blank pages and uploaded files in place.
   groups.forEach((g, gi) => {
     if (g.t === "files") { seq.push({ files: g.files, key: g.key }); return; }
+    if (g.t === "resumes") {
+      // One resume per page run; field 3 is the role in THIS proposal.
+      built.forEach(({ e, r }, i) => page(
+        <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
+          {i === 0 && g.headed && <>{mark(g.m.id)}<SectionHeading label={labelById.get(g.m.id)?.heading || undefined} title={g.m.title} /></>}
+          <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} />
+        </Sheet>,
+      ));
+      return;
+    }
     if (g.t === "blank") { page(<Page size="A4" style={styles.page} />); return; }
     if (g.t === "divider") {
       // As on the client's samples: document, "Section A:", title, reference, then who and which RFP.
@@ -653,13 +712,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     );
   });
 
-  // Team resumes, one section per person, numbered after the other appendices.
-  resumes.forEach((r, i) => page(
-    <Sheet lh={lh} label="Team Resumes" note={footNote("Team Resumes", project)}>
+  // No Resumes section in the layout: the resumes close the appendices, one per page run.
+  if (trailingResumes) built.forEach(({ e, r }, i) => page(
+    <Sheet lh={lh} label="Key Personnel Resumes" note={footNote("Key Personnel Resumes", project)}>
       {i === 0 && mark("resumes")}
-      {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Team Resumes" />}
-      {!!r.role && <Text style={[styles.cardMeta, { marginBottom: 8 }]}>Proposed role: {r.role}</Text>}
-      <ResumeBlock resume={r.data.resume} person={r.data.user} />
+      {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Key Personnel Resumes" />}
+      <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} />
     </Sheet>,
   ));
 

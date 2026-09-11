@@ -3,6 +3,7 @@ import { FileText, Plus, Trash2, Save, Loader2, Download, X, Pencil, Library, Se
 import { PDFDownloadLink, PDFViewer } from "@react-pdf/renderer";
 import {
   fetchSubResumes, createSubResume, updateSubResume, deleteSubResume,
+  fetchMySubResumes, createMySubResume, updateMySubResume, deleteMySubResume,
   ApiSubResume, SubResumeInput,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -44,7 +45,13 @@ function rowShell(rowKey: number, onRemove: () => void, children: ReactNode) {
   );
 }
 
-export default function SubcontractorResumes({ subcontractorName, canManage }: { subcontractorName: string; canManage: boolean }) {
+/**
+ * `mode="mine"`: a partner (guest) login building its own people's resumes in its profile. Only
+ * the resumes that login created, filed under its company; no reuse library.
+ */
+export default function SubcontractorResumes({ subcontractorName: nameProp, canManage, mode = "staff" }: { subcontractorName: string; canManage: boolean; mode?: "staff" | "mine" }) {
+  const mine = mode === "mine";
+  const [subcontractorName, setCompanyName] = useState(nameProp);
   const [resumes, setResumes] = useState<ApiSubResume[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,11 +71,19 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
 
   const load = async () => {
     setLoading(true);
-    try { setResumes(await fetchSubResumes({ subName: subcontractorName })); }
+    try {
+      if (mine) {
+        const r = await fetchMySubResumes();
+        setResumes(r.resumes);
+        setCompanyName(r.companyName);
+      } else {
+        setResumes(await fetchSubResumes({ subName: nameProp }));
+      }
+    }
     catch { /* keep empty */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [subcontractorName]);
+  useEffect(() => { setCompanyName(nameProp); void load(); /* eslint-disable-next-line */ }, [nameProp, mine]);
 
   const openNew = () => {
     setEditingId(null);
@@ -91,8 +106,8 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
     setSaving(true);
     try {
       const body: SubResumeInput = { ...draft, skills: skillsText.split(",").map((s) => s.trim()).filter(Boolean) };
-      if (editingId) { await updateSubResume(editingId, body); toast("Resume saved.", "success"); }
-      else { await createSubResume(body); toast("Resume created.", "success"); }
+      if (editingId) { await (mine ? updateMySubResume : updateSubResume)(editingId, body); toast("Resume saved.", "success"); }
+      else { await (mine ? createMySubResume : createSubResume)(body); toast("Resume created.", "success"); }
       setEditorOpen(false);
       await load();
     } catch (err) {
@@ -122,7 +137,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    try { await deleteSubResume(deleteTarget._id); toast("Resume deleted.", "success"); setDeleteTarget(null); await load(); }
+    try { await (mine ? deleteMySubResume : deleteSubResume)(deleteTarget._id); toast("Resume deleted.", "success"); setDeleteTarget(null); await load(); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); setDeleteTarget(null); }
   };
 
@@ -134,7 +149,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
         </p>
         {canManage && (
           <div className="flex items-center gap-2">
-            <button onClick={() => { setLibQuery(""); setLibOpen(true); }} className="text-[10px] font-bold text-slate-500 hover:text-primary flex items-center gap-1"><Library size={11} /> Reuse</button>
+            {!mine && <button onClick={() => { setLibQuery(""); setLibOpen(true); }} className="text-[10px] font-bold text-slate-500 hover:text-primary flex items-center gap-1"><Library size={11} /> Reuse</button>}
             <button onClick={openNew} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"><Plus size={11} /> New resume</button>
           </div>
         )}
@@ -143,7 +158,7 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
       {loading ? (
         <div className="py-6 flex justify-center text-slate-300"><Loader2 size={18} className="animate-spin" /></div>
       ) : resumes.length === 0 ? (
-        <p className="text-[11px] text-slate-400 italic">No resumes yet.{canManage ? " Build one in the GreenTech format, or reuse an existing one." : ""}</p>
+        <p className="text-[11px] text-slate-400 italic">No resumes yet.{canManage ? (mine ? " Add one for each person you propose on GreenTech projects." : " Build one in the GreenTech format, or reuse an existing one.") : ""}</p>
       ) : (
         <div className="space-y-1.5">
           {resumes.map((r) => (
@@ -219,11 +234,13 @@ export default function SubcontractorResumes({ subcontractorName, canManage }: {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pr-6">
                 <input className={`${inp} md:col-span-2`} value={p.name} onChange={(ev) => set("projects", updateAt(draft.projects, i, { name: ev.target.value }))} placeholder="Project name" />
                 <input className={inp} value={p.employer || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { employer: ev.target.value }))} placeholder="Employer" />
+                <input className={inp} value={p.role} onChange={(ev) => set("projects", updateAt(draft.projects, i, { role: ev.target.value }))} placeholder="Position held" />
                 <input className={inp} value={p.client || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { client: ev.target.value }))} placeholder="Client" />
                 <input className={inp} value={p.solicitationNo || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { solicitationNo: ev.target.value }))} placeholder="Solicitation #" />
                 <input className={inp} value={p.contractNo || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { contractNo: ev.target.value }))} placeholder="Contract #" />
                 <input className={inp} value={p.start} onChange={(ev) => set("projects", updateAt(draft.projects, i, { start: ev.target.value }))} placeholder="Start" />
                 <input className={inp} value={p.end} onChange={(ev) => set("projects", updateAt(draft.projects, i, { end: ev.target.value }))} placeholder="End" />
+                <input className={inp} value={p.value || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { value: ev.target.value }))} placeholder="Project value (e.g. $1,250,000)" />
                 <input className={inp} value={p.cost || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { cost: ev.target.value }))} placeholder="Cost (e.g. $246,451)" />
                 <textarea rows={2} className={`${inp} resize-none md:col-span-2`} value={p.description} onChange={(ev) => set("projects", updateAt(draft.projects, i, { description: ev.target.value }))} placeholder="Scope / description…" />
               </div>

@@ -14,7 +14,7 @@ export interface IResume extends Document {
   contact: { email: string; phone: string; location: string };
   photoUrl: string; // optional override; falls back to the user's avatar
   experience: Array<{ company: string; role: string; start: string; end: string; description: string }>;
-  projects: Array<{ name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string }>;
+  projects: Array<{ name: string; role: string; start: string; end: string; description: string; projectId?: string; employer?: string; client?: string; solicitationNo?: string; contractNo?: string; cost?: string; value?: string }>;
   education: Array<{ school: string; degree: string; field: string; start: string; end: string }>;
   skills: string[];
   certifications: Array<{ name: string; issuer: string; year: string }>;
@@ -60,6 +60,7 @@ const ResumeSchema = new Schema<IResume>(
         solicitationNo: { type: String, default: "" },
         contractNo: { type: String, default: "" },
         cost: { type: String, default: "" },
+        value: { type: String, default: "" },   // GT resume template: "Project value" (beside Cost)
       },
     ],
     education: [
