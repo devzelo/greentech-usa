@@ -314,6 +314,7 @@ const IDENTITY_FIELDS = new Set([
   "owner", "ownerId", "image", "published", "progress",
   "startDate", "endDate", "fiscal", "compliance", "value", "disciplines",
   "projectNature", "clientInfo", "timeline",
+  "schedule",   // CR-P (121)-(126) — milestones & extensions; assigned employees are let through below
   // The JV partner record carries the partner's stamps & signatures, which end up on signed
   // POs and agreements — owner-only, like the rest of the project identity.
   "jointVenture",

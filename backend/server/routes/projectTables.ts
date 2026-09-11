@@ -10,7 +10,15 @@ import { recycleAndDelete } from "../lib/recycleBin";
 // Generic structured-table rows (see model). Scoped by ?table=<key>.
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
-router.use(tabAccessGuard(["project-info", "proposals", "tech-docs", "closeout"]));
+// The tab a table belongs to decides who may use it: the Project Management and Legal document tabs
+// (CR-P (136)/(152), keys "pm-…" / "legal-…") follow those tabs' access; every other table keeps the
+// Project Info / Proposals / Technical Docs / Closeout rule.
+const DEFAULT_TABS = ["project-info", "proposals", "tech-docs", "closeout"];
+router.use((req: AuthedRequest, res: Response, next: NextFunction) => {
+  const key = String(req.query.table || req.body?.tableKey || "");
+  const tabs = key.startsWith("pm-") ? ["pm"] : key.startsWith("legal-") ? ["legal"] : DEFAULT_TABS;
+  return tabAccessGuard(tabs)(req, res, next);
+});
 
 const humanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
 const tableKey = (req: AuthedRequest) => String(req.query.table || req.body?.tableKey || "").slice(0, 60);
