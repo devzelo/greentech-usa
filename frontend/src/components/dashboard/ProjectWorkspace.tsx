@@ -2177,7 +2177,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }))) return;
     const next = assignedEmployees.filter((e) => e !== empIdStr);
     setAssignedEmployees(next);
-    try { await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>); toast("Removed from the project.", "success"); }
+    try {
+      await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>);
+      // CR-P (81) — the server drops their tab-access grant with the assignment; reload the
+      // grants so this screen agrees with it.
+      await refreshGuests();
+      toast("Removed from the project.", "success");
+    }
     catch (err) { toast(err instanceof Error ? err.message : "Could not remove.", "error"); }
   };
 

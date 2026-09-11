@@ -317,6 +317,25 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
       { new: true, runValidators: true }
     );
 
+    // CR-P (81) — removing an employee from the project cuts ALL of their access to it. Tab access
+    // set with "Manage access" is a separate grant in guests[], and getProjectAccess checks that
+    // grant BEFORE the assigned list, so leaving it behind kept the removed person in, with the
+    // same tabs and the project still in their My Projects. Their work stays; only access goes.
+    if (project) {
+      const nowAssigned = new Set(project.assignedEmployees || []);
+      const removed = [...beforeAssigned].filter((e) => !nowAssigned.has(e));
+      if (removed.length) {
+        const removedIds = new Set((await User.find({ empId: { $in: removed } }).select("_id").lean()).map((u) => String(u._id)));
+        const guests = project.guests || [];
+        const kept = guests.filter((g) => !removedIds.has(String(g.userId)));
+        if (kept.length !== guests.length) {
+          project.guests = kept as never;
+          project.markModified("guests");
+          await project.save();
+        }
+      }
+    }
+
     // Notify newly-assigned employees (best-effort, owner-only path).
     if (project) {
       const added = (project.assignedEmployees || []).filter((e) => !beforeAssigned.has(e));
