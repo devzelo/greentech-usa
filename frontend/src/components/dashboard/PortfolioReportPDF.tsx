@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { ApiProject } from "../../lib/api";
+import { projectCategories } from "../../lib/api";
 
 const PRIMARY = "#10B981";
 const INK = "#0f172a";
@@ -161,7 +162,7 @@ export default function PortfolioReportPDF({ projects, logoUrl, title = "Portfol
               </View>
               <Text style={styles.cardId}>{p.id}</Text>
               <Text style={styles.cardMeta}>
-                {p.location || "—"}   •   {p.category || "—"}   •   Owner: {p.owner || "—"}
+                {p.location || "—"}   •   {projectCategories(p).join(", ") || "—"}   •   Owner: {p.owner || "—"}
               </Text>
 
               {/* Financials */}

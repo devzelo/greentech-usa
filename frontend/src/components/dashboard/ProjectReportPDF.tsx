@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
 import type { ApiProject } from "../../lib/api";
+import { projectCategories } from "../../lib/api";
 
 const PRIMARY = "#10B981";
 const INK = "#0f172a";
@@ -216,7 +217,7 @@ export default function ProjectReportPDF({ project, logoUrl, financials }: Props
 
         {/* Title */}
         <View style={styles.titleSection}>
-          <Text style={styles.idChip}>{project.id || "—"}  ·  {(project.category || "Uncategorized").toUpperCase()}</Text>
+          <Text style={styles.idChip}>{project.id || "—"}  ·  {(projectCategories(project).join(", ") || "Uncategorized").toUpperCase()}</Text>
           <Text style={styles.projectName}>{project.name}</Text>
           <View style={styles.statusRow}>
             <Text style={styles.statusPill}>{(project.status || "—").toUpperCase()}</Text>

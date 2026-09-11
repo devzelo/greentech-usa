@@ -6,6 +6,9 @@ export interface IProject extends Document {
   status: "Ongoing" | "Pending" | "Completed" | "Draft" | "Planning"
     | "Proposal" | "BidSubmitted" | "Active" | "Warranty" | "Closed" | "Lost" | "OnHold";
   category: string;
+  categories: string[];  // item 101 - a project can cover several services (WTP, HVAC, piping); `category` mirrors the first
+  contractType: string;  // proposal data sheets: FFP, IDIQ task order, T&M, ...
+  cpars: string;         // "Yes" | "No" | "Pending" | "" - a CPARS / Government evaluation is on file
   contractNo: string;    // the contract number — shown in place of a project number
   contractYear: string;  // the year the project started (shown as the table's Year column)
   contractDate: string;  // the exact contract date (ISO yyyy-mm-dd), parallel to contractYear
@@ -133,6 +136,9 @@ const ProjectSchema = new Schema<IProject>(
       default: "Planning",
     },
     category: { type: String, default: "" },
+    categories: [{ type: String }],
+    contractType: { type: String, default: "" },
+    cpars: { type: String, default: "" },
     contractNo: { type: String, default: "" },
     contractYear: { type: String, default: "" },
     contractDate: { type: String, default: "" },   // exact contract date (parallel to contractYear)

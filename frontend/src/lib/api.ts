@@ -122,6 +122,18 @@ export interface BackupPreview {
   emailConfigured: boolean;
 }
 
+/** Item 101 - a project's service categories. Older records only carry the single `category`. */
+export function projectCategories(p: { category?: string; categories?: string[] } | null | undefined): string[] {
+  if (!p) return [];
+  return p.categories?.length ? p.categories : p.category ? [p.category] : [];
+}
+
+/** Contract types printed on past-performance data sheets. */
+export const CONTRACT_TYPES = [
+  "Firm-Fixed-Price (FFP)", "IDIQ / Task Order", "Time & Materials (T&M)", "Cost-Plus",
+  "BPA / Call Order", "Purchase Order", "Subcontract", "Grant / Cooperative Agreement", "Other",
+];
+
 export interface ApiProject {
   id: string;
   name: string;
@@ -136,6 +148,9 @@ export interface ApiProject {
   // Structured project site address; `location` is kept as a short "City, Country" mirror.
   siteAddress?: { line1: string; city: string; state: string; postalCode: string; country: string };
   category: string;
+  categories?: string[];   // item 101 - several services; `category` mirrors the first (see projectCategories)
+  contractType?: string;
+  cpars?: string;          // "Yes" | "No" | "Pending" | ""
   contractNo: string;
   contractYear: string;
   contractDate?: string;

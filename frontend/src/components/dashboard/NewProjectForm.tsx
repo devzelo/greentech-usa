@@ -5,7 +5,7 @@ import { createProject, updateProject, uploadProjectImage, uploadProjectContract
 import ClientPicker from "./ClientPicker";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
-import { SERVICE_CATEGORIES } from "../../data/services";
+import CategoryMultiSelect from "./CategoryMultiSelect";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import CountrySelect from "./CountrySelect";
@@ -175,7 +175,7 @@ export default function NewProjectForm() {
 
   // Identity
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);   // item 101 - multi-select
   const [contractNo, setContractNo] = useState("");
   const [contractYear, setContractYear] = useState(String(new Date().getFullYear()));
   const [contractDate, setContractDate] = useState("");
@@ -338,7 +338,8 @@ export default function NewProjectForm() {
     try {
       const project = await createProject({
         name: title,
-        category,
+        category: categories[0] || "",
+        categories,
         contractNo,
         contractYear,
         contractDate,
@@ -557,21 +558,10 @@ export default function NewProjectForm() {
             </div>
             <p className="text-[10px] text-slate-400">Saved on the project identity and previewable from the project.</p>
           </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category (Service)</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white outline-none appearance-none"
-            >
-              <option value="">Select a service…</option>
-              {category && !SERVICE_CATEGORIES.includes(category) && (
-                <option value={category}>{category} (current)</option>
-              )}
-              {SERVICE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Categories (Services)</label>
+            <CategoryMultiSelect value={categories} onChange={(v) => { setCategories(v); markTouched(); }} />
+            <p className="text-[10px] text-slate-400">Pick every service this project covers.</p>
           </div>
           {/* Project site address — structured so RFQ/PO delivery and the project header can reuse it. */}
           <div className="md:col-span-2">
@@ -1352,7 +1342,7 @@ export default function NewProjectForm() {
               <div className="bg-slate-50 rounded-[2rem] p-6 divide-y divide-slate-100 mb-8">
                 {[
                   { label: "Title", value: title },
-                  { label: "Category", value: category },
+                  { label: "Categories", value: categories.join(", ") },
                   { label: "Status", value: status },
                   { label: "Location", value: shortLocation(siteAddr) || "—" },
                   { label: "Project Value", value: projectValue || "—" },

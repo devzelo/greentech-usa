@@ -33,13 +33,14 @@ import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
-import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
+import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, projectCategories, CONTRACT_TYPES, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
 import * as XLSX from "xlsx";
 import DocSection from "./DocSection";
 import ProjectInfoTab from "./ProjectInfoTab";
 import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
+import CategoryMultiSelect from "./CategoryMultiSelect";
 import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePageBadge";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
@@ -81,7 +82,6 @@ import { resolveProposalLayout, PROPOSAL_BUILTINS, fetchProposalTemplates, saveP
 import PortalMenu from "./PortalMenu";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
-import { SERVICE_CATEGORIES } from "../../data/services";
 
 // ── Employee pool ──────────────────────────────────────────────────────────
 const EMPLOYEE_POOL = [
@@ -1240,14 +1240,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // Edit Project Identity modal (owner only)
   type IdentityForm = {
-    name: string; clientName: string; status: string; category: string; siteAddress: SiteAddress;
+    name: string; clientName: string; status: string; category: string; categories: string[]; contractType: string; cpars: string; siteAddress: SiteAddress;
     description: string; reportNotes: string; fiscal: string; compliance: string; value: string;
     startDate: string; endDate: string; progress: number;
     disciplines: string; contractNo: string; contractYear: string; contractDate: string;
   };
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState<IdentityForm>({
-    name: "", clientName: "", status: "Planning", category: "", siteAddress: EMPTY_SITE_ADDRESS,
+    name: "", clientName: "", status: "Planning", category: "", categories: [], contractType: "", cpars: "", siteAddress: EMPTY_SITE_ADDRESS,
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
     startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
   });
@@ -1281,6 +1281,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       clientName: project.clientInfo?.name || "",
       status: project.status || "Planning",
       category: project.category || "",
+      categories: projectCategories(project),
+      contractType: project.contractType || "",
+      cpars: project.cpars || "",
       siteAddress: {
         line1: project.siteAddress?.line1 || "",
         city: project.siteAddress?.city || "",
@@ -1321,7 +1324,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         name: identityForm.name,
         clientInfo: { ...project.clientInfo, name: identityForm.clientName },
         status: identityForm.status as ApiProject["status"],
-        category: identityForm.category,
+        category: identityForm.categories[0] || "",
+        categories: identityForm.categories,
+        contractType: identityForm.contractType,
+        cpars: identityForm.cpars,
         location: shortLocation(identityForm.siteAddress, project.location),
         siteAddress: identityForm.siteAddress,
         description: identityForm.description,
@@ -2957,10 +2963,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <span className="text-xs font-bold text-slate-300">·</span>
                   </>
                 )}
-                {project.category && (
+                {projectCategories(project).length > 0 && (
                   <>
                     <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-                      <Building2 size={11} /> {project.category}
+                      <Building2 size={11} /> {projectCategories(project).join(", ")}
                     </span>
                     <span className="text-xs font-bold text-slate-300">·</span>
                   </>
@@ -6109,22 +6115,39 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </div>
                   <p className="text-[10px] text-slate-400">Saved on the project identity and previewable from here.</p>
                 </div>
+                {/* Item 101 - several services per project; proposals filter past performance by these. */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Categories (Services)</label>
+                  <CategoryMultiSelect value={identityForm.categories} onChange={(v) => setIdentityForm({ ...identityForm, categories: v })} disabled={!isOwner} />
+                  <p className="text-[10px] text-slate-400">Pick every service this project covers. Proposals find past performance by these and by Project Nature.</p>
+                </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category (Service)</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Type</label>
                   <select
-                    value={identityForm.category}
-                    onChange={(e) => setIdentityForm({ ...identityForm, category: e.target.value })}
+                    value={identityForm.contractType}
+                    onChange={(e) => setIdentityForm({ ...identityForm, contractType: e.target.value })}
                     disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed appearance-none"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    <option value="">Select a service…</option>
-                    {identityForm.category && !SERVICE_CATEGORIES.includes(identityForm.category) && (
-                      <option value={identityForm.category}>{identityForm.category} (current)</option>
-                    )}
-                    {SERVICE_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    <option value="">Not set</option>
+                    {CONTRACT_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {identityForm.contractType && !CONTRACT_TYPES.includes(identityForm.contractType) && <option value={identityForm.contractType}>{identityForm.contractType}</option>}
                   </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">CPARS / Evaluation</label>
+                  <select
+                    value={identityForm.cpars}
+                    onChange={(e) => setIdentityForm({ ...identityForm, cpars: e.target.value })}
+                    disabled={!isOwner}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Not set</option>
+                    <option value="Yes">Yes, on file</option>
+                    <option value="Pending">Pending</option>
+                    <option value="No">No</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400">Printed on this project's past-performance data sheet.</p>
                 </div>
                 {/* Project site address — feeds RFQ/PO delivery and the "City, Country 🇬🇭" header. */}
                 <div className="md:col-span-2">
@@ -6644,7 +6667,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     {([
                       ["Project name", project.name],
                       ["Status", project.status],
-                      ["Category", project.category],
+                      ["Category", projectCategories(project).join(", ")],
                       ["Location", project.location],
                       ["Timeline", `${project.startDate || "—"} → ${project.endDate || "—"}`],
                       ["Client", project.showClientName === false ? "Hidden" : (project.clientInfo?.name || "—")],

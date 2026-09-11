@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, ApiProject, ProjectFinancials } from "../../lib/api";
+import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, projectCategories, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -75,7 +75,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       p.id.toLowerCase().includes(q) ||
       (p.contractNo || "").toLowerCase().includes(q) ||
       (p.contractYear || "").toLowerCase().includes(q) ||
-      (p.category || "").toLowerCase().includes(q) ||
+      projectCategories(p).join(" ").toLowerCase().includes(q) ||
       (p.clientInfo?.name || "").toLowerCase().includes(q) ||
       (p.location || "").toLowerCase().includes(q);
     return matchesSearch && statusMatches(statusFilter, p.status) && (!jvOnly || !!p.jointVenture?.enabled);
@@ -321,7 +321,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-600">{p.category || "—"}</td>
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-600">{projectCategories(p).join(", ") || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-medium text-slate-600">{p.clientInfo?.name || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold whitespace-nowrap">
@@ -409,7 +409,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                     {p.jointVenture?.enabled && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold border border-indigo-100" title={p.jointVenture.partnerName ? `Joint Venture with ${p.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={11} /> JV</span>}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 font-medium mb-5">
-                    {p.category && <span><span className="text-slate-400">Category:</span> <span className="font-bold text-slate-700">{p.category}</span></span>}
+                    {projectCategories(p).length > 0 && <span><span className="text-slate-400">Category:</span> <span className="font-bold text-slate-700">{projectCategories(p).join(", ")}</span></span>}
                     {p.clientInfo?.name && <span><span className="text-slate-400">Client:</span> <span className="font-bold text-slate-700">{p.clientInfo.name}</span></span>}
                     {p.contractYear && <span><span className="text-slate-400">Year:</span> <span className="font-bold text-slate-700">{p.contractYear}</span></span>}
                     {p.endDate && <span><span className="text-slate-400">Deadline:</span> <span className={`font-bold ${overdue(p) ? "text-red-600" : "text-slate-700"}`}>{p.endDate}{overdue(p) ? " ⚠" : ""}</span></span>}

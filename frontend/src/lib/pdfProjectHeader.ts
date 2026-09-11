@@ -1,5 +1,6 @@
 import { PDFFont, PDFPage, rgb } from "pdf-lib";
 import type { ApiProject } from "./api";
+import { projectCategories } from "./api";
 import { composeSiteAddress } from "./address";
 
 // Project identity shown at the top of every exported/printed document (H1). Deliberately
@@ -29,7 +30,7 @@ export function projectPdfInfo(p?: Pick<ApiProject, "id" | "name" | "location" |
     number: p?.id || "",
     location: p?.location || "",
     siteAddress: composeSiteAddress(p?.siteAddress) || p?.location || "",
-    category: p?.category || "",
+    category: projectCategories(p).join(", "),
     date: new Date().toLocaleDateString(),
     partner: jv?.enabled ? { name: jv.partnerName || "", address: jv.partnerAddress || "", email: jv.email || "", phone: jv.phone || "", logoUrl: jv.logo || "", stamps: jv.stamps || [], signatures: jv.signatures || [] } : undefined,
   };
