@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import ProjectDocument from "../models/ProjectDocument";
+import DocumentFolder from "../models/DocumentFolder";
 import Project from "../models/Project";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
@@ -28,6 +29,18 @@ async function canEditSection(req: AuthedRequest, projectId: string, section: st
   const a = await sectionAccess(req, projectId, section);
   return !!a?.canEdit;
 }
+
+// CR-P (131) — a folder path within a section: "/"-separated names, no empty / "." / ".." parts.
+// It is only stored in the database (files stay in uploads/<project>/<section>/ on disk).
+function cleanFolder(raw: unknown): string {
+  return String(raw || "")
+    .split(/[\\/]+/)
+    .map((s) => s.trim().slice(0, 120))
+    .filter((s) => s && s !== "." && s !== "..")
+    .join("/")
+    .slice(0, 500);
+}
+const escapeRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Store uploads in uploads/<projectId>/<section>/
 const storage = multer.diskStorage({
@@ -88,11 +101,12 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       : `${sizeKB.toFixed(0)} KB`;
 
     const section = req.body.section || "general";
+    const folder = cleanFolder(req.body.folder);
     // `replace=true` — generated documents (RFQ / PO / submittal packages) re-save the SAME
     // logical file whenever they're regenerated. Supersede the previous copy instead of piling
     // up identically-named rows the user can't tell apart.
     if (String(req.body.replace) === "true") {
-      const prior = await ProjectDocument.find({ projectId: req.params.id, section, name: req.file.originalname });
+      const prior = await ProjectDocument.find({ projectId: req.params.id, section, name: req.file.originalname, folder: folder || { $in: ["", null] } });
       for (const p of prior) {
         if (p.filePath) fs.unlink(path.resolve(p.filePath), () => {});
         await p.deleteOne();
@@ -106,12 +120,71 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       fileType: ext,
       size: sizeStr,
       filePath: req.file.path,
+      folder,
     });
 
     res.status(201).json(doc);
   } catch (err) {
     next(err);
   }
+});
+
+// CR-P (131) — folders in a section. Declared before the "/:did" routes so "folders" is never
+// read as a document id.
+
+// GET /api/projects/:id/documents/folders?section=
+router.get("/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const section = String(req.query.section || "");
+    if (!section) return res.json([]);
+    if (req.user!.role === "subcontractor") {
+      const a = await sectionAccess(req, req.params.id, section);
+      if (!a?.canView) return res.json([]);
+    }
+    res.json(await DocumentFolder.find({ projectId: req.params.id, section }).sort({ path: 1 }).lean());
+  } catch (err) { next(err); }
+});
+
+// PUT /api/projects/:id/documents/folders { section, path, description } — create a folder or
+// change its description.
+router.put("/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const section = String(req.body?.section || "");
+    const fpath = cleanFolder(req.body?.path);
+    if (!section || !fpath) return res.status(400).json({ error: "A folder name is required." });
+    if (!(await canEditSection(req, req.params.id, section))) return res.status(403).json({ error: "Not allowed." });
+    const description = typeof req.body?.description === "string" ? req.body.description.slice(0, 500) : "";
+    const folder = await DocumentFolder.findOneAndUpdate(
+      { projectId: req.params.id, section, path: fpath },
+      { $set: { description } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    res.json(folder);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/projects/:id/documents/folders?section=&path= — the folder with everything in it.
+// Each file goes to the recycle bin, like a single deleted file.
+router.delete("/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const section = String(req.query.section || "");
+    const fpath = cleanFolder(req.query.path);
+    if (!section || !fpath) return res.status(400).json({ error: "Which folder?" });
+    if (!(await canEditSection(req, req.params.id, section))) return res.status(403).json({ error: "Not allowed." });
+    const inside = { $in: [fpath, new RegExp(`^${escapeRx(fpath)}/`)] };
+    const docs = await ProjectDocument.find({ projectId: req.params.id, section, folder: inside });
+    for (const d of docs) {
+      await moveToTrash({
+        kind: "document", refId: String(d._id), projectId: d.projectId,
+        name: d.name || "Document", subtitle: `Document · ${d.folder}`,
+        data: d.toObject(), files: d.filePath ? [{ filePath: d.filePath }] : [],
+        deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+      });
+      await d.deleteOne();
+    }
+    await DocumentFolder.deleteMany({ projectId: req.params.id, section, path: inside });
+    res.json({ deleted: docs.length });
+  } catch (err) { next(err); }
 });
 
 // PATCH /api/projects/:id/documents/:did/public — owner only; toggle public visibility

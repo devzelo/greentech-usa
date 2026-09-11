@@ -1467,7 +1467,23 @@ export interface ApiDocument {
   description?: string;
   public?: boolean;
   archived?: boolean;
+  /** CR-P (131) - folder path within the section ("" = top level, "A/B" = subfolder B of A). */
+  folder?: string;
   uploadedAt: string;
+}
+
+/** CR-P (131) - a folder in a document section: its description, and it can exist while empty. */
+export interface ApiDocFolder { _id: string; section: string; path: string; description: string }
+export async function fetchDocFolders(projectId: string, section: string): Promise<ApiDocFolder[]> {
+  return request<ApiDocFolder[]>(`/projects/${projectId}/documents/folders?section=${encodeURIComponent(section)}`);
+}
+/** Create a folder, or change its description. */
+export async function saveDocFolder(projectId: string, section: string, path: string, description = ""): Promise<ApiDocFolder> {
+  return request<ApiDocFolder>(`/projects/${projectId}/documents/folders`, { method: "PUT", body: JSON.stringify({ section, path, description }) });
+}
+/** Delete a folder with everything in it (its files and subfolders). */
+export async function deleteDocFolder(projectId: string, section: string, path: string): Promise<void> {
+  await request(`/projects/${projectId}/documents/folders?section=${encodeURIComponent(section)}&path=${encodeURIComponent(path)}`, { method: "DELETE" });
 }
 
 /** Owner-only: toggle whether a document appears on the public showcase. */
@@ -1532,9 +1548,10 @@ export async function setFolderNote(projectId: string, folderKey: string, descri
 // `replace` supersedes any existing document with the SAME name in the same section — used by
 // the generated RFQ / PO / submittal documents so regenerating one updates its copy in the
 // Documents module instead of adding another identically-named row.
-export async function uploadDocument(projectId: string, file: File, section: string, replace = false): Promise<ApiDocument> {
+export async function uploadDocument(projectId: string, file: File, section: string, replace = false, folder = ""): Promise<ApiDocument> {
   const fd = new FormData();
   fd.append('section', section); // append BEFORE file so multer's destination cb has it
+  if (folder) fd.append('folder', folder);   // CR-P (131)
   if (replace) fd.append('replace', 'true');
   fd.append('file', file);
   const token = getAuthToken();
