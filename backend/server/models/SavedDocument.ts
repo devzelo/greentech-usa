@@ -30,6 +30,8 @@ export interface ISavedDocument extends Document {
   // CR-P (88) - the date ON the document (YYYY-MM-DD), e.g. when an uploaded proposal was issued.
   // Empty for ones built here, whose date is simply when they were filed.
   docDate: string;
+  // Item 110 - who a revision went to, when and how (emailed from here, or sent another way).
+  sendLog: Array<{ at: Date; to: string; method: string; byName: string; note: string }>;
 }
 
 /**
@@ -71,6 +73,16 @@ const SavedDocumentSchema = new Schema<ISavedDocument>(
     updatedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false, index: true },
     docDate: { type: String, default: "" },
+    sendLog: {
+      type: [{
+        at: { type: Date, default: Date.now },
+        to: { type: String, default: "" },
+        method: { type: String, default: "" },
+        byName: { type: String, default: "" },
+        note: { type: String, default: "" },
+      }],
+      default: [],
+    },
   },
   { timestamps: true }
 );

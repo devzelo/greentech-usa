@@ -1171,6 +1171,7 @@ export interface ApiSavedDocument {
   updatedByName?: string;
   archived?: boolean;
   docDate?: string;   // CR-P (88) - the date on the document (YYYY-MM-DD), set on uploaded ones
+  sendLog?: Array<{ at: string; to: string; method: string; byName: string; note?: string }>;   // item 110
 }
 // `version` asks for a specific number (an uploaded proposal's own revision); omit it to get the next.
 interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus; version?: number; docDate?: string }
@@ -1210,6 +1211,14 @@ export async function saveDocumentVersion(projectId: string, meta: SaveMeta, fil
 
 export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus; archived?: boolean; docDate?: string }) {
   return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+/**
+ * Item 110 - record that a revision went out: emailed from here, or sent another way (portal, hand
+ * delivery). `markSent` moves a draft / final / completed revision to Sent.
+ */
+export async function logSavedDocumentSend(projectId: string, docId: string, entry: { to: string; method: string; note?: string; at?: string; markSent?: boolean }) {
+  return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}/sends`, { method: 'POST', body: JSON.stringify(entry) });
 }
 
 export async function deleteSavedDocument(projectId: string, docId: string) {

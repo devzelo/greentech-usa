@@ -71,7 +71,7 @@ import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposa
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
-import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
+import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
@@ -794,6 +794,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!id) return;
     try { await updateSavedDocument(id, d._id, { status }); await loadNextFinalVer(); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not update the status.", "error"); }
+  };
+  // Item 110 - a revision's send log: who it went to, when and how. Recording one moves a draft /
+  // final / completed revision to Sent.
+  const logProposalSend = async (d: ApiSavedDocument, to: string, method: string, note = "", at?: string) => {
+    if (!id) return;
+    try { await logSavedDocumentSend(id, d._id, { to, method, note, at, markSent: true }); await loadNextFinalVer(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not record the send.", "error"); throw err; }
   };
 
   // CR-P (86) - delete one revision. Asks first: a revision is a record of what went out.
@@ -3968,6 +3975,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                       ) : (
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${PROP_DOC_STATUS[d.status]?.cls || "bg-slate-100 text-slate-500"}`}>{PROP_DOC_STATUS[d.status]?.label || d.status}</span>
                                       )}
+                                      {/* Item 110 - the latest send; the whole log is in the tooltip and in Manage. */}
+                                      {!!d.sendLog?.length && (() => {
+                                        const last = d.sendLog[d.sendLog.length - 1];
+                                        return (
+                                          <span className="block mt-1 text-[10px] text-slate-400 whitespace-nowrap" title={d.sendLog.map((x) => `${new Date(x.at).toLocaleString()} · ${x.method} · ${x.to}${x.byName ? ` (by ${x.byName})` : ""}`).join("\n")}>
+                                            Sent to {last.to} · {new Date(last.at).toLocaleDateString()}{d.sendLog.length > 1 ? ` (+${d.sendLog.length - 1})` : ""}
+                                          </span>
+                                        );
+                                      })()}
                                     </td>
                                     {/* CR-P (83) - created and last modified are separate columns, each with a name.
                                         Last modified moves with a status or note change; created never does. */}
@@ -3994,7 +4010,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                         {isComparable(d) && docs.filter(isComparable).length > 1 && (
                                           <button onClick={() => openCompare(p.which, docs, d)} title="Compare with another revision" aria-label={`Compare Rev ${revNo(d)} with another revision`} className="p-1.5 rounded text-slate-400 hover:text-primary"><GitCompareArrows size={14} /></button>
                                         )}
-                                        <ShareMenu fileName={d.fileName} fileUrl={savedDocUrl(d.filePath)} size={14} />
+                                        <ShareMenu fileName={d.fileName} fileUrl={savedDocUrl(d.filePath)} size={14} onSent={(e) => void logProposalSend(d, e.to, "Email").catch(() => {})} />
                                         {canEdit && (
                                           <button onClick={() => void archiveProposalDoc(d, true)} title="Archive this revision" aria-label={`Archive Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-300 hover:text-amber-500"><Archive size={13} /></button>
                                         )}
@@ -4054,6 +4070,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           <RevisionManage
                             doc={manageDoc}
                             statuses={PROP_DOC_STATUS}
+                            onLogSend={async (e) => { await logProposalSend(manageDoc, e.to, e.method, e.note, e.at); toast("Send recorded.", "success"); }}
                             onClose={() => setManageDoc(null)}
                             onSave={async (body) => {
                               if (!id) return;

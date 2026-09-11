@@ -12,6 +12,8 @@ interface Props {
   /** Render as a labeled button instead of an icon-only trigger. */
   variant?: "icon" | "button";
   className?: string;
+  /** Item 110 - told when the document is emailed out, so the caller can log the send. */
+  onSent?: (e: { to: string; method: "email" }) => void;
 }
 
 /**
@@ -22,7 +24,7 @@ interface Props {
  * The dropdown renders in a portal (document.body) so it is never clipped by an
  * ancestor's overflow (tables, modals) — z-index alone can't escape an overflow clip.
  */
-export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, variant = "icon", className }: Props) {
+export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, variant = "icon", className, onSent }: Props) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
@@ -82,6 +84,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
     try {
       await emailDocument({ path: fileUrl.split("?")[0], to: addr, docName: fileName, note: projectName ? `Project: ${projectName}` : "" });
       toast(`Document emailed to ${addr}.`, "success");
+      onSent?.({ to: addr, method: "email" });
       setEmail(""); setOpen(false);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not send the email.", "error"); }
     finally { setEmailing(false); }

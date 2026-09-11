@@ -12,16 +12,39 @@ interface Props {
   /** Throws on failure, so the window stays open with the edits intact. */
   onSave: (body: { title: string; note: string; status: SavedDocStatus; docDate: string }) => Promise<void>;
   onClose: () => void;
+  /** Item 110 - record a send made outside the platform (portal, hand delivery, courier). Throws on failure. */
+  onLogSend?: (e: { to: string; method: string; at: string; note: string }) => Promise<void>;
 }
+
+const SEND_METHODS = ["Portal", "Email", "Hand delivery", "Courier", "Other"];
 
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "-");
 
-export default function RevisionManage({ doc, statuses, onSave, onClose }: Props) {
+export default function RevisionManage({ doc, statuses, onSave, onClose, onLogSend }: Props) {
   const [title, setTitle] = useState(doc.title || "");
   const [note, setNote] = useState(doc.note || "");
   const [status, setStatus] = useState<SavedDocStatus>(doc.status);
   const [docDate, setDocDate] = useState(doc.docDate || "");   // CR-P (88)
   const [busy, setBusy] = useState(false);
+  // Item 110 - the send log, and a send recorded by hand.
+  const [log, setLog] = useState(doc.sendLog || []);
+  const [sTo, setSTo] = useState("");
+  const [sMethod, setSMethod] = useState(SEND_METHODS[0]);
+  const [sDate, setSDate] = useState("");
+  const [sNote, setSNote] = useState("");
+  const [logging, setLogging] = useState(false);
+  const addSend = async () => {
+    if (!onLogSend || !sTo.trim()) return;
+    setLogging(true);
+    try {
+      const at = sDate ? new Date(`${sDate}T12:00:00`).toISOString() : new Date().toISOString();
+      await onLogSend({ to: sTo.trim(), method: sMethod, at, note: sNote.trim() });
+      setLog((l) => [...l, { at, to: sTo.trim(), method: sMethod, byName: "", note: sNote.trim() }]);
+      if (status === "draft" || status === "final" || status === "completed") setStatus("sent");
+      setSTo(""); setSDate(""); setSNote("");
+    } catch { /* the caller has already said what went wrong */ }
+    finally { setLogging(false); }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -71,6 +94,41 @@ export default function RevisionManage({ doc, statuses, onSave, onClose }: Props
             <label htmlFor="rev-date" className={lbl}>Document date</label>
             <input id="rev-date" type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} className={inp} />
             <p className="text-[10px] text-slate-400">The date on the document, e.g. when it was issued. Leave empty to use the day it was filed.</p>
+          </div>
+
+          {/* Item 110 - what went out, to whom, when and how. */}
+          <div className="space-y-2">
+            <span className={lbl}>Sent</span>
+            {log.length === 0 ? (
+              <p className="text-[11px] text-slate-400">Not sent yet. Emailing it from the row's share menu records it here.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {log.map((x, i) => (
+                  <li key={i} className="text-[11px] text-slate-600 flex flex-wrap gap-x-2">
+                    <span className="font-bold text-slate-800">{x.to}</span>
+                    <span>{x.method}</span>
+                    <span className="text-slate-400">{when(x.at)}{x.byName ? ` · by ${x.byName}` : ""}</span>
+                    {x.note && <span className="w-full text-slate-400">{x.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {onLogSend && (
+              <div className="rounded-xl border border-slate-100 p-3 space-y-2">
+                <p className="text-[11px] font-bold text-slate-700">Record a send made outside the platform</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={sTo} onChange={(e) => setSTo(e.target.value)} placeholder="Sent to (person, office or portal)" aria-label="Sent to" className={`${inp} col-span-2`} />
+                  <select value={sMethod} onChange={(e) => setSMethod(e.target.value)} aria-label="How it was sent" className={`${inp} appearance-none`}>
+                    {SEND_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <input type="date" value={sDate} onChange={(e) => setSDate(e.target.value)} aria-label="Date sent" className={inp} />
+                  <input value={sNote} onChange={(e) => setSNote(e.target.value)} placeholder="Note (optional)" aria-label="Note" className={`${inp} col-span-2`} />
+                </div>
+                <button onClick={() => void addSend()} disabled={!sTo.trim() || logging} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-40">
+                  {logging && <Loader2 size={12} className="animate-spin" />} Record send
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 text-[11px] text-slate-500 space-y-1">

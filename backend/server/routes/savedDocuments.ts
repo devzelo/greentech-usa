@@ -151,6 +151,29 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
   } catch (err) { next(err); }
 });
 
+// POST /api/projects/:id/saved-documents/:docId/sends — item 110: record that a revision went out
+// (emailed from the platform, or by portal, hand delivery, courier). `markSent` moves a draft /
+// final / completed revision to "sent"; a later lifecycle status (submitted, awarded) is kept.
+router.post("/:docId/sends", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.docId)) return res.status(404).json({ error: "Not found" });
+    const to = String(req.body.to || "").trim().slice(0, 200);
+    if (!to) return res.status(400).json({ error: "Say who it was sent to." });
+    const method = String(req.body.method || "Email").trim().slice(0, 40);
+    const note = String(req.body.note || "").trim().slice(0, 500);
+    const at = req.body.at && !isNaN(Date.parse(String(req.body.at))) ? new Date(String(req.body.at)) : new Date();
+    const doc = await SavedDocument.findOne({ _id: req.params.docId, projectId: req.params.id });
+    if (!doc) return res.status(404).json({ error: "Not found" });
+    const me = await User.findById(req.user!.userId).select("name").lean();
+    const byName = (me as { name?: string } | null)?.name || "";
+    doc.sendLog.push({ at, to, method, byName, note });
+    if (req.body.markSent && ["draft", "final", "completed"].includes(doc.status)) doc.status = "sent";
+    doc.updatedByName = byName;
+    await doc.save();
+    res.json(doc);
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/projects/:id/saved-documents/:docId — CR-P (86): moves the version to the recycle
 // bin. The file stays on disk until it is purged from there, so a deleted revision can be restored
 // exactly as it was (same number, same file). It used to be erased on the spot.
