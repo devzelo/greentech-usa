@@ -728,13 +728,14 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!permsOf(req).staff) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: "Only staff can upload the signed copy." }); }
       const ag = await findAg(req);
       if (!ag) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Not found" }); }
-      // Only an issued, not-yet-settled agreement can receive a counter-signed copy — the same
-      // states the UI offers the upload in (a Signed one is immutable; Draft must be sent first).
-      // CR-P (52) — "Signed" is included so the signed copy can be REPLACED with a corrected
-      // scan. Only that file changes; the agreement's terms stay locked.
-      if (!["Sent", "Viewed", "PendingSignature", "Rejected", "Signed"].includes(ag.status)) {
+      // CR-P (51)/(66) — any live agreement can receive its signed copy, a Draft included: it may
+      // have been signed on paper or on another platform without ever being shared here, and
+      // "please upload the signed copy" must have somewhere to go. Cancelled and expired ones
+      // cannot. CR-P (52) — "Signed" is included so the signed copy can be REPLACED with a
+      // corrected scan; only that file changes, the agreement's terms stay locked.
+      if (!["Draft", "Sent", "Viewed", "PendingSignature", "Rejected", "Signed"].includes(ag.status)) {
         fs.unlink(req.file.path, () => {});
-        return res.status(400).json({ error: `Cannot mark a ${ag.status} agreement as signed. Send it first.` });
+        return res.status(400).json({ error: `A ${ag.status.toLowerCase()} agreement cannot take a signed copy.` });
       }
       const replacing = ag.status === "Signed" && !!ag.signedDocument?.filePath;
       const meta = fileMeta(req.file);

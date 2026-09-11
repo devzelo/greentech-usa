@@ -207,6 +207,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [sharePurpose, setSharePurpose] = useState<"review" | "signature">("review");
   const [shareNote, setShareNote] = useState("");
   const [signFor, setSignFor] = useState<ApiAgreement | null>(null);
+  // CR-P (51) — the file picker opened by "Please upload the signed copy".
+  const signedPickRef = useRef<HTMLInputElement>(null);
   const [mySignatureUrl, setMySignatureUrl] = useState("");
   const [signName, setSignName] = useState("");
   // CR-P (16) — the signer's named signatures; they pick which one goes on the document.
@@ -285,16 +287,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     if (!draft) return;
     // CR-P (51) — marking the document "Completed and signed" is a claim that a signed copy
     // exists, so it asks for that copy straight away rather than leaving the claim unevidenced.
+    // CR-P (51) — Cancel on that prompt used to set the status anyway, and a draft had nowhere to
+    // upload the copy. Now the prompt opens the file picker; the status changes only once the
+    // signed copy is uploaded, and Cancel leaves everything as it was.
     if (next === "CompletedSigned") {
       const cur = list.find((a) => a._id === editor?.aid);
       if (!cur?.signedDocument?.filePath) {
-        await confirm({
+        if (!cur) { toast("Save the agreement first, then upload its signed copy.", "info"); return; }
+        const ok = await confirm({
           title: "Please upload the signed copy",
-          message: "Mark it as completed and signed, then attach the signed copy in the Signed copy box at the top of this editor. Until it is attached the agreement has no evidence of signature on file.",
-          confirmLabel: "Got it",
+          message: "An agreement is only Completed and signed once its signed copy is on file. Choose the file now: the status changes as soon as it is uploaded.",
+          confirmLabel: "Choose the signed copy",
           cancelLabel: "Cancel",
           danger: false,
         });
+        if (ok) signedPickRef.current?.click();
+        return;
       }
     }
     // Marking the whole document Complete while a section is not asks first, so "complete" keeps
@@ -711,6 +719,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   // Closing the editor when there is unsaved work asks first, and offers to save it (CR-P (48)).
   const closeEditor = async () => {
+    // A signed agreement is locked: nothing in it can be saved, so it just closes.
+    if (list.find((a) => a._id === editor?.aid)?.status === "Signed") { setEditor(null); setDraft(null); savedSnapRef.current = ""; return; }
     if (isDirty() && !(await confirm({
       title: "You have not saved",
       message: "This agreement has changes that are not saved yet. Save them before closing?",
@@ -844,7 +854,17 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     try {
       const next = await uploadSignedAgreement(ctx, ag._id, file);
       patch(next);
-      if (editor?.aid === ag._id) baseRef.current = next;
+      if (editor?.aid === ag._id) {
+        baseRef.current = next;
+        // CR-P (51) — the upload itself makes it "Completed and signed". The open editor shows it,
+        // and as a signed agreement is locked there is nothing left to save.
+        setDraft((d) => {
+          if (!d) return d;
+          const nd = { ...d, docStatus: (next.docStatus || "CompletedSigned") as DocStatus };
+          savedSnapRef.current = snapOf(nd);
+          return nd;
+        });
+      }
       toast(replacing ? "Signed copy replaced — the previous one is kept in its history." : "Signed copy uploaded — agreement marked Signed.", "success");
     }
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
@@ -1396,6 +1416,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
               </div>
             </div>
             <div className="p-5 space-y-4">
+              <input
+                ref={signedPickRef} type="file" accept=".pdf,image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; const cur = list.find((a) => a._id === editor.aid); if (f && cur) void uploadSigned(cur, f); e.target.value = ""; }}
+              />
               {/* CR-P (52) — the signed copy lives at the TOP of Manage: "in the manage, we have to
                   create another section on top, and it will show the signed one." Replace swaps in a
                   corrected scan and the one it replaced is kept underneath. */}
@@ -1404,7 +1428,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 if (!cur) return null;
                 const signed = cur.signedDocument;
                 const hist = cur.signedDocumentHistory || [];
-                if (!signed && !["Sent", "Viewed", "PendingSignature", "Rejected", "Signed"].includes(cur.status)) return null;
+                // CR-P (51)/(66) — offered on a draft too: it may have been signed on paper.
+                if (!signed && ["Cancelled", "Expired"].includes(cur.status)) return null;
                 return (
                   <div className={`rounded-2xl p-4 space-y-2 border ${signed ? "bg-emerald-50/60 border-emerald-100" : "bg-slate-50 border-slate-100"}`}>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
