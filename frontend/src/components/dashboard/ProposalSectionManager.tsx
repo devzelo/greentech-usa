@@ -44,6 +44,19 @@ export default function ProposalSectionManager({
     [next[i], next[j]] = [next[j], next[i]];
     onLayoutChange(next);
   };
+  // Spec 1 - drag and reorder. A drag starts only from a row's grip handle (armed on mouse-down),
+  // so selecting text in the title or RFP boxes never picks the row up. The arrows stay for keyboards.
+  const [armed, setArmed] = useState<number | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const moveTo = (from: number, to: number) => {
+    if (from === to) return;
+    const next = layout.slice();
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x);
+    onLayoutChange(next);
+  };
+  const endDrag = () => { setArmed(null); setDragIdx(null); setOverIdx(null); };
   const patch = (i: number, p: Partial<ProposalSectionMeta>) =>
     onLayoutChange(layout.map((m, idx) => (idx === i ? { ...m, ...p } : m)));
 
@@ -58,7 +71,7 @@ export default function ProposalSectionManager({
           )}
           <div>
             <h4 className="font-bold text-slate-800 text-sm">Sections</h4>
-            <p className="text-[10px] text-slate-400 mt-0.5">Add from the library, rename anything, set each section's page type. The document follows this order.</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Add from the library, rename anything, set each section's page type. Drag the handle to reorder; the document follows this order.</p>
           </div>
         </div>
         {/* CR-P (95) / spec 1 - numbering 1, 2, 3 or A, B, C ("Section A: Performance Schedule"), or off;
@@ -99,9 +112,25 @@ export default function ProposalSectionManager({
           const locked = !!m.locked;
           const st = SECTION_STATUS_OPTS.find((o) => o.v === (m.status || "")) || SECTION_STATUS_OPTS[0];
           return (
-          <div key={m.id} className={`rounded-xl border transition-colors ${m.hidden ? "bg-slate-50/60 border-slate-100 opacity-60" : locked ? "bg-white border-amber-200" : "bg-white border-slate-100"}`}>
+          <div
+            key={m.id}
+            draggable={armed === i}
+            onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); }}
+            onDragOver={(e) => { if (dragIdx === null) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (overIdx !== i) setOverIdx(i); }}
+            onDrop={(e) => { e.preventDefault(); if (dragIdx !== null) moveTo(dragIdx, i); endDrag(); }}
+            onDragEnd={endDrag}
+            className={`rounded-xl border transition-colors ${dragIdx === i ? "opacity-40" : ""} ${overIdx === i && dragIdx !== null && dragIdx !== i ? "ring-2 ring-primary/40" : ""} ${m.hidden ? "bg-slate-50/60 border-slate-100 opacity-60" : locked ? "bg-white border-amber-200" : "bg-white border-slate-100"}`}
+          >
           <div className="flex flex-wrap items-center gap-2 p-2">
-            <GripVertical size={14} className="text-slate-300 flex-shrink-0" />
+            <span
+              onMouseDown={() => { if (canEdit && !locked) setArmed(i); }}
+              onMouseUp={() => { if (dragIdx === null) setArmed(null); }}
+              title={locked ? "Locked sections stay in place" : "Drag to reorder"}
+              aria-hidden="true"
+              className={`flex-shrink-0 ${canEdit && !locked ? "cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-700" : "text-slate-200"}`}
+            >
+              <GripVertical size={14} />
+            </span>
             <div className="flex flex-col">
               <button disabled={!canEdit || locked || i === 0} onClick={() => move(i, -1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={12} /></button>
               <button disabled={!canEdit || locked || i === layout.length - 1} onClick={() => move(i, 1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={12} /></button>
