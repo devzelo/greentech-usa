@@ -66,6 +66,12 @@ export interface IProject extends Document {
     // Partner stamp & signature images kept on the partner profile; the PO picks from these.
     stamps: Array<{ name: string; url: string }>;
     signatures: Array<{ name: string; url: string }>;
+    // Proposal step 8 - the JV as its own registered entity (EOIs, proposals).
+    legalName: string;
+    uei: string;
+    cage: string;
+    legalAddress: string;
+    combinedLogo: string;
   };
   timeline: {
     phases: Array<{ name: string; start: string; end: string }>;
@@ -195,6 +201,11 @@ const ProjectSchema = new Schema<IProject>(
       notes: { type: String, default: "" },
       stamps: { type: [{ name: { type: String, default: "" }, url: { type: String, default: "" } }], default: [] },
       signatures: { type: [{ name: { type: String, default: "" }, url: { type: String, default: "" } }], default: [] },
+      legalName: { type: String, default: "" },
+      uei: { type: String, default: "" },
+      cage: { type: String, default: "" },
+      legalAddress: { type: String, default: "" },
+      combinedLogo: { type: String, default: "" },
     },
     timeline: {
       phases: [

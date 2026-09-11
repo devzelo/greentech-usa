@@ -174,6 +174,12 @@ export interface ApiProject {
     contactName: string; email: string; phone: string; lead: string; logo: string; notes: string;
     stamps?: Array<{ name: string; url: string }>;
     signatures?: Array<{ name: string; url: string }>;
+    // Step 8 (items 114-118) - the JV as its own registered entity, used on EOIs and proposals.
+    legalName?: string;      // e.g. "Green Tech-ACCU JV LLC"
+    uei?: string;            // the JV's own UEI (the JV EOI sample: DSZEZJK7H2T6)
+    cage?: string;
+    legalAddress?: string;   // registered address (often GreenTech's)
+    combinedLogo?: string;   // the JV's combined logo
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   assignedEmployees: string[];
@@ -411,6 +417,30 @@ export interface ProposalContent {
   requirements?: ProposalRequirement[]; // internal compliance checklist
   technical?: TechnicalProposalContent;
   financial?: FinancialProposalContent;
+  eoi?: EoiContent;                    // step 8 - the project's Expression of Interest (no revisions)
+}
+
+/**
+ * Step 8 (items 114-117) - an Expression of Interest: one fixed letter (the GT_EOI wording), filled
+ * from the project and the cover page. Every field left empty takes its default when printed.
+ */
+export interface EoiContent {
+  date?: string;
+  solicitationNo?: string;
+  projectTitle?: string;
+  projectType?: string;        // Design-Build, Design, Construction, Services, ...
+  location?: string;           // e.g. "U.S. Embassy Djibouti, Djibouti"
+  country?: string;            // for the local permits sentence
+  recipientName?: string;
+  recipientTitle?: string;
+  agency?: string;             // who announced it, e.g. "Regional Procurement Support Office (RPSO) Frankfurt"
+  firm?: "gt" | "jv";          // who submits: GreenTech, or the project's JV entity
+  bullets?: string[];          // experience bullets; unset = the standard list
+  bondingPercent?: string;     // ILC / bonding capacity, % of contract value
+  pocName?: string; pocPhone?: string; pocEmail?: string;
+  signatory?: { name: string; title: string; signatureUrl: string; email: string; phone: string };
+  stampUrl?: string;
+  updatedAt?: string;
 }
 
 // ── Resource library (reusable proposal content blocks) ───────────────────────

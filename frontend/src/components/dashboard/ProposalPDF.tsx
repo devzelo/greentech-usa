@@ -297,7 +297,10 @@ export const RESTRICTION_LEGEND = "Use or disclosure of data contained on this s
 
 /** Who the proposal is from when the cover does not say: GreenTech, or the joint venture. */
 export const defaultSubmitter = (project: ApiProject) =>
-  project.jointVenture?.enabled && project.jointVenture.partnerName ? `GreenTech USA - ${project.jointVenture.partnerName} JV` : COMPANY.name;
+  project.jointVenture?.enabled && project.jointVenture.partnerName
+    // Step 8 - the JV's registered name when Project Identity has it.
+    ? (project.jointVenture.legalName || "").trim() || `GreenTech USA - ${project.jointVenture.partnerName} JV`
+    : COMPANY.name;
 
 /**
  * The cover's data, whatever its style, in the order the client's samples read: the solicitation
@@ -323,6 +326,7 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     ["SUBMITTED BY", lines(c?.submittedBy || defaultSubmitter(project), COMPANY.address)],
     [COMPANY.name.toUpperCase(), lines(COMPANY.phone, COMPANY.email, COMPANY.website, `UEI ${COMPANY.uei} · CAGE ${COMPANY.cage}`)],
     [(jv?.partnerName || "").toUpperCase(), jv ? lines(jv.phone, jv.email, jv.partnerAddress) : ""],
+    ["JV REGISTRATION", jv?.uei ? `UEI ${jv.uei}${jv.cage ? ` · CAGE ${jv.cage}` : ""}` : ""],
   ] as Array<[string, string | undefined]>)
     .filter(([l, v]) => !!l && !!v && v.trim())
     .map(([label, value]): CoverField => ({ label, value: value as string }));

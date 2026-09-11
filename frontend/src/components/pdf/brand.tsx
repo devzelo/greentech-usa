@@ -28,6 +28,7 @@ export const COMPANY = {
   name: "GreenTech USA LLC",
   tagline: "Environmental Engineering & General Contracting",
   address: "Chantilly, Virginia, USA",
+  mailingAddress: "25214 Larks Ter, Chantilly, VA, USA",   // the full address, as on the client's EOI letters
   phone: "+1 571-337-1358",
   email: "info@gt-usa.com",
   website: "www.gt-usa.com",

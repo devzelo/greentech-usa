@@ -42,6 +42,8 @@ import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
 import CategoryMultiSelect from "./CategoryMultiSelect";
 import ProposalProjectsEditor from "./ProposalProjectsEditor";
+import EoiBuilder from "./EoiBuilder";
+import type { EoiContent } from "../../lib/api";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
@@ -388,8 +390,9 @@ export default function ProjectWorkspace() {
 
   // §M — Joint Venture info (partner company for a JV project)
   type JVImage = { name: string; url: string };
-  type JVInfo = { enabled: boolean; partnerName: string; partnerAddress: string; contactName: string; email: string; phone: string; lead: string; logo: string; notes: string; stamps: JVImage[]; signatures: JVImage[] };
-  const [jvInfo, setJvInfo] = useState<JVInfo>({ enabled: false, partnerName: "", partnerAddress: "", contactName: "", email: "", phone: "", lead: "", logo: "", notes: "", stamps: [], signatures: [] });
+  // Step 8 - plus the JV as its own registered entity (legal name, UEI, CAGE, address, combined logo).
+  type JVInfo = { enabled: boolean; partnerName: string; partnerAddress: string; contactName: string; email: string; phone: string; lead: string; logo: string; notes: string; stamps: JVImage[]; signatures: JVImage[]; legalName: string; uei: string; cage: string; legalAddress: string; combinedLogo: string };
+  const [jvInfo, setJvInfo] = useState<JVInfo>({ enabled: false, partnerName: "", partnerAddress: "", contactName: "", email: "", phone: "", lead: "", logo: "", notes: "", stamps: [], signatures: [], legalName: "", uei: "", cage: "", legalAddress: "", combinedLogo: "" });
   // Editing the JV record marks the workspace dirty so the unsaved-changes guard applies —
   // uploaded partner stamps/signatures only persist via Save Workspace / Save Identity.
   const updateJv = <K extends keyof JVInfo>(field: K, value: JVInfo[K]) => { setJvInfo((prev) => ({ ...prev, [field]: value })); setDirty(true); };
@@ -485,6 +488,45 @@ export default function ProjectWorkspace() {
             <textarea rows={2} value={jvInfo.partnerAddress} onChange={(e) => updateJv("partnerAddress", e.target.value)} disabled={disabled} placeholder="Full address…"
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60" />
           </div>
+          {/* Step 8 (items 114-118) - the JV as its own registered entity. Expressions of Interest
+              and proposal covers print these, so a JV letter never falls back to GreenTech's details. */}
+          <div className="rounded-2xl border border-slate-100 p-4 space-y-4">
+            <div>
+              <p className="text-xs font-bold text-slate-700">The JV entity</p>
+              <p className="text-[11px] text-slate-400">The joint venture's own registration, used on Expressions of Interest and proposal covers.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {([
+                { field: "legalName", label: "JV Legal Name", placeholder: jvInfo.partnerName ? `GreenTech USA - ${jvInfo.partnerName} JV` : "e.g. Green Tech-ACCU JV LLC" },
+                { field: "uei", label: "JV UEI", placeholder: "e.g. DSZEZJK7H2T6" },
+                { field: "cage", label: "JV CAGE Code", placeholder: "Optional" },
+                { field: "legalAddress", label: "JV Registered Address", placeholder: "25214 Larks Ter, Chantilly, VA, USA" },
+              ] as const).map((f) => (
+                <div key={f.field} className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</label>
+                  <input value={jvInfo[f.field]} onChange={(e) => updateJv(f.field, e.target.value)} disabled={disabled} placeholder={f.placeholder}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60" />
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">JV Combined Logo <span className="font-medium normal-case text-slate-400">(both companies' marks; shown on the JV's EOIs)</span></label>
+              <div className="flex items-center gap-3">
+                <div className="w-28 h-16 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                  {jvInfo.combinedLogo ? <img src={assetSrc(jvInfo.combinedLogo)} alt="JV combined logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
+                </div>
+                {!disabled && (
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
+                      {jvLogoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {jvInfo.combinedLogo ? "Replace" : "Upload logo"}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleJvLogoUpload(f, "combinedLogo"); e.target.value = ""; }} disabled={jvLogoUploading} />
+                    </label>
+                    {jvInfo.combinedLogo && <button type="button" onClick={() => updateJv("combinedLogo", "")} className="text-[11px] font-bold text-red-500 hover:underline">Remove</button>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           {/* Partner stamps & signatures — saved on the profile; the PO's partner section picks from these */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(["stamps", "signatures"] as const).map((kind) => (
@@ -579,7 +621,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   });
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
-  const [proposalSub, setProposalSub] = useState<"overview" | "technical" | "financial">("overview");
+  const [proposalSub, setProposalSub] = useState<"overview" | "eoi" | "technical" | "financial">("overview");
   // CR-B-19b — if the Financial Proposal is locked and the viewer isn't the owner, never leave them on it.
   useEffect(() => {
     const cu = getAuthUser();
@@ -618,6 +660,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [coverFinancial, setCoverFinancial] = useState<ProposalCover>(emptyCover()); // Financial cover
   const [coverLetter, setCoverLetter] = useState<ProposalCoverLetter>(emptyCoverLetter());
   const [coverLetterFinancial, setCoverLetterFinancial] = useState<ProposalCoverLetter>(emptyCoverLetter());   // CR-P (93)
+  const [eoi, setEoi] = useState<EoiContent>({});   // step 8 - the Expression of Interest (no revisions)
   const [backCover, setBackCover] = useState<ProposalBackCover>(emptyBackCover());
   const [letterhead, setLetterhead] = useState<ProposalLetterhead>("gt");
   const [customLetterheadUrl, setCustomLetterheadUrl] = useState("");
@@ -1109,6 +1152,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setCoverFinancial({ ...emptyCover(), ...(c.coverFinancial || c.cover || {}) });
     setCoverLetter({ ...emptyCoverLetter(), ...(c.coverLetter || {}) });
     setCoverLetterFinancial({ ...emptyCoverLetter(), ...(c.coverLetterFinancial || {}) });
+    // Item 117 - revisions never carry the EOI; only a full reload (Discard) restores it.
+    if (c.eoi) setEoi(c.eoi);
     setBackCover({ ...emptyBackCover(), ...(c.backCover || {}) });
     setLetterhead(c.letterhead || "gt");
     setCustomLetterheadUrl(c.customLetterheadUrl || "");
@@ -1380,11 +1425,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // §M — upload the JV partner logo as a file (stored URL goes into jvInfo.logo).
-  const handleJvLogoUpload = async (file: File) => {
+  const handleJvLogoUpload = async (file: File, field: "logo" | "combinedLogo" = "logo") => {
     if (!id) return;
     if (file.size > 8 * 1024 * 1024) { toast("Logo must be under 8 MB.", "error"); return; }
     setJvLogoUploading(true);
-    try { const { url } = await uploadProposalAsset(id, file); updateJv("logo", url); toast("Partner logo uploaded — remember to save.", "success"); }
+    try { const { url } = await uploadProposalAsset(id, file); updateJv(field, url); toast(`${field === "logo" ? "Partner logo" : "JV combined logo"} uploaded. Remember to save.`, "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
     finally { setJvLogoUploading(false); }
   };
@@ -2356,6 +2401,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           notes: proj.jointVenture?.notes || "",
           stamps: proj.jointVenture?.stamps || [],
           signatures: proj.jointVenture?.signatures || [],
+          legalName: proj.jointVenture?.legalName || "",
+          uei: proj.jointVenture?.uei || "",
+          cage: proj.jointVenture?.cage || "",
+          legalAddress: proj.jointVenture?.legalAddress || "",
+          combinedLogo: proj.jointVenture?.combinedLogo || "",
         });
         setProposals({
           technical: {
@@ -2392,6 +2442,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         });
         setCoverLetter({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetter ?? {}) });
         setCoverLetterFinancial({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetterFinancial ?? {}) });
+        setEoi(proj.proposalContent?.eoi ?? {});
         setBackCover({ ...emptyBackCover(), ...(proj.proposalContent?.backCover ?? {}) });
         setLetterhead(proj.proposalContent?.letterhead ?? "gt");
         setCustomLetterheadUrl(proj.proposalContent?.customLetterheadUrl ?? "");
@@ -2909,7 +2960,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       }));
       payload.subcontractors = subcontractors;
       payload.proposals = proposals;
-      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial } as ProposalContent;
+      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, eoi } as ProposalContent;
       const updated = await wsSave.track(updateProject(id, payload));
       setProject(updated);
       setDirty(false); // I5 — workspace is now saved
@@ -3635,6 +3686,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <SaveStatus {...wsSave} className="ml-1" />
                 {([
                   { k: "overview" as const, label: "Overview" },
+                  { k: "eoi" as const, label: "Expression of Interest" },
                   { k: "technical" as const, label: "Technical Proposal" },
                   { k: "financial" as const, label: "Financial Proposal" },
                 ]).map((t) => {
@@ -3667,6 +3719,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 )}
               </div>
 
+              {/* Step 8 (items 114-117) - the Expression of Interest: one standard letter, no revisions.
+                  It sees JV edits not yet saved, so the letter matches what is on screen. */}
+              {proposalSub === "eoi" && project && (
+                <EoiBuilder
+                  project={{ ...project, jointVenture: { ...(project.jointVenture || {}), ...jvInfo } as ApiProject["jointVenture"] }}
+                  cover={cover}
+                  value={eoi}
+                  onChange={(v) => { setEoi(v); setDirty(true); }}
+                  onReset={() => void (async () => {
+                    if (!(await brandedConfirm({ title: "Start a new EOI?", message: "The current Expression of Interest is replaced. EOIs keep no revisions.", confirmLabel: "Start a new EOI" }))) return;
+                    setEoi({});
+                    setDirty(true);
+                  })()}
+                  canEdit={canEdit}
+                />
+              )}
+
               {/* OVERVIEW */}
               {/* CR-P (82)-(87) - the overview used to be two status cards, which said nothing
                   about what had actually been produced. It is now a numbered table per stream:
@@ -3674,6 +3743,32 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   revision sits on the main row and older ones fold out underneath it. */}
               {proposalSub === "overview" && (
                 <div className="space-y-6">
+                  {/* Item 114 - the three ways to answer a solicitation, in the client's order. */}
+                  {canEdit && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Upload existing</p>
+                        <p className="text-xs text-slate-500">A proposal produced outside the platform.</p>
+                        <div className="flex gap-2 flex-wrap">
+                          <button onClick={() => setUploadFor("technical")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Technical</button>
+                          {!(financialLocked && !isOwner) && <button onClick={() => setUploadFor("financial")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Financial</button>}
+                        </div>
+                      </div>
+                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Expression of Interest</p>
+                        <p className="text-xs text-slate-500">{eoi.updatedAt ? `Solicitation ${eoi.solicitationNo || cover.solicitationNo || "not set"} · updated ${new Date(eoi.updatedAt).toLocaleDateString()}` : "One standard letter, filled from the project."}</p>
+                        <button onClick={() => setProposalSub("eoi")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><FileText size={12} /> {eoi.updatedAt ? "Open the EOI" : "Write an EOI"}</button>
+                      </div>
+                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">3. Proposal builder</p>
+                        <p className="text-xs text-slate-500">Build the technical and financial volumes here.</p>
+                        <div className="flex gap-2 flex-wrap">
+                          <button onClick={() => { setProposalSub("technical"); setProposalDocTab("builder"); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Technical</button>
+                          {!(financialLocked && !isOwner) && <button onClick={() => { setProposalSub("financial"); setProposalDocTab("builder"); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Financial</button>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {([
                     { which: "technical" as const, title: "Technical Proposal", section: "proposals-technical" },
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
