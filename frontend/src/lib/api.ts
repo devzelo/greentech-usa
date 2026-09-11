@@ -168,6 +168,8 @@ export interface ApiProject {
   clientInfo: {
     name: string; reference: string; contactName: string;
     email: string; phone: string; country: string; address: string; notes: string;
+    /** CR-P (127)/(128) - the Directory company the client was picked from. */
+    companyId?: string;
   };
   jointVenture?: {
     enabled: boolean; partnerName: string; partnerAddress: string;

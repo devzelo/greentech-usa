@@ -72,6 +72,7 @@ import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposa
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import ProjectSchedule from "./ProjectSchedule";
+import ClientInfoCard from "./ClientInfoCard";
 import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
@@ -388,9 +389,9 @@ export default function ProjectWorkspace() {
   const [customNatureTypes, setCustomNatureTypes] = useState<string[]>([]);
 
   // Client info (editable form on the Client Info tab)
-  type ClientInfo = { name: string; reference: string; contactName: string; email: string; phone: string; country: string; address: string; notes: string };
+  type ClientInfo = { name: string; reference: string; contactName: string; email: string; phone: string; country: string; address: string; notes: string; companyId: string };
   const [clientInfo, setClientInfo] = useState<ClientInfo>({
-    name: "", reference: "", contactName: "", email: "", phone: "", country: "", address: "", notes: "",
+    name: "", reference: "", contactName: "", email: "", phone: "", country: "", address: "", notes: "", companyId: "",
   });
   const updateClient = (field: keyof ClientInfo, value: string) =>
     setClientInfo((prev) => ({ ...prev, [field]: value }));
@@ -1525,7 +1526,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     try {
       const updated = await updateProject(id, {
         name: identityForm.name,
-        clientInfo: { ...project.clientInfo, name: identityForm.clientName },
+        // A renamed client is no longer the Directory company it was picked from (CR-P 127).
+        clientInfo: { ...project.clientInfo, name: identityForm.clientName, companyId: identityForm.clientName === project.clientInfo?.name ? project.clientInfo?.companyId || "" : "" },
         status: identityForm.status as ApiProject["status"],
         category: identityForm.categories[0] || "",
         categories: identityForm.categories,
@@ -1548,7 +1550,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         jointVenture: jvInfo, // §M — JV now lives in Project Identity
       });
       setProject(updated);
-      setClientInfo((prev) => ({ ...prev, name: identityForm.clientName }));
+      setClientInfo((prev) => ({ ...prev, name: identityForm.clientName, companyId: identityForm.clientName === prev.name ? prev.companyId : "" }));
       toast("Project identity updated.", "success");
       jvSnapshot.current = null; // saved — nothing to revert to
       setShowEditIdentity(false);
@@ -2603,6 +2605,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           country: proj.clientInfo?.country || "",
           address: proj.clientInfo?.address || "",
           notes: proj.clientInfo?.notes || "",
+          companyId: proj.clientInfo?.companyId || "",
         });
         setJvInfo({
           enabled: proj.jointVenture?.enabled || false,
@@ -3822,71 +3825,56 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <button onClick={() => setClientLocked(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors"><Lock size={13} /> Lock</button>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* CR-P-43 — client comes from the Directory (client category). */}
+              {/* CR-P (127) — the client is picked from the Directory; its details show as a small
+                  information box (always from the Directory) instead of fields to type in. Only
+                  the reference and a note are the project's own. */}
+              {canEditIdentity && !clientLocked && (
+                <CompanyPicker
+                  label="Client from the Directory"
+                  value={clientInfo.name}
+                  category="client"
+                  // Typing a new name drops the old link until a company is picked.
+                  onNameChange={(v) => setClientInfo((prev) => ({ ...prev, name: v, companyId: "" }))}
+                  onSelectCompany={(c) => {
+                    const cp = c.contactPersons?.[0];
+                    setClientInfo((prev) => ({
+                      ...prev,
+                      companyId: c._id,
+                      name: c.name,
+                      contactName: cp?.name || "",
+                      email: c.email || cp?.email || "",
+                      phone: c.phone || cp?.phone || "",
+                      address: c.address || "",
+                    }));
+                  }}
+                  placeholder="Search the Directory for the client…"
+                  hint="Not in the Directory? Type the name and add it, or use Open in Directory to create it with the full details, then pick it here."
+                />
+              )}
+              <ClientInfoCard info={clientInfo} />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client / Organization Name</label>
-                  {!canEditIdentity || clientLocked ? (
-                    <input type="text" value={clientInfo.name} disabled placeholder="e.g. USAID Ghana"
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none disabled:opacity-60" />
-                  ) : (
-                    <CompanyPicker
-                      value={clientInfo.name}
-                      category="client"
-                      onNameChange={(v) => updateClient("name", v)}
-                      onSelectCompany={(c) => {
-                        updateClient("name", c.name);
-                        const cp = c.contactPersons?.[0];
-                        if (cp?.name) updateClient("contactName", cp.name);
-                        if (c.email || cp?.email) updateClient("email", c.email || cp?.email || "");
-                        if (c.phone || cp?.phone) updateClient("phone", c.phone || cp?.phone || "");
-                        if (c.address) updateClient("address", c.address);
-                      }}
-                      placeholder="Search or add a client from the Directory…"
-                    />
-                  )}
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Reference Number</label>
+                  <input
+                    type="text"
+                    value={clientInfo.reference}
+                    onChange={(e) => updateClient("reference", e.target.value)}
+                    disabled={!canEditIdentity || clientLocked}
+                    placeholder="e.g. USAID-GH-2026-012"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60"
+                  />
                 </div>
-                {([
-                  { field: "reference", label: "Client Reference Number", type: "text", placeholder: "e.g. USAID-GH-2026-012" },
-                  { field: "contactName", label: "Primary Contact Name", type: "text", placeholder: "Full name" },
-                  { field: "email", label: "Contact Email", type: "email", placeholder: "contact@client.org" },
-                  { field: "phone", label: "Contact Phone", type: "tel", placeholder: "+1 (555) 000-0000" },
-                  { field: "country", label: "Country / Region", type: "text", placeholder: "e.g. Accra, Ghana" },
-                ] as const).map((f) => (
-                  <div key={f.field} className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</label>
-                    <input
-                      type={f.type}
-                      value={clientInfo[f.field]}
-                      onChange={(e) => updateClient(f.field, e.target.value)}
-                      disabled={!canEditIdentity || clientLocked}
-                      placeholder={f.placeholder}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Address</label>
-                <textarea
-                  rows={3}
-                  value={clientInfo.address}
-                  onChange={(e) => updateClient("address", e.target.value)}
-                  disabled={!canEditIdentity || clientLocked}
-                  placeholder="Full mailing address..."
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>
-                <textarea
-                  rows={3}
-                  value={clientInfo.notes}
-                  onChange={(e) => updateClient("notes", e.target.value)}
-                  disabled={!canEditIdentity || clientLocked}
-                  placeholder="Any relevant notes about the client relationship..."
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60"
-                />
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Note</label>
+                  <textarea
+                    rows={2}
+                    value={clientInfo.notes}
+                    onChange={(e) => updateClient("notes", e.target.value)}
+                    disabled={!canEditIdentity || clientLocked}
+                    placeholder="Anything to remember about this client on this project..."
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60"
+                  />
+                </div>
               </div>
 
             </div>

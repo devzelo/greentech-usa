@@ -56,6 +56,9 @@ export interface IProject extends Document {
     country: string;
     address: string;
     notes: string;
+    // CR-P (127)/(128) — the Directory company the client was picked from, so the project and the
+    // company stay linked (the company's page lists this project).
+    companyId: string;
   };
   jointVenture: {
     enabled: boolean;
@@ -204,6 +207,7 @@ const ProjectSchema = new Schema<IProject>(
       country: { type: String, default: "" },
       address: { type: String, default: "" },
       notes: { type: String, default: "" },
+      companyId: { type: String, default: "" },   // CR-P (127)/(128)
     },
     jointVenture: {
       enabled: { type: Boolean, default: false },

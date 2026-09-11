@@ -59,10 +59,12 @@ export async function buildCompanyLinks(companyId: string, name: string, email =
   if (nameRx) vendorMatch.push({ name: nameRx });
   const vendorIds = (await Vendor.find({ $or: vendorMatch }).select("_id").lean()).map((v) => String(v._id));
 
-  const memberMatch: Record<string, unknown>[] = [];
+  // CR-P (128) — the projects where this company is the client: picked from the Directory
+  // (clientInfo.companyId), or an older project whose client name matches.
+  const memberMatch: Record<string, unknown>[] = [{ "clientInfo.companyId": companyId }];
   if (linkedUserId) memberMatch.push({ "guests.userId": linkedUserId }, { "subcontractors.userId": linkedUserId });
   if (email) memberMatch.push({ "subcontractors.email": new RegExp(`^${escapeRegex(email)}$`, "i") });
-  if (nameRx) memberMatch.push({ "subcontractors.name": nameRx });
+  if (nameRx) memberMatch.push({ "subcontractors.name": nameRx }, { "clientInfo.name": nameRx });
 
   // CR-P (19)/(63) — a company is on an agreement as party 2, as party 3 or 4, or because it was
   // shared with it. Rows from before the Directory link are matched on the party 2 name.
