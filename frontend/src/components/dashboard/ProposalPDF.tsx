@@ -10,7 +10,7 @@ import {
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
 import { resolveLetter } from "../../lib/proposalLetter";
-import type { ProposalPart } from "../../lib/proposalExport";
+import type { ProposalPart, PageCtx } from "../../lib/proposalExport";
 
 // The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
 // letterhead, the look defined by the brand kit's generator scripts. Fonts register once.
@@ -80,6 +80,8 @@ const styles = StyleSheet.create({
   tocText: { flex: 1, fontSize: 9.5, color: BRAND.slate },
   tocRef: { fontSize: 8.5, color: BRAND.s500 },
   tocSubRow: { paddingVertical: 4, paddingLeft: 14 },
+  tocPage: { width: 30, textAlign: "right", fontSize: 9.5, color: BRAND.slate },
+  pageMark: { position: "absolute", top: 0, left: 0, fontSize: 1, color: BRAND.white },
   tocSubNum: { fontWeight: 400, color: BRAND.s500, fontSize: 9 },
   tocSubText: { fontSize: 9, color: BRAND.s600 },
 
@@ -403,8 +405,8 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
 // ── Technical Proposal PDF ───────────────────────────────────────────────────
 type SectionFile = { name: string; url: string };
 /** The technical document as an ordered run of pages and uploaded files (see proposalParts). */
-type SeqItem = { page: ReactElement } | { files: SectionFile[] };
-type TechArgs = { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] };
+type SeqItem = { page: ReactElement } | { files: SectionFile[]; key?: string };
+type TechArgs = { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] } & PageCtx;
 /** Does editor HTML hold anything printable (text, an image or a table)? */
 const htmlHasContent = (h: string) => !!h.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() || /<(img|table)\b/i.test(h);
 /** A section's subsections that have a title or text (empty ones are skipped in print). */
@@ -421,7 +423,9 @@ function SubHeading({ label, title }: { label?: string; title: string }) {
   );
 }
 
-function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [] }: TechArgs): SeqItem[] {
+function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf }: TechArgs): SeqItem[] {
+  // An invisible page marker (see PageCtx): absolutely positioned, so it never moves the layout.
+  const mark = (k: string) => (probe ? <Text style={styles.pageMark} render={({ pageNumber }) => { probe(k, pageNumber); return " "; }} /> : null);
   const LABEL = "Technical Proposal";
   const note = footNote(LABEL, project);
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
@@ -483,7 +487,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Effective per-section letterhead, then group consecutive same-letterhead sections onto shared pages.
   const eff = (m: ProposalSectionMeta): ProposalLetterhead => (m.letterhead && m.letterhead !== "inherit" ? m.letterhead : (letterhead || "gt"));
-  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[] };
+  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[]; key: string };
   const groups: Grp[] = [];
   let curGrp: Extract<Grp, { t: "content" }> | null = null;
   for (const m of visible) {
@@ -507,12 +511,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         curGrp.items.push(m);
       }
     }
-    if (files.length) { groups.push({ t: "files", files }); curGrp = null; }
+    if (files.length) { groups.push({ t: "files", files, key: m.id }); curGrp = null; }
   }
   const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
   const renderSection = (m: typeof visible[number]) => {
-    const heading = <SectionHeading label={labelById.get(m.id)?.heading || undefined} title={m.title} />;
+    const heading = <>{mark(m.id)}<SectionHeading label={labelById.get(m.id)?.heading || undefined} title={m.title} /></>;
     if (m.kind === "description") return (
       <View key={m.id}>{heading}<RichText html={content.description} keyBase="desc" /></View>
     );
@@ -569,6 +573,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         <RichText html={s?.body || ""} keyBase={`sec-${m.id}`} />
         {printableSubs(s).map((ss, k) => (
           <View key={ss.id}>
+            {mark(ss.id)}
             <SubHeading label={base ? `${base}.${k + 1}` : undefined} title={ss.heading} />
             <RichText html={ss.body} keyBase={`sub-${ss.id}`} />
           </View>
@@ -584,6 +589,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       <View key={ss.id} style={[styles.tocRow, styles.tocSubRow]}>
         {w > 0 && <Text style={[styles.tocNum, styles.tocSubNum, { width: w }]}>{base ? `${base}.${k + 1}` : ""}</Text>}
         <Text style={[styles.tocText, styles.tocSubText]}>{ss.heading || "Untitled"}</Text>
+        <Text style={[styles.tocPage, styles.tocSubText]}>{pageOf?.[ss.id] ?? ""}</Text>
       </View>
     ));
   };
@@ -596,10 +602,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Table of contents: main sections with their RFP reference, then the appendices.
   if (tocMain.length || tocAppx.length || resumes.length) {
+    // The page column has a fixed width, so filling in the numbers on the second pass moves nothing.
     const row = (key: string, num: string, title: string, ref: string | undefined, w: number) => (
       <View key={key} style={styles.tocRow}>
         {w > 0 && <Text style={[styles.tocNum, { width: w }]}>{num}</Text>}
         <Text style={styles.tocText}>{title}{ref?.trim() ? <Text style={styles.tocRef}>{`  (reference ${ref.trim()})`}</Text> : null}</Text>
+        <Text style={styles.tocPage}>{pageOf?.[key] ?? ""}</Text>
       </View>
     );
     page(
@@ -615,7 +623,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Body: one page group per letterhead run, with divider / blank pages and uploaded files in place.
   groups.forEach((g, gi) => {
-    if (g.t === "files") { seq.push({ files: g.files }); return; }
+    if (g.t === "files") { seq.push({ files: g.files, key: g.key }); return; }
     if (g.t === "blank") { page(<Page size="A4" style={styles.page} />); return; }
     if (g.t === "divider") {
       // As on the client's samples: document, "Section A:", title, reference, then who and which RFP.
@@ -623,6 +631,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       page(
         <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
           <View style={styles.dividerWrap}>
+            {mark(g.m.id)}
             <Eyebrow>{LABEL.toUpperCase()}</Eyebrow>
             {!!lbl?.divider && <Text style={styles.dividerKicker}>{lbl.divider}:</Text>}
             <Text style={styles.dividerTitle}>{g.m.title}</Text>
@@ -647,6 +656,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   // Team resumes, one section per person, numbered after the other appendices.
   resumes.forEach((r, i) => page(
     <Sheet lh={lh} label="Team Resumes" note={footNote("Team Resumes", project)}>
+      {i === 0 && mark("resumes")}
       {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Team Resumes" />}
       {!!r.role && <Text style={[styles.cardMeta, { marginBottom: 8 }]}>Proposed role: {r.role}</Text>}
       <ResumeBlock resume={r.data.resume} person={r.data.user} />
@@ -788,18 +798,19 @@ export interface ProposalPdfProps {
  * CR-P (94) - the proposal as parts for assembly: generated pages, split around each section's
  * uploaded files so client forms land exactly where their section sits (lib/proposalExport).
  */
-export function proposalParts(p: ProposalPdfProps): ProposalPart[] {
+export function proposalParts(p: ProposalPdfProps, ctx: PageCtx = {}): ProposalPart[] {
   if (p.kind === "financial") {
     return [{ type: "doc", element: <FinancialPDF project={p.project} content={p.financial} cover={p.cover} coverLetter={p.coverLetter} backCover={p.backCover} letterhead={p.letterhead} customLetterheadUrl={p.customLetterheadUrl} logoUrl={p.logoUrl} /> }];
   }
   const title = `${p.cover?.proposalTitle || p.project.name} - Technical Proposal`;
-  const seq = technicalSequence({ project: p.project, content: p.technical, cover: p.cover, coverLetter: p.coverLetter, backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl, resumes: p.resumes });
+  const seq = technicalSequence({ project: p.project, content: p.technical, cover: p.cover, coverLetter: p.coverLetter, backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl, resumes: p.resumes, probe: ctx.probe, pageOf: ctx.pageOf });
   const parts: ProposalPart[] = [];
   let pages: ReactElement[] = [];
-  const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages) }); pages = []; };
+  // The first run of pages holds the table of contents, so it is the part rebuilt with page numbers.
+  const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages), usesPageNumbers: parts.length === 0 }); pages = []; };
   for (const s of seq) {
     if ("page" in s) pages.push(s.page);
-    else { flush(); parts.push({ type: "files", files: s.files }); }
+    else { flush(); parts.push({ type: "files", files: s.files, key: s.key }); }
   }
   flush();
   return parts;

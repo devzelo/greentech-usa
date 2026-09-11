@@ -57,7 +57,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
-import { assembleProposalParts, downloadBlob } from "../../lib/proposalExport";
+import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
@@ -1134,9 +1134,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!project || !id) throw new Error("Project not loaded.");
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
-    const parts = proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes });
+    // Built as a function of the page context, so the contents can carry page numbers (two passes).
+    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
-    const { blob, skipped } = await assembleProposalParts(parts, atts);
+    const { blob, skipped } = await assembleProposalParts(makeParts, atts);
     if (skipped.length) toast(`Attached but couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
     return blob;
   };
