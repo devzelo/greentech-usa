@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   FileArchive, Layers, MessageSquare, Plus, Settings2, Trash2, X, Loader2, Upload, FileText, Eye, Download,
-  Folder, FolderPlus, ChevronRight, ChevronDown,
+  Folder, FolderPlus, ChevronRight, ChevronDown, Archive, RotateCcw,
 } from "lucide-react";
 import DocSection from "./DocSection";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -50,6 +50,9 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
   const [busy, setBusy] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
+  // CR-P (150) — the standard row actions: view, share, archive (with an Archived view), delete.
+  const [showArchived, setShowArchived] = useState(false);
+  const [viewFile, setViewFile] = useState<ApiTableFile | null>(null);
   const { confirm, prompt, dialogs } = useDialogs();
 
   const load = useCallback(async () => {
@@ -74,12 +77,21 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
     try { await deleteTableRow(projectId, row._id); setRows((p) => p.filter((r) => r._id !== row._id)); if (manageId === row._id) setManageId(null); }
     catch (e) { setErr(e instanceof Error ? e.message : "Delete failed."); }
   };
+  const archiveRow = async (row: ApiTableRow, next: boolean) => {
+    try { replace(await updateTableRow(projectId, row._id, { data: { ...row.data, archived: next ? "1" : "" } })); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Could not update."); }
+  };
+  const isArchived = (r: ApiTableRow) => r.data?.archived === "1";
+  const shown = rows.filter((r) => isArchived(r) === showArchived);
+  // A row's files: one opens straight in the viewer; several open the Manage window's list.
+  const viewRow = (row: ApiTableRow) => (row.files.length === 1 ? setViewFile(row.files[0]) : setManageId(row._id));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 text-[11px] text-slate-400"><Layers size={14} /> Documents submitted to the client at project end. The table is a preview — click <strong>Manage</strong> to edit and upload.</div>
         <div className="flex items-center gap-2">
+          {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-3 py-2.5 rounded-xl text-xs font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={13} /> {showArchived ? "Active" : "Archived"}</button>}
           <button onClick={() => setPreview(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:opacity-90"><FileArchive size={14} /> Combine into single PDF</button>
           {canEdit && <button disabled={busy} onClick={add} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-40"><Plus size={13} /> Add closeout document</button>}
         </div>
@@ -101,8 +113,8 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} className="text-center text-slate-300 py-10"><Loader2 size={15} className="animate-spin inline" /></td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} className="text-center text-slate-300 py-10">No closeout documents yet.</td></tr>}
-            {rows.map((row, i) => {
+            {!loading && shown.length === 0 && <tr><td colSpan={6} className="text-center text-slate-300 py-10">{showArchived ? "No archived closeout documents." : "No closeout documents yet."}</td></tr>}
+            {shown.map((row, i) => {
               const status = row.data?.status || "Pending";
               return (
                 <tr key={row._id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
@@ -111,13 +123,16 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
                   <td className="py-2.5 px-3"><span className={`inline-flex items-center px-2 py-1 rounded-lg border text-[11px] font-semibold ${STATUS_CLS[status] || "bg-slate-50 text-slate-500 border-slate-200"}`}>{status}</span></td>
                   <td className="py-2.5 px-3 text-slate-500 max-w-[200px] truncate" title={row.data?.remarks}>{row.data?.remarks || "—"}</td>
                   <td className="py-2.5 px-3 text-center">
-                    <button onClick={() => setManageId(row._id)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${row.files.length ? "bg-primary/10 text-primary hover:bg-primary/20" : "bg-slate-50 text-slate-300 cursor-default"}`}>
+                    <button onClick={() => row.files.length && viewRow(row)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${row.files.length ? "bg-primary/10 text-primary hover:bg-primary/20" : "bg-slate-50 text-slate-300 cursor-default"}`}>
                       {row.files.length ? <><Eye size={11} /> {row.files.length}</> : "—"}
                     </button>
                   </td>
                   <td className="py-2.5 px-3">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => setManageId(row._id)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Settings2 size={12} /> Manage</button>
+                      <button onClick={() => viewRow(row)} disabled={!row.files.length} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary disabled:opacity-30" title="View"><Eye size={13} /></button>
+                      {row.files.length === 1 && <ShareMenu fileName={row.files[0].name} fileUrl={tableRowFileUrl(row.files[0])} projectName={projectName} size={13} />}
+                      {canEdit && <button onClick={() => archiveRow(row, !isArchived(row))} className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600" title={isArchived(row) ? "Restore" : "Archive"}>{isArchived(row) ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                       {canEdit && <button onClick={() => remove(row)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={13} /></button>}
                     </div>
                   </td>
@@ -144,7 +159,7 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
           fileName={`Closeout_Package_${projectName || projectId}.pdf`}
           build={async () => {
             const fresh = await fetchTableRows(projectId, TABLE_KEY);
-            const { blob, skipped, included } = await buildCloseoutPackage(fresh, projectName);
+            const { blob, skipped, included } = await buildCloseoutPackage(fresh.filter((r) => r.data?.archived !== "1"), projectName);
             if (!included) throw new Error("No embeddable PDF/image documents uploaded yet (Word/Excel must be saved as PDF).");
             if (skipped.length) console.warn("Closeout package skipped non-PDF/image files:", skipped);
             return blob;
@@ -152,6 +167,7 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
           onClose={() => setPreview(false)}
         />
       )}
+      {viewFile && <DocumentViewer doc={toViewable(viewFile)} onClose={() => setViewFile(null)} />}
       {dialogs}
     </div>
   );
