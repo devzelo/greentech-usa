@@ -736,11 +736,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const closeEditor = async () => {
     // A signed agreement is locked: nothing in it can be saved, so it just closes.
     if (list.find((a) => a._id === editor?.aid)?.status === "Signed") { setEditor(null); setDraft(null); savedSnapRef.current = ""; return; }
+    // CR-P (48) — "Are you sure you want to close, you have not saved", offering Save or Cancel.
+    // The X in the header and Cancel in the footer both come here, so it is always one question.
     if (isDirty() && !(await confirm({
-      title: "You have not saved",
-      message: "This agreement has changes that are not saved yet. Save them before closing?",
-      confirmLabel: "Save and close",
-      cancelLabel: "Keep editing",
+      title: "Are you sure you want to close?",
+      message: "You have not saved. Save your changes and close, or cancel to keep editing.",
+      confirmLabel: "Save",
+      cancelLabel: "Cancel",
       danger: false,
     }))) return;
     // A failed save keeps the editor open so nothing is lost; the toast explains why.
@@ -2140,15 +2142,16 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 <BuilderActions
                   confirm={confirm}
                   saving={saving}
-                  // CR-P (48) — only nag when something would actually be lost.
-                  dirty={isDirty()}
+                  // CR-P (48) — Cancel goes through closeEditor, which asks the one close question
+                  // itself; BuilderActions' own "Discard & close" prompt is not used here.
+                  dirty={false}
                   onExportPdf={async () => {
                     const cur = list.find((a) => a._id === editor.aid);
                     const ag = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody(), status: (cur?.status || "Draft"), signatures: { company: draft.company, recipient: cur?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
                     downloadBlob(await buildAgreementPdf(ag), `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
                   }}
                   onReset={() => applyTemplate("")}
-                  onCancel={() => { setEditor(null); setDraft(null); savedSnapRef.current = ""; }}
+                  onCancel={() => void closeEditor()}
                   onSaveDraft={() => saveDraft()}
                   onSave={() => saveDraft()}
                 />
