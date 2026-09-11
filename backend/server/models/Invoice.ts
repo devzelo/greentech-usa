@@ -46,6 +46,10 @@ export interface IInvoice extends Document {
   signerTitle: string;
   signatureUrl: string;
   contractTotal: string;   // for the Payment Application (progressive billing)
+  // CR-P (168) — which contract this invoice bills against: the project's contract (the client),
+  // one of our agreements with the receiver, or a value typed in. Invoices on the same contract
+  // make up its payment application (previously invoiced, balance to finish).
+  contractRef: { source: string; agreementId: string; label: string };
   attachments: IInvoiceFile[];
   payments: IInvoicePayment[];
   addedByName: string;
@@ -91,6 +95,11 @@ const InvoiceSchema = new Schema<IInvoice>(
     signerTitle: { type: String, default: "" },
     signatureUrl: { type: String, default: "" },
     contractTotal: { type: String, default: "" },
+    contractRef: {
+      source: { type: String, default: "" },        // "project" | "agreement" | "manual" | ""
+      agreementId: { type: String, default: "" },
+      label: { type: String, default: "" },
+    },
     attachments: { type: [FileSchema], default: [] },
     payments: { type: [PaymentSchema], default: [] },
     addedByName: { type: String, default: "" },

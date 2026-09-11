@@ -4,6 +4,7 @@ import { type ApiInvoice } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { drawWrapped } from "./pdfText";
 import { embedImage, drawFitted, GREENTECH } from "./poPdf";
+import { payApplication } from "./payApplication";
 
 // Branded invoice document (client CR-I-04/07): page 1 = the invoice (receiver, line items,
 // bank, signature); page 2 = the Payment Application (progressive billing) when a contract
@@ -118,25 +119,26 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
     if (inv.signerTitle) page.drawText(inv.signerTitle, { x: M, y: y - 24, size: 8, font, color: MUTED });
   }
 
-  // Page 2 — Payment Application
+  // Page 2 — Payment Application. CR-P (167)/(168) — against one contract (the project's contract,
+  // an agreement, or a value typed in), with the history of every invoice on it.
   const contract = n(inv.contractTotal);
-  if (contract > 0) {
+  if (contract > 0 && (inv.contractRef?.source ?? "manual") !== "") {
     const p2 = doc.addPage([PAGE_W, PAGE_H]);
     let y2 = PAGE_H - M;
-    p2.drawText("PAYMENT APPLICATION", { x: M, y: y2 - 4, size: 14, font: bold, color: INK }); y2 -= 30;
-    const all = opts?.allInvoices || [];
-    const prevInvoiced = all.filter((r) => r._id !== inv._id).reduce((s, r) => s + invoiceAmount(r), 0);
-    const totalInvoiced = prevInvoiced + total;
-    const rows: [string, string][] = [
-      ["Original contract total", money(contract)],
-      ["Previously invoiced", money(prevInvoiced)],
+    p2.drawText("PAYMENT APPLICATION", { x: M, y: y2 - 4, size: 14, font: bold, color: INK }); y2 -= 20;
+    const label = inv.contractRef?.label || (inv.contractRef?.source === "project" ? "Project contract" : "Contract");
+    p2.drawText(`${label}${opts?.projectInfo?.name ? ` · ${opts.projectInfo.name}` : ""} · Invoice #${inv.number || ""}`, { x: M, y: y2, size: 9, font, color: MUTED }); y2 -= 24;
+    const pa = payApplication(inv, opts?.allInvoices || [], total);
+    const totalInvoiced = pa.previous + total;
+    const summary: [string, string][] = [
+      ["Contract value", money(contract)],
+      ["Previously invoiced", money(pa.previous)],
       ["This invoice", money(total)],
       ["Total invoiced to date", money(totalInvoiced)],
       ["Percent invoiced", `${Math.round((totalInvoiced / contract) * 100)}%`],
       ["Balance to finish", money(contract - totalInvoiced)],
-      ["Invoices to date", String(all.length || 1)],
     ];
-    for (const [k, v] of rows) {
+    for (const [k, v] of summary) {
       const strong = k === "Total invoiced to date" || k === "Balance to finish";
       p2.drawText(k, { x: M, y: y2, size: 10, font: strong ? bold : font, color: INK });
       p2.drawText(v, { x: PAGE_W - M - (strong ? bold : font).widthOfTextAtSize(v, 10), y: y2, size: 10, font: strong ? bold : font, color: strong ? GREEN : INK });
@@ -144,7 +146,33 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
       p2.drawLine({ start: { x: M, y: y2 }, end: { x: PAGE_W - M, y: y2 }, thickness: 0.5, color: LINE });
       y2 -= 14;
     }
-    p2.drawText(`${all.length} invoice(s) on this project.`, { x: M, y: y2 - 4, size: 8, font, color: MUTED });
+
+    // The history: one row per invoice on this contract, this one last.
+    y2 -= 10;
+    p2.drawText("HISTORY", { x: M, y: y2, size: 8, font: bold, color: MUTED }); y2 -= 14;
+    const W = PAGE_W - M * 2;
+    const hc = [
+      { label: "Invoice", w: 0.14, right: false }, { label: "Date", w: 0.16, right: false },
+      { label: "Contract value", w: 0.18, right: true }, { label: "Previously invoiced", w: 0.18, right: true },
+      { label: "This invoice", w: 0.16, right: true }, { label: "Balance to finish", w: 0.18, right: true },
+    ];
+    const colX = (i: number) => M + hc.slice(0, i).reduce((s, c) => s + c.w * W, 0);
+    const cell = (text: string, i: number, f: PDFFont, color = INK) => {
+      const c = hc[i]; const x = colX(i);
+      p2.drawText(text, { x: c.right ? x + c.w * W - 4 - f.widthOfTextAtSize(text, 8.5) : x + 4, y: y2, size: 8.5, font: f, color });
+    };
+    p2.drawRectangle({ x: M, y: y2 - 5, width: W, height: 18, color: INK });
+    hc.forEach((c, i) => cell(c.label, i, bold, rgb(1, 1, 1)));
+    y2 -= 20;
+    for (const r of pa.rows) {
+      if (y2 < M + 20) break;
+      const f = r.current ? bold : font;
+      const col = r.current ? GREEN : INK;
+      [`#${r.number}`, r.date || "-", money(r.contract), money(r.previous), money(r.thisInvoice), money(r.balance)].forEach((t, i) => cell(t, i, f, col));
+      y2 -= 8;
+      p2.drawLine({ start: { x: M, y: y2 }, end: { x: PAGE_W - M, y: y2 }, thickness: 0.5, color: LINE });
+      y2 -= 12;
+    }
   }
 
   const bytes = await doc.save();

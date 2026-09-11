@@ -1375,6 +1375,8 @@ export interface ApiInvoice {
   receiverKind?: string; companyId?: string; lineItems?: InvoiceLineItem[]; bank?: InvoiceBank;
   terms?: string; sections?: Array<{ title: string; body: string }>; rfqId?: string; isTemplate?: boolean;
   signerName?: string; signerTitle?: string; signatureUrl?: string; contractTotal?: string;
+  /** CR-P (168) - the contract billed against: "project" | "agreement" | "manual" (| "" none). */
+  contractRef?: { source: string; agreementId: string; label: string };
   attachments: ApiInvoiceFile[]; payments: ApiInvoicePayment[]; addedByName: string;
 }
 // Paid / remaining are DERIVED from the payment rows — partial payments are first-class.
@@ -1388,7 +1390,7 @@ export async function fetchInvoices(projectId: string, type?: 'sent' | 'received
   return request<ApiInvoice[]>(`/projects/${projectId}/invoices${qs}`);
 }
 
-export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'poId' | 'subId' | 'receiverKind' | 'companyId' | 'lineItems' | 'bank' | 'terms' | 'sections' | 'rfqId' | 'isTemplate' | 'signerName' | 'signerTitle' | 'signatureUrl' | 'contractTotal'>>;
+export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'poId' | 'subId' | 'receiverKind' | 'companyId' | 'lineItems' | 'bank' | 'terms' | 'sections' | 'rfqId' | 'isTemplate' | 'signerName' | 'signerTitle' | 'signatureUrl' | 'contractTotal' | 'contractRef'>>;
 export async function addInvoice(projectId: string, body: InvoiceInput): Promise<ApiInvoice> {
   return request(`/projects/${projectId}/invoices`, { method: 'POST', body: JSON.stringify(body) });
 }
@@ -2370,6 +2372,10 @@ const agrBase = (ctx: AgreementCtx) =>
   : ctx.kind === "general" ? `/general-agreements`
   : `/projects/${ctx.projectId}/agreements`;
 
+/** CR-P (168) - every agreement on a project (any partner / subcontractor / vendor), for staff. */
+export async function fetchProjectAgreements(projectId: string): Promise<ApiAgreement[]> {
+  return request(`/projects/${projectId}/agreements`);
+}
 export async function fetchAgreements(ctx: AgreementCtx, archived = false): Promise<ApiAgreement[]> {
   const parts: string[] = [];
   if (ctx.kind === "project") parts.push(`entityType=${encodeURIComponent(ctx.entityType)}`, `entityId=${encodeURIComponent(ctx.entityId)}`);

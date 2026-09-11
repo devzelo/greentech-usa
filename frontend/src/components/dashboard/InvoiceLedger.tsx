@@ -6,7 +6,8 @@ import {
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
   invoicePaid, invoiceRemaining, fetchCompanies, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
-  fetchCompanyBanks, createCompanyBank, updateCompanyBank, deleteCompanyBank, getAuthUser,
+  fetchCompanyBanks, createCompanyBank, updateCompanyBank, deleteCompanyBank, getAuthUser, fetchProjectAgreements,
+  type ApiAgreement,
   type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq, type ApiCompanyBank,
 } from "../../lib/api";
 
@@ -15,6 +16,7 @@ const bankOf = (b: ApiCompanyBank): InvoiceBank => ({ name: b.name, accountName:
 const sameBank = (a: InvoiceBank, b: InvoiceBank) => a.name.trim() === b.name.trim() && a.accountNumber.trim() === b.accountNumber.trim() && a.iban.trim() === b.iban.trim();
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
+import { payApplication } from "../../lib/payApplication";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
@@ -58,11 +60,14 @@ type BuilderDraft = {
   lineItems: InvoiceLineItem[]; bank: InvoiceBank; terms: string;
   sections: Array<{ title: string; body: string }>; rfqId: string;
   signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
+  contractRef: { source: string; agreementId: string; label: string };   // CR-P (168)
 };
 
-export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId }: {
+export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId, projectValue }: {
   projectId: string; kind: "sent" | "received"; canEdit: boolean;
   projectInfo?: ProjectPdfInfo;
+  /** CR-P (168) — the project's contract value, used when an invoice bills the project's contract. */
+  projectValue?: string;
   /** CR-P (161) — a new invoice sent goes to the project's client unless another receiver is picked. */
   clientName?: string;
   clientCompanyId?: string;
@@ -95,6 +100,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   useUnsavedGuard(!!builderId);
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
   const [companyBanks, setCompanyBanks] = useState<ApiCompanyBank[]>([]);   // CR-P (162)
+  const [agreements, setAgreements] = useState<ApiAgreement[]>([]);         // CR-P (168)
   const isStaff = getAuthUser()?.role !== "subcontractor";
   const defaultBank = companyBanks.find((b) => b.isDefault) || companyBanks[0];
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
@@ -115,6 +121,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   useEffect(() => {
     fetchCompanies().then(setCompanies).catch(() => {});
     fetchCompanyBanks().then(setCompanyBanks).catch(() => {});
+    if (isSent) fetchProjectAgreements(projectId).then(setAgreements).catch(() => {});
     fetchSignatories().then(setSignatories).catch(() => {});
     fetchRfqs(projectId).then(setRfqList).catch(() => {});
   }, [projectId]);
@@ -150,7 +157,13 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
       sections: inv.sections ? inv.sections.map((s) => ({ ...s })) : [], rfqId: inv.rfqId || "",
       signerName: inv.signerName || "", signerTitle: inv.signerTitle || "", signatureUrl: inv.signatureUrl || "",
-      contractTotal: inv.contractTotal || "",
+      // CR-P (168) — an invoice to the project's client bills the project's contract by default.
+      ...(() => {
+        if (inv.contractRef?.source) return { contractRef: { ...inv.contractRef }, contractTotal: inv.contractTotal || "" };
+        const toClient = isSent && ((clientCompanyId && inv.companyId === clientCompanyId) || (!!clientName && inv.party === clientName));
+        if (toClient && n(projectValue)) return { contractRef: { source: "project", agreementId: "", label: "Project contract" }, contractTotal: inv.contractTotal || String(n(projectValue)) };
+        return { contractRef: { source: inv.contractTotal ? "manual" : "", agreementId: "", label: "" }, contractTotal: inv.contractTotal || "" };
+      })(),
     });
   };
   const setB = (p: Partial<BuilderDraft>) => setBDraft((d) => (d ? { ...d, ...p } : d));
@@ -162,7 +175,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       lineItems: d.mode === "build" ? d.lineItems : [],
       bank: d.bank, terms: d.terms, sections: d.sections, rfqId: d.rfqId,
       signerName: d.signerName, signerTitle: d.signerTitle, signatureUrl: d.signatureUrl,
-      contractTotal: d.contractTotal,
+      contractTotal: d.contractRef.source ? d.contractTotal : "", contractRef: d.contractRef,
     };
     if (d.mode === "build") body.amount = String(lineTotal(d.lineItems));
     return body;
@@ -587,10 +600,17 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       {builderId && bDraft && (() => {
         const cur = rows.find((r) => r._id === builderId);
         const thisAmount = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(cur?.amount);
-        const contract = n(bDraft.contractTotal);
-        const prevInvoiced = rows.filter((r) => r._id !== builderId).reduce((s, r) => s + n(r.amount), 0);
-        const totalInvoiced = prevInvoiced + thisAmount;
-        const balance = contract ? contract - totalInvoiced : 0;
+        // CR-P (167)/(168) — only the invoices on the same contract count as previously invoiced.
+        const pa = cur ? payApplication({ ...cur, party: bDraft.party, companyId: bDraft.companyId, contractTotal: bDraft.contractTotal, contractRef: bDraft.contractRef, date: bDraft.date }, rows, thisAmount) : null;
+        const contract = pa?.contract || 0;
+        const prevInvoiced = pa?.previous || 0;
+        const balance = pa?.balance || 0;
+        // The receiver's agreements first.
+        const partyAgreements = [...agreements].sort((a, b) => {
+          const mine = (ag: ApiAgreement) => [ag.partySnapshot?.party2, ...(ag.partySnapshot?.extraParties || [])].some((p) => p && ((bDraft.companyId && p.companyId === bDraft.companyId) || (!!bDraft.party && p.name === bDraft.party)));
+          return Number(mine(b)) - Number(mine(a));
+        });
+        const agLabel = (ag: ApiAgreement) => [ag.agreementNo, ag.title || ag.agreementType, ag.partySnapshot?.party2?.name].filter(Boolean).join(" · ");
         return (
           <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-6">
@@ -759,20 +779,66 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signer title<input className={`${finp} mt-1`} value={bDraft.signerTitle} onChange={(e) => setB({ signerTitle: e.target.value })} /></label>
                 </div>
 
-                {/* Payment Application (CR-I-07) */}
-                <div className="bg-primary/[0.04] border border-primary/15 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payment Application</p>
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">Total contract<input className={`${finp} w-32`} value={bDraft.contractTotal} onChange={(e) => setB({ contractTotal: e.target.value })} placeholder="0.00" /></label>
+                {/* Payment Application (CR-I-07). CR-P (167)/(168) — tied to one contract: the project's
+                    contract (the client), one of our agreements with the receiver, or a value typed
+                    in; previously invoiced counts only the invoices on that contract. */}
+                {isSent && (
+                <div className="bg-primary/[0.04] border border-primary/15 rounded-2xl p-4 space-y-3">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payment Application</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contract
+                      <select className={`${finp} mt-1 font-bold`} value={bDraft.contractRef.source} onChange={(e) => {
+                        const source = e.target.value;
+                        if (source === "project") setB({ contractRef: { source, agreementId: "", label: "Project contract" }, contractTotal: n(projectValue) ? String(n(projectValue)) : bDraft.contractTotal });
+                        else if (source === "agreement") { const first = partyAgreements[0]; setB({ contractRef: { source, agreementId: first?._id || "", label: first ? agLabel(first) : "" } }); }
+                        else setB({ contractRef: { source, agreementId: "", label: source === "manual" ? "Contract" : "" } });
+                      }}>
+                        <option value="">No payment application</option>
+                        <option value="project">Project contract{n(projectValue) ? ` (${money(n(projectValue))})` : ""}</option>
+                        {agreements.length > 0 && <option value="agreement">An agreement with the receiver</option>}
+                        <option value="manual">Another contract (type the value)</option>
+                      </select></label>
+                    {bDraft.contractRef.source === "agreement" && (
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Agreement
+                        <select className={`${finp} mt-1`} value={bDraft.contractRef.agreementId} onChange={(e) => { const ag = agreements.find((a) => a._id === e.target.value); setB({ contractRef: { source: "agreement", agreementId: e.target.value, label: ag ? agLabel(ag) : "" } }); }}>
+                          {partyAgreements.map((ag) => <option key={ag._id} value={ag._id}>{agLabel(ag)}</option>)}
+                        </select></label>
+                    )}
+                    {!!bDraft.contractRef.source && (
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contract value
+                        <input className={`${finp} mt-1 font-bold`} value={bDraft.contractTotal} onChange={(e) => setB({ contractTotal: e.target.value })} placeholder="0.00" /></label>
+                    )}
                   </div>
+                  {!!bDraft.contractRef.source && (<>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                     <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Contract</p><p className="text-sm font-bold text-slate-800">{money(contract)}</p></div>
                     <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Previously invoiced</p><p className="text-sm font-bold text-slate-800">{money(prevInvoiced)}</p></div>
                     <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">This invoice</p><p className="text-sm font-bold text-primary">{money(thisAmount)}</p></div>
                     <div className="bg-white rounded-xl p-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Balance to finish</p><p className={`text-sm font-bold ${balance < 0 ? "text-red-600" : "text-slate-800"}`}>{money(balance)}</p></div>
                   </div>
-                  <p className="text-[10px] text-slate-400">{rows.length} invoice{rows.length === 1 ? "" : "s"} on this project · Total invoiced to date {money(totalInvoiced)}.</p>
+                  {/* The history on this contract, one row per invoice; it prints on page 2. */}
+                  {pa && (
+                    <div className="overflow-x-auto rounded-xl border border-primary/10 bg-white">
+                      <table className="w-full min-w-[520px] text-[11px]">
+                        <thead><tr className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400">
+                          <th className="text-left px-2 py-1.5">Invoice</th><th className="text-left px-2 py-1.5">Date</th><th className="text-right px-2 py-1.5">Contract value</th><th className="text-right px-2 py-1.5">Previously invoiced</th><th className="text-right px-2 py-1.5">This invoice</th><th className="text-right px-2 py-1.5">Balance to finish</th>
+                        </tr></thead>
+                        <tbody>
+                          {pa.rows.map((r) => (
+                            <tr key={r.id} className={`border-t border-slate-50 ${r.current ? "font-bold text-primary bg-primary/[0.03]" : "text-slate-600"}`}>
+                              <td className="px-2 py-1.5">#{r.number}{r.current ? " (this)" : ""}</td><td className="px-2 py-1.5">{r.date || "—"}</td>
+                              <td className="px-2 py-1.5 text-right">{money(r.contract)}</td><td className="px-2 py-1.5 text-right">{money(r.previous)}</td>
+                              <td className="px-2 py-1.5 text-right">{money(r.thisInvoice)}</td><td className={`px-2 py-1.5 text-right ${r.balance < 0 ? "text-red-600" : ""}`}>{money(r.balance)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400">{pa && pa.rows.length > 1 ? `${pa.rows.length} invoices on this contract.` : "The first invoice on this contract."} The payment application prints on page 2 of the invoice.</p>
+                  </>)}
                 </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
@@ -782,7 +848,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => {
-                    const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractTotal };
+                    const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : cur?.amount || "", bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractRef.source ? bDraft.contractTotal : "", contractRef: bDraft.contractRef, companyId: bDraft.companyId };
                     setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
                   {/* CR-B-14a — Word export. */}

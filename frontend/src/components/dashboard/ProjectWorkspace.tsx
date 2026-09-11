@@ -5937,7 +5937,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           {/* INVOICE SENT / RECEIVED — one ledger component, with payments + totals */}
           {activeTab === "finances" && (finActive === "invoice-sent" || finActive === "invoice-received") && id && (
             <div className="space-y-6">
-              <InvoiceLedger projectId={id} kind={finActive === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} clientName={project?.clientInfo?.name} clientCompanyId={project?.clientInfo?.companyId} />
+              <InvoiceLedger projectId={id} kind={finActive === "invoice-sent" ? "sent" : "received"} canEdit={canEdit} projectInfo={projectPdfInfo(project)} onExpensesChanged={refreshExpenses} clientName={project?.clientInfo?.name} clientCompanyId={project?.clientInfo?.companyId} projectValue={project?.value} />
               <DocSection
                 projectId={id}
                 section={finActive === "invoice-sent" ? "invoice-sent-documents" : "invoice-received-documents"}
