@@ -3477,7 +3477,8 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                               </button>
                               {/* CR-P (89) - create opens the builder for this stream. */}
                               {p.which !== "combined" ? (
-                                <button onClick={() => setProposalSub(p.which)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Create proposal</button>
+                                // Always lands on the Builder sub-tab, not whichever one (Cover, Saved Versions) was open last.
+                                <button onClick={() => { setProposalSub(p.which); setProposalDocTab("builder"); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Create proposal</button>
                               ) : (
                                 <button onClick={() => void buildCombinedProposal()} disabled={proposalDownloading === "combined"} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50" title="Merge the latest technical and financial proposals into one pack">
                                   <Plus size={12} /> {proposalDownloading === "combined" ? "Merging..." : "Combine latest"}
