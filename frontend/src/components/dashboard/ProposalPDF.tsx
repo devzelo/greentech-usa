@@ -1063,7 +1063,7 @@ const asDocument = (title: string, pages: ReactElement[]) => createElement(Docum
 export function CoverOnlyDocument({ volume, cover, project }: { volume: "technical" | "financial"; cover?: ProposalCover; project: ApiProject }) {
   const kind = volume === "financial" ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL";
   return asDocument(`${cover?.proposalTitle || project.name} - Cover`, [
-    <ProposalCoverPage key="cover" variant={cover?.coverStyle} data={coverData(kind, cover, project)} />,
+    <ProposalCoverPage variant={cover?.coverStyle} data={coverData(kind, cover, project)} />,
   ]);
 }
 
