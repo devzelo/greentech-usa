@@ -3,6 +3,7 @@ import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject } from "../../lib/api";
 import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
+import { tableCalc, adjustmentLabel } from "../../lib/pricing";
 import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
@@ -389,7 +390,8 @@ function CoverLetterPage({ coverLetter, cover, project, lh, label, note }: { cov
   );
 }
 
-const money = (n: number, currency: string) => `${currency || "$"}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// A discount prints as -$5,000.00, not $-5,000.00.
+const money = (n: number, currency: string) => `${n < 0 ? "-" : ""}${currency || "$"}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
 
 // Closing / back-cover page, on dark like the hero cover. Marketing copy sits on a light card so
@@ -450,42 +452,91 @@ const financialAsContent = (f: FinancialProposalContent): TechnicalProposalConte
   appendixNumbering: f.appendixNumbering || "letters", printResumes: false,
 });
 
-/** Our own price tables (the financial volume's built-in "Price Schedule" section). */
+/**
+ * Our own price tables (the financial volume's built-in "Price Schedule" section). Step 7b: every
+ * number is calculated (lib/pricing), so the PDF can never carry an arithmetic error.
+ */
 function PricingBlock({ content }: { content: FinancialProposalContent }) {
   const currency = content.currency || "$";
-  const tables = resolveFinancialTables(content);
-  const amtCols = (tb: typeof tables[number]) => tb.columns.filter((c) => c.kind === "amount").map((c) => c.id);
-  const tblTotal = (tb: typeof tables[number]) => tb.rows.reduce((s, r) => s + amtCols(tb).reduce((a, cid) => a + num(r.cells[cid] || ""), 0), 0);
-  const grand = tables.reduce((s, tb) => s + tblTotal(tb), 0);
-  const colFlex = (kind: string) => (kind === "text" ? 2.5 : kind === "amount" ? 1.3 : 1);
+  const tables = resolveFinancialTables(content).filter((tb) => tb.rows.length > 0);
+  const calcs = tables.map((tb) => tableCalc(tb));
+  const grand = calcs.reduce((s, c) => s + c.grand, 0);
+  const colFlex = (kind: string) => (kind === "text" ? 2.5 : kind === "amount" ? 1.3 : kind === "rate" ? 1.2 : 0.8);
+  const right = (kind: string) => kind === "amount" || kind === "rate";
+  // A right-aligned label and amount under the columns (subtotals, adjustment lines).
+  const line = (key: string, label: string, value: string, strong = false) => (
+    <View key={key} style={[styles.tRow, { justifyContent: "flex-end" }]} wrap={false}>
+      <Text style={[styles.td, { flex: 1, textAlign: "right", color: strong ? BRAND.slate : BRAND.s600, fontWeight: strong ? 700 : 400 }]}>{label}</Text>
+      <Text style={[styles.td, { width: 110, textAlign: "right", fontWeight: 700 }]}>{value}</Text>
+    </View>
+  );
   return (
     <View>
-      {tables.filter((tb) => tb.rows.length > 0).map((tb) => (
-        <View key={tb.id} style={{ marginBottom: 16 }}>
-          {!!tb.title && <Subhead>{tb.title.toUpperCase()}</Subhead>}
-          <View style={styles.tHead} wrap={false} minPresenceAhead={30}>
-            {tb.columns.map((c) => (
-              <Text key={c.id} style={[styles.th, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>{(c.label || "").toUpperCase()}</Text>
-            ))}
-          </View>
-          {tb.rows.map((r, ri) => (
-            <View key={r.id} style={[styles.tRow, ri % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+      {tables.map((tb, ti) => {
+        const calc = calcs[ti];
+        const nOpt = calc.periods.length - 1;
+        return (
+          <View key={tb.id} style={{ marginBottom: 16 }}>
+            {!!tb.title && <Subhead>{tb.title.toUpperCase()}</Subhead>}
+            <View style={styles.tHead} wrap={false} minPresenceAhead={30}>
               {tb.columns.map((c) => (
-                <Text key={c.id} style={[styles.td, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>
-                  {c.kind === "amount" && r.cells[c.id] ? money(num(r.cells[c.id]), currency) : (r.cells[c.id] || "")}
-                </Text>
+                <Text key={c.id} style={[styles.th, { flex: colFlex(c.kind), textAlign: right(c.kind) ? "right" : "left" }]}>{(c.label || "").toUpperCase()}</Text>
               ))}
             </View>
-          ))}
-          <View style={styles.totalRow} wrap={false}>
-            <View style={styles.totalBox}>
-              <Text style={styles.totalLabel}>{tb.title ? `${tb.title.toUpperCase()} TOTAL` : "TOTAL"}</Text>
-              <Text style={styles.totalValue}>{money(tblTotal(tb), currency)}</Text>
+            {tb.rows.map((r, ri) => {
+              if (r.type === "group") return (
+                <View key={r.id} style={styles.staffBand} wrap={false} minPresenceAhead={24}>
+                  <Text style={styles.staffBandText}>{(r.label || "Phase").toUpperCase()}</Text>
+                </View>
+              );
+              const next = tb.rows[ri + 1];
+              const g = calc.groups.find((x) => x.rows.some((y) => y.id === r.id));
+              const closes = !!g?.label && (!next || next.type === "group");
+              return [
+                <View key={r.id} style={[styles.tRow, ri % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+                  {tb.columns.map((c) => (
+                    <Text key={c.id} style={[styles.td, { flex: colFlex(c.kind), textAlign: right(c.kind) ? "right" : "left" }]}>
+                      {c.kind === "amount" ? money(calc.amountOf(r), currency)
+                        : c.kind === "rate" && r.cells[c.id] ? money(num(r.cells[c.id]), currency)
+                        : (r.cells[c.id] || "")}
+                    </Text>
+                  ))}
+                </View>,
+                closes ? line(`${r.id}-subtotal`, `Subtotal, ${g!.label}`, money(g!.subtotal, currency), true) : null,
+              ];
+            })}
+            {calc.adjustments.length > 0 && [
+              line(`${tb.id}-lines`, "Total of the lines", money(calc.items, currency), true),
+              ...calc.adjustments.map((a, k) => line(a.id, adjustmentLabel(tb.adjustments![k]), money(a.amount, currency))),
+            ]}
+            {nOpt > 0 && (
+              <View style={{ marginTop: 8 }} wrap={false}>
+                <View style={styles.tHead}>
+                  <Text style={[styles.th, { flex: 2 }]}>PERIOD</Text>
+                  <Text style={[styles.th, { flex: 1.2, textAlign: "right" }]}>ESCALATION (CUMULATIVE)</Text>
+                  <Text style={[styles.th, { flex: 1.3, textAlign: "right" }]}>PRICE</Text>
+                </View>
+                {calc.periods.map((p, k) => (
+                  <View key={p.label} style={[styles.tRow, k % 2 === 1 ? styles.tRowAlt : {}]}>
+                    <Text style={[styles.td, { flex: 2, fontWeight: 700 }]}>{p.label}</Text>
+                    <Text style={[styles.td, { flex: 1.2, textAlign: "right" }]}>{k === 0 ? "-" : `+${((p.factor - 1) * 100).toFixed(2)}%`}</Text>
+                    <Text style={[styles.td, { flex: 1.3, textAlign: "right", fontWeight: 700 }]}>{money(p.total, currency)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View style={styles.totalRow} wrap={false}>
+              <View style={styles.totalBox}>
+                <Text style={styles.totalLabel}>
+                  {`${tb.title ? `${tb.title.toUpperCase()} ` : ""}TOTAL${nOpt > 0 ? `, BASE + ${nOpt} OPTION YEAR${nOpt === 1 ? "" : "S"}` : ""}`}
+                </Text>
+                <Text style={styles.totalValue}>{money(calc.grand, currency)}</Text>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
-      {tables.filter((tb) => tb.rows.length > 0).length > 1 && (
+        );
+      })}
+      {tables.length > 1 && (
         <View style={styles.totalRow} wrap={false}>
           <View style={[styles.totalBox, { backgroundColor: BRAND.slate }]}>
             <Text style={[styles.totalLabel, { color: BRAND.s300 }]}>GRAND TOTAL</Text>

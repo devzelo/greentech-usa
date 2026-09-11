@@ -287,10 +287,18 @@ export interface TechnicalProposalContent {
 export interface FinancialLineItem { id: string; itemNo: string; description: string; qty: string; unit: string; rate: string; amount: string }
 
 // Fully customizable pricing tables (add/remove rows & columns, rename columns, multiple tables).
-export type FinancialColumnKind = "text" | "number" | "amount";
+// Step 7b - "qty" and "rate" (unit price) columns make each line's amount quantity × unit price.
+export type FinancialColumnKind = "text" | "number" | "qty" | "rate" | "amount";
 export interface FinancialColumn { id: string; label: string; kind: FinancialColumnKind }
-export interface FinancialRow { id: string; cells: Record<string, string> } // keyed by column id
-export interface FinancialTable { id: string; title: string; columns: FinancialColumn[]; rows: FinancialRow[] }
+/** A line (cells keyed by column id), or a phase heading (`type: "group"`) whose lines get a subtotal. */
+export interface FinancialRow { id: string; cells: Record<string, string>; type?: "item" | "group"; label?: string }
+/** A line under a price table: VAT, DBA insurance or a markup (percent of the lines), or a fixed amount. */
+export interface FinancialAdjustment { id: string; label: string; mode: "percent" | "fixed"; value: string }
+export interface FinancialTable {
+  id: string; title: string; columns: FinancialColumn[]; rows: FinancialRow[];
+  adjustments?: FinancialAdjustment[];
+  optionYears?: { count: number; escalation: string };   // base year + N option years, escalation % per year
+}
 
 export interface FinancialProposalContent {
   currency: string;
@@ -310,9 +318,9 @@ export function defaultFinancialColumns(): FinancialColumn[] {
   return [
     { id: "c-item", label: "Item", kind: "text" },
     { id: "c-desc", label: "Description", kind: "text" },
-    { id: "c-qty", label: "Qty", kind: "number" },
+    { id: "c-qty", label: "Qty", kind: "qty" },
     { id: "c-unit", label: "Unit", kind: "text" },
-    { id: "c-rate", label: "Rate", kind: "number" },
+    { id: "c-rate", label: "Unit Price", kind: "rate" },
     { id: "c-amount", label: "Amount", kind: "amount" },
   ];
 }

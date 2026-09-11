@@ -14,7 +14,7 @@ import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
 import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
 fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
-import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind } from "../../lib/api";
+import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind, FinancialAdjustment } from "../../lib/api";
 import { uploadProposalAsset, uploadInlineImage, setProjectArchived } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 import ProcurementBOQ from "./ProcurementBOQ";
@@ -44,6 +44,7 @@ import CategoryMultiSelect from "./CategoryMultiSelect";
 import ProposalProjectsEditor from "./ProposalProjectsEditor";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
+import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
 /** Step 7 - which proposal volume a section handler works on (both have sections). */
 type Vol = "technical" | "financial";
@@ -879,9 +880,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!src) return t;
     const colMap: Record<string, string> = {};
     const columns = src.columns.map((c) => { const nid = `c-${uid()}`; colMap[c.id] = nid; return { ...c, id: nid }; });
-    const rows = src.rows.map((r) => ({ id: `r-${uid()}`, cells: Object.fromEntries(Object.entries(r.cells).map(([k, v]) => [colMap[k] || k, v])) }));
+    const rows = src.rows.map((r) => ({ ...r, id: `r-${uid()}`, cells: Object.fromEntries(Object.entries(r.cells).map(([k, v]) => [colMap[k] || k, v])) }));
     const idx = t.findIndex((x) => x.id === tid);
-    const copy: FinancialTable = { id: `t-${uid()}`, title: `${src.title} (copy)`, columns, rows };
+    const copy: FinancialTable = { id: `t-${uid()}`, title: `${src.title} (copy)`, columns, rows, adjustments: (src.adjustments || []).map((a) => ({ ...a, id: `a-${uid()}` })), optionYears: src.optionYears };
     return [...t.slice(0, idx + 1), copy, ...t.slice(idx + 1)];
   });
   const removeTable = (tid: string) => updateTables((t) => t.filter((x) => x.id !== tid));
@@ -893,16 +894,26 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const removeRow = (tid: string, rid: string) => patchTableById(tid, (tb) => ({ ...tb, rows: tb.rows.filter((r) => r.id !== rid) }));
   const setCell = (tid: string, rid: string, cid: string, value: string) => patchTableById(tid, (tb) => ({ ...tb, rows: tb.rows.map((r) => (r.id === rid ? { ...r, cells: { ...r.cells, [cid]: value } } : r)) }));
   function patchTableById(tid: string, fn: (tb: FinancialTable) => FinancialTable) { updateTables((t) => t.map((x) => (x.id === tid ? fn(x) : x))); }
+  // Step 7b - phase headings, lines under a table (VAT, DBA, markup, discount), option years.
+  const addGroupRow = (tid: string) => patchTableById(tid, (tb) => ({ ...tb, rows: [...tb.rows, { id: `r-${uid()}`, cells: {}, type: "group" as const, label: "" }] }));
+  const setRowLabel = (tid: string, rid: string, label: string) => patchTableById(tid, (tb) => ({ ...tb, rows: tb.rows.map((r) => (r.id === rid ? { ...r, label } : r)) }));
+  const addAdjustment = (tid: string, p: { label: string; mode: "percent" | "fixed"; value: string }) =>
+    patchTableById(tid, (tb) => ({ ...tb, adjustments: [...(tb.adjustments || []), { id: `a-${uid()}`, ...p }] }));
+  const setAdjustment = (tid: string, aid: string, patch: Partial<FinancialAdjustment>) =>
+    patchTableById(tid, (tb) => ({ ...tb, adjustments: (tb.adjustments || []).map((a) => (a.id === aid ? { ...a, ...patch } : a)) }));
+  const removeAdjustment = (tid: string, aid: string) => patchTableById(tid, (tb) => ({ ...tb, adjustments: (tb.adjustments || []).filter((a) => a.id !== aid) }));
 
-  const tableTotal = (tb: FinancialTable) => {
-    const amtCols = tb.columns.filter((c) => c.kind === "amount").map((c) => c.id);
-    return tb.rows.reduce((sum, r) => sum + amtCols.reduce((s, cid) => s + fNum(r.cells[cid] || ""), 0), 0);
-  };
+  // Always calculated (step 7b): lines, adjustments and option years.
+  const tableTotal = (tb: FinancialTable) => tableCalc(tb).grand;
 
   // Export one table to an .xlsx file.
   const exportTableExcel = (tb: FinancialTable) => {
     const header = tb.columns.map((c) => c.label);
-    const data = tb.rows.map((r) => tb.columns.map((c) => r.cells[c.id] ?? ""));
+    const calc = tableCalc(tb);
+    // Phase headings export as a label row; calculated amounts export as their value.
+    const data = tb.rows.map((r) => (r.type === "group"
+      ? [r.label || "", ...tb.columns.slice(1).map(() => "")]
+      : tb.columns.map((c) => (c.kind === "amount" && calc.isComputed(r) ? String(calc.amountOf(r)) : r.cells[c.id] ?? ""))));
     const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (tb.title || "Table").slice(0, 31).replace(/[\\/?*[\]]/g, ""));
@@ -918,7 +929,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
       const headerRow = (aoa[0] || []) as unknown[];
       if (!headerRow.length) { toast("No rows found in that file.", "error"); return; }
-      const kindFor = (h: string): FinancialColumnKind => /amount|total/i.test(h) ? "amount" : /qty|rate|price|cost|unit/i.test(h) ? "number" : "text";
+      // Quantity and unit price columns are recognised, so an imported schedule calculates itself.
+      const kindFor = (h: string): FinancialColumnKind => /amount|total|extended/i.test(h) ? "amount" : /qty|quantity/i.test(h) ? "qty" : /rate|price|cost/i.test(h) ? "rate" : "text";
       const columns: FinancialColumn[] = headerRow.map((h, i) => ({ id: `c-${uid()}`, label: String(h || `Column ${i + 1}`), kind: kindFor(String(h)) }));
       const rows = (aoa.slice(1) as unknown[][]).map((r) => ({ id: `r-${uid()}`, cells: Object.fromEntries(columns.map((c, i) => [c.id, String(r[i] ?? "")])) }))
         .filter((r) => Object.values(r.cells).some((v) => String(v).trim() !== ""));
@@ -3545,7 +3557,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
             const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
             const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
-            const fmtMoney = (n: number) => `${financial.currency || "$"}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const fmtMoney = (n: number) => `${n < 0 ? "-" : ""}${financial.currency || "$"}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
             const ActionButtons = ({ which }: { which: "technical" | "financial" }) => (
               <div className="flex flex-wrap items-center gap-2">
@@ -4149,7 +4161,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
                   {/* Pricing tables */}
                   {finTables.map((tb) => {
-                    const total = tableTotal(tb);
+                    const calc = tableCalc(tb);
+                    const total = calc.grand;
                     return (
                       <div key={tb.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -4172,7 +4185,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                     {canEdit && (
                                       <div className="flex items-center gap-1 mt-1">
                                         <select value={c.kind} onChange={(e) => setColumn(tb.id, c.id, { kind: e.target.value as FinancialColumnKind })} className="text-[9px] font-bold text-slate-400 bg-white border border-slate-100 rounded px-1 py-0.5 outline-none">
-                                          <option value="text">text</option><option value="number">number</option><option value="amount">amount ($)</option>
+                                          <option value="text">text</option><option value="number">number</option><option value="qty">quantity</option><option value="rate">unit price ($)</option><option value="amount">amount ($)</option>
                                         </select>
                                         <button onClick={() => removeColumn(tb.id, c.id)} title="Remove column" className="text-slate-300 hover:text-red-500"><X size={11} /></button>
                                       </div>
@@ -4184,21 +4197,98 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             </thead>
                             <tbody>
                               {tb.rows.length === 0 && <tr><td colSpan={tb.columns.length + 1} className="px-2 py-5 text-center text-slate-400">No rows. Add a row, or import from Excel.</td></tr>}
-                              {tb.rows.map((r) => (
-                                <tr key={r.id} className="hover:bg-slate-50/40">
-                                  {tb.columns.map((c) => (
-                                    <td key={c.id} className="px-1 py-1"><input value={r.cells[c.id] || ""} onChange={(e) => setCell(tb.id, r.id, c.id, e.target.value)} disabled={!canEdit} className={`${inp} min-w-[5rem] ${c.kind === "amount" ? "text-right font-bold" : ""}`} /></td>
-                                  ))}
-                                  {canEdit && <td className="px-1 py-1"><button onClick={() => removeRow(tb.id, r.id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button></td>}
-                                </tr>
-                              ))}
+                              {tb.rows.map((r, ri) => {
+                                const del = canEdit && <td className="px-1 py-1"><button onClick={() => removeRow(tb.id, r.id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button></td>;
+                                // A phase heading: one label across the table; its lines get a subtotal.
+                                if (r.type === "group") return (
+                                  <tr key={r.id}>
+                                    <td colSpan={tb.columns.length} className="px-1 py-1"><input value={r.label || ""} onChange={(e) => setRowLabel(tb.id, r.id, e.target.value)} disabled={!canEdit} placeholder="Phase heading, e.g. Phase 1 - Design" className={`${inp} font-bold !bg-emerald-50 text-emerald-800`} /></td>
+                                    {del}
+                                  </tr>
+                                );
+                                const next = tb.rows[ri + 1];
+                                const g = calc.groups.find((x) => x.rows.some((y) => y.id === r.id));
+                                const closes = !!g?.label && (!next || next.type === "group");
+                                return [
+                                  <tr key={r.id} className="hover:bg-slate-50/40">
+                                    {tb.columns.map((c) => (
+                                      <td key={c.id} className="px-1 py-1">
+                                        {c.kind === "amount" && calc.isComputed(r)
+                                          ? <div className="min-w-[5rem] px-3 py-2.5 text-right font-bold text-slate-700 bg-slate-50 rounded-xl" title="Quantity × unit price, calculated">{fmtMoney(calc.amountOf(r))}</div>
+                                          : <input value={r.cells[c.id] || ""} onChange={(e) => setCell(tb.id, r.id, c.id, e.target.value)} disabled={!canEdit} className={`${inp} min-w-[5rem] ${c.kind === "amount" || c.kind === "rate" ? "text-right" : ""} ${c.kind === "amount" ? "font-bold" : ""}`} />}
+                                      </td>
+                                    ))}
+                                    {del}
+                                  </tr>,
+                                  closes ? (
+                                    <tr key={`${r.id}-subtotal`}>
+                                      <td colSpan={tb.columns.length} className="px-3 py-1.5 text-right text-[11px] font-bold text-emerald-700">Subtotal, {g!.label || "phase"}: {fmtMoney(g!.subtotal)}</td>
+                                      {canEdit && <td />}
+                                    </tr>
+                                  ) : null,
+                                ];
+                              })}
                             </tbody>
                           </table>
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                          {canEdit ? <button onClick={() => addRow(tb.id)} className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add row</button> : <span />}
-                          <div className="bg-slate-50 rounded-xl px-4 py-2 border-l-4 border-primary">
-                            <span className={lbl}>Total</span> <span className="text-lg font-bold text-slate-900 ml-2">{fmtMoney(total)}</span>
+                        <div className="flex items-center gap-4 flex-wrap">
+                          {canEdit && <button onClick={() => addRow(tb.id)} className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button>}
+                          {canEdit && <button onClick={() => addGroupRow(tb.id)} className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 hover:underline"><Plus size={12} /> Add phase heading</button>}
+                          {!calc.computed && <span className="text-[10px] text-amber-600">Set one column to "quantity" and one to "unit price" and each line's amount calculates itself.</span>}
+                        </div>
+
+                        {/* Step 7b - lines under the table: VAT, DBA insurance, markup, discount. */}
+                        <div className="rounded-2xl border border-slate-100 p-3 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className={lbl}>Lines under the table</span>
+                            {canEdit && (
+                              <div className="flex gap-1.5 flex-wrap">
+                                {ADJUSTMENT_PRESETS.map((p) => (
+                                  <button key={p.label} onClick={() => addAdjustment(tb.id, p)} className="px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200">+ {p.label}</button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {(tb.adjustments || []).length === 0 && <p className="text-[11px] text-slate-400">None. Add VAT, DBA insurance, a markup or a discount if the price needs one.</p>}
+                          {(tb.adjustments || []).map((a) => (
+                            <div key={a.id} className="grid grid-cols-1 sm:grid-cols-[1.5fr_1fr_0.7fr_1fr_auto] gap-2 items-center">
+                              <input value={a.label} onChange={(e) => setAdjustment(tb.id, a.id, { label: e.target.value })} disabled={!canEdit} aria-label="Line label" className={inp} />
+                              <select value={a.mode} onChange={(e) => setAdjustment(tb.id, a.id, { mode: e.target.value as "percent" | "fixed" })} disabled={!canEdit} aria-label="Percent or fixed" className={inp}>
+                                <option value="percent">% of the lines</option>
+                                <option value="fixed">Fixed amount</option>
+                              </select>
+                              <input value={a.value} onChange={(e) => setAdjustment(tb.id, a.id, { value: e.target.value })} disabled={!canEdit} placeholder={a.mode === "percent" ? "15" : "-5000"} aria-label="Value" className={`${inp} text-right`} />
+                              <span className="text-right text-xs font-bold text-slate-700">{fmtMoney(calc.adjustments.find((x) => x.id === a.id)?.amount || 0)}</span>
+                              {canEdit ? <button onClick={() => removeAdjustment(tb.id, a.id)} aria-label="Remove line" className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button> : <span />}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Step 7b - base year plus option years with escalation (the PM sample). */}
+                        <div className="rounded-2xl border border-slate-100 p-3 flex flex-wrap items-center gap-3">
+                          <span className={lbl}>Option years</span>
+                          <select value={tb.optionYears?.count || 0} onChange={(e) => patchTable(tb.id, { optionYears: { count: Number(e.target.value), escalation: tb.optionYears?.escalation || "3" } })} disabled={!canEdit} aria-label="Number of option years" className={`${inp} !w-24`}>
+                            {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 0 ? "None" : n}</option>)}
+                          </select>
+                          {(tb.optionYears?.count || 0) > 0 && (
+                            <>
+                              <span className="text-[11px] text-slate-500">Escalation per year</span>
+                              <input value={tb.optionYears?.escalation || ""} onChange={(e) => patchTable(tb.id, { optionYears: { count: tb.optionYears?.count || 0, escalation: e.target.value } })} disabled={!canEdit} placeholder="3" aria-label="Escalation percent per year" className={`${inp} !w-20 text-right`} />
+                              <span className="text-[11px] text-slate-500">%</span>
+                              <div className="w-full flex flex-wrap gap-2">
+                                {calc.periods.map((p) => <span key={p.label} className="px-2.5 py-1 rounded-lg bg-slate-50 text-[11px] font-bold text-slate-600">{p.label}: {fmtMoney(p.total)}</span>)}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex justify-end">
+                          <div className="bg-slate-50 rounded-xl px-4 py-2 border-l-4 border-primary text-right">
+                            {(calc.adjustments.length > 0 || calc.periods.length > 0) && (
+                              <p className="text-[10px] text-slate-400">Lines {fmtMoney(calc.items)}{calc.adjustments.length > 0 ? ` · with the lines under the table ${fmtMoney(calc.total)}` : ""}</p>
+                            )}
+                            <span className={lbl}>{calc.periods.length ? `Total, base + ${calc.periods.length - 1} option year${calc.periods.length === 2 ? "" : "s"}` : "Total"}</span>
+                            <span className="text-lg font-bold text-slate-900 ml-2">{fmtMoney(total)}</span>
                           </div>
                         </div>
                       </div>
@@ -4214,7 +4304,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </div>
                   )}
 
-                  <p className="text-[10px] text-slate-400">Columns set to <strong>amount ($)</strong> are summed for each table total. Add multiple tables for quarterly/phased pricing; duplicate to reuse a layout; export any table to Excel.</p>
+                  <p className="text-[10px] text-slate-400">Totals are always calculated, never typed: a line's amount is quantity × unit price, phase headings get subtotals, and the lines under a table and its option years are added in. Use several tables for separate schedules (for example the base contract and O&amp;M); the grand total adds them up. Export any table to Excel.</p>
 
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
                     <h4 className="font-bold text-slate-800 text-sm">Notes / Terms</h4>
