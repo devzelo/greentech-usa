@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ApiProject, ProjectFinancials } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
+import { effectiveEndDate } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading } from "../pdf/brand";
 import { KpiRow } from "./ProjectReportPDF";
 
@@ -250,7 +251,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
               </View>
               <View style={s.statRow}>
                 <View style={s.stat}><Text style={s.statLabel}>START</Text><Text style={s.statValue}>{p.startDate || "-"}</Text></View>
-                <View style={s.stat}><Text style={s.statLabel}>TARGET END</Text><Text style={s.statValue}>{p.endDate || "-"}</Text></View>
+                <View style={s.stat}><Text style={s.statLabel}>{effectiveEndDate(p) !== p.endDate ? "EXTENDED END" : "TARGET END"}</Text><Text style={s.statValue}>{effectiveEndDate(p) || "-"}</Text></View>
                 <View style={s.stat}><Text style={s.statLabel}>TEAM</Text><Text style={s.statValue}>{p.assignedEmployees?.length ?? 0}</Text></View>
                 <View style={s.stat}><Text style={s.statLabel}>PROGRESS</Text><Text style={s.statValue}>{progress}%</Text></View>
               </View>

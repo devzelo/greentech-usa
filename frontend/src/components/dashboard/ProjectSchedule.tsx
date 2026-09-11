@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Flag,
 import type { ApiMilestone, ApiProject } from "../../lib/api";
 import { useDialogs } from "../../lib/useDialogs";
 import {
-  DAY, DEFAULT_MILESTONES, UNIT_LABEL, fmtDate, humanGap, newMilestoneId, parseDate, planSchedule, toIso,
+  DAY, DEFAULT_MILESTONES, UNIT_LABEL, effectiveEndDate, fmtDate, humanGap, newMilestoneId, parseDate, planSchedule, toIso,
   type MilestoneState,
 } from "../../lib/projectSchedule";
 
@@ -51,12 +51,13 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
   const plan = useMemo(() => planSchedule(milestones, startDate), [milestones, startDate]);
   const hasMs = milestones.length > 0;
   const pct = hasMs ? plan.progress : Math.max(0, Math.min(100, Math.round(project.progress || 0)));
-  const end = parseDate(project.endDate);
+  const end = parseDate(effectiveEndDate(project));   // after an extension, the new end date (126)
 
-  // Keep the stored percentage (used by the lists and reports) in step with the milestones.
+  // Keep the stored percentage (used by the lists and reports) in step with the milestones. The
+  // whole schedule goes back, so the extensions are kept.
   const saveMilestones = async (next: ApiMilestone[], message?: string) => {
     const progress = next.length ? planSchedule(next, startDate).progress : project.progress;
-    await onSave({ schedule: { milestones: next }, progress }, message);
+    await onSave({ schedule: { ...project.schedule, milestones: next }, progress }, message);
   };
 
   const setDone = async (m: ApiMilestone, done: boolean) => {

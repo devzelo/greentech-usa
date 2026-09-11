@@ -2,6 +2,7 @@ import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/render
 import type { ReactNode } from "react";
 import type { ApiProject } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
+import { effectiveEndDate } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
 
 registerBrandFonts();
@@ -184,7 +185,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         {/* Key figures */}
         <KpiRow items={[
           { label: "START DATE", value: project.startDate || "-" },
-          { label: "TARGET END", value: project.endDate || "-" },
+          { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: effectiveEndDate(project) || "-" },
           { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
           { label: "VISIBILITY", value: project.published ? "Public" : "Internal" },
         ]} />

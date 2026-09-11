@@ -87,6 +87,9 @@ export interface IProject extends Document {
   // has a duration; the project manager confirms it finished (doneAt), which counts toward progress.
   schedule: {
     milestones: Array<{ id: string; name: string; duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string }>;
+    // CR-P (126) — approved extensions of time. The latest endDate is the project's deadline now;
+    // the project's own endDate stays the original one.
+    extensions: Array<{ id: string; endDate: string; reason: string; addedAt: string; addedBy: string }>;
   };
   assignedEmployees: string[];
   subcontractors: Array<{
@@ -239,6 +242,17 @@ const ProjectSchema = new Schema<IProject>(
           unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
           doneAt: { type: String, default: "" },
           doneBy: { type: String, default: "" },
+          _id: false,
+        }],
+        default: [],
+      },
+      extensions: {
+        type: [{
+          id: { type: String, default: "" },
+          endDate: { type: String, default: "" },
+          reason: { type: String, default: "" },
+          addedAt: { type: String, default: "" },
+          addedBy: { type: String, default: "" },
           _id: false,
         }],
         default: [],

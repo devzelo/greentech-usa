@@ -185,7 +185,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[] };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[] };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -977,6 +977,15 @@ export interface ApiMilestone {
   unit: "days" | "weeks" | "months";
   doneAt: string;   // yyyy-mm-dd, "" while not confirmed
   doneBy: string;
+}
+
+/** CR-P (126) - an approved extension of time: the new deadline, and why. */
+export interface ApiExtension {
+  id: string;
+  endDate: string;  // yyyy-mm-dd, the new deadline
+  reason: string;
+  addedAt: string;
+  addedBy: string;
 }
 
 export async function updateProject(id: string, body: Partial<ApiProject>): Promise<ApiProject> {

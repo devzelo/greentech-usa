@@ -1,4 +1,4 @@
-import type { ApiMilestone } from "./api";
+import type { ApiExtension, ApiMilestone } from "./api";
 
 /**
  * CR-P (121)-(125) — the project schedule: milestones run one after another from the project's
@@ -111,6 +111,19 @@ export function humanGap(from: Date, to: Date): string {
   const p = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   if (months <= 0) return p(days, "day");
   return days ? `${p(months, "month")} ${p(days, "day")}` : p(months, "month");
+}
+
+/** CR-P (126) — the extensions with a valid date, earliest first. */
+export function sortedExtensions(exts?: ApiExtension[]): ApiExtension[] {
+  return (exts || []).filter((e) => parseDate(e.endDate)).sort((a, b) => parseDate(a.endDate)!.getTime() - parseDate(b.endDate)!.getTime());
+}
+
+/** The deadline now: the latest approved extension, or the original end date. */
+export function effectiveEndDate(p: { endDate?: string; schedule?: { extensions?: ApiExtension[] } }): string {
+  const exts = sortedExtensions(p.schedule?.extensions);
+  const last = exts[exts.length - 1];
+  const orig = parseDate(p.endDate);
+  return last && (!orig || parseDate(last.endDate)! > orig) ? last.endDate : p.endDate || "";
 }
 
 export const newMilestoneId = () => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

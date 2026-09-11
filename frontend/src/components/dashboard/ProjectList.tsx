@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, projectCategories, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
+import { effectiveEndDate } from "../../lib/projectSchedule";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
@@ -92,7 +93,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const sortVal = (p: ApiProject, key: SortKey): string | number =>
     key === "progress" ? (p.progress ?? 0)
     : key === "year" ? (p.contractYear || "")
-    : key === "deadline" ? (p.endDate || "")
+    : key === "deadline" ? effectiveEndDate(p)
     : key === "client" ? (p.clientInfo?.name || "").toLowerCase()
     : key === "contractNo" ? (p.contractNo || "").toLowerCase()
     : String((p as unknown as Record<string, unknown>)[key] || "").toLowerCase();
@@ -104,7 +105,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     : filteredRaw;
   // A deadline that has passed on a project that isn't finished yet.
   const overdue = (p: ApiProject) =>
-    !!p.endDate && p.endDate < new Date().toLocaleDateString("en-CA") &&
+    !!effectiveEndDate(p) && effectiveEndDate(p) < new Date().toLocaleDateString("en-CA") &&
     !["Closed", "Completed", "Lost"].includes(p.status);
 
   // Portfolio value totals for All Projects (staff only): all = GT-only + JV.
@@ -337,7 +338,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold whitespace-nowrap">
                         {p.endDate
-                          ? <span className={overdue(p) ? "text-red-600" : "text-slate-500"}>{p.endDate}{overdue(p) ? " ⚠" : ""}</span>
+                          ? <span className={overdue(p) ? "text-red-600" : "text-slate-500"} title={effectiveEndDate(p) !== p.endDate ? `Extended; original end date ${p.endDate}` : undefined}>{effectiveEndDate(p)}{overdue(p) ? " ⚠" : ""}</span>
                           : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6">
@@ -423,7 +424,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                     {projectCategories(p).length > 0 && <span><span className="text-slate-400">Category:</span> <span className="font-bold text-slate-700">{projectCategories(p).join(", ")}</span></span>}
                     {p.clientInfo?.name && <span><span className="text-slate-400">Client:</span> <span className="font-bold text-slate-700">{p.clientInfo.name}</span></span>}
                     {p.contractYear && <span><span className="text-slate-400">Year:</span> <span className="font-bold text-slate-700">{p.contractYear}</span></span>}
-                    {p.endDate && <span><span className="text-slate-400">Deadline:</span> <span className={`font-bold ${overdue(p) ? "text-red-600" : "text-slate-700"}`}>{p.endDate}{overdue(p) ? " ⚠" : ""}</span></span>}
+                    {p.endDate && <span title={effectiveEndDate(p) !== p.endDate ? `Extended; original end date ${p.endDate}` : undefined}><span className="text-slate-400">Deadline:</span> <span className={`font-bold ${overdue(p) ? "text-red-600" : "text-slate-700"}`}>{effectiveEndDate(p)}{overdue(p) ? " ⚠" : ""}</span></span>}
                   </div>
 
                   <div className="space-y-3 mb-6">

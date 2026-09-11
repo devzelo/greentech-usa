@@ -72,6 +72,7 @@ import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposa
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import ProjectSchedule from "./ProjectSchedule";
+import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
@@ -3470,8 +3471,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 {project.endDate && (
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-                      <Calendar size={11} /> Deadline: {project.endDate}
+                    {/* CR-P (126) — after an extension the deadline is the new end date. */}
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400" title={effectiveEndDate(project) !== project.endDate ? `Original end date ${project.endDate}` : undefined}>
+                      <Calendar size={11} /> Deadline: {effectiveEndDate(project)}
+                      {effectiveEndDate(project) !== project.endDate && <span className="text-[10px] font-bold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">Extended</span>}
                     </span>
                   </>
                 )}
@@ -3505,6 +3508,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               <ContractTimeline
                 startDate={project.startDate || project.contractDate}
                 endDate={project.endDate}
+                extensions={project.schedule?.extensions}
+                canEdit={canManage}
+                userName={currentUser?.name || ""}
+                onSaveExtensions={async (next, message) => {
+                  if (!id) return;
+                  // The whole schedule goes back, so the milestones are kept.
+                  try { const u = await updateProject(id, { schedule: { milestones: project.schedule?.milestones || [], extensions: next } }); setProject(u); toast(message, "success"); }
+                  catch (e) { toast(e instanceof Error ? e.message : "Could not save the extension.", "error"); throw e; }
+                }}
                 className="mt-3 max-w-3xl"
               />
             </div>
