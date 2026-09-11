@@ -97,7 +97,9 @@ export function forParty<T extends object>(doc: T, me: PartyIdentity) {
     sectionAssignees?: Record<string, string>;
     shares?: Array<{ email?: string; companyId?: string }>;
     youSigned?: boolean;
+    remark?: string;
   };
+  o.remark = "";   // CR-P (60) — our internal remark never goes to a party
   const mine = (v: { email?: string; companyId?: string }) => isSharedWith({ visibleTo: [v] }, me);
   o.extraSections = (o.extraSections || []).filter((s) => !s.hidden).map((s) => ({ ...s, notes: "", assignedTo: "", history: [] }));
   o.sectionAssignees = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "" };

@@ -32,7 +32,10 @@ export interface IAgreement extends Document {
   // keep meaning the same agreement even after that agreement is cancelled or revised.
   agreementNo: string;
   title: string;              // short human title (general agreements) — CR-P-45
-  description: string;        // description / remarks (general agreements) — CR-P-45
+  description: string;        // the short description printed under the title — CR-P-45 / (26)
+  // CR-P (60) — "Remark": an internal note about the agreement for our own team. Never printed and
+  // never sent to a party; the printed text is the description above.
+  remark: string;
   agreementType: string;      // Employment | Service | Supply | Partnership | NDA | Custom
   templateId: string;
   // CR-PR-11 — projects this agreement covers. A general agreement may span several, or none.
@@ -155,6 +158,7 @@ const AgreementSchema = new Schema<IAgreement>(
     agreementNo: { type: String, default: "", index: true },   // CR-P (23) — AG-0001, AG-0002, …
     title: { type: String, default: "" },        // CR-P-45
     description: { type: String, default: "" },   // CR-P-45
+    remark: { type: String, default: "" },        // CR-P (60) — internal, never printed
     agreementType: { type: String, default: "Custom" },
     templateId: { type: String, default: "" },
     linkedProjects: { type: [{ id: { type: String, default: "" }, name: { type: String, default: "" }, location: { type: String, default: "" } }], default: [] },

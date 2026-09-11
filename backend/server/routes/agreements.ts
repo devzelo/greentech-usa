@@ -214,7 +214,7 @@ function ownerFilter(ctx: Ctx, req: AuthedRequest): Record<string, string> {
 // Plain string fields an editor may change. `linkedProjects` used to be listed here, but the loop
 // below coerces every entry with String(), which turned the array into "[object Object]" — it is
 // handled on its own now (CR-P (27)).
-const EDIT_FIELDS = ["name", "title", "description", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
+const EDIT_FIELDS = ["name", "title", "description", "remark", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
 
 function buildAgreementRouter(ctx: Ctx): Router {
   const router = Router({ mergeParams: true });
@@ -331,6 +331,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
         agreementNo: await nextAgreementNo(),   // CR-P (23) — server-assigned, never from the client
         title: String(b.title || "").slice(0, 200),
         description: String(b.description || "").slice(0, 4000),
+        remark: String(b.remark || "").slice(0, 4000),   // CR-P (60)
         agreementType: String(b.agreementType || "Custom").slice(0, 60),
         templateId: String(b.templateId || ""),
         linkedProjects: cleanLinkedProjects(b.linkedProjects),
@@ -381,7 +382,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       }
       if (ag.status === "Signed") return res.status(400).json({ error: "A signed agreement is locked. Only cancel/expire are possible." });
       const b = req.body || {};
-      for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : f === "description" ? 4000 : 200);
+      for (const f of EDIT_FIELDS) if (f in b) (ag as unknown as Record<string, unknown>)[f] = String(b[f] ?? "").slice(0, f === "name" ? 160 : f === "description" || f === "remark" ? 4000 : 200);
       if (Array.isArray(b.linkedProjects)) ag.linkedProjects = cleanLinkedProjects(b.linkedProjects);  // CR-P (27)
       if (b.datesShown && typeof b.datesShown === "object") ag.datesShown = cleanDatesShown(b.datesShown);  // CR-P (21)
       if (typeof b.docStatus === "string") ag.docStatus = b.docStatus.slice(0, 20);  // CR-P (33)

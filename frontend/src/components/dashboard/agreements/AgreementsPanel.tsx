@@ -141,6 +141,7 @@ const BLANK_SECTIONS: ApiAgreementSections = {
 
 type Draft = {
   name: string; title: string; description: string; agreementType: string; templateId: string;
+  remark: string;   // CR-P (60) — internal, never printed
   linkedProjects: Array<{ id: string; name: string; location?: string }>;
   effectiveDate: string; startDate: string; endDate: string;
   datesShown: { effective: boolean; start: boolean; end: boolean };   // CR-P (21)
@@ -451,7 +452,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const openCreate = async () => {
     allDoneRef.current = null;
     setDraft({
-      name: "", title: "", description: "",
+      name: "", title: "", description: "", remark: "",
       // CR-P (69) — names from the one grouped type list every agreement now uses.
       agreementType: ctx.kind === "user" ? "Employment Agreement" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supplier Agreement" : ctx.entityType === "partner" ? "Partnership Agreement" : "Subcontract Agreement",
       // A project's own agreement covers that project from the start (it can be changed).
@@ -490,6 +491,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     // already holds it and opening an agreement never counts as an unsaved change.
     setDraft(withAutoStatus({
       name: ag.name, title: ag.title || "", description: ag.description || "", agreementType: ag.agreementType, templateId: ag.templateId,
+      remark: ag.remark || "",
       linkedProjects: ag.linkedProjects || [],
       effectiveDate: ag.effectiveDate, startDate: ag.startDate, endDate: ag.endDate,
       // CR-P (21) — an agreement saved before this existed has no flags, so each date is ticked on
@@ -561,7 +563,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // it later is silently ignored server-side, but we simply don't send it.
   const draftBody = (isDraftStatus = true) => ({
     name: draft!.name || autoName(draft!.agreementType),
-    title: draft!.title, description: draft!.description,
+    title: draft!.title, description: draft!.description, remark: draft!.remark,
     agreementType: draft!.agreementType, templateId: draft!.templateId,
     linkedProjects: draft!.linkedProjects,
     effectiveDate: draft!.effectiveDate, startDate: draft!.startDate, endDate: draft!.endDate,
@@ -676,6 +678,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       adopt("name", fresh.name, base.name);
       adopt("title", fresh.title || "", base.title || "");
       adopt("description", fresh.description || "", base.description || "");
+      adopt("remark", fresh.remark || "", base.remark || "");
       adopt("agreementType", fresh.agreementType, base.agreementType);
       adopt("docStatus", (fresh.docStatus || "") as DocStatus, base.docStatus || "");
       adopt("effectiveDate", fresh.effectiveDate, base.effectiveDate);
@@ -1093,7 +1096,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                       <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
                       {/* CR-P (23) — the agreement's own reference, beside the row number. */}
                       <td className="px-3 py-2.5 text-xs font-bold text-slate-700 tabular-nums whitespace-nowrap align-top">{ag.agreementNo || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-slate-800 align-top min-w-[12rem]">{ag.title || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2.5 text-xs font-bold text-slate-800 align-top min-w-[12rem]">
+                        {ag.title || <span className="text-slate-300">—</span>}
+                        {/* CR-P (60) — the internal remark, shown to our own team only. */}
+                        {canManage && ag.remark && <span className="block mt-0.5 text-[10px] font-medium text-slate-400 truncate max-w-[16rem]" title={ag.remark}>{ag.remark}</span>}
+                      </td>
                       {/* CR-P (19) — every counterparty, not just the second one. */}
                       <td className="px-3 py-2.5 align-top">
                         {partyNames(ag).length === 0 ? <span className="text-slate-300 text-xs">—</span> : (
@@ -1551,6 +1558,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description
                   <textarea rows={2} className={`${inp} mt-1`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Farmer Group will carry out the 60% civil design for the Ivory Coast plant." />
                   <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">A short description about the nature of this agreement. One or two lines. Prints under the title in plain text.</span>
+                </label>
+                {/* CR-P (60) — "Remark": our own note about this agreement. Separate from the
+                    description, which prints; the remark never prints and never reaches a party. */}
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remark <span className="font-medium normal-case text-slate-400">(internal, not printed)</span>
+                  <textarea rows={2} className={`${inp} mt-1`} value={draft.remark} onChange={(e) => setDraft({ ...draft, remark: e.target.value })} placeholder="e.g. Waiting for the bank's wording on clause 4." />
                 </label>
               </>
               </EditorBox>
