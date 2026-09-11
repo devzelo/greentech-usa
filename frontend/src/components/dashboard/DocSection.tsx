@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw } from "lucide-react";
+import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw, Plus } from "lucide-react";
 import {
   fetchDocuments,
   uploadDocument,
@@ -65,8 +65,10 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
     if (!file) return;
     setUploading(true);
     try {
-      await uploadDocument(projectId, file, section);
+      const doc = await uploadDocument(projectId, file, section);
       await refresh();
+      // CR-P (130) — say what the file is right away (solicitations arrive as 10-15 oddly named files).
+      setDescEdit({ doc, value: "" });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -140,15 +142,19 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                   <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
                   <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}</p>
                 </button>
-                {/* CR-P-07 — the per-file "Add description" line is removed (client didn't want it).
-                    A Preview button sits in front of each file instead. Any description already set
-                    still shows read-only (click to edit when editable) so no existing data is lost. */}
+                {/* CR-P (130) — every file carries a description of what it is (e.g. which appendix),
+                    added in a popup with Save and shown under the file name. (CR-P-07 had removed
+                    the "Add description" line; the client now wants it back.) */}
                 {d.description ? (
                   canEdit ? (
-                    <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-[11px] font-medium italic text-slate-500 hover:text-primary py-0.5 transition-colors" title="Edit note">{d.description}</button>
+                    <button onClick={() => setDescEdit({ doc: d, value: d.description || "" })} className="mt-1 text-left text-xs font-medium text-slate-600 hover:text-primary py-0.5 transition-colors" title="Edit description">{d.description}</button>
                   ) : (
-                    <p className="mt-0.5 text-[11px] text-slate-500 font-medium italic">{d.description}</p>
+                    <p className="mt-0.5 text-xs text-slate-600 font-medium">{d.description}</p>
                   )
+                ) : canEdit && !showArchived ? (
+                  <button onClick={() => setDescEdit({ doc: d, value: "" })} className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary py-0.5 transition-colors">
+                    <Plus size={11} /> Add description
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -218,7 +224,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
               value={descEdit.value}
               onChange={(e) => setDescEdit({ ...descEdit, value: e.target.value })}
               rows={4}
-              placeholder="Add a description (e.g. Appendix A)…"
+              placeholder="What is this file? e.g. Appendix A: geotechnical report"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10"
             />
             <div className="flex items-center justify-between gap-2 mt-4">
@@ -226,7 +232,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                 <button onClick={() => saveDescription(descEdit.doc._id, "")} disabled={descSaving} className="px-3 py-2 rounded-xl text-red-500 hover:bg-red-50 text-xs font-bold disabled:opacity-50">Remove</button>
               ) : <span />}
               <div className="flex items-center gap-2">
-                <button onClick={() => setDescEdit(null)} disabled={descSaving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Cancel</button>
+                <button onClick={() => setDescEdit(null)} disabled={descSaving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">{descEdit.doc.description ? "Cancel" : "Later"}</button>
                 <button onClick={() => saveDescription(descEdit.doc._id, descEdit.value.trim())} disabled={descSaving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{descSaving && <Loader2 size={13} className="animate-spin" />} Save</button>
               </div>
             </div>
