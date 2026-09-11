@@ -14,13 +14,15 @@ interface Props {
   onClose: () => void;
   /** Item 110 - record a send made outside the platform (portal, hand delivery, courier). Throws on failure. */
   onLogSend?: (e: { to: string; method: string; at: string; note: string }) => Promise<void>;
+  /** Item 90 - the builder is launched from Manage too (technical / financial revisions). */
+  onOpenBuilder?: () => void;
 }
 
 const SEND_METHODS = ["Portal", "Email", "Hand delivery", "Courier", "Other"];
 
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "-");
 
-export default function RevisionManage({ doc, statuses, onSave, onClose, onLogSend }: Props) {
+export default function RevisionManage({ doc, statuses, onSave, onClose, onLogSend, onOpenBuilder }: Props) {
   const [title, setTitle] = useState(doc.title || "");
   const [note, setNote] = useState(doc.note || "");
   const [status, setStatus] = useState<SavedDocStatus>(doc.status);
@@ -143,6 +145,10 @@ export default function RevisionManage({ doc, statuses, onSave, onClose, onLogSe
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+          {/* Item 90 - open the builder from Manage: the next revision is made there (item 111). */}
+          {onOpenBuilder && (
+            <button onClick={onOpenBuilder} className="mr-auto px-4 py-2 rounded-xl text-xs font-bold text-primary hover:bg-primary/5">Open the builder</button>
+          )}
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-50">Cancel</button>
           <button onClick={() => void save()} disabled={!dirty || busy} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-40">
             {busy && <Loader2 size={12} className="animate-spin" />} Save changes

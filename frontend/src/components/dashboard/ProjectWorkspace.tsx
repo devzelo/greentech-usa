@@ -46,6 +46,7 @@ import EoiBuilder from "./EoiBuilder";
 import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import SectionGroupTemplates from "./SectionGroupTemplates";
+import { makeZip } from "../../lib/zip";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
@@ -771,7 +772,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
       if (overLimit && !(await brandedConfirm({
         title: `The combined file is ${mb(out.size)}`,
-        message: `Most clients cap attachments at 30 MB, so this merged pack is likely too big to email as one file. You can still file it, but consider sending the technical (${mb(tech.size)}) and financial (${mb(fin.size)}) PDFs separately, or zipped.`,
+        message: `Most clients cap attachments at 30 MB, so this merged pack is likely too big to email as one file. You can still file it, but consider sending the technical (${mb(tech.size)}) and financial (${mb(fin.size)}) PDFs separately, or use "ZIP latest" to send them in one ZIP file.`,
         confirmLabel: "File it anyway",
         danger: false,
       }))) { setProposalDownloading(null); return; }
@@ -786,6 +787,31 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       await loadNextFinalVer();
       toast("Combined proposal created.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not combine the proposals.", "error"); }
+    finally { setProposalDownloading(null); }
+  };
+
+  // CR-P (112) - "otherwise send the two PDFs in one email, or put them in a ZIP file". The two
+  // volumes zipped, filed in the Combined stream (item 113: the note says which revisions went in)
+  // and downloaded, ready to attach.
+  const buildCombinedZip = async () => {
+    if (!id) return;
+    setProposalDownloading("combined-zip");
+    try {
+      const [tech, fin] = await Promise.all([buildProposalBlob("technical", true), buildProposalBlob("financial", true)]);
+      const base = (project?.name || "project").replace(/[^a-z0-9._-]+/gi, "_");
+      const zip = makeZip([
+        { name: `${base}_Technical_Proposal.pdf`, data: new Uint8Array(await tech.arrayBuffer()) },
+        { name: `${base}_Financial_Proposal.pdf`, data: new Uint8Array(await fin.arrayBuffer()) },
+      ]);
+      const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
+      const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
+      const finRev = Math.max(0, ((propDocs.financial[0]?.version) || 1) - 1);
+      const note = `ZIP: Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(zip.size)}`;
+      await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial (ZIP)", note, status: "final" }, zip, `${base}_Proposals.zip`);
+      await loadNextFinalVer();
+      downloadBlob(zip, `${base}_Proposals.zip`);
+      toast("ZIP created, downloaded and filed under Combined Proposal.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not create the ZIP.", "error"); }
     finally { setProposalDownloading(null); }
   };
 
@@ -3939,6 +3965,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   <Plus size={12} /> {proposalDownloading === "combined" ? "Merging..." : "Combine latest"}
                                 </button>
                               )}
+                              {/* CR-P (112) - over 30 MB, the two PDFs go in one ZIP instead. */}
+                              {p.which === "combined" && (
+                                <button onClick={() => void buildCombinedZip()} disabled={proposalDownloading === "combined-zip"} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 disabled:opacity-50" title="Put the latest technical and financial PDFs in one ZIP file (for packs over 30 MB)">
+                                  <Download size={12} /> {proposalDownloading === "combined-zip" ? "Zipping..." : "ZIP latest"}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -4086,6 +4118,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             doc={manageDoc}
                             statuses={PROP_DOC_STATUS}
                             onLogSend={async (e) => { await logProposalSend(manageDoc, e.to, e.method, e.note, e.at); toast("Send recorded.", "success"); }}
+                            onOpenBuilder={manageDoc.refId === "technical" || manageDoc.refId === "financial"
+                              ? () => { const which = manageDoc.refId as "technical" | "financial"; setManageDoc(null); setProposalSub(which); setProposalDocTab("builder"); }
+                              : undefined}
                             onClose={() => setManageDoc(null)}
                             onSave={async (body) => {
                               if (!id) return;
