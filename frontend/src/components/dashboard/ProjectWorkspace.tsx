@@ -44,6 +44,7 @@ import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
 import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
+import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
@@ -572,7 +573,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const owner = !!(project && cu && (project as ApiProject & { ownerId?: string }).ownerId === cu.id);
     if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
   }, [financialLocked, project, proposalSub]);
-  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "builder" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
+  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
@@ -603,6 +604,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [cover, setCover] = useState<ProposalCover>(emptyCover());                 // Technical cover
   const [coverFinancial, setCoverFinancial] = useState<ProposalCover>(emptyCover()); // Financial cover
   const [coverLetter, setCoverLetter] = useState<ProposalCoverLetter>(emptyCoverLetter());
+  const [coverLetterFinancial, setCoverLetterFinancial] = useState<ProposalCoverLetter>(emptyCoverLetter());   // CR-P (93)
   const [backCover, setBackCover] = useState<ProposalBackCover>(emptyBackCover());
   const [letterhead, setLetterhead] = useState<ProposalLetterhead>("gt");
   const [customLetterheadUrl, setCustomLetterheadUrl] = useState("");
@@ -1000,11 +1002,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // ── Revision control + archive ───────────────────────────────────────────────
   const currentProposalSnapshot = (): ProposalContentType =>
-    ({ cover, coverFinancial, coverLetter, backCover, letterhead, customLetterheadUrl, requirements, technical, financial });
+    ({ cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial });
   const applyProposalSnapshot = (c: ProposalContentType) => {
     setCover({ ...emptyCover(), ...(c.cover || {}) });
     setCoverFinancial({ ...emptyCover(), ...(c.coverFinancial || c.cover || {}) });
     setCoverLetter({ ...emptyCoverLetter(), ...(c.coverLetter || {}) });
+    setCoverLetterFinancial({ ...emptyCoverLetter(), ...(c.coverLetterFinancial || {}) });
     setBackCover({ ...emptyBackCover(), ...(c.backCover || {}) });
     setLetterhead(c.letterhead || "gt");
     setCustomLetterheadUrl(c.customLetterheadUrl || "");
@@ -1105,7 +1108,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!project || !id) throw new Error("Project not loaded.");
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
     const el = (
-      <ProposalPDF kind={which} project={project} cover={which === "financial" ? coverFinancial : cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />
+      <ProposalPDF kind={which} project={project} cover={which === "financial" ? coverFinancial : cover} coverLetter={which === "financial" ? coverLetterFinancial : coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />
     );
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     const { blob, skipped } = await assembleProposalPdf(el, atts);
@@ -2271,6 +2274,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           proposalTitle: savedFin?.proposalTitle || "Financial Proposal",
         });
         setCoverLetter({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetter ?? {}) });
+        setCoverLetterFinancial({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetterFinancial ?? {}) });
         setBackCover({ ...emptyBackCover(), ...(proj.proposalContent?.backCover ?? {}) });
         setLetterhead(proj.proposalContent?.letterhead ?? "gt");
         setCustomLetterheadUrl(proj.proposalContent?.customLetterheadUrl ?? "");
@@ -2665,7 +2669,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       }));
       payload.subcontractors = subcontractors;
       payload.proposals = proposals;
-      payload.proposalContent = { cover, coverFinancial, coverLetter, backCover, letterhead, customLetterheadUrl, requirements, technical, financial } as ProposalContent;
+      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial } as ProposalContent;
       const updated = await wsSave.track(updateProject(id, payload));
       setProject(updated);
       setDirty(false); // I5 — workspace is now saved
@@ -3634,6 +3638,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="flex items-center gap-2">
                   {([
                     { k: "cover" as const, label: "Cover Page" },
+                    { k: "letter" as const, label: "Transmittal Letter" },
                     { k: "builder" as const, label: "Builder" },
                     { k: "attachments" as const, label: "Attachments" },
                     { k: "versions" as const, label: "Saved Versions" },
@@ -3649,6 +3654,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* CR-P (93) - the transmittal letter, one per volume, printed right after the cover. */}
+              {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "letter" && (
+                <ProposalLetterBuilder
+                  projectId={id}
+                  project={project}
+                  cover={proposalSub === "financial" ? coverFinancial : cover}
+                  letter={proposalSub === "financial" ? coverLetterFinancial : coverLetter}
+                  onChange={(l) => { (proposalSub === "financial" ? setCoverLetterFinancial : setCoverLetter)(l); setDirty(true); }}
+                  canEdit={canEdit}
+                />
               )}
 
               {/* Proposal attachments, merged into the PDF (Download + attachments, Mark as Final). They
@@ -4039,7 +4056,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </div>
                   </div>
                   <div className="flex-1 bg-slate-200">
-                    <BlobProvider document={<ProposalPDF kind={proposalPreview} project={project} cover={proposalPreview === "financial" ? coverFinancial : cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />}>
+                    <BlobProvider document={<ProposalPDF kind={proposalPreview} project={project} cover={proposalPreview === "financial" ? coverFinancial : cover} coverLetter={proposalPreview === "financial" ? coverLetterFinancial : coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />}>
                       {({ url, loading }) => (loading || !url)
                         ? <div className="flex items-center justify-center h-full text-slate-500 text-sm gap-2"><Loader2 className="animate-spin" size={18} /> Generating preview…</div>
                         : <iframe src={url} title="Proposal preview" className="w-full h-full border-0" />}

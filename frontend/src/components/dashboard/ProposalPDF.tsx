@@ -8,6 +8,7 @@ import {
   LetterheadHeader, LetterheadFooter, SectionHeading, Subhead, Eyebrow, GradBar,
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
+import { resolveLetter } from "../../lib/proposalLetter";
 
 // The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
 // letterhead, the look defined by the brand kit's generator scripts. Fonts register once.
@@ -50,9 +51,13 @@ const styles = StyleSheet.create({
   docTitle: { fontFamily: "Outfit", fontSize: 22, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15 },
 
   // Cover letter
-  sigRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 26 },
+  letterRow: { flexDirection: "row", marginBottom: 5 },
+  letterLabel: { width: 56, fontSize: 9.5, fontWeight: 700, color: BRAND.slate },
+  letterValue: { flex: 1, fontSize: 9.5, color: BRAND.s700, lineHeight: 1.45 },
+  sigRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   sigBlock: { minWidth: 180, marginRight: 28, marginBottom: 12 },
-  sigImg: { height: 40, width: 120, objectFit: "contain", marginBottom: 4 },
+  sigImg: { height: 40, width: 120, objectFit: "contain" },
+  sealImg: { height: 56, width: 56, objectFit: "contain" },
   sigName: { fontSize: 10.5, fontWeight: 700, color: BRAND.slate },
   sigTitle: { fontSize: 8.5, color: BRAND.s500 },
 
@@ -297,26 +302,49 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
   };
 }
 
-function CoverLetterPage({ coverLetter, lh, label, note }: { coverLetter?: ProposalCoverLetter; lh: LhConfig; label: string; note: string }) {
+/**
+ * CR-P (93) - the transmittal letter, laid out as on the client's samples: Date / To / Subject,
+ * "Dear ...", the paragraphs, the closing, then each signer with their signature (the company seal
+ * beside the first), name, title, company, mobile and email. Empty header lines come from the cover.
+ */
+function CoverLetterPage({ coverLetter, cover, project, lh, label, note }: { coverLetter?: ProposalCoverLetter; cover?: ProposalCover; project: ApiProject; lh: LhConfig; label: string; note: string }) {
   if (!coverLetter?.enabled) return null;
+  const L = resolveLetter(coverLetter, cover, project);
+  const toLines = [L.toName, L.toTitle, L.toOffice, L.toAgency, L.toAddress].filter(Boolean);
+  const company = cover?.submittedBy || defaultSubmitter(project);
+  const seal = coverLetter.stampUrl;
+  const head = (k: string, v: string, bold = false) => (
+    <View style={styles.letterRow}>
+      <Text style={styles.letterLabel}>{k}</Text>
+      <Text style={[styles.letterValue, bold ? { fontWeight: 700, color: BRAND.slate } : {}]}>{v}</Text>
+    </View>
+  );
   return (
     <Sheet lh={lh} label={label} note={note}>
-      <SectionHeading title="Cover Letter" />
+      {head("Date:", longDate(L.date))}
+      {head("To:", (toLines.length ? toLines : ["Contracting Officer"]).join("\n"))}
+      {head("Subject:", L.subject, true)}
+      <Text style={[styles.para, { marginTop: 10, marginBottom: 10 }]}>{L.salutation}</Text>
       <RichText html={coverLetter.body} keyBase="cover-letter" />
-      {(coverLetter.signatories.length > 0 || coverLetter.useEmailSignature) && (
+      <View wrap={false} style={{ marginTop: 14 }}>
+        <Text style={styles.para}>{L.closing}</Text>
+        {coverLetter.signatories.length === 0 && !!seal && <Image src={abs(seal)} style={styles.sealImg} />}
         <View style={styles.sigRow}>
           {coverLetter.signatories.map((s, i) => (
-            <View key={i} style={styles.sigBlock}>
-              {!!s.signatureUrl && <Image src={abs(s.signatureUrl)} style={styles.sigImg} />}
+            <View key={s.id || i} style={styles.sigBlock}>
+              <View style={{ flexDirection: "row", alignItems: "center", minHeight: 48, marginBottom: 4 }}>
+                {!!s.signatureUrl && <Image src={abs(s.signatureUrl)} style={styles.sigImg} />}
+                {i === 0 && !!seal && <Image src={abs(seal)} style={[styles.sealImg, { marginLeft: 10 }]} />}
+              </View>
               <Text style={styles.sigName}>{s.name || "-"}</Text>
               {!!s.title && <Text style={styles.sigTitle}>{s.title}</Text>}
+              <Text style={styles.sigTitle}>{company}</Text>
+              {!!s.phone && <Text style={styles.sigTitle}>Mobile: {s.phone}</Text>}
+              {!!s.email && <Text style={styles.sigTitle}>Email: {s.email}</Text>}
             </View>
           ))}
         </View>
-      )}
-      {coverLetter.useEmailSignature && (
-        <Text style={[styles.cardMeta, { marginTop: 16 }]}>{COMPANY.name} · {COMPANY.tagline}</Text>
-      )}
+      </View>
     </Sheet>
   );
 }
@@ -472,7 +500,7 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
     <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
       <ProposalCoverPage variant={cover?.coverStyle} data={coverData("TECHNICAL PROPOSAL", cover, project)} />
 
-      <CoverLetterPage coverLetter={coverLetter} lh={lh} label={LABEL} note={note} />
+      <CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />
 
       {toc.length > 0 && (
         <Sheet lh={lh} label={LABEL} note={note}>
@@ -538,7 +566,7 @@ function FinancialPDF({ project, content, cover, coverLetter, backCover, letterh
     <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
       <ProposalCoverPage variant={cover?.coverStyle} data={coverData("FINANCIAL PROPOSAL", cover, project)} />
 
-      <CoverLetterPage coverLetter={coverLetter} lh={lh} label={LABEL} note={note} />
+      <CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />
 
       <Sheet lh={lh} label={LABEL} note={note}>
         <View style={{ marginBottom: 12 }}>

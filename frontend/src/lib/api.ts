@@ -288,12 +288,24 @@ export interface ProposalCover {
   clientLogoUrl?: string;       // the client's seal or logo
   restrictionNotice?: boolean;  // the data-restriction legend on the cover; on unless set false
 }
-export interface ProposalSignatory { id: string; name: string; title: string; signatureUrl: string }
+export interface ProposalSignatory { id: string; name: string; title: string; signatureUrl: string; email?: string; phone?: string }
 export interface ProposalCoverLetter {
   enabled: boolean;
-  body: string; // HTML
+  body: string; // HTML: the letter's paragraphs, written by hand
   useEmailSignature: boolean;
   signatories: ProposalSignatory[];
+  // CR-P (93) - the transmittal header, as on the client's samples. Left empty, each line is filled
+  // from the cover page and project when printed (see lib/proposalLetter), so it stays in step.
+  date?: string;        // YYYY-MM-DD
+  toName?: string;
+  toTitle?: string;
+  toOffice?: string;
+  toAgency?: string;
+  toAddress?: string;
+  subject?: string;
+  salutation?: string;
+  closing?: string;
+  stampUrl?: string;    // the company seal printed beside the first signature
 }
 
 export interface ProposalRequirement { id: string; label: string; done: boolean }
@@ -314,7 +326,8 @@ export interface ProposalBackCover {
 export interface ProposalContent {
   cover?: ProposalCover;           // Technical proposal cover page (legacy key; also the shared base)
   coverFinancial?: ProposalCover;  // Financial proposal cover page (defaults from `cover`)
-  coverLetter?: ProposalCoverLetter;
+  coverLetter?: ProposalCoverLetter;           // the technical volume's transmittal letter
+  coverLetterFinancial?: ProposalCoverLetter;  // CR-P (93) - the financial volume has its own
   backCover?: ProposalBackCover;
   letterhead?: ProposalLetterhead;     // proposal-wide letterhead (GT / JV / custom / none)
   customLetterheadUrl?: string;        // header image when letterhead === "custom"
