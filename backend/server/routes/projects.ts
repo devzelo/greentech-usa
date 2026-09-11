@@ -24,6 +24,19 @@ async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { em
   return isStaff || isPartner;
 }
 
+// CR-P (81) — what a staff member with no access to a project may receive of it: the name, owner
+// and status, enough for the "Access required" screen, and none of its content. Built as a fresh,
+// unsaved document so it has the full shape (every field at its default): no screen that reads a
+// project trips over a missing field.
+const STUB_FIELDS = ["projectId", "name", "owner", "ownerId", "status", "archived"] as const;
+function accessStub(project: { toObject: () => unknown }) {
+  const src = project.toObject() as Record<string, unknown>;
+  const picked: Record<string, unknown> = {};
+  for (const k of STUB_FIELDS) if (src[k] !== undefined) picked[k] = src[k];
+  const stub = new Project(picked).toObject() as unknown as Record<string, unknown>;
+  return { ...stub, _id: src._id, createdAt: src.createdAt, updatedAt: src.updatedAt, noAccess: true };
+}
+
 const router = Router();
 
 // All routes require auth
@@ -184,6 +197,14 @@ router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
     const requesterIsGuest = isProjectGuest(project, req.user!.userId);
     if (req.user!.role === "subcontractor" && !requesterIsGuest) {
       return res.status(403).json({ error: "You do not have access to this project." });
+    }
+    // CR-P (81) — removing someone from a project must cut them off at the API too, not only on
+    // screen. A staff member who is not the owner, not assigned and holds no guest grant gets the
+    // stub: enough to show "Access required", none of the project. Admins keep the full view.
+    if (!requesterIsGuest && req.user!.role !== "admin") {
+      const me = await User.findById(req.user!.userId).select("empId").lean();
+      const access = getProjectAccess(project, req.user!.userId, (me as { empId?: string } | null)?.empId || "");
+      if (access.role === "none") return res.json(accessStub(project));
     }
     if (requesterIsGuest) {
       // A guest must never see other people's data — strip the subcontractor list and the access
