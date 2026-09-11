@@ -300,6 +300,17 @@ async function runBootstrapTasks() {
     console.error("Proposal revision retitle failed:", err);
   }
 
+  // The Company Profile's details were seeded with a placeholder phone (+1-125-258-3525); the
+  // company's number is +1 571-337-1358. Correct it only where it still holds that exact seeded
+  // value, so a number someone typed in is never overwritten. Idempotent.
+  try {
+    const CompanyDetailModel = (await import("./models/CompanyDetail")).default;
+    const r = await CompanyDetailModel.updateMany({ value: "+1-125-258-3525" }, { $set: { value: "+1 571-337-1358" } });
+    if (r.modifiedCount) console.log(`📞 Corrected the company phone in ${r.modifiedCount} Company Profile detail(s).`);
+  } catch (err) {
+    console.error("Company phone correction failed:", err);
+  }
+
 }
 
 connectDB().then(() => {

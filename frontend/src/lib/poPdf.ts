@@ -14,7 +14,7 @@ export const GREENTECH = {
   name: "GreenTech USA",
   address: "Chantilly, Virginia, USA",
   email: "info@gt-usa.com",
-  phone: "+1-125-258-3525",
+  phone: "+1 571-337-1358",
 };
 
 // Resolve an uploaded-file path or public asset URL to a fetchable URL. Handles both the

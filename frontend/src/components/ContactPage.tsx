@@ -21,8 +21,8 @@ export default function ContactPage() {
     : "Have a question or want to work with us? Send us a message and our team will get back to you shortly.";
 
   const contactInfo = [
-    { icon: Phone, label: "Call us at", value: "+1-125-258-3525", href: "tel:+11252583525" },
-    { icon: MessageSquare, label: "WhatsApp Contact", value: "+1-125-258-3525", href: "https://wa.me/11252583525" },
+    { icon: Phone, label: "Call us at", value: "+1 571-337-1358", href: "tel:+15713371358" },
+    { icon: MessageSquare, label: "WhatsApp Contact", value: "+1 571-337-1358", href: "https://wa.me/15713371358" },
     { icon: Mail, label: "You can email us here", value: "info@gt-usa.com", href: "mailto:info@gt-usa.com" },
   ];
 

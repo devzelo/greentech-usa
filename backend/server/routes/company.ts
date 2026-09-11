@@ -40,7 +40,7 @@ const DEFAULT_DETAILS: Array<{ label: string; value: string }> = [
   { label: "UEI", value: "FYR1QQSL3SM7" },
   { label: "CAGE / NCAGE", value: "8ZJ10" },
   { label: "Email", value: "info@gt-usa.com" },
-  { label: "Phone", value: "+1-125-258-3525" },
+  { label: "Phone", value: "+1 571-337-1358" },
   { label: "Website", value: "www.gt-usa.com" },
 ];
 
