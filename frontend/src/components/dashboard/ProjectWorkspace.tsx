@@ -75,6 +75,7 @@ import ProjectSchedule from "./ProjectSchedule";
 import ClientInfoCard from "./ClientInfoCard";
 import DocTabs from "./DocTabs";
 import ExpenseLog from "./ExpenseLog";
+import ProcurementInvoices from "./ProcurementInvoices";
 import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
@@ -270,6 +271,8 @@ const PROC_SUBTABS = [
   { key: "rfqs", permId: "proc-rfqs", label: "RFQs" },
   { key: "quotes", permId: "proc-quotes", label: "Quotes" },
   { key: "po", permId: "proc-po", label: "Purchase Orders" },
+  // CR-P (172) — the vendor invoices on the POs; same access as Purchase Orders.
+  { key: "invoices", permId: "proc-po", label: "Invoices" },
   { key: "shipment", permId: "proc-shipment", label: "Shipment" },
 ] as const;
 const PROC_PERM_BY_KEY: Record<string, string> = Object.fromEntries(PROC_SUBTABS.map((t) => [t.key, t.permId]));
@@ -650,7 +653,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
   }, [financialLocked, project, proposalSub]);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
-  const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
+  const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
   const [openRfqId, setOpenRfqId] = useState<string | undefined>(undefined); // open a specific RFQ after creating it from the BOQ
@@ -3172,7 +3175,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const procNav = ([
     { k: "log", label: "Master Log" }, { k: "boq", label: "BOQ" }, { k: "submittals", label: "Submittals" },
     { k: "rfqs", label: "RFQs" }, { k: "quotes", label: "Quotes" }, { k: "po", label: "Purchase Orders" },
-    { k: "shipment", label: "Shipment" }, { k: "legacy", label: "Legacy Log" },
+    { k: "invoices", label: "Invoices" }, { k: "shipment", label: "Shipment" }, { k: "legacy", label: "Legacy Log" },
   ] as const).filter((t) => procVisible(t.k));
   const procActive = procNav.some((t) => t.k === procSub) ? procSub : (procNav[0]?.k || "log");
 
@@ -5966,6 +5969,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {procActive === "rfqs" && id && <ProcurementRFQ projectId={id} canEdit={procPermFor("rfqs") === "edit"} projectInfo={projectPdfInfo(project)} onGoToPO={() => setProcSub("po")} openRfqId={openRfqId} onOpenedRfq={() => setOpenRfqId(undefined)} />}
               {procActive === "quotes" && id && <ProcurementQuotes projectId={id} canEdit={procPermFor("quotes") === "edit"} />}
               {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} onGoToQuotes={() => setProcSub("quotes")} />}
+              {procActive === "invoices" && id && <ProcurementInvoices projectId={id} projectName={project?.name} onGoToPO={() => setProcSub("po")} onGoToReceived={() => { setActiveTab("finances"); setFinSub("invoice-received"); }} />}
               {procActive === "shipment" && id && <ProcurementShipment projectId={id} canEdit={procPermFor("shipment") === "edit"} projectInfo={projectPdfInfo(project)} />}
 
               {procActive === "legacy" && (
@@ -7605,7 +7609,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           const rows = [permRow(t.id, t.label, isChild)];
                           // Procurement gets per-sub-tab rows so a guest (e.g. logistics company) can be limited to specific sub-tabs.
                           if (t.id === "procurement") {
-                            for (const s of PROC_SUBTABS) rows.push(permRow(s.permId, `Procurement · ${s.label}`, true));
+                            // Invoices shares the Purchase Orders permission: one row for it.
+                            for (const s of PROC_SUBTABS.filter((x, i, a) => a.findIndex((y) => y.permId === x.permId) === i)) rows.push(permRow(s.permId, `Procurement · ${s.label}`, true));
                           }
                           // CR-P-30 — Finances gets per-sub-tab rows (Expenses / Invoice Sent / Invoice Received).
                           if (t.id === "finances") {
