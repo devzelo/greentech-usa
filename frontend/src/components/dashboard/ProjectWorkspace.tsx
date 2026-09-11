@@ -561,7 +561,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const emptyCover = (): ProposalCover => ({
     proposalTitle: "", projectName: "", solicitationNo: "", taskOrderNo: "", contractNo: "",
     clientName: "", dueDate: "", submissionDate: "", submittedTo: "", attentionTo: "", submittedBy: "",
-    logoMode: "single", jvLogoUrl: "", images: [],
+    logoMode: "single", jvLogoUrl: "", images: [], coverStyle: "hero", subtitle: "",
   });
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });

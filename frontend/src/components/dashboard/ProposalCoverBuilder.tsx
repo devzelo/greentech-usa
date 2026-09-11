@@ -9,6 +9,39 @@ const card = "bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm spac
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
+// The three cover designs from the brand kit. The thumbnails are small sketches of each layout.
+const GRAD_H = "linear-gradient(90deg, #10B981, #3B82F6)";
+const GRAD_V = "linear-gradient(180deg, #10B981, #3B82F6)";
+const COVER_STYLES: Array<{ id: NonNullable<ProposalCover["coverStyle"]>; label: string; hint: string }> = [
+  { id: "hero", label: "Dark hero", hint: "Photo mosaic on dark. Uses up to 4 cover images." },
+  { id: "formal", label: "Light formal", hint: "White page with detail cards. No photos." },
+  { id: "panel", label: "Gradient panel", hint: "Brand gradient side panel and one photo." },
+];
+function CoverThumb({ id }: { id: string }) {
+  if (id === "formal") return (
+    <div className="w-full h-full bg-white flex flex-col">
+      <div className="h-1" style={{ background: GRAD_H }} />
+      <div className="px-1.5 pt-1.5"><div className="w-5 h-1.5 rounded-sm bg-slate-800" /></div>
+      <div className="px-1.5 mt-3 space-y-0.5"><div className="w-8 h-1 rounded bg-slate-800" /><div className="w-6 h-1 rounded bg-slate-800" /></div>
+      <div className="px-1.5 mt-2 grid grid-cols-2 gap-0.5"><div className="h-1.5 rounded-sm bg-slate-100 border-l border-emerald-500" /><div className="h-1.5 rounded-sm bg-slate-100 border-l border-emerald-500" /></div>
+      <div className="mt-auto mx-1.5 mb-1.5 h-1.5 rounded-sm" style={{ background: GRAD_H }} />
+    </div>
+  );
+  if (id === "panel") return (
+    <div className="w-full h-full bg-white flex">
+      <div className="w-2/5 h-full p-1 flex flex-col justify-between" style={{ background: GRAD_V }}><div className="w-3 h-1 rounded-sm bg-slate-800" /><div className="w-4 h-1 rounded bg-white/90" /></div>
+      <div className="flex-1 p-1"><div className="h-4 rounded-sm bg-slate-300" /><div className="mt-2 space-y-0.5"><div className="h-0.5 bg-slate-200" /><div className="h-0.5 bg-slate-200" /><div className="h-0.5 bg-slate-200" /></div></div>
+    </div>
+  );
+  return (
+    <div className="w-full h-full bg-slate-900 flex flex-col">
+      <div className="h-[45%] flex gap-px"><div className="w-3/5 bg-slate-500" /><div className="flex-1 flex flex-col gap-px"><div className="flex-1 bg-slate-400" /><div className="flex-1 bg-slate-500" /><div className="flex-1 bg-slate-400" /></div></div>
+      <div className="px-1.5 mt-1.5 space-y-0.5"><div className="w-8 h-1 rounded bg-white" /><div className="w-6 h-1 rounded bg-white" /></div>
+      <div className="mt-auto mx-1.5 mb-2 h-0.5" style={{ background: GRAD_H }} />
+    </div>
+  );
+}
+
 const COVER_FIELDS: Array<{ key: keyof ProposalCover; label: string; type?: string }> = [
   { key: "proposalTitle", label: "Proposal Title" },
   { key: "projectName", label: "Project Name" },
@@ -84,6 +117,33 @@ export default function ProposalCoverBuilder({
           <span className="text-[10px] text-slate-400">This cover is specific to this document</span>
         </div>
 
+        {/* Cover design, from the brand kit. The data below fills whichever style is chosen. */}
+        <div className="space-y-2">
+          <label className={lbl}>Cover style</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Cover style">
+            {COVER_STYLES.map((s) => {
+              const on = (cover.coverStyle || "hero") === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={!canEdit}
+                  onClick={() => setCover("coverStyle", s.id)}
+                  className={`flex items-center gap-3 p-2.5 rounded-2xl border text-left transition-all disabled:opacity-60 ${on ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "border-slate-100 hover:border-slate-300 bg-white"}`}
+                >
+                  <span className="w-12 h-16 shrink-0 rounded-md overflow-hidden border border-slate-200 shadow-sm"><CoverThumb id={s.id} /></span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold text-slate-800">{s.label}</span>
+                    <span className="block text-[10px] text-slate-500 leading-snug">{s.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {COVER_FIELDS.map((f) => (
             <div key={String(f.key)} className="space-y-1.5">
@@ -98,6 +158,17 @@ export default function ProposalCoverBuilder({
               />
             </div>
           ))}
+          <div className="space-y-1.5 md:col-span-2">
+            <label className={lbl}>Subtitle</label>
+            <textarea
+              value={cover.subtitle || ""}
+              onChange={(e) => setCover("subtitle", e.target.value)}
+              disabled={!canEdit}
+              rows={2}
+              placeholder="One or two lines under the title, e.g. Design-build delivery and operations & maintenance of the wastewater treatment plant."
+              className={`${inp} resize-y`}
+            />
+          </div>
         </div>
 
         {/* Logos — CR-P (91): whether this is a joint venture is decided ONCE, when the project is

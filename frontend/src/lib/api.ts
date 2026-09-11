@@ -275,6 +275,9 @@ export interface ProposalCover {
   logoMode: "single" | "dual"; // dual = Joint Venture (two logos)
   jvLogoUrl: string;           // second logo for JV submissions
   images: ProposalCoverImage[]; // 3–4 cover images (from the project gallery or uploaded)
+  // Brand-kit cover design: dark photo mosaic, light formal, or gradient side panel.
+  coverStyle?: "hero" | "formal" | "panel";
+  subtitle?: string;            // one or two lines under the title
 }
 export interface ProposalSignatory { id: string; name: string; title: string; signatureUrl: string }
 export interface ProposalCoverLetter {

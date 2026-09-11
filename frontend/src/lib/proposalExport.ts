@@ -1,6 +1,7 @@
 import { pdf } from "@react-pdf/renderer";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { documentUrl, type ApiDocument } from "./api";
+import { PAGE_NUMBER_POS } from "../components/pdf/brand";
 
 // Render a react-pdf proposal element, append uploaded attachments (PDFs page-by-page,
 // images as full pages), and stamp continuous page numbers across the whole document.
@@ -39,15 +40,17 @@ export async function assembleProposalPdf(
     }
   }
 
-  // Continuous "Page i of N" across the assembled document.
+  // Continuous "Page i of N" across the assembled document, in the letterhead footer's right-hand
+  // slot (level with its reference line, above the gradient rule).
   const font = await merged.embedFont(StandardFonts.Helvetica);
   const pages = merged.getPages();
   pages.forEach((p, i) => {
+    if (i === 0) return;   // the cover counts as page 1 but carries no number
     const { width } = p.getSize();
     const text = `Page ${i + 1} of ${pages.length}`;
-    const size = 8;
+    const size = 7.5;
     const tw = font.widthOfTextAtSize(text, size);
-    p.drawText(text, { x: width - 44 - tw, y: 20, size, font, color: rgb(0.39, 0.45, 0.55) });
+    p.drawText(text, { x: width - PAGE_NUMBER_POS.right - tw, y: PAGE_NUMBER_POS.baseline, size, font, color: rgb(0.39, 0.45, 0.55) });
   });
 
   const out = await merged.save();

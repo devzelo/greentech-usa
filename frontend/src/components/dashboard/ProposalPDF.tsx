@@ -3,20 +3,27 @@ import type { ReactNode } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover } from "../../lib/api";
 import { resolveProposalLayout, resolveFinancialTables } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
+import {
+  BRAND, COMPANY, A4, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
+  LetterheadHeader, LetterheadFooter, SectionHeading, Subhead, Eyebrow, GradBar,
+} from "../pdf/brand";
+import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
 
-// Resolve the proposal-wide letterhead into header inputs ({ logo, jv, hide }).
-interface LhConfig { logo?: string; jv?: string; hide?: boolean }
+// The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
+// letterhead, the look defined by the brand kit's generator scripts. Fonts register once.
+registerBrandFonts();
+
+// Resolve a letterhead choice: the brand band (with the JV partner's logo for "jv"), a custom logo
+// row, or nothing at all (e.g. sections that are raw client forms).
+interface LhConfig { mode: "brand" | "custom" | "none"; logo?: string; jv?: string }
 function lhConfig(letterhead: ProposalLetterhead | undefined, customLetterheadUrl: string | undefined, logoUrl: string | undefined, coverJv: string | undefined): LhConfig {
   switch (letterhead) {
-    case "none": return { hide: true };
-    case "custom": return { logo: abs(customLetterheadUrl), jv: "" };
-    case "jv": return { logo: logoUrl, jv: coverJv || "" };
-    default: return { logo: logoUrl, jv: "" };
+    case "none": return { mode: "none" };
+    case "custom": return { mode: "custom", logo: abs(customLetterheadUrl) || logoUrl };
+    case "jv": return { mode: "brand", jv: coverJv || "" };
+    default: return { mode: "brand" };
   }
 }
-
-// Stored proposal asset URLs are root-relative (/uploads/…) — react-pdf needs an absolute URL.
-const abs = (url?: string) => (!url ? "" : url.startsWith("http") ? url : `${typeof window !== "undefined" ? window.location.origin : ""}${url}`);
 
 /** A proposal team member whose full resume gets appended as extra pages. */
 export interface ProposalTeamResume {
@@ -25,87 +32,65 @@ export interface ProposalTeamResume {
   data: TeamResume;
 }
 
-const PRIMARY = "#10B981";
-const INK = "#0f172a";
-const MUTED = "#64748b";
-const LINE = "#e7ebf0";
-const SOFT = "#f8fafc";
+const BODY = { fontSize: 9.5, color: BRAND.s700, fontFamily: "Inter", lineHeight: 1.5 } as const;
 
 const styles = StyleSheet.create({
-  page: { paddingTop: 44, paddingHorizontal: 44, paddingBottom: 60, fontSize: 10, color: INK, fontFamily: "Helvetica", lineHeight: 1.5 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 22, borderBottom: `2 solid ${PRIMARY}` },
-  brandLogo: { width: 92, height: 47, objectFit: "contain" },
-  headerRight: { alignItems: "flex-end", justifyContent: "center" },
-  reportLabel: { fontSize: 8, color: MUTED, letterSpacing: 2 },
-  reportDate: { fontSize: 9, color: INK, marginTop: 3 },
-
-  // Cover
-  cover: { marginTop: 120, alignItems: "center" },
-  coverKicker: { fontSize: 10, color: PRIMARY, letterSpacing: 3, marginBottom: 18 },
-  coverTitle: { fontSize: 30, fontWeight: 700, textAlign: "center", marginBottom: 14, lineHeight: 1.2 },
-  coverSubtitle: { fontSize: 13, color: MUTED, textAlign: "center", marginBottom: 40 },
-  coverMetaRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 6 },
-  coverMeta: { fontSize: 10, color: INK },
-
-  // Cover field grid + images + dual logos
-  coverFields: { marginTop: 30, borderTop: `1 solid ${LINE}`, paddingTop: 16, width: "100%" },
-  coverFieldRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
-  coverFieldLabel: { fontSize: 9, color: MUTED, letterSpacing: 0.5 },
-  coverFieldValue: { fontSize: 10, color: INK, fontWeight: 700, textAlign: "right", flexShrink: 1, maxWidth: "60%" },
-  coverImages: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 22, justifyContent: "center" },
-  coverImg: { width: 150, height: 96, objectFit: "cover", borderRadius: 6 },
-  logoPair: { flexDirection: "row", alignItems: "center", gap: 12 },
-  jvLogo: { width: 78, height: 40, objectFit: "contain" },
+  page: { ...LETTERHEAD_PAGE, ...BODY },
+  // No brand band (custom logo row, or no letterhead): the text starts nearer the top.
+  pagePlain: { paddingTop: 44, paddingBottom: LETTERHEAD_PAGE.paddingBottom, paddingHorizontal: LETTERHEAD_PAGE.paddingHorizontal, ...BODY },
+  customHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, marginBottom: 20, borderBottom: `1.4 solid ${BRAND.emerald}` },
+  customLogo: { width: 110, height: 40, objectFit: "contain" },
+  customLabel: { fontSize: 7.5, color: BRAND.s500, letterSpacing: 2 },
 
   // Divider page
-  dividerWrap: { marginTop: 220, alignItems: "center" },
-  dividerBar: { width: 64, height: 4, backgroundColor: PRIMARY, borderRadius: 2, marginBottom: 18 },
-  dividerTitle: { fontSize: 26, fontWeight: 700, textAlign: "center", color: INK },
+  dividerWrap: { marginTop: 200 },
+  dividerTitle: { fontFamily: "Outfit", fontSize: 28, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15, marginBottom: 16 },
+
+  // Document title block (financial)
+  docTitle: { fontFamily: "Outfit", fontSize: 22, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15 },
 
   // Cover letter
-  sigRow: { flexDirection: "row", flexWrap: "wrap", gap: 28, marginTop: 28 },
-  sigBlock: { minWidth: 180 },
+  sigRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 26 },
+  sigBlock: { minWidth: 180, marginRight: 28, marginBottom: 12 },
   sigImg: { height: 40, width: 120, objectFit: "contain", marginBottom: 4 },
-  sigName: { fontSize: 11, fontWeight: 700 },
-  sigTitle: { fontSize: 9, color: MUTED },
+  sigName: { fontSize: 10.5, fontWeight: 700, color: BRAND.slate },
+  sigTitle: { fontSize: 8.5, color: BRAND.s500 },
 
-  // Sections
-  sectionTitle: { fontSize: 14, fontWeight: 700, color: INK, marginBottom: 8, marginTop: 18, paddingBottom: 5, borderBottom: `1 solid ${LINE}` },
-  para: { fontSize: 10, marginBottom: 6, color: "#1f2937" },
-  h2: { fontSize: 12, fontWeight: 700, marginTop: 8, marginBottom: 4 },
-  h3: { fontSize: 11, fontWeight: 700, marginTop: 6, marginBottom: 3 },
+  // Body text
+  para: { fontSize: 9.5, marginBottom: 6, color: BRAND.s700 },
+  h2: { fontSize: 11, fontWeight: 700, color: BRAND.slate, marginTop: 8, marginBottom: 4 },
+  h3: { fontSize: 10, fontWeight: 700, color: BRAND.slate, marginTop: 6, marginBottom: 3 },
   listItem: { flexDirection: "row", marginBottom: 3 },
-  bullet: { width: 14, fontSize: 10 },
-  listText: { flex: 1, fontSize: 10 },
+  bullet: { width: 13, fontSize: 9.5, fontWeight: 700, color: BRAND.emerald },
+  listText: { flex: 1, fontSize: 9.5, color: BRAND.s700 },
 
   // TOC
-  tocRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, borderBottom: `1 solid ${LINE}` },
-  tocText: { fontSize: 10 },
+  tocRow: { flexDirection: "row", paddingVertical: 6, borderBottom: `0.6 solid ${BRAND.border}` },
+  tocNum: { width: 30, fontSize: 9.5, fontWeight: 700, color: BRAND.emerald },
+  tocText: { flex: 1, fontSize: 9.5, color: BRAND.slate },
 
   // Employee / project cards
-  card: { backgroundColor: SOFT, borderRadius: 6, padding: 10, marginBottom: 7, borderLeft: `3 solid ${PRIMARY}` },
-  cardTitle: { fontSize: 11, fontWeight: 700 },
-  cardMeta: { fontSize: 9, color: MUTED, marginTop: 2 },
+  card: { backgroundColor: BRAND.mist, borderRadius: 6, padding: 10, marginBottom: 7, borderLeft: `3 solid ${BRAND.emerald}` },
+  cardTitle: { fontSize: 10.5, fontWeight: 700, color: BRAND.slate },
+  cardMeta: { fontSize: 8.5, color: BRAND.s500, marginTop: 2 },
 
-  // Table
-  tRow: { flexDirection: "row", borderBottom: `1 solid ${LINE}` },
-  tHead: { flexDirection: "row", backgroundColor: INK, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
-  th: { color: "#fff", fontSize: 8, fontWeight: 700, padding: 6 },
-  td: { fontSize: 9, padding: 6, color: "#1f2937" },
+  // Data tables: slate header, zebra rows (the proposal template's table)
+  tHead: { flexDirection: "row", backgroundColor: BRAND.slate },
+  th: { color: BRAND.white, fontSize: 7.5, fontWeight: 700, padding: 6, letterSpacing: 0.6 },
+  tRow: { flexDirection: "row", borderBottom: `0.6 solid ${BRAND.border}` },
+  tRowAlt: { backgroundColor: BRAND.mist },
+  td: { fontSize: 8.5, padding: 6, color: BRAND.slate },
   totalRow: { flexDirection: "row", marginTop: 8, justifyContent: "flex-end" },
-  totalBox: { backgroundColor: SOFT, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 16, borderLeft: `3 solid ${PRIMARY}` },
-  totalLabel: { fontSize: 8, color: MUTED, letterSpacing: 1 },
-  totalValue: { fontSize: 14, fontWeight: 700, color: INK },
-
-  footer: { position: "absolute", bottom: 24, left: 44, right: 44, flexDirection: "row", justifyContent: "space-between", borderTop: `1 solid ${LINE}`, paddingTop: 8 },
-  footerText: { fontSize: 8, color: MUTED },
+  totalBox: { backgroundColor: BRAND.mist, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 16, borderLeft: `3 solid ${BRAND.emerald}` },
+  totalLabel: { fontSize: 7.5, color: BRAND.s500, letterSpacing: 1 },
+  totalValue: { fontSize: 13, fontWeight: 700, color: BRAND.slate },
 
   // Rich-text media (inline images & tables from the editor)
   rtImg: { marginVertical: 8, alignSelf: "flex-start", objectFit: "contain" },
-  rtTable: { marginVertical: 8, borderTop: `1 solid ${LINE}`, borderLeft: `1 solid ${LINE}` },
+  rtTable: { marginVertical: 8, borderTop: `0.6 solid ${BRAND.s300}`, borderLeft: `0.6 solid ${BRAND.s300}` },
   rtTr: { flexDirection: "row" },
-  rtTd: { flex: 1, fontSize: 9, padding: 5, color: "#1f2937", borderRight: `1 solid ${LINE}`, borderBottom: `1 solid ${LINE}` },
-  rtTh: { fontWeight: 700, backgroundColor: SOFT },
+  rtTd: { flex: 1, fontSize: 8.5, padding: 5, color: BRAND.slate, borderRight: `0.6 solid ${BRAND.s300}`, borderBottom: `0.6 solid ${BRAND.s300}` },
+  rtTh: { fontWeight: 700, backgroundColor: "#ECFDF5" },
 });
 
 // ── Minimal HTML → react-pdf renderer ────────────────────────────────────────
@@ -133,7 +118,9 @@ function inlineToText(nodes: Inline[], keyBase: string) {
     <Text
       key={`${keyBase}-${i}`}
       style={{
-        fontFamily: "Helvetica",
+        // Inter is registered without an italic face, so italic runs use Helvetica's oblique to
+        // stay visibly italic instead of silently printing upright.
+        fontFamily: n.italic ? "Helvetica" : "Inter",
         fontWeight: n.bold ? 700 : 400,
         fontStyle: n.italic ? "italic" : "normal",
         textDecoration: n.underline ? "underline" : "none",
@@ -155,7 +142,7 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
   const renderImg = (el: HTMLElement) => {
     const src = el.getAttribute("src");
     if (!src) return;
-    const w = Math.min(parseInt(el.getAttribute("width") || "", 10) || 300, 468);
+    const w = Math.min(parseInt(el.getAttribute("width") || "", 10) || 300, A4.w - 2 * LETTERHEAD_PAGE.paddingHorizontal);
     blocks.push(<Image key={`${keyBase}-img-${k++}`} src={abs(src)} style={[styles.rtImg, { width: w }]} />);
   };
   const renderTable = (tbl: HTMLElement) => {
@@ -229,143 +216,137 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
   return <>{blocks}</>;
 }
 
-function Header({ logoUrl, label, jvLogoUrl }: { logoUrl?: string; label: string; jvLogoUrl?: string }) {
+/**
+ * One page (or run of pages) on the chosen letterhead: the brand band on top and the gradient rule
+ * below, a custom logo row, or bare. The footer note carries the document and project; the page
+ * number is stamped afterwards across the whole assembled file.
+ */
+function Sheet({ lh, label, note, children }: { lh: LhConfig; label: string; note: string; children?: ReactNode; key?: string }) {
   return (
-    <View style={styles.header} fixed>
-      <View style={styles.logoPair}>
-        {logoUrl ? <Image src={logoUrl} style={styles.brandLogo} /> : <Text style={{ fontWeight: 700 }}>GreenTech USA</Text>}
-        {!!jvLogoUrl && <Image src={abs(jvLogoUrl)} style={styles.jvLogo} />}
-      </View>
-      <View style={styles.headerRight}>
-        <Text style={styles.reportLabel}>{label}</Text>
-        <Text style={styles.reportDate}>{new Date().toISOString().slice(0, 10)}</Text>
-      </View>
-    </View>
-  );
-}
-
-// Letterhead-aware header for content pages (returns nothing when letterhead = "none").
-function PageHeader({ lh, label }: { lh: LhConfig; label: string }) {
-  if (lh.hide) return null;
-  return <Header logoUrl={lh.logo} jvLogoUrl={lh.jv} label={label} />;
-}
-
-// ── Shared cover page + cover letter (used by both documents) ─────────────────
-function CoverPage({ cover, project, logoUrl, label }: { cover?: ProposalCover; project: ApiProject; logoUrl?: string; label: string }) {
-  const c = cover;
-  const title = c?.proposalTitle || project.name;
-  const jv = c?.logoMode === "dual" ? c?.jvLogoUrl : "";
-  const fields: Array<[string, string]> = c ? ([
-    ["Project Name", c.projectName || project.name],
-    ["Solicitation Number", c.solicitationNo],
-    ["Task Order Number", c.taskOrderNo],
-    ["Contract Number", c.contractNo],
-    ["Client Name", c.clientName || project.clientInfo?.name || ""],
-    ["Proposal Due Date", c.dueDate],
-    ["Date of Submission", c.submissionDate],
-    ["Submitted To", c.submittedTo],
-    ["Attention To", c.attentionTo],
-    ["Submitted By", c.submittedBy],
-  ] as Array<[string, string]>).filter(([, v]) => !!v && v.trim()) : [];
-  const images = (c?.images || []).slice(0, 4);
-
-  return (
-    <Page size="A4" style={styles.page}>
-      <Header logoUrl={logoUrl} label={label} jvLogoUrl={jv} />
-      <View style={styles.cover}>
-        <Text style={styles.coverKicker}>{label}</Text>
-        <Text style={styles.coverTitle}>{title}</Text>
-        {images.length > 0 && (
-          <View style={styles.coverImages}>
-            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={styles.coverImg} />)}
-          </View>
-        )}
-        {fields.length > 0 && (
-          <View style={styles.coverFields}>
-            {fields.map(([k, v], i) => (
-              <View key={i} style={styles.coverFieldRow}>
-                <Text style={styles.coverFieldLabel}>{k}</Text>
-                <Text style={styles.coverFieldValue}>{v}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-      <Footer project={project} />
+    <Page size="A4" style={lh.mode === "brand" ? styles.page : styles.pagePlain} wrap>
+      {lh.mode === "brand" && <LetterheadHeader jvLogo={lh.jv} />}
+      {lh.mode === "custom" && (
+        <View style={styles.customHeader} fixed>
+          {lh.logo ? <Image src={lh.logo} style={styles.customLogo} /> : <Text style={{ fontWeight: 700, color: BRAND.slate }}>{COMPANY.name}</Text>}
+          <Text style={styles.customLabel}>{label.toUpperCase()}</Text>
+        </View>
+      )}
+      {children}
+      {lh.mode !== "none" && <LetterheadFooter note={note} line={lh.mode === "brand"} />}
     </Page>
   );
 }
 
-function CoverLetterPage({ coverLetter, project, lh, label }: { coverLetter?: ProposalCoverLetter; project: ApiProject; lh: LhConfig; label: string }) {
+const footNote = (label: string, project: ApiProject) => [label, project.name, project.id].filter(Boolean).join(" · ");
+
+// ── Cover page data ──────────────────────────────────────────────────────────
+const longDate = (s?: string) => {
+  if (!s) return "";
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00` : s);
+  return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+};
+
+/** The cover's data, whatever its style: filled fields only, photos with a brand fallback. */
+function coverData(kind: string, c: ProposalCover | undefined, project: ApiProject): CoverData {
+  const title = c?.proposalTitle || project.name;
+  const projectName = c?.projectName || project.name;
+  const fields = ([
+    ["SOLICITATION NO.", c?.solicitationNo],
+    ["PREPARED FOR", c?.clientName || project.clientInfo?.name || ""],
+    ["PROJECT", projectName !== title ? projectName : ""],
+    ["TASK ORDER NO.", c?.taskOrderNo],
+    ["CONTRACT NO.", c?.contractNo],
+    ["DUE DATE", longDate(c?.dueDate)],
+    ["DATE OF SUBMISSION", longDate(c?.submissionDate)],
+    ["SUBMITTED TO", c?.submittedTo],
+    ["ATTENTION", c?.attentionTo],
+    ["SUBMITTED BY", c?.submittedBy || COMPANY.name],
+  ] as Array<[string, string | undefined]>)
+    .filter(([, v]) => !!v && v.trim())
+    .map(([label, value]): CoverField => ({ label, value: value as string }));
+  const images = (c?.images || []).map((im) => abs(im.url)).filter(Boolean).slice(0, 4);
+  const dated = c?.submissionDate || c?.dueDate;
+  return {
+    kind,
+    year: String(dated ? new Date(`${dated}T00:00:00`).getFullYear() || new Date().getFullYear() : new Date().getFullYear()),
+    title,
+    subtitle: c?.subtitle || "",
+    fields,
+    images: images.length ? images : [abs(COVER_FALLBACK)],
+    jvLogo: c?.logoMode === "dual" ? c?.jvLogoUrl : "",
+  };
+}
+
+function CoverLetterPage({ coverLetter, lh, label, note }: { coverLetter?: ProposalCoverLetter; lh: LhConfig; label: string; note: string }) {
   if (!coverLetter?.enabled) return null;
   return (
-    <Page size="A4" style={styles.page} wrap>
-      <PageHeader lh={lh} label={label} />
-      <Text style={styles.sectionTitle}>Cover Letter</Text>
+    <Sheet lh={lh} label={label} note={note}>
+      <SectionHeading title="Cover Letter" />
       <RichText html={coverLetter.body} keyBase="cover-letter" />
       {(coverLetter.signatories.length > 0 || coverLetter.useEmailSignature) && (
         <View style={styles.sigRow}>
           {coverLetter.signatories.map((s, i) => (
             <View key={i} style={styles.sigBlock}>
               {!!s.signatureUrl && <Image src={abs(s.signatureUrl)} style={styles.sigImg} />}
-              <Text style={styles.sigName}>{s.name || "—"}</Text>
+              <Text style={styles.sigName}>{s.name || "-"}</Text>
               {!!s.title && <Text style={styles.sigTitle}>{s.title}</Text>}
             </View>
           ))}
         </View>
       )}
       {coverLetter.useEmailSignature && (
-        <Text style={[styles.cardMeta, { marginTop: 16 }]}>GreenTech USA — Environmental Engineering &amp; General Contracting</Text>
+        <Text style={[styles.cardMeta, { marginTop: 16 }]}>{COMPANY.name} · {COMPANY.tagline}</Text>
       )}
-      <Footer project={project} />
-    </Page>
-  );
-}
-
-// Page numbers are stamped continuously across the assembled document (incl. attachments)
-// by assembleProposalPdf via pdf-lib, so the react-pdf footer only carries the project name.
-function Footer({ project }: { project: ApiProject }) {
-  return (
-    <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>{project.name} · {project.id}</Text>
-      <Text style={styles.footerText}>GreenTech USA</Text>
-    </View>
+    </Sheet>
   );
 }
 
 const money = (n: number, currency: string) => `${currency || "$"}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
 
-// Customizable closing / back-cover page (brochure-style).
-function BackCoverPage({ backCover, project, logoUrl }: { backCover?: ProposalBackCover; project: ApiProject; logoUrl?: string }) {
+// Closing / back-cover page, on dark like the hero cover. Marketing copy sits on a light card so
+// the editor's dark text stays readable.
+function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
   if (!backCover?.enabled) return null;
-  const contact = [backCover.website, backCover.email, backCover.phone].filter(Boolean).join("   ·   ");
   const images = (backCover.images || []).slice(0, 4);
+  const contact = ([["WEB", backCover.website], ["EMAIL", backCover.email], ["PHONE", backCover.phone], ["ADDRESS", backCover.address]] as Array<[string, string]>).filter(([, v]) => !!v?.trim());
   return (
-    <Page size="A4" style={styles.page}>
-      <Header logoUrl={logoUrl} label="" />
-      <View style={{ marginTop: 60, alignItems: "center" }}>
-        <View style={styles.dividerBar} />
-        {!!backCover.tagline && <Text style={[styles.coverTitle, { fontSize: 24 }]}>{backCover.tagline}</Text>}
-        {!!backCover.marketing?.trim() && <View style={{ marginTop: 12, width: "100%" }}><RichText html={backCover.marketing} keyBase="back-mkt" /></View>}
-        {images.length > 0 && (
-          <View style={styles.coverImages}>
-            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={styles.coverImg} />)}
+    <Page size="A4" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter", padding: 56, justifyContent: "space-between" }}>
+      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={A4.w} h={8} r={0} id="backTop" /></View>
+      <Image src={abs(LOGO_MINT)} style={{ width: 30 * (1588 / 295), height: 30 }} />
+      <View>
+        {!!backCover.tagline && <Text style={{ fontFamily: "Outfit", fontSize: 26, fontWeight: 700, color: BRAND.white, lineHeight: 1.15, marginBottom: 16 }}>{backCover.tagline}</Text>}
+        {!!backCover.marketing?.trim() && (
+          <View style={{ backgroundColor: BRAND.white, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+            <RichText html={backCover.marketing} keyBase="back-mkt" />
           </View>
         )}
-        <View style={{ marginTop: 28, alignItems: "center" }}>
-          {!!contact && <Text style={styles.coverMeta}>{contact}</Text>}
-          {!!backCover.address && <Text style={[styles.coverMeta, { marginTop: 4 }]}>{backCover.address}</Text>}
-          {!!backCover.social && <Text style={[styles.cardMeta, { marginTop: 4 }]}>{backCover.social}</Text>}
-        </View>
+        {images.length > 0 && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={{ width: (A4.w - 112 - 18) / 4, height: 80, objectFit: "cover", borderRadius: 6, marginRight: i < images.length - 1 ? 6 : 0 }} />)}
+          </View>
+        )}
       </View>
-      <Footer project={project} />
+      <View>
+        <GradBar w={A4.w - 112} h={3} id="backRule" />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
+          {contact.map(([l, v]) => (
+            <View key={l} style={{ width: "50%", marginBottom: 10, paddingRight: 12 }}>
+              <Text style={{ fontSize: 6.6, fontWeight: 600, color: BRAND.s400, letterSpacing: 1.4 }}>{l}</Text>
+              <Text style={{ fontSize: 9.5, fontWeight: 700, color: BRAND.white, marginTop: 3 }}>{v}</Text>
+            </View>
+          ))}
+        </View>
+        {!!backCover.social && <Text style={{ fontSize: 8, color: BRAND.s400, marginTop: 4 }}>{backCover.social}</Text>}
+      </View>
     </Page>
   );
 }
 
 // ── Technical Proposal PDF ───────────────────────────────────────────────────
 function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [] }: { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] }) {
+  const LABEL = "Technical Proposal";
+  const note = footNote(LABEL, project);
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
   // Does a section have any content to render?
@@ -387,9 +368,9 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
   const numById = new Map<string, number>();
   let nCounter = 0;
   for (const m of visible) if (m.kind !== "blank") numById.set(m.id, ++nCounter);
-  const toc = [
-    ...visible.filter((m) => m.kind !== "blank").map((m) => `${numById.get(m.id)}. ${m.title}`),
-    ...(resumes.length > 0 ? ["Appendix — Team Resumes"] : []),
+  const toc: Array<{ num?: number; title: string }> = [
+    ...visible.filter((m) => m.kind !== "blank").map((m) => ({ num: numById.get(m.id), title: m.title })),
+    ...(resumes.length > 0 ? [{ title: "Appendix: Team Resumes" }] : []),
   ];
 
   // Effective per-section letterhead, then group consecutive same-letterhead sections onto shared pages.
@@ -411,19 +392,19 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
   const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
   const renderSection = (m: typeof visible[number], n: number) => {
-    const title = `${n}. ${m.title}`;
+    const heading = <SectionHeading num={n} title={m.title} />;
     if (m.kind === "description") return (
-      <View key={m.id}><Text style={styles.sectionTitle}>{title}</Text><RichText html={content.description} keyBase="desc" /></View>
+      <View key={m.id}>{heading}<RichText html={content.description} keyBase="desc" /></View>
     );
     if (m.kind === "personnel") return (
       <View key={m.id}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        {heading}
         {content.employees.map((e) => {
           const hasResume = resumes.some((r) => r.name === e.name);
           return (
-            <View key={e.id} style={styles.card}>
-              <Text style={styles.cardTitle}>{e.name || "—"}</Text>
-              <Text style={styles.cardMeta}>{e.role || "—"}{hasResume ? "  ·  Full resume in Appendix — Team Resumes" : e.resumeName ? `  ·  Resume: ${e.resumeName}` : ""}</Text>
+            <View key={e.id} style={styles.card} wrap={false}>
+              <Text style={styles.cardTitle}>{e.name || "-"}</Text>
+              <Text style={styles.cardMeta}>{e.role || "-"}{hasResume ? "  ·  Full resume in Appendix: Team Resumes" : e.resumeName ? `  ·  Resume: ${e.resumeName}` : ""}</Text>
             </View>
           );
         })}
@@ -431,10 +412,10 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
     );
     if (m.kind === "pastPerformance") return (
       <View key={m.id}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        {heading}
         {content.similarProjects.map((p) => (
-          <View key={p.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{p.name || "—"}</Text>
+          <View key={p.id} style={styles.card} wrap={false}>
+            <Text style={styles.cardTitle}>{p.name || "-"}</Text>
             <Text style={styles.cardMeta}>{[p.client, p.year, p.value].filter(Boolean).join("  ·  ")}</Text>
             {!!p.summary && <Text style={[styles.para, { marginTop: 4 }]}>{p.summary}</Text>}
           </View>
@@ -443,17 +424,17 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
     );
     if (m.kind === "timeline") return (
       <View key={m.id}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        {heading}
         <View style={styles.tHead}>
           <Text style={[styles.th, { flex: 3 }]}>PHASE</Text>
           <Text style={[styles.th, { flex: 1 }]}>START</Text>
           <Text style={[styles.th, { flex: 1 }]}>END</Text>
         </View>
         {content.timeline.map((ph, i) => (
-          <View key={i} style={styles.tRow}>
-            <Text style={[styles.td, { flex: 3 }]}>{ph.phase || "—"}</Text>
-            <Text style={[styles.td, { flex: 1 }]}>{ph.start || "—"}</Text>
-            <Text style={[styles.td, { flex: 1 }]}>{ph.end || "—"}</Text>
+          <View key={i} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+            <Text style={[styles.td, { flex: 3 }]}>{ph.phase || "-"}</Text>
+            <Text style={[styles.td, { flex: 1 }]}>{ph.start || "-"}</Text>
+            <Text style={[styles.td, { flex: 1 }]}>{ph.end || "-"}</Text>
           </View>
         ))}
       </View>
@@ -461,79 +442,70 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
     const s = sectionFor(m.refId);
     return (
       <View key={m.id} wrap={false}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        {heading}
         <RichText html={s?.body || ""} keyBase={`sec-${m.id}`} />
       </View>
     );
   };
 
   return (
-    <Document>
-      {/* Cover */}
-      <CoverPage cover={cover} project={project} logoUrl={logoUrl} label="TECHNICAL PROPOSAL" />
+    <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
+      <ProposalCoverPage variant={cover?.coverStyle} data={coverData("TECHNICAL PROPOSAL", cover, project)} />
 
-      {/* Cover letter */}
-      <CoverLetterPage coverLetter={coverLetter} project={project} lh={lh} label="TECHNICAL PROPOSAL" />
+      <CoverLetterPage coverLetter={coverLetter} lh={lh} label={LABEL} note={note} />
 
-      {/* Table of Contents */}
       {toc.length > 0 && (
-        <Page size="A4" style={styles.page}>
-          <PageHeader lh={lh} label="TECHNICAL PROPOSAL" />
-          <Text style={styles.sectionTitle}>Table of Contents</Text>
+        <Sheet lh={lh} label={LABEL} note={note}>
+          <SectionHeading title="Table of Contents" />
           {toc.map((t, i) => (
-            <View key={i} style={styles.tocRow}><Text style={styles.tocText}>{t}</Text></View>
+            <View key={i} style={styles.tocRow}>
+              <Text style={styles.tocNum}>{t.num !== undefined ? String(t.num).padStart(2, "0") : "A"}</Text>
+              <Text style={styles.tocText}>{t.title}</Text>
+            </View>
           ))}
-          <Footer project={project} />
-        </Page>
+        </Sheet>
       )}
 
-      {/* Body — one page group per letterhead run, with optional divider / blank pages */}
+      {/* Body: one page group per letterhead run, with optional divider / blank pages */}
       {groups.map((g, gi) => {
-        if (g.t === "blank") {
-          return <Page key={`g-${gi}`} size="A4" style={styles.page} />;
-        }
+        if (g.t === "blank") return <Page key={`g-${gi}`} size="A4" style={styles.page} />;
         if (g.t === "divider") {
-          const hc = hConf(g.lh);
+          const n = numById.get(g.m.id) || 0;
           return (
-            <Page key={`g-${gi}`} size="A4" style={styles.page}>
-              {!hc.hide && <Header logoUrl={hc.logo} jvLogoUrl={hc.jv} label="TECHNICAL PROPOSAL" />}
+            <Sheet key={`g-${gi}`} lh={hConf(g.lh)} label={LABEL} note={note}>
               <View style={styles.dividerWrap}>
-                <View style={styles.dividerBar} />
-                <Text style={styles.dividerTitle}>{numById.get(g.m.id)}. {g.m.title}</Text>
+                <Eyebrow>{`SECTION ${String(n).padStart(2, "0")}`}</Eyebrow>
+                <Text style={styles.dividerTitle}>{g.m.title}</Text>
+                <GradBar w={120} h={4} r={2} id={`divider-${gi}`} />
               </View>
-              <Footer project={project} />
-            </Page>
+            </Sheet>
           );
         }
-        const hc = hConf(g.lh);
         return (
-          <Page key={`g-${gi}`} size="A4" style={styles.page} wrap>
-            {!hc.hide && <Header logoUrl={hc.logo} jvLogoUrl={hc.jv} label="TECHNICAL PROPOSAL" />}
+          <Sheet key={`g-${gi}`} lh={hConf(g.lh)} label={LABEL} note={note}>
             {g.items.map((m) => renderSection(m, numById.get(m.id) || 0))}
-            <Footer project={project} />
-          </Page>
+          </Sheet>
         );
       })}
 
-      {/* Appendix — full resume of each team member, one section per person */}
+      {/* Appendix: full resume of each team member, one section per person */}
       {resumes.map((r, i) => (
-        <Page key={`resume-${i}`} size="A4" style={styles.page} wrap>
-          <PageHeader lh={lh} label="TEAM RESUMES" />
-          {i === 0 && <Text style={styles.sectionTitle}>Appendix — Team Resumes</Text>}
+        <Sheet key={`resume-${i}`} lh={lh} label="Team Resumes" note={footNote("Team Resumes", project)}>
+          {i === 0 && <SectionHeading title="Appendix: Team Resumes" />}
           {!!r.role && <Text style={[styles.cardMeta, { marginBottom: 8 }]}>Proposed role: {r.role}</Text>}
           <ResumeBlock resume={r.data.resume} person={r.data.user} />
-          <Footer project={project} />
-        </Page>
+        </Sheet>
       ))}
 
-      {/* Back cover */}
-      <BackCoverPage backCover={backCover} project={project} logoUrl={logoUrl} />
+      <BackCoverPage backCover={backCover} />
     </Document>
   );
 }
 
 // ── Financial Proposal PDF ───────────────────────────────────────────────────
 function FinancialPDF({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl }: { project: ApiProject; content: FinancialProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string }) {
+  const LABEL = "Financial Proposal";
+  const note = footNote(LABEL, project);
   const currency = content.currency || "$";
   const tables = resolveFinancialTables(content);
   const amtCols = (tb: typeof tables[number]) => tb.columns.filter((c) => c.kind === "amount").map((c) => c.id);
@@ -543,31 +515,28 @@ function FinancialPDF({ project, content, cover, coverLetter, backCover, letterh
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
   return (
-    <Document>
-      {/* Cover */}
-      <CoverPage cover={cover} project={project} logoUrl={logoUrl} label="FINANCIAL PROPOSAL" />
+    <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
+      <ProposalCoverPage variant={cover?.coverStyle} data={coverData("FINANCIAL PROPOSAL", cover, project)} />
 
-      {/* Cover letter / introduction */}
-      <CoverLetterPage coverLetter={coverLetter} project={project} lh={lh} label="FINANCIAL PROPOSAL" />
+      <CoverLetterPage coverLetter={coverLetter} lh={lh} label={LABEL} note={note} />
 
-      <Page size="A4" style={styles.page} wrap>
-        <PageHeader lh={lh} label="FINANCIAL PROPOSAL" />
-
-        <View style={{ marginBottom: 10 }}>
-          <Text style={[styles.coverTitle, { fontSize: 20, textAlign: "left" }]}>Financial Proposal</Text>
-          <Text style={styles.cardMeta}>{project.name} · {project.id}{project.clientInfo?.name ? `  ·  Prepared for ${project.clientInfo.name}` : ""}</Text>
+      <Sheet lh={lh} label={LABEL} note={note}>
+        <View style={{ marginBottom: 12 }}>
+          <Eyebrow>FINANCIAL PROPOSAL</Eyebrow>
+          <Text style={styles.docTitle}>{cover?.proposalTitle || project.name}</Text>
+          <Text style={[styles.cardMeta, { marginTop: 4 }]}>{project.name} · {project.id}{project.clientInfo?.name ? `  ·  Prepared for ${project.clientInfo.name}` : ""}</Text>
         </View>
 
         {tables.map((tb) => (
           <View key={tb.id} style={{ marginBottom: 16 }} wrap={false}>
-            {!!tb.title && <Text style={styles.h2}>{tb.title}</Text>}
+            {!!tb.title && <Subhead>{tb.title.toUpperCase()}</Subhead>}
             <View style={styles.tHead}>
               {tb.columns.map((c) => (
                 <Text key={c.id} style={[styles.th, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>{(c.label || "").toUpperCase()}</Text>
               ))}
             </View>
-            {tb.rows.map((r) => (
-              <View key={r.id} style={styles.tRow}>
+            {tb.rows.map((r, ri) => (
+              <View key={r.id} style={[styles.tRow, ri % 2 === 1 ? styles.tRowAlt : {}]}>
                 {tb.columns.map((c) => (
                   <Text key={c.id} style={[styles.td, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>
                     {c.kind === "amount" && r.cells[c.id] ? money(num(r.cells[c.id]), currency) : (r.cells[c.id] || "")}
@@ -586,25 +555,22 @@ function FinancialPDF({ project, content, cover, coverLetter, backCover, letterh
 
         {tables.length > 1 && (
           <View style={styles.totalRow}>
-            <View style={[styles.totalBox, { backgroundColor: INK }]}>
-              <Text style={[styles.totalLabel, { color: "#cbd5e1" }]}>GRAND TOTAL</Text>
-              <Text style={[styles.totalValue, { color: "#fff" }]}>{money(grand, currency)}</Text>
+            <View style={[styles.totalBox, { backgroundColor: BRAND.slate }]}>
+              <Text style={[styles.totalLabel, { color: BRAND.s300 }]}>GRAND TOTAL</Text>
+              <Text style={[styles.totalValue, { color: BRAND.white }]}>{money(grand, currency)}</Text>
             </View>
           </View>
         )}
 
         {!!content.notes?.trim() && (
           <>
-            <Text style={styles.sectionTitle}>Notes</Text>
+            <SectionHeading title="Notes" />
             <RichText html={content.notes} keyBase="fin-notes" />
           </>
         )}
+      </Sheet>
 
-        <Footer project={project} />
-      </Page>
-
-      {/* Back cover */}
-      <BackCoverPage backCover={backCover} project={project} logoUrl={logoUrl} />
+      <BackCoverPage backCover={backCover} />
     </Document>
   );
 }

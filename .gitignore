@@ -23,3 +23,8 @@ Thumbs.db
 # Internal spec docs & scratch (not part of the app)
 docs/
 grill-me.md
+
+# Design reference only (brand templates + the scripts that generated them). Never committed.
+graphics-frontend/
+# Client-supplied sample proposals (real client documents), reference only. Never committed.
+frontend/assets/proposal-template/
