@@ -998,8 +998,10 @@ export interface ApiSavedDocument {
   updatedAt?: string;
   updatedByName?: string;
   archived?: boolean;
+  docDate?: string;   // CR-P (88) - the date on the document (YYYY-MM-DD), set on uploaded ones
 }
-interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus }
+// `version` asks for a specific number (an uploaded proposal's own revision); omit it to get the next.
+interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus; version?: number; docDate?: string }
 
 async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): Promise<T> {
   const token = getAuthToken();
@@ -1028,11 +1030,13 @@ export async function saveDocumentVersion(projectId: string, meta: SaveMeta, fil
   if (meta.title) fd.append('title', meta.title);
   if (meta.note) fd.append('note', meta.note);
   if (meta.status) fd.append('status', meta.status);
+  if (meta.version) fd.append('version', String(meta.version));
+  if (meta.docDate) fd.append('docDate', meta.docDate);
   fd.append('file', file, fileName);
   return postMultipart(`/api/projects/${projectId}/saved-documents`, fd);
 }
 
-export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus; archived?: boolean }) {
+export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus; archived?: boolean; docDate?: string }) {
   return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 

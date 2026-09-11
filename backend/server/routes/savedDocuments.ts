@@ -19,6 +19,8 @@ router.use(tabAccessGuard(["proposals", "proc-boq", "proc-rfqs", "proc-po", "pro
 
 const PROJECT_KINDS = ["proposal", "boq", "rfq", "po"];
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 const humanSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -83,10 +85,24 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       return res.status(400).json({ error: "Invalid document kind." });
     }
     const refId = String(req.body.refId || "");
-    // The counter is seeded from the highest existing number the first time a stream uses it, so
-    // streams saved before the counter existed carry on from where they are.
-    const last = await lastVersionInStream(req.params.id, kind, refId);
-    const version = Math.max(await nextSequence(streamKey(req.params.id, kind, refId), last), last + 1);
+    const key = streamKey(req.params.id, kind, refId);
+    let version: number;
+    const wanted = Number(req.body.version);
+    if (Number.isInteger(wanted) && wanted >= 1) {
+      // CR-P (88) — an uploaded proposal keeps the revision number it was issued under. It may not
+      // collide with one already in the table, and the counter moves past it so later saves follow on.
+      if (await SavedDocument.exists({ projectId: req.params.id, kind, refId, version: wanted })) {
+        fs.unlink(req.file.path, () => {});
+        return res.status(409).json({ error: kind === "proposal" ? `Rev ${wanted - 1} is already in this table. Pick another revision number.` : `Version ${wanted} already exists.` });
+      }
+      version = wanted;
+      await Counter.updateOne({ _id: key }, { $max: { seq: wanted } }, { upsert: true });
+    } else {
+      // The counter is seeded from the highest existing number the first time a stream uses it, so
+      // streams saved before the counter existed carry on from where they are.
+      const last = await lastVersionInStream(req.params.id, kind, refId);
+      version = Math.max(await nextSequence(key, last), last + 1);
+    }
     const me = await User.findById(req.user!.userId).select("name").lean();
     const doc = await SavedDocument.create({
       kind,
@@ -97,6 +113,7 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       // "Version 1" sitting next to a "Rev 0" badge.
       title: String(req.body.title || "").trim() || (kind === "proposal" ? `Revision ${version - 1}` : `Version ${version}`),
       note: String(req.body.note || ""),
+      docDate: ISO_DATE.test(String(req.body.docDate || "")) ? String(req.body.docDate) : "",
       // Any valid lifecycle status is kept. This used to collapse everything but "final" to
       // "draft", so an uploaded proposal asked to be "submitted" was silently filed as a draft.
       status: SAVED_DOC_STATUSES.includes(req.body.status) ? req.body.status : "draft",
@@ -120,6 +137,7 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
     // CR-P (83) — the wider proposal lifecycle.
     if (SAVED_DOC_STATUSES.includes(req.body.status)) update.status = req.body.status;
     if (typeof req.body.archived === "boolean") update.archived = req.body.archived;   // CR-P (86)
+    if (typeof req.body.docDate === "string" && (req.body.docDate === "" || ISO_DATE.test(req.body.docDate))) update.docDate = req.body.docDate;   // CR-P (88)
     // CR-P (83) — "last modified" names who made the change, not who created the revision.
     const me = await User.findById(req.user!.userId).select("name").lean();
     update.updatedByName = (me as { name?: string } | null)?.name || "";

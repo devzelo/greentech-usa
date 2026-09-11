@@ -48,6 +48,7 @@ import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
 import RevisionManage from "./RevisionManage";
+import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposal";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
@@ -639,6 +640,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
   const [archivedDocs, setArchivedDocs] = useState<{ technical: ApiSavedDocument[]; financial: ApiSavedDocument[]; combined: ApiSavedDocument[] }>({ technical: [], financial: [], combined: [] });
   const [showArchivedRevs, setShowArchivedRevs] = useState<Record<string, boolean>>({});
   const [manageDoc, setManageDoc] = useState<ApiSavedDocument | null>(null);
+  const [uploadFor, setUploadFor] = useState<"technical" | "financial" | "combined" | null>(null);   // CR-P (88)
   const openCompare = (which: string, docs: ApiSavedDocument[], d: ApiSavedDocument) => {
     const pdfs = docs.filter(isComparable);   // newest first
     const at = pdfs.findIndex((x) => x._id === d._id);
@@ -648,20 +650,23 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
   };
   // CR-P (88) - file a proposal that was produced outside the platform. It joins the same
   // revision stream, so an uploaded Rev 0 and a built Rev 1 sit in one history.
-  const uploadExistingProposal = async (which: "technical" | "financial" | "combined", file: File) => {
+  // It carries the title, revision number, date and description it was issued with (item 88).
+  // Errors are thrown back to the upload window, which shows them and keeps the form filled in.
+  const uploadExistingProposal = async (which: "technical" | "financial" | "combined", file: File, meta: UploadMeta) => {
     if (!id) return;
-    setProposalDownloading(`upload-${which}`);
-    try {
-      await saveDocumentVersion(
-        id,
-        { kind: "proposal", refId: which, title: file.name.replace(/\.[^.]+$/, ""), note: "Uploaded, produced outside the platform", status: "submitted" },
-        file,
-        file.name,
-      );
-      await loadNextFinalVer();
-      toast("Proposal uploaded and filed as a revision.", "success");
-    } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
-    finally { setProposalDownloading(null); }
+    await saveDocumentVersion(
+      id,
+      {
+        kind: "proposal", refId: which,
+        title: meta.title || file.name.replace(/\.[^.]+$/, ""),
+        note: meta.note || "Uploaded, produced outside the platform",
+        status: meta.status, version: meta.revision + 1, docDate: meta.docDate,
+      },
+      file,
+      file.name,
+    );
+    await loadNextFinalVer();
+    toast(`Uploaded and filed as Rev ${meta.revision}.`, "success");
   };
 
   // CR-P (106) - the financial cover is the technical cover with a different title. Copying it is
@@ -3467,10 +3472,9 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                           {canEdit && (
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* CR-P (88) - an already-awarded project's proposal is uploaded, not rebuilt. */}
-                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 cursor-pointer" title="Upload a proposal produced outside the platform">
+                              <button onClick={() => setUploadFor(p.which)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200" title="Upload a proposal produced outside the platform">
                                 <Upload size={12} /> Upload existing
-                                <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadExistingProposal(p.which, f); e.target.value = ""; }} />
-                              </label>
+                              </button>
                               {/* CR-P (89) - create opens the builder for this stream. */}
                               {p.which !== "combined" ? (
                                 <button onClick={() => setProposalSub(p.which)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Plus size={12} /> Create proposal</button>
@@ -3534,7 +3538,9 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                     {/* CR-P (83) - created and last modified are separate columns, each with a name.
                                         Last modified moves with a status or note change; created never does. */}
                                     <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top whitespace-nowrap">
-                                      {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "-"}
+                                      {/* CR-P (88) - an uploaded proposal shows the date it was issued, then when it was uploaded. */}
+                                      {d.docDate ? new Date(`${d.docDate}T00:00:00`).toLocaleDateString() : d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "-"}
+                                      {d.docDate && d.createdAt && <span className="block text-[10px] text-slate-400">uploaded {new Date(d.createdAt).toLocaleDateString()}</span>}
                                       {d.createdByName && <span className="block text-[10px] text-slate-400">by {d.createdByName}</span>}
                                     </td>
                                     <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top whitespace-nowrap">
@@ -3600,6 +3606,15 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
 
                         {compareRevs?.which === p.which && (
                           <RevisionCompare title={p.title} docs={docs} fromId={compareRevs.fromId} toId={compareRevs.toId} onClose={() => setCompareRevs(null)} />
+                        )}
+                        {uploadFor === p.which && (
+                          <UploadExistingProposal
+                            streamTitle={p.title}
+                            statuses={PROP_DOC_STATUS}
+                            fetchNextVersion={() => fetchNextSavedVersion(id, "proposal", p.which)}
+                            onUpload={(file, meta) => uploadExistingProposal(p.which, file, meta)}
+                            onClose={() => setUploadFor(null)}
+                          />
                         )}
                         {manageDoc && docs.some((x) => x._id === manageDoc._id) && (
                           <RevisionManage

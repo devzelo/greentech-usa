@@ -10,7 +10,7 @@ interface Props {
   doc: ApiSavedDocument;
   statuses: Record<string, { label: string }>;
   /** Throws on failure, so the window stays open with the edits intact. */
-  onSave: (body: { title: string; note: string; status: SavedDocStatus }) => Promise<void>;
+  onSave: (body: { title: string; note: string; status: SavedDocStatus; docDate: string }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -20,6 +20,7 @@ export default function RevisionManage({ doc, statuses, onSave, onClose }: Props
   const [title, setTitle] = useState(doc.title || "");
   const [note, setNote] = useState(doc.note || "");
   const [status, setStatus] = useState<SavedDocStatus>(doc.status);
+  const [docDate, setDocDate] = useState(doc.docDate || "");   // CR-P (88)
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -29,10 +30,10 @@ export default function RevisionManage({ doc, statuses, onSave, onClose }: Props
   }, [onClose]);
 
   const rev = `Rev ${Math.max(0, (doc.version || 1) - 1)}`;
-  const dirty = title.trim() !== (doc.title || "") || note !== (doc.note || "") || status !== doc.status;
+  const dirty = title.trim() !== (doc.title || "") || note !== (doc.note || "") || status !== doc.status || docDate !== (doc.docDate || "");
   const save = async () => {
     setBusy(true);
-    try { await onSave({ title: title.trim(), note, status }); onClose(); }
+    try { await onSave({ title: title.trim(), note, status, docDate }); onClose(); }
     catch { /* the caller has already said what went wrong */ }
     finally { setBusy(false); }
   };
@@ -65,6 +66,11 @@ export default function RevisionManage({ doc, statuses, onSave, onClose }: Props
             <select id="rev-status" value={status} onChange={(e) => setStatus(e.target.value as SavedDocStatus)} className={`${inp} appearance-none`}>
               {Object.entries(statuses).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
             </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="rev-date" className={lbl}>Document date</label>
+            <input id="rev-date" type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} className={inp} />
+            <p className="text-[10px] text-slate-400">The date on the document, e.g. when it was issued. Leave empty to use the day it was filed.</p>
           </div>
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 text-[11px] text-slate-500 space-y-1">

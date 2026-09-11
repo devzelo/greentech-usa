@@ -27,6 +27,9 @@ export interface ISavedDocument extends Document {
   updatedByName: string;
   // CR-P (86) - archived revisions leave the table but are kept, and listed in Archive & Bin.
   archived: boolean;
+  // CR-P (88) - the date ON the document (YYYY-MM-DD), e.g. when an uploaded proposal was issued.
+  // Empty for ones built here, whose date is simply when they were filed.
+  docDate: string;
 }
 
 /**
@@ -67,6 +70,7 @@ const SavedDocumentSchema = new Schema<ISavedDocument>(
     createdByName: { type: String, default: "" },
     updatedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false, index: true },
+    docDate: { type: String, default: "" },
   },
   { timestamps: true }
 );
