@@ -73,6 +73,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import ProjectSchedule from "./ProjectSchedule";
 import ClientInfoCard from "./ClientInfoCard";
+import DocTabs from "./DocTabs";
 import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
@@ -294,7 +295,6 @@ export default function ProjectWorkspace() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState("client");
-  const [pmSub, setPmSub] = useState<"board" | "docs">("board");   // CR-P — Project Management: Board | Documents
   type FieldType = "text" | "textarea" | "number" | "date" | "url" | "email" | "select" | "checkbox" | "file";
   type CustomField = { fieldId: string; label: string; type: FieldType; options?: string[]; value?: string };
   type CustomTab = { id: string; label: string; icon: typeof Plus; color?: string; parentId?: string; notes?: string; fields?: CustomField[] };
@@ -4966,29 +4966,25 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
           {/* PROJECT MANAGEMENT */}
           {activeTab === "pm" && id && (
-            <div className="space-y-5">
-              {/* CR-P — Board (Kanban) is primary; the document sections live under Documents. */}
-              <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-                {([["board", "Board"], ["docs", "Documents"]] as const).map(([v, l]) => (
-                  <button key={v} onClick={() => setPmSub(v)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${pmSub === v ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>{l}</button>
-                ))}
-              </div>
-              {pmSub === "board" ? (
-                <ProjectBoard projectId={id} canEdit={canEdit} />
-              ) : (
-                <div className="space-y-6">
-                  {[
-                    { sid: "pm-schedules", title: "Schedules" },
-                    { sid: "pm-meeting-minutes", title: "Meeting Minutes" },
-                    { sid: "pm-progress-reports", title: "Progress Reports" },
-                    { sid: "pm-site-data", title: "Site Data" },
-                    { sid: "pm-closeout", title: "Closeout Documents" },
-                  ].map((s) => (
-                    <DocSection key={s.sid} projectId={id} section={s.sid} title={s.title} canEdit={canEdit} canPublish={isOwner} />
-                  ))}
-                </div>
-              )}
-            </div>
+            /* CR-P (135)/(136) — the task board first (styled apart), then the document sections as
+               tabs the project manager can add, rename and delete. Closeout Documents moved out
+               (they live under Technical Docs); it stays only where files were already uploaded. */
+            <DocTabs
+              projectId={id}
+              tableKey="pm-doc-tabs"
+              sectionPrefix="pm"
+              canEdit={canEdit}
+              canManageTabs={canManage}
+              canPublish={isOwner}
+              lead={{ id: "board", label: "Task Board", content: <ProjectBoard projectId={id} canEdit={canEdit} /> }}
+              defaults={[
+                { id: "pm-schedules", label: "Schedules", section: "pm-schedules" },
+                { id: "pm-meeting-minutes", label: "Meeting Minutes", section: "pm-meeting-minutes" },
+                { id: "pm-progress-reports", label: "Progress Reports", section: "pm-progress-reports" },
+                { id: "pm-site-data", label: "Site Data", section: "pm-site-data" },
+                { id: "pm-closeout", label: "Closeout Documents (old)", section: "pm-closeout", onlyIfFiles: true },
+              ]}
+            />
           )}
 
           {/* TECHNICAL DOCS */}
@@ -5801,17 +5797,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
           {/* LEGAL DOCS */}
           {activeTab === "legal" && id && (
-            <div className="space-y-6">
-              {[
-                { sid: "legal-office-reg", title: "Local Office Registration" },
-                { sid: "legal-iloc", title: "ILOC (Irrevocable Letter of Credit)" },
-                { sid: "legal-bond", title: "Bond Documents" },
-                { sid: "legal-insurance", title: "Insurance Certificates" },
-                { sid: "legal-tax", title: "Tax Documents" },
-              ].map((s) => (
-                <DocSection key={s.sid} projectId={id} section={s.sid} title={s.title} canEdit={canEdit} canPublish={isOwner} />
-              ))}
-            </div>
+            /* CR-P (152) — the same tab system as Project Management. */
+            <DocTabs
+              projectId={id}
+              tableKey="legal-doc-tabs"
+              sectionPrefix="legal"
+              canEdit={canEdit}
+              canManageTabs={canManage}
+              canPublish={isOwner}
+              defaults={[
+                { id: "legal-office-reg", label: "Local Office Registration", section: "legal-office-reg" },
+                { id: "legal-iloc", label: "ILOC (Irrevocable Letter of Credit)", section: "legal-iloc" },
+                { id: "legal-bond", label: "Bond Documents", section: "legal-bond" },
+                { id: "legal-insurance", label: "Insurance Certificates", section: "legal-insurance" },
+                { id: "legal-tax", label: "Tax Documents", section: "legal-tax" },
+              ]}
+            />
           )}
 
           {/* FINANCES — sub-tab bar (Expenses / Invoice Sent / Invoice Received). CR-P-30 */}
