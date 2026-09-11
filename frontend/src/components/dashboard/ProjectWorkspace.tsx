@@ -49,7 +49,7 @@ import SavedVersionsPanel from "./SavedVersionsPanel";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
-import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
+import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
@@ -532,6 +532,7 @@ export default function ProjectWorkspace() {
 const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-slate-100 text-slate-500" },
   final: { label: "Final", cls: "bg-indigo-50 text-indigo-600" },
+  completed: { label: "Completed", cls: "bg-teal-50 text-teal-700" },
   sent: { label: "Sent", cls: "bg-blue-50 text-blue-600" },
   submitted: { label: "Submitted", cls: "bg-amber-50 text-amber-700" },
   awarded: { label: "Awarded", cls: "bg-emerald-50 text-emerald-700" },
@@ -755,12 +756,16 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
   const loadNextFinalVer = async () => {
     if (!id) return;
     try {
-      const [t, f, c] = await Promise.all([
+      const [t, f, c, nt, nf] = await Promise.all([
         fetchSavedDocuments(id, "proposal", "technical"),
         fetchSavedDocuments(id, "proposal", "financial"),
         fetchSavedDocuments(id, "proposal", "combined"),
+        // CR-P (84) - the real next number (deleted ones are never reused). Falls back to
+        // "newest + 1" if the server cannot say.
+        fetchNextSavedVersion(id, "proposal", "technical").catch(() => 0),
+        fetchNextSavedVersion(id, "proposal", "financial").catch(() => 0),
       ]);
-      setNextFinalVer({ technical: ((t[0]?.version) || 0) + 1, financial: ((f[0]?.version) || 0) + 1 });
+      setNextFinalVer({ technical: nt || ((t[0]?.version) || 0) + 1, financial: nf || ((f[0]?.version) || 0) + 1 });
       setPropDocs({ technical: t, financial: f, combined: c });
     } catch { /* ignore */ }
   };
@@ -3330,14 +3335,15 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
                     /* CR-P (109) — "are you sure you want to save it as final? You cannot change it later." The
                        frozen copy is what went out, so it is explicitly immutable. */
-                    markCompleteMessage={`This files a frozen copy as revision ${Math.max(0, nextFinalVer[which] - 1)} in the proposals table. That copy can never be changed — it is the record of what was produced. You can keep editing the live proposal afterwards and file another revision later.`}
+                    markCompleteMessage={`This files a frozen copy as revision ${Math.max(0, nextFinalVer[which] - 1)} in the proposals table. That copy can never be changed. It is the record of what was produced. You can keep editing the live proposal afterwards and file another revision later.`}
                     onMarkComplete={async () => {
                       if (!id) return;
                       try {
                         const blob = await buildProposalBlob(which, true);
                         const safe = `${project.name || "project"}_${which === "financial" ? "Financial" : "Technical"}_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
-                        const doc = await saveDocumentVersion(id, { kind: "proposal", refId: which, title: revLabel.trim() || `Final — ${which === "financial" ? "Financial" : "Technical"}`, status: "final" }, blob, `${safe}.pdf`);
-                        toast(`Marked as Final — saved as v${doc.version} in Saved Versions.`, "success");
+                        const doc = await saveDocumentVersion(id, { kind: "proposal", refId: which, title: revLabel.trim() || `${which === "financial" ? "Financial" : "Technical"} Proposal (Final)`, status: "final" }, blob, `${safe}.pdf`);
+                        // CR-P (84) - name it the way the table does: Rev 0, Rev 1, ...
+                        toast(`Marked as Final, filed as Rev ${Math.max(0, doc.version - 1)} in the proposals table.`, "success");
                         await loadNextFinalVer();
                       } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); }
                     }}
@@ -3445,25 +3451,32 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                           )}
                         </div>
 
-                        {docs.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic px-5 py-6">
-                            Nothing produced yet. {p.which === "combined" ? "Combine the technical and financial proposals once both exist." : "Build it, then Mark as Final to file revision 0 here, or upload one that already exists."}
-                          </p>
-                        ) : (
+                        {/* The table ALWAYS renders, headers included, even with nothing filed yet.
+                            It used to be replaced by a single sentence when a stream was empty, so
+                            on a fresh project the overview showed no table at all, which is the
+                            opposite of what was asked for: "I want to see a table in here". */}
                           <div className="overflow-x-auto">
-                            <table className="w-full min-w-[860px] text-left">
+                            <table className="w-full min-w-[960px] text-left">
                               <thead>
                                 <tr className="bg-slate-50/50 border-b border-slate-100">
                                   <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
                                   <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Revision</th>
                                   <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title</th>
                                   <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                                  <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Created</th>
                                   <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last modified</th>
                                   <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</th>
                                   <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-50">
+                                {docs.length === 0 && (
+                                  <tr>
+                                    <td colSpan={8} className="px-5 py-6 text-center text-xs text-slate-400 italic">
+                                      No revisions yet. {p.which === "combined" ? "Combine the technical and financial proposals once both exist." : "Build it and use Mark as Final to file Rev 0 here, or upload one that already exists."}
+                                    </td>
+                                  </tr>
+                                )}
                                 {[latest, ...(expanded ? older : [])].filter(Boolean).map((d, i) => (
                                   <tr key={d._id} className={i > 0 ? "bg-slate-50/20 hover:bg-slate-50/40" : "hover:bg-slate-50/40"}>
                                     <td className="px-4 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
@@ -3485,9 +3498,15 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${PROP_DOC_STATUS[d.status]?.cls || "bg-slate-100 text-slate-500"}`}>{PROP_DOC_STATUS[d.status]?.label || d.status}</span>
                                       )}
                                     </td>
+                                    {/* CR-P (83) - created and last modified are separate columns, each with a name.
+                                        Last modified moves with a status or note change; created never does. */}
                                     <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top whitespace-nowrap">
                                       {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "-"}
                                       {d.createdByName && <span className="block text-[10px] text-slate-400">by {d.createdByName}</span>}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top whitespace-nowrap">
+                                      {(d.updatedAt || d.createdAt) ? new Date(d.updatedAt || d.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "-"}
+                                      {(d.updatedByName || d.createdByName) && <span className="block text-[10px] text-slate-400">by {d.updatedByName || d.createdByName}</span>}
                                     </td>
                                     <td className="px-3 py-2.5 text-[11px] text-slate-500 align-top max-w-[12rem] truncate" title={d.note}>{d.note || <span className="text-slate-300">-</span>}</td>
                                     <td className="px-3 py-2.5 align-top">
@@ -3512,7 +3531,6 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                               </button>
                             )}
                           </div>
-                        )}
 
                         {p.which !== "combined" && (
                           <div className="px-5 py-4 border-t border-slate-100 space-y-4">
@@ -3570,10 +3588,14 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                     baseName: `${(project.name || "project")}_${proposalSub === "technical" ? "Technical" : "Financial"}_Proposal`,
                     build: () => buildProposalBlob(proposalSub === "technical" ? "technical" : "financial", true),
                   }]}
+                  // CR-P (84) - same stream as the overview table, so it numbers from Rev 0 too, and
+                  // saving or deleting here keeps the overview's numbers in step.
+                  zeroBased
+                  fetchNextVersion={() => fetchNextSavedVersion(id, "proposal", proposalSub)}
                   fetchList={() => fetchSavedDocuments(id, "proposal", proposalSub)}
-                  saveVersion={(file, fileName, meta) => saveDocumentVersion(id, { kind: "proposal", refId: proposalSub, title: meta.title, status: meta.status }, file, fileName)}
+                  saveVersion={(file, fileName, meta) => saveDocumentVersion(id, { kind: "proposal", refId: proposalSub, title: meta.title, status: meta.status }, file, fileName).then(async (d) => { await loadNextFinalVer(); return d; })}
                   update={(docId, body) => updateSavedDocument(id, docId, body)}
-                  remove={(docId) => deleteSavedDocument(id, docId).then(() => {})}
+                  remove={(docId) => deleteSavedDocument(id, docId).then(() => loadNextFinalVer())}
                   toast={toast}
                 />
               )}

@@ -282,6 +282,24 @@ async function runBootstrapTasks() {
     console.error("Agreement number backfill failed:", err);
   }
 
+  // CR-P (84) — proposal revisions count from Rev 0, but ones saved without a label were titled
+  // "Version N" (counting from 1), so a row could read "Rev 0 · Version 1". Retitle only those
+  // exact automatic labels; anything a person typed is left alone. Timestamps are not touched, so
+  // "last modified" is unchanged. Idempotent: afterwards nothing matches.
+  try {
+    const SavedDocModel = (await import("./models/SavedDocument")).default;
+    const auto = await SavedDocModel.find({ kind: "proposal", title: /^Version \d+$/ }).select("_id title version").lean();
+    let retitled = 0;
+    for (const d of auto) {
+      if (d.title !== `Version ${d.version}`) continue;
+      await SavedDocModel.updateOne({ _id: d._id }, { $set: { title: `Revision ${Math.max(0, d.version - 1)}` } }, { timestamps: false });
+      retitled++;
+    }
+    if (retitled) console.log(`🔢 Retitled ${retitled} proposal revision(s) to count from Rev 0.`);
+  } catch (err) {
+    console.error("Proposal revision retitle failed:", err);
+  }
+
 }
 
 connectDB().then(() => {

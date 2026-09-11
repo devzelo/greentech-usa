@@ -16,14 +16,19 @@ export interface ISavedDocument extends Document {
   note: string;
   // CR-P (83) — a proposal revision moves through more than draft/final: it gets sent, submitted,
   // and eventually won or lost. "final" is kept as-is so nothing existing changes meaning.
-  status: "draft" | "final" | "sent" | "submitted" | "awarded" | "not-awarded";
+  status: SavedDocStatus;
   fileName: string;
   filePath: string;
   fileType: string;
   size: string;
   createdById: mongoose.Types.ObjectId | null;
   createdByName: string;
+  // CR-P (83) - the table shows "created" and "last modified" separately, each with a name.
+  updatedByName: string;
 }
+
+export const SAVED_DOC_STATUSES = ["draft", "final", "completed", "sent", "submitted", "awarded", "not-awarded"] as const;
+export type SavedDocStatus = (typeof SAVED_DOC_STATUSES)[number];
 
 const SavedDocumentSchema = new Schema<ISavedDocument>(
   {
@@ -34,13 +39,14 @@ const SavedDocumentSchema = new Schema<ISavedDocument>(
     version: { type: Number, default: 1 },
     title: { type: String, default: "" },
     note: { type: String, default: "" },
-    status: { type: String, enum: ["draft", "final", "sent", "submitted", "awarded", "not-awarded"], default: "draft" },
+    status: { type: String, enum: SAVED_DOC_STATUSES, default: "draft" },
     fileName: { type: String, default: "" },
     filePath: { type: String, default: "" },
     fileType: { type: String, default: "" },
     size: { type: String, default: "" },
     createdById: { type: Schema.Types.ObjectId, ref: "User", default: null },
     createdByName: { type: String, default: "" },
+    updatedByName: { type: String, default: "" },
   },
   { timestamps: true }
 );

@@ -21,6 +21,12 @@ export interface SavedVersionsPanelProps {
   update: (id: string, body: { status?: "draft" | "final" }) => Promise<ApiSavedDocument>;
   remove: (id: string) => Promise<void>;
   toast?: (msg: string, type?: string) => void;
+  // CR-P (84) - proposals count revisions from Rev 0 (stored version 1 = Rev 0). Other documents
+  // keep v1, v2, ...
+  zeroBased?: boolean;
+  // The real next number from the server. Deleted numbers are never reused, so "newest + 1" from
+  // the list can be wrong after a deletion.
+  fetchNextVersion?: () => Promise<number>;
 }
 
 async function downloadFile(url: string, name: string) {
@@ -47,7 +53,7 @@ function printFile(url: string) {
 }
 
 export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
-  const { heading = "Saved Versions", subtitle, canEdit, formats, fetchList, saveVersion, update, remove, toast } = props;
+  const { heading = "Saved Versions", subtitle, canEdit, formats, fetchList, saveVersion, update, remove, toast, zeroBased, fetchNextVersion } = props;
   const [list, setList] = useState<ApiSavedDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -59,20 +65,27 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
 
   const notify = (m: string, t?: string) => { if (toast) toast(m, t); };
 
+  const [serverNext, setServerNext] = useState(0);
+  const refreshNext = () => { fetchNextVersion?.().then(setServerNext).catch(() => {}); };
+
   useEffect(() => {
     let alive = true;
     fetchList().then((d) => { if (alive) setList(d); }).catch(() => {}).finally(() => { if (alive) setLoading(false); });
+    refreshNext();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The revision number this save will become (versions are newest-first; server assigns the real
   // number, this predicts it for the confirmation message).
-  const nextVersion = list.reduce((m, d) => Math.max(m, d.version || 0), 0) + 1;
+  const nextVersion = Math.max(serverNext, list.reduce((m, d) => Math.max(m, d.version || 0), 0) + 1);
+  // How a stored version number reads to people: "Rev 0" for proposals, "v1" elsewhere.
+  const badge = (v: number) => (zeroBased ? `Rev ${Math.max(0, v - 1)}` : `v${v}`);
+  const revNum = (v: number) => (zeroBased ? Math.max(0, v - 1) : v);
 
   const handleSave = async (fmt: SaveFormat) => {
     // CR-B-21 — finalizing files the frozen copy into this directory; confirm & name the revision.
-    if (isFinal && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you sure you're done with this? It will be saved as Final revision ${nextVersion} in this directory (Saved Versions) — a frozen copy you can preview, print, or download. It won't change when you keep editing.`, confirmLabel: "Save as Final", cancelLabel: "Keep editing", danger: false }))) return;
+    if (isFinal && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you sure you're done with this? It will be saved as Final revision ${revNum(nextVersion)} in this directory (Saved Versions), a frozen copy you can preview, print, or download. It won't change when you keep editing.`, confirmLabel: "Save as Final", cancelLabel: "Keep editing", danger: false }))) return;
     setBusy(true);
     try {
       const blob = await fmt.build();
@@ -80,7 +93,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
       const doc = await saveVersion(blob, `${safe}.${fmt.ext}`, { title: title.trim() || undefined, status: isFinal ? "final" : "draft" });
       setList((p) => [doc, ...p]);
       setTitle(""); setIsFinal(false); setOpen(false);
-      notify(`Saved ${doc.title} (v${doc.version}).`, "success");
+      refreshNext();
+      notify(`Saved ${doc.title} (${badge(doc.version)}).`, "success");
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not save this version.", "error");
     } finally { setBusy(false); }
@@ -89,7 +103,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   const toggleFinal = async (d: ApiSavedDocument) => {
     const next = d.status === "final" ? "draft" : "final";
     // CR-B-21 — confirm before finalizing (this is the revision filed / sent to the client).
-    if (next === "final" && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you done with "${d.title}"? It will be saved as Final revision ${d.version} in this directory (the copy sent to the client).`, confirmLabel: "Mark as Final", cancelLabel: "Not yet", danger: false }))) return;
+    if (next === "final" && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you done with "${d.title}"? It will be saved as Final revision ${revNum(d.version)} in this directory (the copy sent to the client).`, confirmLabel: "Mark as Final", cancelLabel: "Not yet", danger: false }))) return;
     try {
       const upd = await update(d._id, { status: next });
       setList((p) => p.map((x) => (x._id === d._id ? upd : x)));
@@ -97,8 +111,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
   };
 
   const del = async (d: ApiSavedDocument) => {
-    if (!(await dlgConfirm({ title: "Delete this version?", message: `Delete "${d.title}" (v${d.version})? This removes the stored file.`, confirmLabel: "Delete", cancelLabel: "Cancel", danger: true }))) return;
-    try { await remove(d._id); setList((p) => p.filter((x) => x._id !== d._id)); }
+    if (!(await dlgConfirm({ title: "Delete this version?", message: `Delete "${d.title}" (${badge(d.version)})? This removes the stored file.${zeroBased ? " Its revision number is not reused." : ""}`, confirmLabel: "Delete", cancelLabel: "Cancel", danger: true }))) return;
+    try { await remove(d._id); setList((p) => p.filter((x) => x._id !== d._id)); refreshNext(); }
     catch (err) { notify(err instanceof Error ? err.message : "Failed", "error"); }
   };
 
@@ -153,7 +167,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
             return (
               <div key={d._id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-3 py-2 rounded-xl border border-slate-100 hover:bg-slate-50/60">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                <span className="shrink-0 inline-flex items-center justify-center w-9 h-7 rounded-lg bg-slate-100 text-[11px] font-extrabold text-slate-600">v{d.version}</span>
+                <span className="shrink-0 inline-flex items-center justify-center min-w-[2.25rem] px-1.5 h-7 rounded-lg bg-slate-100 text-[11px] font-extrabold text-slate-600 whitespace-nowrap">{badge(d.version)}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-800 truncate" title={d.title}>{d.title}</span>
@@ -163,7 +177,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold uppercase tracking-wide"><Clock size={9} /> Draft</span>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-400 truncate">{d.fileType.toUpperCase()} · {d.size} · {d.createdByName || "—"} · {when}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{d.fileType.toUpperCase()} · {d.size} · {d.createdByName || "-"} · {when}</p>
                 </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 justify-end">

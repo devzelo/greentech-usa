@@ -979,7 +979,7 @@ export function attachmentUrl(filePath: string): string {
 // ── Saved document versions (frozen PDF/Excel copies with history) ────────────
 export type SavedDocKind = "proposal" | "boq" | "rfq" | "po" | "resume";
 /** CR-P (83) - a produced document's lifecycle, wide enough for a proposal revision. */
-export type SavedDocStatus = "draft" | "final" | "sent" | "submitted" | "awarded" | "not-awarded";
+export type SavedDocStatus = "draft" | "final" | "completed" | "sent" | "submitted" | "awarded" | "not-awarded";
 export interface ApiSavedDocument {
   _id: string;
   kind: SavedDocKind;
@@ -995,6 +995,8 @@ export interface ApiSavedDocument {
   size: string;
   createdByName: string;
   createdAt: string;
+  updatedAt?: string;
+  updatedByName?: string;
 }
 interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus }
 
@@ -1007,6 +1009,13 @@ async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): P
 
 export async function fetchSavedDocuments(projectId: string, kind: SavedDocKind, refId = '') {
   return request<ApiSavedDocument[]>(`/projects/${projectId}/saved-documents?kind=${encodeURIComponent(kind)}&refId=${encodeURIComponent(refId)}`);
+}
+
+// CR-P (84) - the number the next save in a stream will get. Deleted numbers are never reused, so
+// this can be higher than "newest + 1".
+export async function fetchNextSavedVersion(projectId: string, kind: SavedDocKind, refId = '') {
+  const r = await request<{ version: number }>(`/projects/${projectId}/saved-documents/next-version?kind=${encodeURIComponent(kind)}&refId=${encodeURIComponent(refId)}`);
+  return r.version;
 }
 
 export async function saveDocumentVersion(projectId: string, meta: SaveMeta, file: Blob, fileName: string) {
