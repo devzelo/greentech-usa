@@ -43,8 +43,10 @@ export default function CompanyProfile({
   const [tab, setTab] = useState<ProfileTab>("activity");
   const [highlight, setHighlight] = useState<string | null>(null);   // CR-P (11) — stat-tile jump
   // CR-P — subcontractors & partners can be given a scoped login + tab access (a "user role"),
-  // so their profile gets an Access tab. Other categories (clients, vendors, …) don't log in.
-  const canHaveLogin = companyCategories(company).some((c) => c === "subcontractor" || c === "partner");
+  // so their profile gets an Access tab. CR-P (72) — "the same for users, subcontractors and
+  // vendors": vendors (and suppliers / manufacturers, the vendor categories) get it too, now that a
+  // vendor's login can be given project tabs. Clients and other categories still don't log in.
+  const canHaveLogin = companyCategories(company).some((c) => ["subcontractor", "partner", "vendor", "supplier", "manufacturer"].includes(c));
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [tasks, setTasks] = useState<ProfileTask[]>([]);
