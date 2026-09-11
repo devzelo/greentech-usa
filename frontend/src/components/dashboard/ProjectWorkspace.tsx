@@ -1608,7 +1608,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [subcontractors, setSubcontractors] = useState<SubContractor[]>([]);
   const [subDocs, setSubDocs] = useState<Record<string, ApiDocument[]>>({});
   const [subInvoiceDocs, setSubInvoiceDocs] = useState<Record<string, ApiDocument[]>>({});
-  const [subOfferDocs, setSubOfferDocs] = useState<Record<string, ApiDocument[]>>({}); // §L — offer files per subId
   const [editingSubIdx, setEditingSubIdx] = useState<number | null>(null);
   const [subForm, setSubForm] = useState<SubContractor>({ name: "", scope: "", subId: "", contact: "", email: "", phone: "", notes: "", invoiceAmount: "", userId: "" });
   const [showSubModal, setShowSubModal] = useState(false);
@@ -1706,14 +1705,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const docs = await fetchDocuments(id);
       const grouped: Record<string, ApiDocument[]> = {};
       const invoices: Record<string, ApiDocument[]> = {};
-      const offers: Record<string, ApiDocument[]> = {};
       for (const d of docs) {
         if (d.section?.startsWith("subinvoice-")) {
           const subId = d.section.slice("subinvoice-".length);
           (invoices[subId] = invoices[subId] || []).push(d);
-        } else if (d.section?.startsWith("suboffer-")) {
-          const subId = d.section.slice("suboffer-".length);
-          (offers[subId] = offers[subId] || []).push(d);
         } else if (d.section?.startsWith("subcontractor-")) {
           const subId = d.section.slice("subcontractor-".length);
           (grouped[subId] = grouped[subId] || []).push(d);
@@ -1721,7 +1716,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       }
       setSubDocs(grouped);
       setSubInvoiceDocs(invoices);
-      setSubOfferDocs(offers);
     } catch {
       /* ignore */
     }
@@ -1788,29 +1782,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // other files) is gone. It was a second, weaker agreement system sitting next to the real builder
   // on the same tab. Agreements are created in AgreementsPanel and their files attach to sections.
 
-  // §L — Subcontractor offers: upload negotiation offers, accept one (gates Agreement & Scope).
-  const handleUploadSubOffer = async (subId: string, file: File) => {
-    if (!id) return;
-    try { await uploadDocument(id, file, `suboffer-${subId}`); await refreshSubDocs(); }
-    catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
-  };
-  const handleDeleteSubOffer = async (subIdx: number, docId: string) => {
-    if (!id) return;
-    if (!confirm("Delete this offer file?")) return;
-    try {
-      await deleteDocument(id, docId);
-      // If the accepted offer was deleted, clear the acceptance.
-      if (subcontractors[subIdx]?.acceptedOfferId === docId) {
-        persistSubs(subcontractors.map((s, i) => i === subIdx ? { ...s, acceptedOfferId: "" } : s));
-      }
-      await refreshSubDocs();
-    } catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
-  };
-  // Accept ONE offer (the agreed one). Accepting a new offer replaces the previous acceptance.
-  const acceptSubOffer = (subIdx: number, docId: string) => {
-    const cur = subcontractors[subIdx]?.acceptedOfferId;
-    persistSubs(subcontractors.map((s, i) => i === subIdx ? { ...s, acceptedOfferId: cur === docId ? "" : docId } : s));
-  };
+  // CR-P (69) — the subcontractor "offers" upload / accept handlers that lived here went with the
+  // bundle flow: nothing rendered them any more.
 
   // Subcontractor invoice: a dedicated upload section + an amount field that feeds project income.
   const handleUploadSubInvoice = async (subId: string, file: File) => {
@@ -5092,7 +5065,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   // The partner's own login (matched by the JV email) signs in-app.
                                   canSign={isGuest && !!jvInfo.email && (getAuthUser()?.email || "").toLowerCase() === jvInfo.email.trim().toLowerCase()}
                                   defaults={{
-                                    projectName: project?.name || "", projectNo: project?.id || "",
+                                    projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                                     party2: { name: jvInfo.partnerName, contactName: jvInfo.contactName, address: jvInfo.partnerAddress, email: jvInfo.email, phone: jvInfo.phone, logoUrl: jvInfo.logo },
                                     jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                                     contextLines: [
@@ -5318,7 +5291,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             canManage={canEdit && !isGuest}
                             canSign={false}
                             defaults={{
-                              projectName: project?.name || "", projectNo: project?.id || "",
+                              projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                               party2: { name: v.name, contactName: v.contactName, address: [v.city, v.country].filter(Boolean).join(", "), email: v.email, phone: v.phone, logoUrl: "" },
                               jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                               contextLines: [
@@ -5416,8 +5389,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   const i = Math.min(activeSubIdx, subcontractors.length - 1);
                   const sub = subcontractors[i];
                   const docs = subDocs[sub.subId] || [];
-                  const offerDocs = subOfferDocs[sub.subId] || [];              // §L
-                  const hasAcceptedOffer = !!sub.acceptedOfferId && offerDocs.some((d) => d._id === sub.acceptedOfferId);
                   // Prefer the hard link (login id stored on the record); fall back to email match.
                   const linked = (sub.userId ? guestsList.find((g) => g.userId === sub.userId) : undefined)
                     || (sub.email ? guestsList.find((g) => g.email && g.email.toLowerCase() === sub.email.toLowerCase()) : undefined);
@@ -5517,7 +5488,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               canManage={canManageSub}
                               canSign={isGuest && linkedUserId === getAuthUser()?.id}
                               defaults={{
-                                projectName: project?.name || "", projectNo: project?.id || "",
+                                projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                                 party2: { name: sub.name, contactName: sub.contact || "", address: "", email: sub.email || "", phone: sub.phone || "", logoUrl: "" },
                                 jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                                 contextLines: [

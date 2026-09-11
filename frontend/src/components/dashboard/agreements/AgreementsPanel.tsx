@@ -90,6 +90,7 @@ export interface AgreementDefaults {
   contextLines?: Array<{ label: string; value: string }>;
   projectName?: string;                     // fallback for the auto-generated code
   projectNo?: string;                       // preferred for the code (spec §5: GT-PROJ01-…)
+  projectLocation?: string;                 // CR-P (69) — a project agreement covers its project from the start
   jv?: { name: string; logoUrl: string };   // the project's JV partner — used by the JV letterhead
 }
 
@@ -168,7 +169,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   useEffect(() => { fetchCompanies().then(setCompanies).catch(() => {}); }, []);
   // CR-PR-11 — the project list a general agreement can be linked to.
   const [allProjects, setAllProjects] = useState<Array<{ id: string; name: string; location: string }>>([]);
-  useEffect(() => { if (ctx.kind !== "general") return; fetchProjects().then((ps) => setAllProjects(ps.map((p) => ({ id: p.id, name: p.name, location: p.location || "" })))).catch(() => {}); }, [ctx.kind]);
+  // CR-P (69) — every agreement can name the projects it covers, not only general ones.
+  useEffect(() => { fetchProjects().then((ps) => setAllProjects(ps.map((p) => ({ id: p.id, name: p.name, location: p.location || "" })))).catch(() => {}); }, []);
   const [ndaFiles, setNdaFiles] = useState<CompanyFile[]>([]);
   // CR-P (45) — the standard terms live in their own Company Documents tab, not the NDA folder.
   const [termsFiles, setTermsFiles] = useState<CompanyFile[]>([]);
@@ -234,7 +236,6 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       : key === "status" ? docStatusMeta(ag.docStatus).label
       : ag.updatedAt || "").toString().trim().toLowerCase();
   const sortedGeneral = useMemo(() => {
-    if (ctx.kind !== "general") return list;
     return [...list].sort((a, b) => {
       const av = genVal(a, genSort.key), bv = genVal(b, genSort.key);
       if (!av && !bv) return 0; if (!av) return 1; if (!bv) return -1;
@@ -450,8 +451,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     allDoneRef.current = null;
     setDraft({
       name: "", title: "", description: "",
-      agreementType: ctx.kind === "user" ? "Employment" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supply" : ctx.entityType === "partner" ? "Partnership" : "Service",
-      templateId: "", linkedProjects: [], effectiveDate: new Date().toISOString().slice(0, 10), startDate: "", endDate: "",
+      // CR-P (69) — names from the one grouped type list every agreement now uses.
+      agreementType: ctx.kind === "user" ? "Employment Agreement" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supplier Agreement" : ctx.entityType === "partner" ? "Partnership Agreement" : "Subcontract Agreement",
+      // A project's own agreement covers that project from the start (it can be changed).
+      templateId: "",
+      linkedProjects: ctx.kind === "project" ? [{ id: ctx.projectId, name: defaults?.projectName || "", location: defaults?.projectLocation || "" }] : [],
+      effectiveDate: new Date().toISOString().slice(0, 10), startDate: "", endDate: "",
       // CR-P (21) — a new agreement carries only the effective date until start/end are ticked on.
       datesShown: { effective: true, start: false, end: false },
       docStatus: "",
@@ -469,7 +474,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       // CR-P (68) — ONE section to start with. Four pre-made ones ("no need to put multiple
       // sections here because it's going to confuse the people") made a new agreement look like a
       // form to fill in rather than a document to write. Add Section adds more when they are wanted.
-      extraSections: ctx.kind === "general" ? [{ title: "Scope / Description", body: "" }] : [],
+      extraSections: [{ title: "Scope / Description", body: "" }],
       sectionAssignees: { ...BLANK_ASSIGNEES },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "" },
     });
@@ -499,24 +504,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       party2: { ...BLANK_PARTY, ...(ag.partySnapshot?.party2 || {}) },
       extraParties: (ag.partySnapshot?.extraParties || []).slice(0, MAX_PARTIES - 2).map((p) => ({ ...BLANK_PARTY, ...p })),
       contextLines: (ag.partySnapshot?.contextLines || []).map((l) => ({ ...l })),
-      // CR-P-48 — general agreements move any legacy fixed-section content into the editable list
-      // (and clear the fixed fields) so every section can be renamed / deleted.
-      sections: ctx.kind === "general"
-        ? {
-            ...BLANK_SECTIONS,
-            ndaEnabled: ag.sections?.ndaEnabled || false, ndaMode: ag.sections?.ndaMode || "text", ndaText: ag.sections?.ndaText || "", ndaFile: ag.sections?.ndaFile || null,
-            // CR-P (45) — carried through the same way as the NDA when the fixed sections are cleared.
-            stdTermsEnabled: ag.sections?.stdTermsEnabled || false, stdTermsMode: ag.sections?.stdTermsMode || "file", stdTermsText: ag.sections?.stdTermsText || "", stdTermsFile: ag.sections?.stdTermsFile || null,
-          }
-        : { ...BLANK_SECTIONS, ...(ag.sections || {}) },
-      extraSections: ctx.kind === "general"
-        ? [
-            ...(([["scope", "Scope / Description"], ["terms", "Terms & Conditions"], ["paymentConditions", "Payment Conditions"], ["deliveryConditions", "Delivery Conditions"]] as const)
-              .filter(([k]) => String(ag.sections?.[k] || "").trim())
-              .map(([k, label]) => ({ title: label, body: String(ag.sections?.[k] || ""), status: "" as SectionStatus }))),
-            ...(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
-          ]
-        : (ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+      // CR-P-48 / CR-P (69) — every agreement moves any legacy fixed-section content into the
+      // editable list (and clears the fixed fields), so every section can be renamed or deleted and
+      // project and employee agreements are built exactly like general ones.
+      sections: {
+        ...BLANK_SECTIONS,
+        ndaEnabled: ag.sections?.ndaEnabled || false, ndaMode: ag.sections?.ndaMode || "text", ndaText: ag.sections?.ndaText || "", ndaFile: ag.sections?.ndaFile || null,
+        // CR-P (45) — carried through the same way as the NDA when the fixed sections are cleared.
+        stdTermsEnabled: ag.sections?.stdTermsEnabled || false, stdTermsMode: ag.sections?.stdTermsMode || "file", stdTermsText: ag.sections?.stdTermsText || "", stdTermsFile: ag.sections?.stdTermsFile || null,
+      },
+      extraSections: [
+        ...(([["scope", "Scope / Description"], ["terms", "Terms & Conditions"], ["paymentConditions", "Payment Conditions"], ["deliveryConditions", "Delivery Conditions"]] as const)
+          .filter(([k]) => String(ag.sections?.[k] || "").trim())
+          .map(([k, label]) => ({ title: label, body: String(ag.sections?.[k] || ""), status: "" as SectionStatus }))),
+        ...(ag.extraSections || []).map((s) => ({ ...s, status: (s.status || "") as SectionStatus })),
+      ],
       sectionAssignees: { ...BLANK_ASSIGNEES, ...(ag.sectionAssignees || {}) },
       company: { signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "", stampUrl: "", signedAt: "", ...(ag.signatures?.company || {}) },
     }, true));
@@ -532,13 +534,20 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // picks its JV partner from the Directory and inherits that company's logo, so one company can
   // never end up with a different letterhead on different agreements.
 
+  // CR-P (69) — every agreement uses the one flexible section list, so a template fills that list
+  // (its scope, terms, payment and delivery texts become sections) instead of fixed fields. Blank
+  // sections, like the empty starter, make way for the template's; anything written stays.
   const applyTemplate = (tid: string) => {
     if (!draft) return;
     const t = templates.find((x) => x._id === tid);
     if (!t) { setDraft({ ...draft, templateId: tid }); return; }
+    const fromTemplate = ([["Scope / Description", t.sections.scope], ["Terms & Conditions", t.sections.terms], ["Payment Conditions", t.sections.paymentConditions], ["Delivery Conditions", t.sections.deliveryConditions]] as const)
+      .filter(([, body]) => (body || "").trim())
+      .map(([title, body]) => ({ title, body: body || "", status: "" as SectionStatus }));
     setDraft({
-      ...draft, templateId: tid, agreementType: t.agreementType,
-      sections: { ...draft.sections, scope: t.sections.scope, terms: t.sections.terms, paymentConditions: t.sections.paymentConditions, deliveryConditions: t.sections.deliveryConditions, ndaText: t.sections.ndaText || draft.sections.ndaText },
+      ...draft, templateId: tid, agreementType: t.agreementType || draft.agreementType,
+      extraSections: [...draft.extraSections.filter((s) => s.body.trim()), ...fromTemplate],
+      sections: { ...draft.sections, ndaText: t.sections.ndaText || draft.sections.ndaText },
     });
   };
 
@@ -830,9 +839,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     try {
       if (ag.signedDocument?.filePath) { window.open(attachmentUrl(ag.signedDocument.filePath), "_blank"); return; }
       if (ag.documentMode === "uploaded") {
-        // General uploaded agreements: cover page + merged document. Others: the file as-is.
-        if (ctx.kind === "general") { downloadBlob(await uploadedMergedBlob(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`); return; }
-        if (ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; }
+        // CR-P (69) — every uploaded agreement gets our cover page (parties, dates) merged in front.
+        downloadBlob(await uploadedMergedBlob(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
+        return;
       }
       downloadBlob(await buildAgreementPdf(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); }
@@ -849,8 +858,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   };
   // The file a row shares as-is: the signed copy, or a non-general uploaded document. Anything
   // else (a built agreement, or a general upload that gets our cover page) is made on demand.
-  const storedShareFile = (ag: ApiAgreement) =>
-    ag.signedDocument?.filePath || (ag.documentMode === "uploaded" && ctx.kind !== "general" ? ag.uploadedDocument?.filePath || "" : "");
+  const storedShareFile = (ag: ApiAgreement) => ag.signedDocument?.filePath || "";
 
   // CR-P (52) — uploading again REPLACES the signed copy; the previous one is kept in history.
   const uploadSigned = async (ag: ApiAgreement, file: File) => {
@@ -982,9 +990,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       )}
       <button onClick={() => {
         if (ag.documentMode === "uploaded") {
-          // General uploaded agreements preview as cover page + merged document.
-          if (ctx.kind === "general") { setPreview({ title: ag.title || ag.agreementType || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(ag) }); return; }
-          if (ag.uploadedDocument?.filePath) { window.open(attachmentUrl(ag.uploadedDocument.filePath.replace(/^\/+/, "")), "_blank"); return; }
+          // CR-P (69) — every uploaded agreement previews as our cover page + the merged document.
+          setPreview({ title: ag.title || ag.agreementType || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(ag) });
+          return;
         }
         // CR-P (24) — the preview is titled like the document, not like the file on disk.
         setPreview({ title: [ag.agreementNo, ag.title || agreementHeading(ag)].filter(Boolean).join(" · "), fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) });
@@ -1044,8 +1052,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
       {list.length === 0 ? (
         <p className="text-[11px] text-slate-400 italic">No agreements yet.{canManage ? " Create one — the details auto-fill from this profile." : ""}</p>
-      ) : ctx.kind === "general" ? (
-        // CR-P-45 — general agreements as a sortable, numbered table.
+      ) : (
+        // CR-P-45 / CR-P (69) — every agreement list is the same sortable, numbered table (project
+        // and employee agreements used to be a different card list).
         <div className="overflow-x-auto border border-slate-100 rounded-2xl">
           <table className="w-full min-w-[1180px] text-left table-auto">
             <thead>
@@ -1126,38 +1135,6 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
               })}
             </tbody>
           </table>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {list.map((ag) => {
-            const meta = STATUS_META[ag.status] || STATUS_META.Draft;
-            const hlId = `ag-${ag._id}`;
-            return (
-              <div key={ag._id} id={hlId} data-hl={hlId} className={`border border-slate-100 rounded-2xl bg-white ${flashId === hlId ? "hl-flash" : ""}`}>
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-                  <FileText size={14} className="text-slate-400 shrink-0" />
-                  <div className="min-w-0 flex-grow">
-                    <p className="text-xs font-bold text-slate-800 truncate">{ag.name || `${ag.agreementType} agreement`}</p>
-                    <p className="text-[10px] text-slate-400">
-                      {/* CR-P (21) — the card echoes the document: only the ticked dates. */}
-                      {ag.agreementType}{shownDates(ag).map((d) => ` · ${d.label === "End" ? "Ends" : d.label} ${d.value}`).join("")}
-                      {ag.signatures?.recipient?.signedAt ? ` · Signed ${ag.signatures.recipient.signedAt}` : ag.sentAt ? ` · Sent ${ag.sentAt}` : ""}
-                    </p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${meta.cls}`}>{meta.label}</span>
-                  {actionButtons(ag)}
-                </div>
-                {ag.status === "Signed" && ag.signedDocument && (
-                  <div className="px-3 pb-2 -mt-1">
-                    <a href={attachmentUrl(ag.signedDocument.filePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:underline"><CheckCircle2 size={11} /> Signed copy · {ag.signedDocument.name}</a>
-                  </div>
-                )}
-                {historyFor === ag._id && (
-                  <div className="px-4 pb-3 border-t border-slate-50">{historyList(ag)}</div>
-                )}
-              </div>
-            );
-          })}
         </div>
       )}
 
@@ -1484,19 +1461,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 title="Agreement details"
                 summary={[draft.agreementType, draft.title].filter(Boolean).join(" · ")}
               >
-              {/* CR-P-45 — general agreements use no templates. The picker sits on its own row so
-                  that type and number always pair up on the row below (CR-P (22)). */}
-              {ctx.kind !== "general" && (
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Template
+              {/* CR-P (69) — a template is an optional starting point, offered on every agreement
+                  that has templates for its kind. It sits on its own row so that type and number
+                  always pair up on the row below (CR-P (22)). */}
+              {relevantTemplates.length > 0 && (
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Start from a template
                   <select className={`${inp} mt-1 font-bold`} value={draft.templateId} onChange={(e) => applyTemplate(e.target.value)}>
-                    <option value="">— blank —</option>
+                    <option value="">No template</option>
                     {relevantTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
                   </select></label>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* CR-P (22) — Agreement type takes the left half, Agreement number the right. */}
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agreement type
-                  {ctx.kind === "general" ? (() => {
+                  {/* CR-P (69) — the one grouped type list, for every agreement. */}
+                  {(() => {
                     const known = AGREEMENT_TYPES_FLAT.includes(draft.agreementType);
                     return (<>
                       <select className={`${inp} mt-1 font-bold`} value={known ? draft.agreementType : "__custom__"} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value === "__custom__" ? "" : e.target.value })}>
@@ -1507,11 +1486,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                         ))}
                         <option value="__custom__">Custom…</option>
                       </select>
-                      {!known && <input className={`${inp} mt-1.5`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Type a custom agreement type…" autoFocus />}
+                      {!known && <input className={`${inp} mt-1.5`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Type a custom agreement type…" />}
                     </>);
-                  })() : (
-                    <input className={`${inp} mt-1`} value={draft.agreementType} onChange={(e) => setDraft({ ...draft, agreementType: e.target.value })} placeholder="Employment / Service / Supply…" />
-                  )}
+                  })()}
                 </label>
 
                 {/* CR-P (23) — the agreement number. Assigned by the server the moment the
@@ -1537,19 +1514,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   })()}
                 </label>
               </div>
-              {ctx.kind !== "general" && (
-                // CR-P (24) — this is the FILE name, not a code, and it never appears on the
-                // document. Auto builds it from the second party and the date.
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">File name <span className="font-medium normal-case text-slate-400">(not printed)</span>
-                  <div className="flex gap-2 mt-1">
-                    <input className={inp} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={autoName(draft.agreementType)} />
-                    <button onClick={() => setDraft({ ...draft, name: autoName(draft.agreementType) })} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 whitespace-nowrap shrink-0" title="Build the file name from the second party and the date">Auto</button>
-                  </div>
-                  <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">Names the downloaded file only. The document identifies itself by its type, title and agreement number.</span>
-                </label>
-              )}
-              {/* CR-P (18) — general agreements: Title + File name sit parallel; remarks/description follow. */}
-              {ctx.kind === "general" && (<>
+              {/* CR-P (18)/(69) — every agreement: Title + File name sit parallel; the description follows. */}
+              <>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title
                     <input className={`${inp} mt-1`} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Short title for this agreement" />
@@ -1572,11 +1538,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   <textarea rows={2} className={`${inp} mt-1`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Farmer Group will carry out the 60% civil design for the Ivory Coast plant." />
                   <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">A short description about the nature of this agreement. One or two lines. Prints under the title in plain text.</span>
                 </label>
-              </>)}
+              </>
               </EditorBox>
 
-              {/* CR-P (67) — box 2: the projects this agreement covers. */}
-              {ctx.kind === "general" && (
+              {/* CR-P (67) — box 2: the projects this agreement covers (every agreement, CR-P (69)). */}
+              {(
                 <EditorBox
                   title="Projects"
                   hint="which project this agreement covers; leave empty if it is not project related"
@@ -1768,6 +1734,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                       : ctx.kind === "user" ? "employee" : ctx.kind === "general" ? "other party" : ctx.entityType;
                     // Only the employee slot is typed by hand; every company party comes from the Directory.
                     const manual = slot === 2 && !party2IsCompany;
+                    // CR-P (70) — an agreement made on a project record (subcontractor, vendor, JV
+                    // partner) is WITH that record: party 2 is filled in from it and cannot be swapped.
+                    const fixedParty = ctx.kind === "project" && slot === 2;
                     return (
                       <div key={slot} className="bg-white rounded-xl border border-slate-100 p-3 space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -1790,18 +1759,23 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                               {p.name ? (
                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold ${p.companyId ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
                                   <Building2 size={12} className={p.companyId ? "text-slate-400" : "text-amber-500"} /> {p.name}
-                                  <button onClick={() => blankParty(slot)} title="Clear this party" className="text-slate-300 hover:text-red-500"><X size={12} /></button>
+                                  {!fixedParty && <button onClick={() => blankParty(slot)} title="Clear this party" className="text-slate-300 hover:text-red-500"><X size={12} /></button>}
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-400 italic">No party chosen — pick one from the Directory.</span>
+                                <span className="text-[11px] text-slate-400 italic">No party chosen. Pick one from the Directory.</span>
                               )}
-                              <button onClick={() => { setPartyPicker(slot); setPartySearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary">
-                                <Building2 size={11} /> {p.name ? "Change party" : "Choose from Directory"}
-                              </button>
-                              <button onClick={() => setNewPartyOpen(slot)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
-                                <Plus size={11} /> New company
-                              </button>
+                              {!fixedParty && (<>
+                                <button onClick={() => { setPartyPicker(slot); setPartySearch(""); }} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary">
+                                  <Building2 size={11} /> {p.name ? "Change party" : "Choose from Directory"}
+                                </button>
+                                <button onClick={() => setNewPartyOpen(slot)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
+                                  <Plus size={11} /> New company
+                                </button>
+                              </>)}
                             </div>
+                            {fixedParty && (
+                              <p className="text-[10px] text-slate-400 italic">Filled in from this {ctx.kind === "project" ? ctx.entityType : "record"}. To agree with someone else, open their record instead.</p>
+                            )}
                             {/* CR-P (20) — a party that isn't a Directory record is flagged, with the
                                 one click that fixes it. Nothing on an agreement should live outside
                                 the Directory, or the same company ends up with different details. */}
@@ -1849,26 +1823,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
               )}
 
               {/* Sections — rich text so tables & pictures can be added (rendered into the agreement PDF).
-                  CR-P-48 — general agreements manage every section through the flexible list below
-                  (rename / delete / reorder). The fixed sections stay for employee & project agreements. */}
-              {ctx.kind !== "general" && ([["scope", "Scope / description", 120], ["terms", "Terms & conditions", 160], ["paymentConditions", "Payment conditions", 90], ["deliveryConditions", "Delivery conditions", 90]] as const).map(([f, label, mh]) => (
-                <div key={f} className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <div className="flex items-center justify-between gap-2">
-                    <span>{label}</span>
-                    {/* CR-P-49 — tag a colleague to review this fixed section (notifies them). */}
-                    <select value="" onChange={(e) => {
-                      const u = users.find((x) => x.id === e.target.value);
-                      setDraft({ ...draft, sectionAssignees: { ...draft.sectionAssignees, [f]: u?.name || "" } });
-                      const pid = ctx.kind === "project" ? ctx.projectId : "";
-                      if (u) createReminder({ userId: u.id, title: `Review agreement section "${label}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: pid ? `/dashboard/projects/${pid}` : "/dashboard", projectId: pid || undefined, projectName: draft?.name || "Agreement" }).then(() => toast(`${u.name} was notified.`, "success")).catch(() => {});
-                    }} className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer normal-case tracking-normal shrink-0">
-                      <option value="">{draft.sectionAssignees[f] ? `👤 ${draft.sectionAssignees[f]}` : "Tag colleague…"}</option>
-                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="mt-1"><RichTextEditor value={draft.sections[f]} onChange={(html) => setDraft({ ...draft, sections: { ...draft.sections, [f]: html } })} minHeight={mh} placeholder={`${label}…`} /></div>
-                </div>
-              ))}
+                  CR-P-48 / CR-P (69) — every agreement manages its sections through the flexible list
+                  below (rename / delete / reorder). The four fixed sections employee and project
+                  agreements used to have are gone; older ones move into this list as they open. */}
 
               {/* Custom named sections — CR-B-04: these live BEFORE the NDA; the NDA is always
                   the last section before the signature. Each is a titled rich-text block. */}
@@ -1882,6 +1839,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 // CR-B-18 — attach/remove a pre-made file on this section (needs the agreement saved first).
                 const uploadFile = async (file: File) => {
                   if (!editor?.aid) { toast("Save the agreement first, then attach files to a section.", "info"); return; }
+                  // The server finds the section by its position. If sections were added, moved, or
+                  // (on an older agreement) moved in from the old fixed fields since the last save,
+                  // save first so the file lands in the right one.
+                  if (isDirty() && !(await saveDraft())) return;
                   try { const ag = await uploadAgreementSectionFile(ctx, editor.aid, i, file); upd({ attachments: (ag.extraSections?.[i]?.attachments || []) as typeof s.attachments }); toast("File attached.", "success"); }
                   catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
                 };
@@ -2146,16 +2107,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 {draft.documentMode === "uploaded" ? (
                   (() => {
                     const existing = list.find((a) => a._id === editor?.aid)?.uploadedDocument;
+                    // CR-P (69) — every uploaded agreement previews as our cover page merged with the
+                    // file, the same way it downloads.
                     const openUploaded = () => {
-                      // General agreements preview the generated cover page merged with the file.
-                      if (ctx.kind === "general") {
-                        const cur = list.find((a) => a._id === editor?.aid);
-                        const previewAg = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody() } as ApiAgreement;
-                        setPreview({ title: draft.title || draft.agreementType || "Agreement", fileName: `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(previewAg, draft.uploadFile) });
-                        return;
-                      }
-                      if (draft.uploadFile) { window.open(URL.createObjectURL(draft.uploadFile), "_blank"); return; }
-                      if (existing?.filePath) window.open(attachmentUrl(existing.filePath.replace(/^\/+/, "")), "_blank");
+                      const cur = list.find((a) => a._id === editor?.aid);
+                      const previewAg = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody() } as ApiAgreement;
+                      setPreview({ title: draft.title || draft.agreementType || "Agreement", fileName: `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(previewAg, draft.uploadFile) });
                     };
                     const has = !!draft.uploadFile || !!existing?.filePath;
                     return <button onClick={openUploaded} disabled={!has} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-40"><Eye size={13} /> Preview file</button>;

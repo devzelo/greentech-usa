@@ -1950,32 +1950,6 @@ export async function deleteShipmentFile(projectId: string, sid: string, rid: st
   return request(`${shipBase(projectId)}/${sid}/rows/${rid}/files/${fid}`, { method: 'DELETE' });
 }
 
-// ── Subcontractor agreements (named; bundle agreement + offer + other docs) ───
-export type SubAgreementDocKind = "agreement" | "offer" | "other";
-export interface ApiSubAgreementDoc { _id: string; kind: SubAgreementDocKind; name: string; filePath: string; fileType: string; size: string }
-export interface ApiSubAgreement { _id: string; projectId: string; subId: string; name: string; description: string; documents: ApiSubAgreementDoc[]; createdAt?: string }
-const subAgrBase = (projectId: string) => `/projects/${projectId}/sub-agreements`;
-export async function fetchSubAgreements(projectId: string, subId?: string): Promise<ApiSubAgreement[]> {
-  return request(`${subAgrBase(projectId)}${subId ? `?subId=${encodeURIComponent(subId)}` : ""}`);
-}
-export async function createSubAgreement(projectId: string, subId: string, name: string, description: string): Promise<ApiSubAgreement> {
-  return request(subAgrBase(projectId), { method: "POST", body: JSON.stringify({ subId, name, description }) });
-}
-export async function updateSubAgreement(projectId: string, aid: string, body: Partial<{ name: string; description: string }>): Promise<ApiSubAgreement> {
-  return request(`${subAgrBase(projectId)}/${aid}`, { method: "PATCH", body: JSON.stringify(body) });
-}
-export async function deleteSubAgreement(projectId: string, aid: string): Promise<void> { await request(`${subAgrBase(projectId)}/${aid}`, { method: "DELETE" }); }
-export async function uploadSubAgreementFile(projectId: string, aid: string, file: File, kind: SubAgreementDocKind): Promise<ApiSubAgreement> {
-  const fd = new FormData(); fd.append("file", file); fd.append("kind", kind);
-  const token = getAuthToken();
-  const res = await fetch(`${API_BASE}/api${subAgrBase(projectId)}/${aid}/files`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
-  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
-  return res.json();
-}
-export async function deleteSubAgreementFile(projectId: string, aid: string, fid: string): Promise<ApiSubAgreement> {
-  return request(`${subAgrBase(projectId)}/${aid}/files/${fid}`, { method: "DELETE" });
-}
-
 // ── Reminders (personal; can point at any record via `link`) ─────────────────
 export type ReminderStatus = "Pending" | "InProgress" | "Completed" | "Cancelled";
 export interface ApiReminder {
