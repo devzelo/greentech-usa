@@ -82,15 +82,13 @@ export function registerBrandFonts() {
  * The letterhead band, repeated on every page. A joint-venture partner's logo sits on a white chip
  * in the empty middle of the band, clear of the GreenTech logo and of the wave on the right.
  */
-export function LetterheadHeader({ jvLogo }: { jvLogo?: string }) {
+// The band carries the client-approved art only. A JV partner's logo used to sit on a white chip in
+// it, which read as an empty white box whenever the logo did not load; the JV shows in the text
+// instead (the submitter on the cover, the EOI's firm name).
+export function LetterheadHeader() {
   return (
     <View fixed style={{ position: "absolute", top: 0, left: 0, width: A4.w, height: LETTERHEAD.header.h }}>
       <Image src={abs(LETTERHEAD.header.src)} style={{ width: A4.w, height: LETTERHEAD.header.h }} />
-      {!!jvLogo && (
-        <View style={{ position: "absolute", top: 8, right: 140, height: 26, paddingHorizontal: 7, backgroundColor: BRAND.white, borderRadius: 4, justifyContent: "center" }}>
-          <Image src={abs(jvLogo)} style={{ height: 18, maxWidth: 96, objectFit: "contain" }} />
-        </View>
-      )}
     </View>
   );
 }

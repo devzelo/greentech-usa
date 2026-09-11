@@ -46,7 +46,7 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
   return (
     <Document title={`Expression of Interest - ${r.projectTitle || projectName}`} author={r.firmName}>
       <Page size="A4" style={s.page} wrap>
-        <LetterheadHeader jvLogo={r.jv ? r.jvLogo || undefined : undefined} />
+        <LetterheadHeader />
         <View style={s.head}>
           <Text style={s.title}>Expression of Interest (EOI)</Text>
           <Text style={s.date}>{longDate(r.date)}</Text>

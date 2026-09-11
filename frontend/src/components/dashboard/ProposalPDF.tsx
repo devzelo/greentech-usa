@@ -270,7 +270,7 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
 function Sheet({ lh, label, note, children }: { lh: LhConfig; label: string; note: string; children?: ReactNode; key?: string }) {
   return (
     <Page size="A4" style={lh.mode === "brand" ? styles.page : styles.pagePlain} wrap>
-      {lh.mode === "brand" && <LetterheadHeader jvLogo={lh.jv} />}
+      {lh.mode === "brand" && <LetterheadHeader />}
       {lh.mode === "custom" && (
         <View style={styles.customHeader} fixed>
           {lh.logo ? <Image src={lh.logo} style={styles.customLogo} /> : <Text style={{ fontWeight: 700, color: BRAND.slate }}>{COMPANY.name}</Text>}
@@ -339,7 +339,6 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     subtitle: c?.subtitle || "",
     fields,
     images: images.length ? images : [abs(COVER_FALLBACK)],
-    jvLogo: c?.logoMode === "dual" ? c?.jvLogoUrl : "",
     volume: (c?.volumeLabel || "").trim().toUpperCase() || undefined,
     badge: (c?.revisionLabel || "").trim() || undefined,
     clientLogo: c?.clientLogoUrl ? abs(c.clientLogoUrl) : undefined,

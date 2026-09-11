@@ -17,7 +17,8 @@ export interface CoverData {
   subtitle: string;
   fields: CoverField[];
   images: string[];    // absolute URLs, first is the feature photo
-  jvLogo?: string;
+  // (No partner-logo chip: it showed as an empty white box whenever the logo did not load. The JV
+  // appears in the fields: "Submitted by" and the partner's contact block.)
   volume?: string;     // "VOL. II: TECHNICAL PROPOSAL", shown in place of the kind
   badge?: string;      // revision, e.g. "Final Proposal Revision"
   clientLogo?: string; // the client's seal or logo
@@ -35,15 +36,6 @@ function LogoChip({ h = 22 }: { h?: number }) {
   return (
     <View style={{ backgroundColor: BRAND.slate, borderRadius: 8, paddingVertical: h * 0.5, paddingHorizontal: h * 0.7, alignSelf: "flex-start" }}>
       <Logo h={h} />
-    </View>
-  );
-}
-
-/** A joint-venture partner's logo, on white so a logo of any colour reads. */
-function JvChip({ src, h = 22, below = false }: { src: string; h?: number; below?: boolean }) {
-  return (
-    <View style={{ backgroundColor: BRAND.white, borderRadius: 6, paddingVertical: 5, paddingHorizontal: 8, justifyContent: "center", alignSelf: "flex-start", ...(below ? { marginTop: 8 } : { marginLeft: 10 }) }}>
-      <Image src={abs(src)} style={{ height: h, maxWidth: 110, objectFit: "contain" }} />
     </View>
   );
 }
@@ -124,7 +116,6 @@ function Hero({ d }: { d: CoverData }) {
         <Scrim w={A4.w} h={H} />
         <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
           <Logo h={30} />
-          {!!d.jvLogo && <JvChip src={d.jvLogo} />}
         </View>
         {!!d.clientLogo && <View style={{ position: "absolute", top: 34, right: 52 }}><ClientMark src={d.clientLogo} /></View>}
       </View>
@@ -189,7 +180,6 @@ function Formal({ d }: { d: CoverData }) {
       <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <LogoChip h={22} />
-          {!!d.jvLogo && <JvChip src={d.jvLogo} />}
           <View style={{ flex: 1 }} />
           {!!d.clientLogo && <ClientMark src={d.clientLogo} h={40} />}
         </View>
@@ -239,7 +229,6 @@ function Panel({ d }: { d: CoverData }) {
         <View style={{ flex: 1, padding: 32, justifyContent: "space-between" }}>
           <View>
             <LogoChip h={18} />
-            {!!d.jvLogo && <JvChip src={d.jvLogo} h={18} below />}
           </View>
           <View>
             <Eyebrow color={BRAND.white}>{d.volume || d.kind}</Eyebrow>
