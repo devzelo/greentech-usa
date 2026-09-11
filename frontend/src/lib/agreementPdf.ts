@@ -393,6 +393,14 @@ async function drawUploadedCover(doc: PDFDocument, ag: ApiAgreement, font: PDFFo
   center("and", font, 9, MUTED, 8);
   if (p2?.name) center(p2.name, bold, 12, INK, 2);
   for (const l of [p2?.contactName ? `Attn: ${p2.contactName}` : "", p2?.address, p2?.email, p2?.phone].filter(Boolean) as string[]) center(l, font, 9, MUTED, 0);
+  // CR-P (19) — parties 3 and 4 as well: an uploaded bonding agreement names the bank and the
+  // surety too, and this cover used to stop at party 2.
+  for (const px of (ag.partySnapshot?.extraParties || []).filter((x) => (x?.name || "").trim())) {
+    y -= 10;
+    center("and", font, 9, MUTED, 8);
+    center(px.name, bold, 12, INK, 2);
+    for (const l of [px.contactName ? `Attn: ${px.contactName}` : "", px.address, px.email, px.phone].filter(Boolean) as string[]) center(l, font, 9, MUTED, 0);
+  }
   y -= 16;
   // CR-P (21) — only the ticked dates, same rule as the built document.
   const dates = shownDates(ag).map((d) => `${d.label}: ${d.value}`).join("      ");

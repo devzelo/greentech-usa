@@ -1004,9 +1004,20 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         // CR-P (24) — the Word document is headed the way the PDF is (type, title, number).
         // The file name only names the downloaded file, it is never content.
         const heading = agreementHeading(ag);
+        // CR-P (19)/(25) — the Word copy follows the PDF's running order and names EVERY party (it
+        // printed no parties at all): type, title, number, description, projects, parties, sections.
+        const partiesHtml = [ag.partySnapshot?.party1, ag.partySnapshot?.party2, ...(ag.partySnapshot?.extraParties || [])]
+          .filter((p): p is ApiAgreementParty => !!p && !!(p.name || "").trim())
+          .map((p, k) => `<p><strong>Party ${k + 1}:</strong> ${escapeHtml(p.name)}${[p.address, p.email, p.phone].filter(Boolean).map((x) => `<br/>${escapeHtml(String(x))}`).join("")}</p>`)
+          .join("");
+        const projectsHtml = (ag.linkedProjects || []).filter((p) => (p.name || "").trim())
+          .map((p) => `<p><strong>Project:</strong> ${escapeHtml(p.name)}${p.location ? `, ${escapeHtml(p.location)}` : ""}</p>`).join("");
         const body = `<h1>${escapeHtml(heading)}</h1>`
           + (ag.title ? `<h2>${escapeHtml(ag.title)}</h2>` : "")
           + (ag.agreementNo ? `<p><em>Agreement No: ${escapeHtml(ag.agreementNo)}</em></p>` : "")
+          + (ag.description ? `<p>${escapeHtml(ag.description)}</p>` : "")
+          + projectsHtml
+          + partiesHtml
           + secs.map((s) => `<h2>${escapeHtml(s.title || "Section")}</h2>${s.body || ""}`).join("")
           + (ag.sections?.ndaEnabled && ag.sections.ndaText ? `<h2>Non-Disclosure Agreement</h2>${ag.sections.ndaText}` : "")
           + (ag.signatures?.company?.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(ag.signatures.company.signerName)}${ag.signatures.company.signerTitle ? `, ${escapeHtml(ag.signatures.company.signerTitle)}` : ""}</p>` : "");
