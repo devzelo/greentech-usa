@@ -172,6 +172,8 @@ export interface ApiProject {
   jointVenture?: {
     enabled: boolean; partnerName: string; partnerAddress: string;
     contactName: string; email: string; phone: string; lead: string; logo: string; notes: string;
+    /** CR-P (31) - the Directory company the partner was picked from. */
+    companyId?: string;
     stamps?: Array<{ name: string; url: string }>;
     signatures?: Array<{ name: string; url: string }>;
     // Step 8 (items 114-118) - the JV as its own registered entity, used on EOIs and proposals.

@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useRef, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, type ApiProject, type ApiCompany } from "../../lib/api";
+import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, withFileToken, type ApiProject, type ApiCompany } from "../../lib/api";
 import ClientPicker from "./ClientPicker";
+import CompanyPicker from "./CompanyPicker";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import CategoryMultiSelect from "./CategoryMultiSelect";
@@ -209,14 +210,30 @@ export default function NewProjectForm() {
   // (logo, stamps, signatures) can only upload once the project exists, so we stash the
   // files here and upload them right after createProject returns a projectId.
   type JVImage = { name: string; url: string };
+  // CR-P (31) — the partner is picked from the Directory: `companyId` links the project to that
+  // record, and `logoUrl` is its Directory logo, which becomes this project's JV letterhead.
   type JVCreate = {
     enabled: boolean; partnerName: string; partnerAddress: string;
     contactName: string; email: string; phone: string; lead: string; notes: string;
+    companyId: string; logoUrl: string;
   };
   const [jv, setJv] = useState<JVCreate>({
     enabled: false, partnerName: "", partnerAddress: "",
     contactName: "", email: "", phone: "", lead: "", notes: "",
+    companyId: "", logoUrl: "",
   });
+  const pickJvPartner = (c: ApiCompany) => {
+    const cp = c.contactPersons?.[0];
+    setJv((prev) => ({
+      ...prev,
+      partnerName: c.name, companyId: c._id,
+      email: c.email || cp?.email || prev.email,
+      phone: c.phone || cp?.phone || prev.phone,
+      contactName: cp?.name || prev.contactName,
+      partnerAddress: c.address || prev.partnerAddress,
+      logoUrl: c.logoUrl || "",
+    }));
+  };
   const updateJv = <K extends keyof JVCreate>(field: K, value: JVCreate[K]) =>
     setJv((prev) => ({ ...prev, [field]: value }));
   const [jvLogoFile, setJvLogoFile] = useState<File | null>(null);
@@ -230,7 +247,9 @@ export default function NewProjectForm() {
     setJvLogoFile(f);
     setJvLogoPreview(URL.createObjectURL(f));
   };
-  const clearJvLogo = () => { setJvLogoFile(null); setJvLogoPreview(""); };
+  const clearJvLogo = () => { setJvLogoFile(null); setJvLogoPreview(""); updateJv("logoUrl", ""); };
+  // What the logo box shows: an uploaded file wins, otherwise the Directory partner's logo.
+  const jvLogoShown = jvLogoPreview || (jv.logoUrl ? withFileToken(jv.logoUrl) : "");
   const addJvImage = (f: File, kind: "stamps" | "signatures") => {
     if (!f.type.startsWith("image/")) { toast("Please pick an image file.", "error"); return; }
     if (f.size > 8 * 1024 * 1024) { toast("Image must be under 8 MB.", "error"); return; }
@@ -384,7 +403,9 @@ export default function NewProjectForm() {
       // them now and save the JV record. Skipped entirely for GreenTech-only projects.
       if (jv.enabled) {
         try {
-          let logo = "";
+          // CR-P (31) — the Directory partner's logo is saved once as this project's JV letterhead;
+          // a logo uploaded here overrides it for this project.
+          let logo = jv.logoUrl || "";
           if (jvLogoFile) { const { url } = await uploadProposalAsset(project.id, jvLogoFile); logo = url; }
           const stamps: JVImage[] = [];
           for (const s of jvStamps) {
@@ -396,7 +417,8 @@ export default function NewProjectForm() {
             const { url } = await uploadProposalAsset(project.id, s.file);
             signatures.push({ name: s.file.name.replace(/\.[^.]+$/, ""), url });
           }
-          await updateProject(project.id, { jointVenture: { ...jv, logo, stamps, signatures } });
+          const { logoUrl: _directoryLogo, ...jvFields } = jv;
+          await updateProject(project.id, { jointVenture: { ...jvFields, logo, stamps, signatures } });
         } catch (err) {
           toast(err instanceof Error ? err.message : "Project created, but saving the Joint Venture details failed.", "error");
         }
@@ -724,8 +746,19 @@ export default function NewProjectForm() {
           {jv.enabled && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* CR-P (31) — the partner comes from the Directory (partners), the same as in the
+                    project's own JV editor. Picking it fills the details below and its logo. */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Company Name</label>
+                  <CompanyPicker
+                    value={jv.partnerName}
+                    category="partner"
+                    onNameChange={(v) => setJv((prev) => ({ ...prev, partnerName: v, companyId: "" }))}
+                    onSelectCompany={pickJvPartner}
+                    placeholder="Search or add a partner from the Directory…"
+                  />
+                </div>
                 {([
-                  { field: "partnerName", label: "Partner Company Name", placeholder: "e.g. ACCU Company" },
                   { field: "contactName", label: "Person in Charge", placeholder: "Full name" },
                   { field: "email", label: "Partner Email", placeholder: "contact@partner.com" },
                   { field: "phone", label: "Partner Phone", placeholder: "+1 (555) 000-0000" },
@@ -742,17 +775,17 @@ export default function NewProjectForm() {
                 ))}
                 {/* Partner logo */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo <span className="font-medium normal-case text-slate-400">(from the Directory partner; this project's JV letterhead)</span></label>
                   <div className="flex items-center gap-3">
                     <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                      {jvLogoPreview ? <img src={jvLogoPreview} alt="Partner logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
+                      {jvLogoShown ? <img src={jvLogoShown} alt="Partner logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
-                        <Upload size={13} /> {jvLogoPreview ? "Replace" : "Upload logo"}
+                        <Upload size={13} /> {jvLogoShown ? "Replace" : "Upload logo"}
                         <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) pickJvLogo(f); e.target.value = ""; }} />
                       </label>
-                      {jvLogoPreview && <button type="button" onClick={clearJvLogo} className="text-[11px] font-bold text-red-500 hover:underline">Remove</button>}
+                      {jvLogoShown && <button type="button" onClick={clearJvLogo} className="text-[11px] font-bold text-red-500 hover:underline">Remove</button>}
                     </div>
                   </div>
                 </div>

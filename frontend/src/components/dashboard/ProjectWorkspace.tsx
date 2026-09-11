@@ -394,8 +394,9 @@ export default function ProjectWorkspace() {
   // §M — Joint Venture info (partner company for a JV project)
   type JVImage = { name: string; url: string };
   // Step 8 - plus the JV as its own registered entity (legal name, UEI, CAGE, address, combined logo).
-  type JVInfo = { enabled: boolean; partnerName: string; partnerAddress: string; contactName: string; email: string; phone: string; lead: string; logo: string; notes: string; stamps: JVImage[]; signatures: JVImage[]; legalName: string; uei: string; cage: string; legalAddress: string; combinedLogo: string };
-  const [jvInfo, setJvInfo] = useState<JVInfo>({ enabled: false, partnerName: "", partnerAddress: "", contactName: "", email: "", phone: "", lead: "", logo: "", notes: "", stamps: [], signatures: [], legalName: "", uei: "", cage: "", legalAddress: "", combinedLogo: "" });
+  // CR-P (31) — `companyId` is the Directory company the partner was picked from.
+  type JVInfo = { enabled: boolean; partnerName: string; partnerAddress: string; contactName: string; email: string; phone: string; lead: string; logo: string; notes: string; stamps: JVImage[]; signatures: JVImage[]; legalName: string; uei: string; cage: string; legalAddress: string; combinedLogo: string; companyId: string };
+  const [jvInfo, setJvInfo] = useState<JVInfo>({ enabled: false, partnerName: "", partnerAddress: "", contactName: "", email: "", phone: "", lead: "", logo: "", notes: "", stamps: [], signatures: [], legalName: "", uei: "", cage: "", legalAddress: "", combinedLogo: "", companyId: "" });
   // Editing the JV record marks the workspace dirty so the unsaved-changes guard applies —
   // uploaded partner stamps/signatures only persist via Save Workspace / Save Identity.
   const updateJv = <K extends keyof JVInfo>(field: K, value: JVInfo[K]) => { setJvInfo((prev) => ({ ...prev, [field]: value })); setDirty(true); };
@@ -427,9 +428,11 @@ export default function ProjectWorkspace() {
                 <CompanyPicker
                   value={jvInfo.partnerName}
                   category="partner"
-                  onNameChange={(v) => updateJv("partnerName", v)}
+                  // Typing a different name breaks the Directory link until one is picked again.
+                  onNameChange={(v) => { updateJv("partnerName", v); updateJv("companyId", ""); }}
                   onSelectCompany={(c) => {
                     updateJv("partnerName", c.name);
+                    updateJv("companyId", c._id);   // CR-P (31)
                     const cp = c.contactPersons?.[0];
                     if (c.email || cp?.email) updateJv("email", c.email || cp?.email || "");
                     if (c.phone || cp?.phone) updateJv("phone", c.phone || cp?.phone || "");
@@ -2569,6 +2572,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           cage: proj.jointVenture?.cage || "",
           legalAddress: proj.jointVenture?.legalAddress || "",
           combinedLogo: proj.jointVenture?.combinedLogo || "",
+          companyId: proj.jointVenture?.companyId || "",   // CR-P (31)
         });
         setProposals({
           technical: {

@@ -62,6 +62,9 @@ export interface IProject extends Document {
     phone: string;
     lead: string;   // who leads (e.g. "GreenTech 51% / Partner 49%")
     logo: string;   // partner logo file path (optional)
+    // CR-P (31) — the Directory company the partner was picked from, so the project stays linked
+    // to that one record (its logo became the project's JV letterhead when it was picked).
+    companyId: string;
     notes: string;
     // Partner stamp & signature images kept on the partner profile; the PO picks from these.
     stamps: Array<{ name: string; url: string }>;
@@ -198,6 +201,7 @@ const ProjectSchema = new Schema<IProject>(
       phone: { type: String, default: "" },
       lead: { type: String, default: "" },
       logo: { type: String, default: "" },
+      companyId: { type: String, default: "" },   // CR-P (31)
       notes: { type: String, default: "" },
       stamps: { type: [{ name: { type: String, default: "" }, url: { type: String, default: "" } }], default: [] },
       signatures: { type: [{ name: { type: String, default: "" }, url: { type: String, default: "" } }], default: [] },
