@@ -99,8 +99,23 @@ router.post("/from-po/:pid", async (req: AuthedRequest, res: Response, next: Nex
   try {
     const po = await ProcurementPO.findOne({ _id: req.params.pid, projectId: req.params.id });
     if (!po) return res.status(404).json({ error: "Purchase order not found." });
+    // CR-P (171) — the vendor's invoice file uploaded on the PO goes with it (same stored file).
+    const poFiles = (po.attachments || []).filter((a) => (a as { kind?: string }).kind === "invoice")
+      .map((a) => ({ name: a.name, filePath: a.filePath, fileType: a.fileType, size: a.size }));
     const existing = await Invoice.findOne({ projectId: req.params.id, type: "received", poId: String(po._id) });
-    if (existing) return res.json(existing);
+    if (existing) {
+      // Kept in step with the PO while nothing has been paid on it (the PO is where it is changed).
+      if (!(existing.payments || []).length) {
+        if (po.invoiceNo) existing.number = po.invoiceNo;
+        if (po.invoiceAmount) existing.amount = po.invoiceAmount;
+        if (po.invoiceDate) existing.date = po.invoiceDate;
+        if (po.vendorName) existing.party = po.vendorName;
+      }
+      const have = new Set((existing.attachments || []).map((a) => a.filePath));
+      for (const f of poFiles) if (!have.has(f.filePath)) existing.attachments.push(f as never);
+      await existing.save();
+      return res.json(existing);
+    }
     const invoice = await Invoice.create({
       projectId: req.params.id,
       type: "received",
@@ -111,6 +126,7 @@ router.post("/from-po/:pid", async (req: AuthedRequest, res: Response, next: Nex
       status: "Unpaid",
       description: `Vendor invoice for PO ${po.poNo}`,
       poId: String(po._id),
+      attachments: poFiles,
       addedByName: req.user!.name || "",
     });
     res.status(201).json(invoice);

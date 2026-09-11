@@ -165,7 +165,10 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const [dirty, setDirty] = useState(false);
   useUnsavedGuard(dirty);
   const save = (pid: string, field: "terms" | "termsMode" | "notes" | "shipTo" | "deliveryMethod" | "status" | "invoiceNo" | "invoiceAmount" | "invoiceDate" | "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "assignedTo", value: string) => {
-    updateProcurementPO(projectId, pid, { [field]: value }).then((po) => { patch(pid, po); setDirty(false); }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+    updateProcurementPO(projectId, pid, { [field]: value }).then((po) => {
+      patch(pid, po); setDirty(false);
+      if (field === "invoiceNo" || field === "invoiceAmount" || field === "invoiceDate") autoRaise(po);
+    }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
   };
   // Pick the GreenTech signer from staff who have a signature on file.
   const selectSigner = async (pid: string, s: ApiSignatory | null) => {
@@ -230,13 +233,26 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create the invoice.", "error"); }
     finally { setRaisingInvoice(null); }
   };
+  // CR-P (171) — once the vendor invoice number, amount and date are in, the invoice goes to
+  // Invoices Received by itself (with the invoice file uploaded here), and stays in step with the
+  // PO until it is paid. The button above still does it by hand.
+  const autoRaise = (po: ApiProcurementPO) => {
+    if (!po.invoiceNo?.trim() || !n(po.invoiceAmount) || !po.invoiceDate?.trim()) return;
+    const isNew = !raisedPoIds.has(po._id);
+    invoiceFromPO(projectId, po._id)
+      .then(() => {
+        setRaisedPoIds((prev) => new Set(prev).add(po._id));
+        if (isNew) toast(`Invoice ${po.invoiceNo} added to Invoices Received.`, "success");
+      })
+      .catch(() => { /* the button is still there */ });
+  };
   const removePO = async (pid: string) => {
     if (!(await confirm({ title: "Delete PO?", message: "This deletes the purchase order. Its auto-created project expense is removed too.", confirmLabel: "Delete" }))) return;
     try { await deleteProcurementPO(projectId, pid); setPOs((p) => p.filter((x) => x._id !== pid)); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
   const upload = async (pid: string, file: File, kind: string) => {
-    try { const po = await uploadPOAttachment(projectId, pid, file, kind); patch(pid, po); }
+    try { const po = await uploadPOAttachment(projectId, pid, file, kind); patch(pid, po); if (kind === "invoice") autoRaise(po); }
     catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
   };
   const removeAtt = async (pid: string, aid: string) => {
@@ -443,7 +459,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-slate-400 mb-2">Record the vendor's invoice here, then push it to <span className="font-bold">Invoices Received</span> to pay it and track the receipt — the payment posts to Expenses automatically.</p>
+          <p className="text-[10px] text-slate-400 mb-2">Record the vendor's invoice here and upload its file below. Once the number, amount and date are in, it goes to <span className="font-bold">Invoices Received</span> by itself (with the file), where it is paid; the payment is recorded in Expenses. It is also listed in Procurement &gt; Invoices.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input className={inp} placeholder="Invoice #" value={po.invoiceNo} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceNo: e.target.value })} onBlur={(e) => save(po._id, "invoiceNo", e.target.value)} />
             <input className={inp} placeholder="Invoice amount" value={po.invoiceAmount} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceAmount: e.target.value })} onBlur={(e) => save(po._id, "invoiceAmount", e.target.value)} />
