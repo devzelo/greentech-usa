@@ -71,7 +71,7 @@ import RevisionManage from "./RevisionManage";
 import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposal";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
-import ProjectProgress from "./ProjectProgress";
+import ProjectSchedule from "./ProjectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
@@ -3485,16 +3485,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 )}
               </div>
 
-              {/* CR-P (120) — the progress bar from the My Projects cards, inside the project too,
-                  with the percentage editable right here by whoever runs the project. */}
-              <ProjectProgress
-                progress={project.progress}
+              {/* CR-P (120)-(125) — the progress bar from the My Projects cards, inside the project
+                  too, with the percentage editable here by whoever runs the project; with milestones
+                  set up it becomes the schedule and the progress counts from the confirmed ones. */}
+              <ProjectSchedule
+                project={project}
                 canEdit={canManage}
+                userName={currentUser?.name || ""}
                 className="mt-3 max-w-3xl"
-                onSave={async (pct) => {
+                onSave={async (patch, message) => {
                   if (!id) return;
-                  try { const u = await updateProject(id, { progress: pct }); setProject(u); toast(`Progress set to ${pct}%.`, "success"); }
-                  catch (e) { toast(e instanceof Error ? e.message : "Could not save the progress.", "error"); throw e; }
+                  try { const u = await updateProject(id, patch); setProject(u); if (message) toast(message, "success"); }
+                  catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); throw e; }
                 }}
               />
 

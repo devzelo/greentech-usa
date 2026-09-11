@@ -83,6 +83,11 @@ export interface IProject extends Document {
   timeline: {
     phases: Array<{ name: string; start: string; end: string }>;
   };
+  // CR-P (121)-(125) — the project's milestones, run one after another from the start date. Each
+  // has a duration; the project manager confirms it finished (doneAt), which counts toward progress.
+  schedule: {
+    milestones: Array<{ id: string; name: string; duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string }>;
+  };
   assignedEmployees: string[];
   subcontractors: Array<{
     name: string;
@@ -224,6 +229,20 @@ const ProjectSchema = new Schema<IProject>(
           end: { type: String, default: "" },
         },
       ],
+    },
+    schedule: {
+      milestones: {
+        type: [{
+          id: { type: String, default: "" },
+          name: { type: String, default: "" },
+          duration: { type: Number, default: 0, min: 0 },
+          unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
+          doneAt: { type: String, default: "" },
+          doneBy: { type: String, default: "" },
+          _id: false,
+        }],
+        default: [],
+      },
     },
     assignedEmployees: [{ type: String }],
     subcontractors: [

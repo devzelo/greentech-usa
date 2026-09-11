@@ -184,6 +184,8 @@ export interface ApiProject {
     combinedLogo?: string;   // the JV's combined logo
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
+  /** CR-P (121)-(125) - milestones run one after another from the start date. */
+  schedule?: { milestones: ApiMilestone[] };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -965,6 +967,16 @@ export async function createProject(body: Partial<ApiProject>): Promise<ApiProje
     body: JSON.stringify(body),
   });
   return normalise(data);
+}
+
+/** A project milestone: a duration after the one before it; doneAt is set when the PM confirms it. */
+export interface ApiMilestone {
+  id: string;
+  name: string;
+  duration: number;
+  unit: "days" | "weeks" | "months";
+  doneAt: string;   // yyyy-mm-dd, "" while not confirmed
+  doneBy: string;
 }
 
 export async function updateProject(id: string, body: Partial<ApiProject>): Promise<ApiProject> {
