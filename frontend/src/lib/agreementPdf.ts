@@ -15,6 +15,36 @@ const LINE = PDF_COLORS.line, HEADBG = PDF_COLORS.headBg, ROWALT = PDF_COLORS.ro
 // CR-P (37) — one stretch of text carrying the styling the editor applied to it.
 type RGB = ReturnType<typeof rgb>;
 type Run = { text: string; color: RGB; bg: RGB | null; bold: boolean };
+// CR-P (37)/(38) — one table cell: its styled text (a "\n" run is a line break), its pictures and
+// its shading.
+type Cell = { runs: Run[]; imgs: PDFImage[]; bg: RGB | null };
+type Word = { text: string; color: RGB; bg: RGB | null; bold: boolean; x: number; w: number };
+
+// Lay styled runs out into lines no wider than maxW. Word positions are relative to the left edge,
+// so the caller places them wherever the box is.
+function layoutRuns(list: Run[], maxW: number, size: number, font: PDFFont, boldFont: PDFFont): Word[][] {
+  const lines: Word[][] = [[]];
+  let x = 0;
+  const newline = () => { lines.push([]); x = 0; };
+  for (const run of list) {
+    const f = run.bold ? boldFont : font;
+    run.text.split("\n").forEach((seg, si) => {
+      if (si > 0) newline();
+      for (const tok of seg.split(/(\s+)/)) {
+        if (!tok) continue;
+        if (/^\s+$/.test(tok)) { if (x > 0) x += f.widthOfTextAtSize(" ", size); continue; }
+        let word = tok;
+        let w = f.widthOfTextAtSize(word, size);
+        if (x + w > maxW && x > 0) newline();
+        while (w > maxW && word.length > 1) { word = word.slice(0, -1); w = f.widthOfTextAtSize(word, size); }
+        lines[lines.length - 1].push({ text: word, color: run.color, bg: run.bg, bold: run.bold, x, w });
+        x += w;
+      }
+    });
+  }
+  while (lines.length && lines[lines.length - 1].length === 0) lines.pop();
+  return lines;
+}
 
 // CSS colours the editor can emit: #rgb, #rrggbb, rgb()/rgba(), and the few names it offers.
 const NAMED: Record<string, [number, number, number]> = {
@@ -189,29 +219,50 @@ class Cursor {
     this.y -= h + 6;
   }
 
-  // Draw a simple bordered table (rows of plain-text cells; `heads[i]` marks a header row).
-  table(rows: string[][], heads: boolean[], font: PDFFont, bold: PDFFont) {
+  // Draw a bordered table; `heads[i]` marks a header row. CR-P (37)/(38) — every cell keeps what
+  // was typed into it: bold, colour and highlight, its line breaks, its pictures (scaled to the
+  // column) and its shading. Cells used to be flattened to plain text, so all of that was lost.
+  table(rows: Cell[][], heads: boolean[], font: PDFFont, bold: PDFFont) {
     const contentW = PAGE_W - M * 2;
     const cols = Math.max(1, ...rows.map((r) => r.length));
     const colW = contentW / cols;
-    const size = 9, pad = 4, lh = size + 2;
+    const size = 9, pad = 4, lh = size + 2, imgGap = 3, maxImgH = 150;
     for (let ri = 0; ri < rows.length; ri++) {
       const isHead = heads[ri];
-      const f = isHead ? bold : font;
-      const wrapped = rows[ri].map((c) => wrap(f, c, size, colW - 2 * pad));
-      const lineCount = Math.max(1, ...wrapped.map((w) => w.length));
-      const rowH = lineCount * lh + 2 * pad;
+      const laid = rows[ri].map((c) => {
+        const lines = layoutRuns(isHead ? c.runs.map((r) => ({ ...r, bold: true })) : c.runs, colW - 2 * pad, size, font, bold);
+        const imgs = c.imgs.map((img) => {
+          const s = Math.min((colW - 2 * pad) / img.width, maxImgH / img.height, 1);
+          return { img, w: img.width * s, h: img.height * s };
+        });
+        return { lines, imgs, bg: c.bg, h: lines.length * lh + imgs.reduce((sum, i) => sum + i.h + imgGap, 0) };
+      });
+      const rowH = Math.max(lh, ...laid.map((l) => l.h)) + 2 * pad;
       this.need(rowH);
       const yTop = this.y;
       // CR-P (41) — header rows take the brand tint, body rows alternate, so a table is legible
-      // and recognisably ours instead of plain grey.
+      // and recognisably ours instead of plain grey. A cell's own shading goes on top.
       if (isHead) this.page.drawRectangle({ x: M, y: yTop - rowH, width: contentW, height: rowH, color: HEADBG });
       else if (ri % 2 === 0) this.page.drawRectangle({ x: M, y: yTop - rowH, width: contentW, height: rowH, color: ROWALT });
       for (let ci = 0; ci < cols; ci++) {
         const cx = M + ci * colW;
+        const cell = laid[ci];
+        if (cell?.bg) this.page.drawRectangle({ x: cx, y: yTop - rowH, width: colW, height: rowH, color: cell.bg });
         this.page.drawLine({ start: { x: cx, y: yTop }, end: { x: cx, y: yTop - rowH }, thickness: 0.5, color: LINE });
+        if (!cell) continue;
         let ty = yTop - pad - size;
-        for (const wl of wrapped[ci] || []) { this.page.drawText(wl, { x: cx + pad, y: ty, size, font: f, color: INK }); ty -= lh; }
+        for (const line of cell.lines) {
+          for (const wd of line) {
+            if (wd.bg) this.page.drawRectangle({ x: cx + pad + wd.x - 0.5, y: ty - 2.5, width: wd.w + 1, height: size + 3.5, color: wd.bg });
+            this.page.drawText(wd.text, { x: cx + pad + wd.x, y: ty, size, font: wd.bold ? bold : font, color: wd.color });
+          }
+          ty -= lh;
+        }
+        let iy = yTop - pad - cell.lines.length * lh;
+        for (const im of cell.imgs) {
+          this.page.drawImage(im.img, { x: cx + pad, y: iy - im.h, width: im.w, height: im.h });
+          iy -= im.h + imgGap;
+        }
       }
       this.page.drawLine({ start: { x: M + contentW, y: yTop }, end: { x: M + contentW, y: yTop - rowH }, thickness: 0.5, color: LINE });
       this.page.drawLine({ start: { x: M, y: yTop }, end: { x: M + contentW, y: yTop }, thickness: 0.5, color: LINE });
@@ -263,12 +314,48 @@ async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDF
     const attrW = parseInt(el.getAttribute("width") || "", 10) || img.width;
     cur.image(img, Math.min(attrW, PAGE_W - M * 2), 380);
   };
-  const drawTbl = (tbl: HTMLElement) => {
-    const rows: string[][] = []; const heads: boolean[] = [];
+  // CR-P (37)/(38) — a table cell's content with its styling. Like collectRuns, but a line break or
+  // the end of a paragraph inside the cell becomes a "\n" run, source whitespace collapses the way
+  // the browser collapses it, and pictures are left to drawTbl.
+  const BLOCK_TAGS = /^(P|DIV|LI|H[1-6]|UL|OL|TR|TABLE)$/;
+  const collectCellRuns = (node: ChildNode, inherited: Omit<Run, "text">): Run[] => {
+    if (node.nodeType === 3) {
+      const text = (node.textContent || "").replace(/\s+/g, " ");
+      return text ? [{ ...inherited, text }] : [];
+    }
+    if (node.nodeType !== 1) return [];
+    const el = node as HTMLElement;
+    if (el.tagName === "BR") return [{ ...inherited, text: "\n" }];
+    if (el.tagName === "IMG") return [];
+    const style = el.style;
+    const next: Omit<Run, "text"> = {
+      color: parseCssColor(style?.color) || parseCssColor(el.getAttribute("color")) || inherited.color,
+      bg: parseCssColor(style?.backgroundColor) || (el.tagName === "MARK" ? rgb(1, 0.95, 0.4) : inherited.bg),
+      bold: inherited.bold || BOLD_TAGS.test(el.tagName),
+    };
+    const inner = Array.from(el.childNodes).flatMap((c) => collectCellRuns(c, next));
+    return BLOCK_TAGS.test(el.tagName) ? [...inner, { ...inherited, text: "\n" }] : inner;
+  };
+  const drawTbl = async (tbl: HTMLElement) => {
+    const rows: Cell[][] = []; const heads: boolean[] = [];
     for (const tr of Array.from(tbl.querySelectorAll("tr"))) {
-      const cells = Array.from(tr.children).filter((c) => /^(TD|TH)$/.test(c.tagName));
+      const cells = Array.from(tr.children).filter((c) => /^(TD|TH)$/.test(c.tagName)) as HTMLElement[];
       if (!cells.length) continue;
-      rows.push(cells.map((c) => (c.textContent || "").trim()));
+      const out: Cell[] = [];
+      for (const c of cells) {
+        // The cell's own text colour carries down; its background is the cell's shading, not a
+        // highlight behind every word.
+        const base: Omit<Run, "text"> = { color: parseCssColor(c.style?.color) || INK, bg: null, bold: c.tagName === "TH" };
+        const runs = Array.from(c.childNodes).flatMap((n) => collectCellRuns(n, base));
+        const imgs: PDFImage[] = [];
+        for (const im of Array.from(c.querySelectorAll("img"))) {
+          const src = im.getAttribute("src");
+          const embedded = src ? await embedImage(doc, src) : null;
+          if (embedded) imgs.push(embedded);
+        }
+        out.push({ runs, imgs, bg: parseCssColor(c.style?.backgroundColor) || parseCssColor(c.getAttribute("bgcolor")) });
+      }
+      rows.push(out);
       heads.push(cells.some((c) => c.tagName === "TH"));
     }
     if (!rows.length) return;
@@ -296,7 +383,7 @@ async function renderHtml(cur: Cursor, doc: PDFDocument, html: string, font: PDF
       if (node.nodeType !== 1) continue;
       const el = node as HTMLElement; const tag = el.tagName.toUpperCase();
       if (tag === "IMG") { await drawImg(el); continue; }
-      if (tag === "TABLE") { drawTbl(el); continue; }
+      if (tag === "TABLE") { await drawTbl(el); continue; }
       if (tag === "UL" || tag === "OL") { drawList(el, tag === "OL"); continue; }
       if (tag === "BR") { cur.gap(6); continue; }
       // CR-P (41) — a real heading scale. Every heading used to print at one flat size, so H1 and
