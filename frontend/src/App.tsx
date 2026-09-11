@@ -175,7 +175,8 @@ export default function App() {
           <Route path="users" element={<AdminOnly><UserManagement /></AdminOnly>} />
           <Route path="reminders" element={<Reminders />} />
           <Route path="recycle-bin" element={<NonGuest><RecycleBin /></NonGuest>} />
-          <Route path="agreements" element={<NonGuest><GeneralAgreements /></NonGuest>} />
+          {/* CR-P (58)/(64) — open to outside parties too: they see only what was shared with them. */}
+          <Route path="agreements" element={<GeneralAgreements />} />
           <Route path="profile" element={<Profile />} />
         </Route>
 

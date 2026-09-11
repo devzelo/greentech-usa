@@ -103,7 +103,16 @@ export default function MyProfileOverview({ isGuest }: { isGuest: boolean }) {
               rows={links.projects.map((p) => <ActivityRow key={p._id} primary={p.name} secondary={p.status} projectId={p.projectId} self projById={projById} />)}
               emptyHint="No projects shared with you yet." />
             <ProfileSection prefix="mp" secKey="agreements" title="Agreements" count={counts.agreements} icon={FileText} highlight={highlight}
-              rows={links.agreements.map((a) => <ActivityRow key={a._id} primary={a.name || a.agreementType || "Agreement"} secondary={a.status || "—"} projectId={a.ownerProjectId} projById={projById} />)}
+              rows={links.agreements.map((a) => (
+                <ActivityRow key={a._id}
+                  primary={[a.agreementNo, a.title || a.name || a.agreementType].filter(Boolean).join(" · ") || "Agreement"}
+                  secondary={a.status || "—"}
+                  projectId={a.ownerProjectId || undefined}
+                  // CR-P (64) — a general agreement belongs to no project: open it on the Agreements
+                  // page, where the party reads it and signs it.
+                  to={a.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${a._id}` : undefined}
+                  projById={projById} />
+              ))}
               emptyHint="No agreements yet." />
             {(isGuest || counts.invoices > 0) && (
               <ProfileSection prefix="mp" secKey="invoices" title="Invoices" count={counts.invoices} icon={Receipt} highlight={highlight}

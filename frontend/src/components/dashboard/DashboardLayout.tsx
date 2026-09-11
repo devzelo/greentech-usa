@@ -45,8 +45,9 @@ const allSidebarLinks = [
   { name: "General Agreements", icon: Handshake, path: "/dashboard/agreements" },
 ];
 
-// Guests only see the projects they're assigned to and the document library.
-const GUEST_LINKS = new Set(["My Projects", "Documents"]);
+// Guests only see the projects they're assigned to, the document library, and (CR-P (58)) the
+// agreements shared with them.
+const GUEST_LINKS = new Set(["My Projects", "Documents", "General Agreements"]);
 
 const secondaryLinks = [
   { name: "Reminders", icon: Bell, path: "/dashboard/reminders" },
@@ -144,7 +145,10 @@ export default function DashboardLayout() {
     : allSidebarLinks;
   // All Projects is admin-only; everyone else works from My Projects.
   const roleLinks = isAdmin ? baseLinks : baseLinks.filter((l) => l.name !== "All Projects");
-  const sidebarLinks = isGuest ? roleLinks.filter((l) => GUEST_LINKS.has(l.name)) : roleLinks;
+  // An outside party has no "general" agreements of their own; to them it is simply Agreements.
+  const sidebarLinks = isGuest
+    ? roleLinks.filter((l) => GUEST_LINKS.has(l.name)).map((l) => (l.name === "General Agreements" ? { ...l, name: "Agreements" } : l))
+    : roleLinks;
   // Guests don't get the Archive & Bin (staff-only).
   const secondaryNav = isGuest ? secondaryLinks.filter((l) => l.name !== "Archive & Bin") : secondaryLinks;
   const userInitial = (me?.name || me?.email || "?").charAt(0).toUpperCase();

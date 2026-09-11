@@ -12,6 +12,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { getProjectAccess } from "../lib/access";
 import { createNotification } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
+import { isSharedWith, signSlotOf, slotSignedAt, signatureCount, forParty } from "../lib/agreementAccess";
 
 // One agreement engine, two context adapters (spec: docs/agreement-feature-spec.md):
 //   userAgreementRouter    → /api/users/:uid/agreements      (employee agreements)
@@ -138,15 +139,18 @@ function act(ag: IAgreement, actorName: string, action: string, note = "") {
 
 // `email` is carried so a party that was SHARED an agreement (CR-P (63)) can be recognised as its
 // recipient and sign it, which is what CR-P (64) asks for.
-interface Perms { staff: boolean; self: boolean; mySubIds: string[]; isPartner: boolean; email: string }
+// `companyId` is the login's Directory company (CR-P (58)): a share goes to a company, and the
+// company's login may use a different address from the one on the Directory record.
+interface Perms { staff: boolean; self: boolean; mySubIds: string[]; isPartner: boolean; email: string; companyId: string }
 
 // Resolve what the requester may do in this context.
 async function resolvePerms(ctx: Ctx, req: AuthedRequest): Promise<Perms | null> {
   const userId = req.user!.userId;
-  const meDoc = await User.findById(userId).select("empId email").lean();
+  const meDoc = await User.findById(userId).select("empId email companyId").lean();
   const myEmail = String((meDoc as { email?: string } | null)?.email || "").trim().toLowerCase();
+  const myCompanyId = (meDoc as { companyId?: unknown } | null)?.companyId ? String((meDoc as { companyId?: unknown }).companyId) : "";
   if (ctx === "user") {
-    return { staff: req.user!.role === "admin", self: String(userId) === String(req.params.uid), mySubIds: [], isPartner: false, email: myEmail };
+    return { staff: req.user!.role === "admin", self: String(userId) === String(req.params.uid), mySubIds: [], isPartner: false, email: myEmail, companyId: myCompanyId };
   }
   if (ctx === "general") {
     // CR-P (64) — an outside party used to be locked out of general agreements entirely ("the
@@ -154,7 +158,7 @@ async function resolvePerms(ctx: Ctx, req: AuthedRequest): Promise<Perms | null>
     // the list is already filtered to agreements shared with them (CR-P (62)), and every
     // single-agreement action is guarded by isRecipient below.
     const staff = req.user!.role === "admin" || req.user!.role === "employee";
-    return { staff, self: false, mySubIds: [], isPartner: false, email: myEmail };
+    return { staff, self: false, mySubIds: [], isPartner: false, email: myEmail, companyId: myCompanyId };
   }
   const project = await Project.findOne({ projectId: req.params.id })
     .select("ownerId assignedEmployees guests subcontractors jointVenture").lean();
@@ -175,7 +179,7 @@ async function resolvePerms(ctx: Ctx, req: AuthedRequest): Promise<Perms | null>
   // the same rule the Partners tab uses to show the partner's account.
   const jvEmail = String(project.jointVenture?.email || "").trim().toLowerCase();
   const isPartner = !!project.jointVenture?.enabled && !!jvEmail && jvEmail === myEmailLower;
-  return { staff: access.role === "owner" || access.role === "employee", self: false, mySubIds, isPartner, email: myEmailLower };
+  return { staff: access.role === "owner" || access.role === "employee", self: false, mySubIds, isPartner, email: myEmailLower, companyId: myCompanyId };
 }
 
 // Is the requester the agreement's recipient (the one who signs)?
@@ -183,7 +187,7 @@ function isRecipient(ctx: Ctx, ag: IAgreement, p: Perms): boolean {
   // CR-P (64) — a party the agreement was SHARED with is its recipient and may sign or reject it,
   // whatever context it lives in. This is what lets a subcontractor or partner sign from their own
   // profile instead of us signing on their behalf.
-  if (p.email && (ag.visibleTo || []).some((v) => (v.email || "").trim().toLowerCase() === p.email)) return true;
+  if (isSharedWith(ag, p)) return true;
   if (ctx === "user") return p.self;
   if (ctx === "general") return false;   // not named on it and not shared it — no standing to sign
   if (ag.ownerEntityType === "partner") return p.isPartner;
@@ -228,12 +232,15 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!p) return res.status(ctx === "project" ? 404 : 403).json({ error: ctx === "project" ? "Project not found or no access." : "No access." });
       // A shared outside party has no sub/partner standing, so the guard cannot reject on that
       // alone any more; the list filter and isRecipient do the real work (CR-P (62)/(64)).
-      if (!p.staff && !p.self && !p.isPartner && p.mySubIds.length === 0 && !p.email) return res.status(403).json({ error: "You do not have access to these agreements." });
+      if (!p.staff && !p.self && !p.isPartner && p.mySubIds.length === 0 && !p.email && !p.companyId) return res.status(403).json({ error: "You do not have access to these agreements." });
       (req as AuthedRequest & { agPerms?: Perms }).agPerms = p;
       next();
     } catch (err) { next(err); }
   });
   const permsOf = (req: AuthedRequest): Perms => (req as AuthedRequest & { agPerms?: Perms }).agPerms!;
+  // CR-P (62) — a party gets the document, never our internal working (notes, reviewers, hidden
+  // sections, who else it was sent to). Staff get the full record.
+  const outFor = (req: AuthedRequest, ag: IAgreement) => (permsOf(req).staff ? ag : forParty(ag, permsOf(req)));
 
   // Every :aid route — reject anything that isn't a real ObjectId BEFORE it reaches a handler
   // (or multer, whose upload path is derived from these params). Also turns CastError 500s into 404s.
@@ -268,6 +275,15 @@ function buildAgreementRouter(ctx: Ctx): Router {
             if (ids.length) scopes.push({ ownerEntityType: "subcontractor", ownerEntityId: { $in: ids } });
           }
           if (p.isPartner && (!qType || qType === "partner")) scopes.push({ ownerEntityType: "partner" });
+          // CR-P (58) — anything shared with this login is theirs to see, in either context. A
+          // general agreement owns no sub or partner record, so this is the ONLY way a party
+          // reaches one: before it, a shared general agreement came back as an empty list.
+          // Still narrowed to the entity asked for, so a record's panel never widens.
+          const within: Record<string, unknown> = {};
+          if (qType) within.ownerEntityType = qType;
+          if (qId) within.ownerEntityId = qId;
+          if (p.email) scopes.push({ ...within, "visibleTo.email": new RegExp(`^${escapeRegex(p.email)}$`, "i") });
+          if (p.companyId) scopes.push({ ...within, "visibleTo.companyId": p.companyId });
           if (!scopes.length) return res.json([]);
           delete filter.ownerEntityType; delete filter.ownerEntityId;
           filter.$or = scopes;
@@ -280,12 +296,10 @@ function buildAgreementRouter(ctx: Ctx): Router {
       // includes them. Agreements from before this existed have an empty list and are matched the
       // old way (they were already issued to this recipient), so nothing disappears retroactively.
       if (!p.staff) {
-        const me = await User.findById(req.user!.userId).select("email").lean();
-        const myEmail = String((me as { email?: string } | null)?.email || "").toLowerCase();
         list = list.filter((ag) => {
           const shared = ag.visibleTo || [];
           if (!shared.length) return (ag.shares || []).length === 0;   // legacy: never shared explicitly
-          return shared.some((v) => (v.email || "").toLowerCase() === myEmail);
+          return isSharedWith(ag, p);   // by the login's email or its Directory company
         });
       }
       // Recipient opening their list marks freshly-sent agreements as Viewed.
@@ -298,7 +312,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
           }
         }
       }
-      res.json(list);
+      res.json(p.staff ? list : list.map((ag) => forParty(ag, p)));
     } catch (err) { next(err); }
   });
 
@@ -534,6 +548,11 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (!ag) return res.status(404).json({ error: "Not found" });
       if (!isRecipient(ctx, ag, p)) return res.status(403).json({ error: "Only the agreement's recipient can sign it." });
       if (!["Sent", "Viewed", "PendingSignature"].includes(ag.status)) return res.status(400).json({ error: `Cannot sign an agreement in status ${ag.status}.` });
+      // CR-P (64) — each party signs in its OWN slot. This used to write every signature into
+      // party 2's slot and mark the whole agreement Signed on the first one, which then locked
+      // parties 3 and 4 out. Slot -1 is party 2 (signatures.recipient); 0 and 1 are parties 3, 4.
+      const slot = signSlotOf(ag, p);
+      if (slotSignedAt(ag, slot)) return res.status(400).json({ error: "You have already signed this agreement." });
       // CR-P (16) — the signer picks one of their named signatures; only images stored on their
       // own account are accepted (default signature when nothing is chosen).
       const signer = await User.findById(req.user!.userId).select("signatureUrl signatures").lean();
@@ -543,25 +562,39 @@ function buildAgreementRouter(ctx: Ctx): Router {
       ].filter(Boolean));
       const requested = String(req.body?.signatureUrl || "");
       const signatureUrl = requested && mine.has(requested) ? requested : ((signer as { signatureUrl?: string } | null)?.signatureUrl || "");
-      ag.signatures.recipient = {
-        ...ag.signatures.recipient,
-        signerName: String(req.body?.signerName || req.user!.name || "").slice(0, 120),
-        signatureUrl,
-        signedAt: today(),
-        method: "account",
-      };
-      ag.status = "Signed";
-      act(ag, req.user!.name || "", "signed");
+      const mark = { signerName: String(req.body?.signerName || req.user!.name || "").slice(0, 120), signatureUrl, signedAt: today(), method: "account" as const };
+      if (slot < 0) {
+        ag.signatures.recipient = { ...ag.signatures.recipient, ...mark };
+      } else {
+        const extra = (ag.signatures.extra || []).map((x) => ({
+          signerName: x.signerName || "", signerTitle: x.signerTitle || "", signatureUrl: x.signatureUrl || "",
+          stampUrl: x.stampUrl || "", signedAt: x.signedAt || "", method: x.method || "",
+        }));
+        while (extra.length <= slot) extra.push({ signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" });
+        extra[slot] = { ...extra[slot], ...mark };
+        ag.signatures.extra = extra as IAgreement["signatures"]["extra"];
+      }
+      ag.markModified("signatures");
+      // Signed means every counterparty has signed. Until then it stays pending, and the document
+      // status only becomes "Completed and signed" with the last signature.
+      const { signed, total } = signatureCount(ag);
+      const complete = signed >= total;
+      ag.status = complete ? "Signed" : "PendingSignature";
+      if (complete) ag.docStatus = "CompletedSigned";
+      act(ag, req.user!.name || "", "signed", total > 1 ? `Party ${slot + 3}. ${signed} of ${total} parties have signed.` : "");
       await ag.save();
       if (ag.addedById) {
+        const what = ag.agreementNo || ag.name || ag.agreementType;
         await createNotification({
           userId: ag.addedById, type: "general",
-          title: "Agreement signed",
-          message: `${req.user!.name || "The recipient"} signed "${ag.name || ag.agreementType}".`,
+          title: complete ? "Agreement signed" : "Agreement signed by one party",
+          message: complete
+            ? `${req.user!.name || "The recipient"} signed "${what}".${total > 1 ? " Every party has now signed." : ""}`
+            : `${req.user!.name || "A party"} signed "${what}". ${signed} of ${total} parties have signed.`,
           link: `${ctx === "user" ? "/dashboard/users" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
-      res.json(ag);
+      res.json(outFor(req, ag));
     } catch (err) { next(err); }
   });
 
@@ -588,7 +621,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
           link: `${ctx === "user" ? "/dashboard/users" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
         });
       }
-      res.json(ag);
+      res.json(outFor(req, ag));
     } catch (err) { next(err); }
   });
 
@@ -657,7 +690,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       ag.signedDocument = fileMeta(req.file);
       act(ag, req.user!.name || "", "snapshot-frozen", req.file.originalname);
       await ag.save();
-      res.status(201).json(ag);
+      res.status(201).json(outFor(req, ag));
     } catch (err) { next(err); }
   });
 
@@ -740,6 +773,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
         method: "upload",
       };
       ag.status = "Signed";
+      ag.docStatus = "CompletedSigned";   // CR-P (64) — the table's status column follows the signature
       act(ag, req.user!.name || "", replacing ? "signed-copy-replaced" : "signed", replacing ? `Signed copy replaced with ${req.file.originalname}` : "Counter-signed copy uploaded");
       await ag.save();
       res.status(201).json(ag);

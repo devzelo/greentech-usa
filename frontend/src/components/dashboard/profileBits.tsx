@@ -32,9 +32,11 @@ export function jumpToSection(prefix: string, key: string, setHighlight: Dispatc
 // A row that shows its project, and deep-links into that project (optionally to a specific tab via
 // `query`). If the project was deleted, the row is blurred and clicking it explains why. Pass
 // `self` for the Projects section, where the row IS the project (no separate project label).
-export function ActivityRow({ primary, secondary, projectId, query, self = false, projById }: {
+export function ActivityRow({ primary, secondary, projectId, query, self = false, projById, to }: {
   primary: ReactNode; secondary: ReactNode; projectId?: string; query?: string; self?: boolean;
   projById: Record<string, string>;
+  /** Open this in-app path instead of the project (a record that lives outside any project). */
+  to?: string;
   // No @types/react in this project, so `key` must be declared for TS to accept it on this element.
   key?: string;
 }) {
@@ -42,20 +44,21 @@ export function ActivityRow({ primary, secondary, projectId, query, self = false
   const projName = !self && projectId ? projById[projectId] : undefined;
   const deleted = !self && !!projectId && !projById[projectId];
   const open = () => {
+    if (to) { navigate(to); return; }
     if (!projectId) return;
     if (deleted) { toast("This project has been deleted, so you can't open it.", "info"); return; }
     navigate(`/dashboard/projects/${projectId}${query ? `?${query}` : ""}`);
   };
   return (
-    <button onClick={open} disabled={!projectId}
-      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
+    <button onClick={open} disabled={!projectId && !to}
+      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs text-left transition-colors ${deleted ? "border-red-100 bg-red-50/30 opacity-50 hover:opacity-80 cursor-pointer" : projectId || to ? "border-slate-100 hover:border-primary/30 hover:bg-primary/5 cursor-pointer group" : "border-slate-100 cursor-default"}`}
       title={deleted ? "The project for this item was deleted, so you can't open it." : ""}>
       <span className="min-w-0 flex flex-col">
         <span className="font-bold text-slate-700 truncate flex items-center gap-1.5">{primary}</span>
         {projName && <span className="text-[10px] font-bold text-slate-400 truncate flex items-center gap-1"><Building2 size={9} /> {projName}</span>}
         {deleted && <span className="text-[10px] font-bold text-red-400 truncate flex items-center gap-1"><Ban size={9} /> Project deleted</span>}
       </span>
-      <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
+      <span className="text-slate-500 shrink-0 flex items-center gap-1.5">{secondary}{deleted ? <Ban size={11} className="text-red-300" /> : projectId || to ? <ExternalLink size={11} className="text-slate-300 group-hover:text-primary" /> : null}</span>
     </button>
   );
 }

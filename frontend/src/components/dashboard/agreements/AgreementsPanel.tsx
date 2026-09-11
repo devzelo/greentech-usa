@@ -870,16 +870,19 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     setBusy(signFor._id);
     try {
       let ag = await signAgreement(ctx, signFor._id, { signerName: signName, signatureUrl: mySignatureUrl });
+      // CR-P (64) — with several parties, the agreement is only Signed once the last one signs.
+      const complete = ag.status === "Signed";
       // Freeze the fully-signed PDF as the immutable snapshot (best-effort). Uploaded-document
-      // agreements skip this — the uploaded file already IS the document.
-      if (ag.documentMode !== "uploaded") {
+      // agreements skip this — the uploaded file already IS the document. A partly signed one is
+      // not frozen: it would show as "the signed copy" while signatures are still missing.
+      if (complete && ag.documentMode !== "uploaded") {
         try {
           const blob = await buildAgreementPdf(ag);
           ag = await freezeAgreementPdf(ctx, ag._id, new File([blob], `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}_signed.pdf`, { type: "application/pdf" }));
         } catch { /* snapshot is best-effort */ }
       }
       patch(ag); setSignFor(null);
-      toast("Agreement signed.", "success");
+      toast(complete ? "Agreement signed." : "Signed. GreenTech has been notified; the agreement is complete once every party has signed.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not sign.", "error"); }
     finally { setBusy(null); }
   };
@@ -897,11 +900,16 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   // CR-P (64) — signable when the caller was set up as a signer for this surface, OR when the
   // agreement was shared with the logged-in party. The server enforces the same rule.
+  // A party only ever receives its OWN entries in visibleTo (the server trims the rest), so for a
+  // party any entry at all means "shared with me", whether it matched on email or on company.
   const sharedWithMe = (ag: ApiAgreement) => {
+    if (!canManage && (ag.visibleTo || []).length > 0) return true;
     const mine = (getAuthUser()?.email || "").trim().toLowerCase();
     return !!mine && (ag.visibleTo || []).some((v) => (v.email || "").trim().toLowerCase() === mine);
   };
-  const signable = (ag: ApiAgreement) => (canSign || sharedWithMe(ag)) && ["Sent", "Viewed", "PendingSignature"].includes(ag.status);
+  // `youSigned` comes from the server: a party that has signed waits for the others, it does not
+  // get the Sign button again.
+  const signable = (ag: ApiAgreement) => (canSign || sharedWithMe(ag)) && !ag.youSigned && ["Sent", "Viewed", "PendingSignature"].includes(ag.status);
 
   // Shared history list — used by both the card list and the general-agreements table row.
   const historyList = (ag: ApiAgreement) => (

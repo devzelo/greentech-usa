@@ -2289,6 +2289,8 @@ export interface ApiAgreement {
   sentAt: string; addedById: string; addedByName: string; createdAt?: string;
   /** CR-P (62)/(63) - the parties allowed to see this agreement. */
   visibleTo?: Array<{ companyId: string; name: string; email: string; grantedAt: string; grantedByName: string }>;
+  /** CR-P (64) - set for a party only: their own signature is already on it (the others may not be). */
+  youSigned?: boolean;
   /** CR-P (61) - every send, so we know who already has it and when. */
   shares?: Array<{ companyId: string; name: string; email: string; purpose: string; sentAt: string; sentByName: string; note: string }>;
   /** CR-P (49) - last modified, shown as its own column in the agreements table. */
