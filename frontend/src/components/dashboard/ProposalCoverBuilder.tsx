@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Upload, Image as ImageIcon, X, Loader2 } from "lucide-react";
+import { Plus, Upload, Image as ImageIcon, X, Loader2, Eye, Save, RotateCcw, CheckCircle2 } from "lucide-react";
+import { PDFViewer } from "@react-pdf/renderer";
 import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { COMPANY } from "../pdf/brand";
-import { RESTRICTION_LEGEND, defaultSubmitter } from "./ProposalPDF";
+import { RESTRICTION_LEGEND, defaultSubmitter, CoverOnlyDocument } from "./ProposalPDF";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
 const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
@@ -84,14 +85,20 @@ const COVER_GROUPS: Array<{ title: string; fields: CoverFieldDef[] }> = [
 ];
 
 export default function ProposalCoverBuilder({
-  projectId, project, cover, onCoverChange, canEdit,
+  projectId, project, cover, onCoverChange, canEdit, volume = "technical", onSave, onCancel, saving = false,
 }: {
   projectId: string;
   project: ApiProject;
   cover: ProposalCover;
   onCoverChange: (next: ProposalCover) => void;
   canEdit: boolean;
+  // Item 91 - the cover's own preview, Save (complete), Save as draft and Cancel.
+  volume?: "technical" | "financial";
+  onSave?: (status: "draft" | "complete") => void;
+  onCancel?: () => void;
+  saving?: boolean;
 }) {
+  const [preview, setPreview] = useState(false);
   // CR-P (91) — the project decides this, once. The cover follows it and keeps itself in step, so
   // a project switched to a joint venture later does not leave old proposals on a single logo.
   const isJvProject = !!project.jointVenture?.enabled;
@@ -140,10 +147,33 @@ export default function ProposalCoverBuilder({
     <div className="space-y-6">
       {/* ── Cover Page ───────────────────────────────────────────────── */}
       <div className={card}>
-        <div className="flex items-center justify-between">
-          <h4 className="font-bold text-slate-800 text-sm">Cover Page</h4>
-          <span className="text-[10px] text-slate-400">This cover is specific to this document</span>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 text-sm">Cover Page</h4>
+            {/* Item 91 - the cover has its own draft / complete status. */}
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${cover.status === "complete" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+              {cover.status === "complete" ? "Complete" : "Draft"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Eye size={12} /> Preview cover</button>
+            {canEdit && onCancel && <button type="button" onClick={onCancel} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-slate-900"><RotateCcw size={12} /> Cancel</button>}
+            {canEdit && onSave && <button type="button" onClick={() => onSave("draft")} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 disabled:opacity-50">{saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save as draft</button>}
+            {canEdit && onSave && <button type="button" onClick={() => onSave("complete")} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">{saving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Save</button>}
+          </div>
         </div>
+        <p className="text-[10px] text-slate-400">This cover is specific to this document. "Save" marks it complete, "Save as draft" keeps it a draft; both save the workspace. Cancel goes back to the last saved cover.</p>
+        {preview && (
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex flex-col" onClick={() => setPreview(false)}>
+            <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-display font-bold text-slate-900 text-sm">Preview: {volume === "financial" ? "Financial" : "Technical"} Proposal cover</h3>
+              <button type="button" onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
+            </div>
+            <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>
+              <PDFViewer width="100%" height="100%" showToolbar><CoverOnlyDocument volume={volume} cover={cover} project={project} /></PDFViewer>
+            </div>
+          </div>
+        )}
 
         {/* Cover design, from the brand kit. The data below fills whichever style is chosen. */}
         <div className="space-y-2">

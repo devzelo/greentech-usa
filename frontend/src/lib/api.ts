@@ -370,6 +370,7 @@ export interface ProposalCover {
   attentionEmail?: string;
   clientLogoUrl?: string;       // the client's seal or logo
   restrictionNotice?: boolean;  // the data-restriction legend on the cover; on unless set false
+  status?: "draft" | "complete"; // item 91 - the cover's own draft / complete status
 }
 export interface ProposalSignatory { id: string; name: string; title: string; signatureUrl: string; email?: string; phone?: string }
 export interface ProposalCoverLetter {

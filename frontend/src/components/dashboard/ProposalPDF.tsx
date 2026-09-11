@@ -1059,6 +1059,14 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 // Pages passed as createElement arguments, so they need no list keys.
 const asDocument = (title: string, pages: ReactElement[]) => createElement(Document, { title, author: COMPANY.name }, ...pages);
 
+/** Item 91 - the cover page on its own, for the cover's own preview. */
+export function CoverOnlyDocument({ volume, cover, project }: { volume: "technical" | "financial"; cover?: ProposalCover; project: ApiProject }) {
+  const kind = volume === "financial" ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL";
+  return asDocument(`${cover?.proposalTitle || project.name} - Cover`, [
+    <ProposalCoverPage key="cover" variant={cover?.coverStyle} data={coverData(kind, cover, project)} />,
+  ]);
+}
+
 /** The technical proposal as one react-pdf document. Uploaded section files are not in it; the
  *  assembled download and preview include them (see proposalParts). */
 function TechnicalPDF(props: TechArgs) {

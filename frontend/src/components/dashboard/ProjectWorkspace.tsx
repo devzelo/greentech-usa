@@ -664,6 +664,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [coverLetterFinancial, setCoverLetterFinancial] = useState<ProposalCoverLetter>(emptyCoverLetter());   // CR-P (93)
   const [eoi, setEoi] = useState<EoiContent>({});   // step 8 - the Expression of Interest (no revisions)
   const [rfp, setRfp] = useState<RfpDetails>({});   // step 9 - the RFP's dates, page limits and rules
+  // Item 91 - the cover's own Save: set its status, then save once the new state has rendered.
+  const [saveRequested, setSaveRequested] = useState(false);
+  useEffect(() => {
+    if (!saveRequested) return;
+    setSaveRequested(false);
+    void handleSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveRequested]);
   const [backCover, setBackCover] = useState<ProposalBackCover>(emptyBackCover());
   const [letterhead, setLetterhead] = useState<ProposalLetterhead>("gt");
   const [customLetterheadUrl, setCustomLetterheadUrl] = useState("");
@@ -1176,6 +1184,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!(await brandedConfirm({ title: `Delete "${t.name}"?`, message: "The saved group is removed. Proposals that already used it keep their sections.", confirmLabel: "Delete group" }))) return;
     try { await deleteProposalTemplate(t._id); await loadSectionTemplates(); toast("Group deleted.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not delete the group.", "error"); }
+  };
+  // Item 91 - the cover's own Cancel: back to the cover as last saved.
+  const cancelCover = async (vol: Vol) => {
+    if (!(await brandedConfirm({ title: "Discard cover changes?", message: "The cover goes back to how it was last saved.", confirmLabel: "Discard changes" }))) return;
+    const pc = (project?.proposalContent || {}) as ProposalContent;
+    if (vol === "financial") setCoverFinancial({ ...emptyCover(), ...(pc.coverFinancial || pc.cover || {}) });
+    else setCover({ ...emptyCover(), ...(pc.cover || {}) });
+  };
+  const saveCover = (vol: Vol, status: "draft" | "complete") => {
+    (vol === "financial" ? setCoverFinancial : setCover)((c) => ({ ...c, status }));
+    setDirty(true);
+    setSaveRequested(true);
   };
   const insertResource = (b: ApiResourceBlock) => {
     addLayoutSection(b.title, b.body);
@@ -3875,6 +3895,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           <h4 className="font-display font-bold text-slate-900 text-base flex items-center gap-2">
                             {p.title}
                             {p.which === "financial" && financialLocked && <Lock size={13} className="text-amber-500" />}
+                            {/* Item 91 - the cover's draft / complete status, at a glance. */}
+                            {p.which !== "combined" && (() => {
+                              const done = (p.which === "financial" ? coverFinancial : cover).status === "complete";
+                              return <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${done ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{done ? "Cover complete" : "Cover draft"}</span>;
+                            })()}
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{docs.length} revision{docs.length === 1 ? "" : "s"}</span>
                           </h4>
                           {canEdit && (
@@ -4126,6 +4151,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   project={project}
                   cover={cover}
                   onCoverChange={setCover}
+                  volume="technical"
+                  saving={saving}
+                  onSave={(st) => saveCover("technical", st)}
+                  onCancel={() => void cancelCover("technical")}
                   canEdit={canEdit}
                 />
               )}
@@ -4306,6 +4335,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     project={project}
                     cover={coverFinancial}
                     onCoverChange={setCoverFinancial}
+                    volume="financial"
+                    saving={saving}
+                    onSave={(st) => saveCover("financial", st)}
+                    onCancel={() => void cancelCover("financial")}
                     canEdit={canEdit}
                   />
                 </div>
