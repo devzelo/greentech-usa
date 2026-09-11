@@ -206,6 +206,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   const [sharePicked, setSharePicked] = useState<Record<string, boolean>>({});
   const [sharePurpose, setSharePurpose] = useState<"review" | "signature">("review");
   const [shareNote, setShareNote] = useState("");
+  // CR-P (63) — "tick which parties can see the agreement, save": the ticks are held here until
+  // Save (null = nothing changed yet). Reset whenever another agreement is opened.
+  const [visDraft, setVisDraft] = useState<Record<string, boolean> | null>(null);
+  const [visBusy, setVisBusy] = useState(false);
+  useEffect(() => { setVisDraft(null); }, [editor?.aid]);
   const [signFor, setSignFor] = useState<ApiAgreement | null>(null);
   // CR-P (51) — the file picker opened by "Please upload the signed copy".
   const signedPickRef = useRef<HTMLInputElement>(null);
@@ -2046,65 +2051,6 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 ))}
               </EditorBox>
 
-              {/* CR-P (63) — "inside the manage, at the end, maybe you can give manage access, who can
-                  see it now." Ticking a party here grants visibility WITHOUT sending anything; the
-                  Share button is what notifies. Only offered once the document is complete, since
-                  until then it is still internal.
-                  CR-P (61) — the send log lives here too, so "we know who we already sent and when". */}
-              {(() => {
-                const cur = list.find((a) => a._id === editor.aid);
-                if (!cur) return null;
-                const targets = shareTargets(cur);
-                if (!targets.length) return null;
-                const ready = ["Complete", "CompletedSigned"].includes(draft.docStatus);
-                const visible = cur.visibleTo || [];
-                const has = (t: SharePartyInput) => visible.some((v) => (v.companyId || v.name.toLowerCase()) === partyKey(t));
-                const toggle = async (t: SharePartyInput) => {
-                  const next = has(t)
-                    ? visible.filter((v) => (v.companyId || v.name.toLowerCase()) !== partyKey(t)).map((v) => ({ companyId: v.companyId, name: v.name, email: v.email }))
-                    : [...visible.map((v) => ({ companyId: v.companyId, name: v.name, email: v.email })), t];
-                  try {
-                    const saved = await setAgreementVisibility(ctx, cur._id, next);
-                    patch(saved); baseRef.current = saved;
-                  } catch (err) { toast(err instanceof Error ? err.message : "Could not update access.", "error"); }
-                };
-                return (
-                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                      <Eye size={11} /> Visible to
-                      <span className="font-medium normal-case text-slate-400">— who can see this agreement on their own profile</span>
-                    </p>
-                    {!ready && (
-                      <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                        Available once the agreement status is <span className="font-bold">Complete</span>. Until then it stays internal, so nothing half-written reaches the other side.
-                      </p>
-                    )}
-                    <div className={`flex flex-wrap gap-1.5 ${ready ? "" : "opacity-50 pointer-events-none"}`}>
-                      {targets.map((t) => (
-                        <button
-                          key={partyKey(t)}
-                          onClick={() => void toggle(t)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${has(t) ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
-                        >
-                          {has(t) ? <Eye size={11} /> : <EyeOff size={11} />} {t.name}
-                        </button>
-                      ))}
-                    </div>
-                    {visible.length === 0 && ready && <p className="text-[10px] text-slate-400 italic">Nobody yet. This agreement is internal.</p>}
-                    {(cur.shares || []).length > 0 && (
-                      <div className="pt-1.5 border-t border-slate-200/70">
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Send log</p>
-                        {(cur.shares || []).slice().reverse().map((h, k) => (
-                          <p key={k} className="text-[10px] text-slate-500">
-                            Sent to <span className="font-bold text-slate-600">{h.name}</span> {h.purpose === "signature" ? "for signature" : "for review"} on {h.sentAt ? new Date(h.sentAt).toLocaleDateString() : ""}{h.sentByName ? ` by ${h.sentByName}` : ""}{h.note ? ` — "${h.note}"` : ""}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
               {/* Company signer */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><PenLine size={11} /> GreenTech signer</p>
@@ -2120,6 +2066,80 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 </select>
               </div>
               </>)}
+
+              {/* CR-P (63) — "at the end of Manage add Manage access / Visible to". It sits at the very
+                  end, for built and uploaded agreements alike. Ticking only marks the change; Save
+                  applies it and the parties added are notified. Offered once the document is
+                  Complete, since until then it is internal.
+                  CR-P (61) — the send log lives here too, so "we know who we already sent and when". */}
+              {(() => {
+                const cur = list.find((a) => a._id === editor.aid);
+                if (!cur) return null;
+                const targets = shareTargets(cur);
+                if (!targets.length) return null;
+                const ready = ["Complete", "CompletedSigned"].includes(draft.docStatus);
+                const visible = cur.visibleTo || [];
+                const has = (t: SharePartyInput) => visible.some((v) => (v.companyId || v.name.toLowerCase()) === partyKey(t));
+                const picked = (t: SharePartyInput) => (visDraft ? !!visDraft[partyKey(t)] : has(t));
+                const changed = !!visDraft && targets.some((t) => picked(t) !== has(t));
+                const toggle = (t: SharePartyInput) =>
+                  setVisDraft(Object.fromEntries(targets.map((x) => [partyKey(x), partyKey(x) === partyKey(t) ? !picked(x) : picked(x)])));
+                const saveAccess = async () => {
+                  // Entries for parties no longer on the agreement are left as they are.
+                  const keys = new Set(targets.map(partyKey));
+                  const others = visible
+                    .filter((v) => !keys.has(v.companyId || v.name.toLowerCase()))
+                    .map((v) => ({ companyId: v.companyId, name: v.name, email: v.email }));
+                  setVisBusy(true);
+                  try {
+                    const saved = await setAgreementVisibility(ctx, cur._id, [...others, ...targets.filter(picked)]);
+                    patch(saved); baseRef.current = saved; setVisDraft(null);
+                    toast("Access saved. Anyone added has been notified.", "success");
+                  } catch (err) { toast(err instanceof Error ? err.message : "Could not update access.", "error"); }
+                  finally { setVisBusy(false); }
+                };
+                return (
+                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <Eye size={11} /> Manage access · Visible to
+                      <span className="font-medium normal-case text-slate-400">(who can see this agreement on their own profile)</span>
+                    </p>
+                    {!ready && (
+                      <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                        Available once the agreement status is <span className="font-bold">Complete</span>. Until then it stays internal, so nothing half-written reaches the other side. To send it for review before that, use Share.
+                      </p>
+                    )}
+                    <div className={`flex flex-wrap gap-1.5 ${ready ? "" : "opacity-50 pointer-events-none"}`}>
+                      {targets.map((t) => (
+                        <button
+                          key={partyKey(t)}
+                          onClick={() => toggle(t)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${picked(t) ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+                        >
+                          {picked(t) ? <Eye size={11} /> : <EyeOff size={11} />} {t.name}
+                        </button>
+                      ))}
+                    </div>
+                    {visible.length === 0 && !changed && ready && <p className="text-[10px] text-slate-400 italic">Nobody yet. This agreement is internal.</p>}
+                    {changed && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => void saveAccess()} disabled={visBusy} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary disabled:opacity-50">{visBusy ? "Saving..." : "Save access"}</button>
+                        <button onClick={() => setVisDraft(null)} disabled={visBusy} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-slate-800">Cancel</button>
+                      </div>
+                    )}
+                    {(cur.shares || []).length > 0 && (
+                      <div className="pt-1.5 border-t border-slate-200/70">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Send log</p>
+                        {(cur.shares || []).slice().reverse().map((h, k) => (
+                          <p key={k} className="text-[10px] text-slate-500">
+                            Sent to <span className="font-bold text-slate-600">{h.name}</span> {h.purpose === "signature" ? "for signature" : "for review"} on {h.sentAt ? new Date(h.sentAt).toLocaleDateString() : ""}{h.sentByName ? ` by ${h.sentByName}` : ""}{h.note ? `: "${h.note}"` : ""}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="flex flex-wrap justify-end gap-2 pt-1 border-t border-slate-100">
                 {/* Built agreements preview the generated PDF; uploaded ones open the attached file as-is. */}

@@ -137,6 +137,17 @@ function act(ag: IAgreement, actorName: string, action: string, note = "") {
   ag.activity.push({ at: new Date(), actorName, action, note });
 }
 
+// CR-P (58)/(63) — the logins behind a party: the account with the party's email, and any login
+// linked to the party's Directory company (its login may use a different address).
+async function loginsOf(party: { companyId?: string; email?: string }): Promise<string[]> {
+  const or: Record<string, unknown>[] = [];
+  if (party.email) or.push({ email: new RegExp(`^${escapeRegex(party.email.trim())}$`, "i") });
+  if (party.companyId && mongoose.isValidObjectId(party.companyId)) or.push({ companyId: party.companyId });
+  if (!or.length) return [];
+  const users = await User.find({ $or: or }).select("_id").lean();
+  return users.map((u) => String(u._id));
+}
+
 // `email` is carried so a party that was SHARED an agreement (CR-P (63)) can be recognised as its
 // recipient and sign it, which is what CR-P (64) asks for.
 // `companyId` is the login's Directory company (CR-P (58)): a share goes to a company, and the
@@ -452,18 +463,14 @@ function buildAgreementRouter(ctx: Ctx): Router {
         if (!already) ag.visibleTo.push({ ...party, grantedAt: stamp, grantedByName: by });
         ag.shares.push({ ...party, purpose, sentAt: stamp, sentByName: by, note });
 
-        // Notify anyone whose login matches the party's email.
-        if (party.email) {
-          // Emails are matched case-insensitively; escape first so a "+" tag can't break the regex.
-          const user = await User.findOne({ email: new RegExp(`^${escapeRegex(party.email)}$`, "i") }).select("_id").lean();
-          if (user) {
-            await createNotification({
-              userId: String(user._id), type: "general",
-              title: purpose === "signature" ? "Agreement awaiting your signature" : "Agreement shared with you for review",
-              message: `${by || "GreenTech USA"} shared "${ag.agreementNo || ag.name || ag.agreementType}" with you.${note ? ` Note: ${note}` : ""}`,
-              link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
-            });
-          }
+        // Notify the party's logins: by email, or through its Directory company.
+        for (const uid of await loginsOf(party)) {
+          await createNotification({
+            userId: uid, type: "general",
+            title: purpose === "signature" ? "Agreement awaiting your signature" : "Agreement shared with you for review",
+            message: `${by || "GreenTech USA"} shared "${ag.agreementNo || ag.name || ag.agreementType}" with you.${note ? ` Note: ${note}` : ""}`,
+            link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
+          });
         }
       }
 
@@ -494,10 +501,28 @@ function buildAgreementRouter(ctx: Ctx): Router {
         };
       }).filter((v: { name: string }) => v.name);
       const after = new Set(ag.visibleTo.map((v) => v.companyId || v.name.toLowerCase()));
-      const added = [...after].filter((k) => !before.has(k)).length;
+      const addedKeys = [...after].filter((k) => !before.has(k));
+      const added = addedKeys.length;
       const removed = [...before].filter((k) => !after.has(k)).length;
+      // CR-P (63) — "this option becomes available once the agreement is marked complete". Taking
+      // access away is always allowed; granting it waits for Complete (Share is the way to send a
+      // draft out for review).
+      if (added && !["Complete", "CompletedSigned"].includes(ag.docStatus)) {
+        return res.status(400).json({ error: "Access can be granted once the agreement is Complete. To send it for review before that, use Share." });
+      }
       act(ag, by, "visibility", `${added} granted, ${removed} removed`);
       await ag.save();
+      // CR-P (63) — "save, and they get a notification": the parties just given access are told.
+      for (const v of ag.visibleTo.filter((x) => addedKeys.includes(x.companyId || x.name.toLowerCase()))) {
+        for (const uid of await loginsOf(v)) {
+          await createNotification({
+            userId: uid, type: "general",
+            title: "Agreement shared with you",
+            message: `${by || "GreenTech USA"} gave you access to "${ag.agreementNo || ag.name || ag.agreementType}".`,
+            link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
+          });
+        }
+      }
       res.json(ag);
     } catch (err) { next(err); }
   });
