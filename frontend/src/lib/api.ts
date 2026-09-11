@@ -1118,8 +1118,20 @@ export interface ApiExpense {
   addedByName: string;
   addedByEmail: string;
   addedByRole: string;
+  /** CR-P (154) - the items of this expense; with items, qty is 1 and amount is their total. */
+  items?: ApiExpenseItem[];
+  rejectReason?: string;            // CR-P (156)
+  comments?: ApiExpenseComment[];   // CR-P (157)
+  historic?: boolean;               // CR-P (158) - past expenses recorded in bulk
+  invoiceId?: string;               // set when this is a payment on an invoice received
+  createdAt?: string;
 }
-type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string };
+export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string }
+export interface ApiExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: string }
+type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string; items?: ApiExpenseItem[]; historic?: boolean };
+export async function addExpenseComment(projectId: string, eid: string, body: { text: string; mentions: string[] }) {
+  return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}/comments`, { method: 'POST', body: JSON.stringify(body) });
+}
 
 export async function fetchExpenses(projectId: string) {
   return request<ApiExpense[]>(`/projects/${projectId}/expenses`);
@@ -1147,7 +1159,7 @@ export async function addExpense(projectId: string, body: ExpenseInput) {
   return request<ApiExpense>(`/projects/${projectId}/expenses`, { method: 'POST', body: JSON.stringify(body) });
 }
 
-export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus }) {
+export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus; rejectReason?: string; resend?: boolean }) {
   return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 

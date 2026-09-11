@@ -74,6 +74,7 @@ import ContractTimeline from "./ContractTimeline";
 import ProjectSchedule from "./ProjectSchedule";
 import ClientInfoCard from "./ClientInfoCard";
 import DocTabs from "./DocTabs";
+import ExpenseLog from "./ExpenseLog";
 import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
@@ -1686,7 +1687,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [subInnerTab, setSubInnerTab] = useState<string>("info");
   const [subCustomSub, setSubCustomSub] = useState<string>(""); // active sub-tab within a custom main tab
   const [subInvoices, setSubInvoices] = useState<ApiSubInvoice[]>([]); // all invoice rows for this project
-  const [sentInvoices, setSentInvoices] = useState<ApiInvoice[]>([]); // "Invoice Sent" builder invoices (feed project income, CR-I-06/09)
+  const [sentInvoices, setSentInvoices] = useState<ApiInvoice[]>([]);
+  // CR-P (160) — invoices received: what is still owed counts as a payable in the expenses.
+  const [receivedInvoices, setReceivedInvoices] = useState<ApiInvoice[]>([]); // "Invoice Sent" builder invoices (feed project income, CR-I-06/09)
   // When granting access from a subcontractor's tab, remember which one so we can link the login.
   const [grantingForSubIdx, setGrantingForSubIdx] = useState<number | null>(null);
   // The access modal is shared with the Partners tab — this flips its copy to say "Partner".
@@ -1711,7 +1714,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   })();
 
   // CR-P-15 — the 5-number financial overview shown on the project header + Expenses tab.
-  const projectFive = fiveFromRaw(expenseRows, sentInvoices);
+  const projectFive = fiveFromRaw(expenseRows, sentInvoices, receivedInvoices);
 
   const refreshSubDocs = async () => {
     if (!id) return;
@@ -2569,10 +2572,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       fetchPurchaseOrders(id).catch(() => []),
       fetchSubInvoices(id).catch(() => [] as ApiSubInvoice[]),
       fetchInvoices(id, "sent").catch(() => [] as ApiInvoice[]),
+      fetchInvoices(id, "received").catch(() => [] as ApiInvoice[]),
     ])
-      .then(async ([proj, emps, expenses, pos, subInv, sentInv]) => {
+      .then(async ([proj, emps, expenses, pos, subInv, sentInv, recvInv]) => {
         setSubInvoices(subInv as ApiSubInvoice[]);
         setSentInvoices(sentInv as ApiInvoice[]);
+        setReceivedInvoices(recvInv as ApiInvoice[]);
         refreshTemplates();
         setProject(proj);
         setIsPublished(proj.published);
@@ -5827,145 +5832,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             </div>
           )}
 
-          {/* EXPENSES (Finances → Expenses) */}
+          {/* EXPENSES (Finances → Expenses) — CR-P (153)-(160): line-item expenses in a pop-up,
+              Manage with approval / rejection reason / conversation, past expenses in bulk, status
+              filter and sorting, and the payables from invoices received (read-only). */}
           {activeTab === "finances" && finActive === "expenses" && id && (
-            <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm">
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-xl font-display font-bold text-slate-900">Expense Log</h3>
-                  <p className="text-xs text-slate-400 mt-1">{expenseRows.length} expense{expenseRows.length === 1 ? "" : "s"} · auto-saves on blur.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input value={expenseSearch} onChange={(e) => setExpenseSearch(e.target.value)} placeholder="Search expenses…" className="bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 w-44" />
-                  </div>
-                  {canEdit && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const row = await addExpense(id, { description: "", date: "", qty: "1", amount: "", remarks: "" }) as ExpenseRow;
-                          setExpenseRows((p) => [...p, row]);
-                        } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); }
-                      }}
-                      className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary"
-                    >
-                      <Plus size={13} /> Add Expense
-                    </button>
-                  )}
-                </div>
-              </div>
-              {/* CR-P-15 — approved / pending expense totals on top of the Expense Log (only for those
-                  who may see the project's financial figures). */}
-              {canSeeFigures && (
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
-                  <span className="text-lg font-display font-bold text-emerald-600 leading-none"><Fig>{fmtMoney(projectFive.approvedExpenses)}</Fig></span>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approved Expenses</span>
-                </span>
-                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-amber-50 border border-amber-100">
-                  <span className="text-lg font-display font-bold text-amber-600 leading-none"><Fig>{fmtMoney(projectFive.pendingExpenses)}</Fig></span>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pending Expenses</span>
-                </span>
-                <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <span className="text-lg font-display font-bold text-slate-700 leading-none"><Fig>{fmtMoney(projectFive.approvedExpenses + projectFive.pendingExpenses)}</Fig></span>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Expenses</span>
-                </span>
-              </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[920px] text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-y border-slate-100">
-                      {["#", "Description", "Qty", "Unit Price", "Total Price", "Remarks", "Date", "Attachments", "Added By", "Approval", ""].map((h) => (
-                        <th key={h} className="text-left px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px]">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {expenseRows.length === 0 && (
-                      <tr><td colSpan={11} className="px-3 py-10 text-center text-slate-400 italic">No expenses yet.</td></tr>
-                    )}
-                    {expenseRows
-                      .filter((r) => !expenseSearch.trim() || [r.description, r.remarks, r.addedByName].some((v) => String(v || "").toLowerCase().includes(expenseSearch.toLowerCase())))
-                      .map((row, idx) => {
-                      const cell = (field: "description" | "date" | "qty" | "amount" | "remarks", type: "text" | "date" = "text", width = "") => {
-                        const common = `${width} px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium`;
-                        const set = (v: string) => setExpenseRows((prev) => prev.map((r) => (r._id === row._id ? { ...r, [field]: v } : r)));
-                        const save = (v: string) => updateExpense(id, row._id, { [field]: v });
-                        if (field === "description" || field === "remarks")
-                          return <td className="px-1 py-1 align-top"><AutoTextarea value={(row[field] as string) || ""} onChange={set} onBlur={save} disabled={!canEdit} className={`${common} w-full`} /></td>;
-                        if (field === "amount")
-                          return <td className="px-1 py-1 align-top"><MoneyInput value={(row[field] as string) || ""} onChange={set} onBlur={save} disabled={!canEdit} className={common} /></td>;
-                        return (
-                          <td className="px-1 py-1 align-top">
-                            <input type={type} value={(row[field] as string) || ""} onChange={(e) => set(e.target.value)} onBlur={(e) => save(e.target.value)} disabled={!canEdit} className={common} />
-                          </td>
-                        );
-                      };
-                      const n = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
-                      const total = n(row.qty) * n(row.amount);
-                      return (
-                        <tr key={row._id} className="hover:bg-slate-50/40">
-                          <td className="px-3 py-2 align-top text-slate-400 font-bold text-[11px]">{idx + 1}</td>
-                          {cell("description", "text", "w-44")}
-                          {cell("qty", "text", "w-14")}
-                          {cell("amount", "text", "w-24")}
-                          <td className="px-3 py-2 align-top font-bold text-slate-700 whitespace-nowrap">{total ? fmtMoney(total) : "—"}</td>
-                          {cell("remarks", "text", "w-40")}
-                          {cell("date", "date", "w-32")}
-                          {/* Attachments */}
-                          <td className="px-2 py-1 align-top">
-                            <div className="flex flex-wrap items-center gap-1">
-                              {(row.attachments || []).map((a) => (
-                                <span key={a._id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600">
-                                  <button onClick={() => setAttachmentPreview({ name: a.name, url: attachmentUrl(a.filePath), fileType: a.fileType })} className="hover:text-primary max-w-[80px] truncate" title={a.name}>{a.name}</button>
-                                  {canEdit && (
-                                    <button onClick={async () => { if (!confirm(`Delete "${a.name}"? The attachment is removed for good.`)) return; try { const u = await deleteExpenseAttachment(id, row._id, a._id); setExpenseRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Failed", "error"); } }} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
-                                  )}
-                                </span>
-                              ))}
-                              {canEdit && (
-                                <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 text-white text-[10px] font-bold cursor-pointer hover:bg-primary">
-                                  <Plus size={10} />
-                                  <input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; try { const u = await uploadExpenseAttachment(id, row._id, f); setExpenseRows((p) => p.map((r) => (r._id === row._id ? u : r))); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed", "error"); } }} />
-                                </label>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{row.addedByName || "—"}{(row.addedByRole === "subcontractor" || row.addedByRole === "guest") ? " (subcontractor)" : ""}</td>
-                          {/* Approval — employees/owners manage it; subcontractors only see the status */}
-                          <td className="px-2 py-1 align-top">
-                            {canManage ? (
-                              <select
-                                value={row.approval || "pending"}
-                                onChange={(e) => {
-                                  const v = e.target.value as ExpenseRow["approval"];
-                                  setExpenseRows((prev) => prev.map((r) => (r._id === row._id ? { ...r, approval: v } : r)));
-                                  updateExpense(id, row._id, { approval: v }).catch((err) => toast(err instanceof Error ? err.message : "Failed", "error"));
-                                }}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize outline-none cursor-pointer border-0 ${approvalBadgeClass(row.approval)}`}
-                              >
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
-                              </select>
-                            ) : (
-                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${approvalBadgeClass(row.approval)}`}>{row.approval || "pending"}</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1 align-top">
-                            {canEdit && (
-                              <button onClick={async () => { if (confirm("Delete?")) { await deleteExpense(id, row._id); setExpenseRows((p) => p.filter((r) => r._id !== row._id)); } }} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50" title="Delete row"><Trash2 size={13} /></button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <ExpenseLog
+              projectId={id}
+              rows={expenseRows}
+              setRows={(fn) => setExpenseRows(fn)}
+              received={receivedInvoices}
+              onRefreshReceived={() => { fetchInvoices(id, "received").then(setReceivedInvoices).catch(() => {}); }}
+              onOpenReceived={() => setFinSub("invoice-received")}
+              canEdit={canEdit}
+              canApprove={canManage}
+              canSeeFigures={canSeeFigures}
+              five={projectFive}
+            />
           )}
 
           {/* PURCHASE ORDERS */}

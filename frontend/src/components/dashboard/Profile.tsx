@@ -99,7 +99,8 @@ export default function Profile() {
         setEmpId(u.empId || "");
         setBackupEnabled(u.backupEnabled !== false);
         setBackupDay(u.backupDay || 1);
-        if (u.role === "subcontractor") fetchMyExpenses().then(setMyExpenses).catch(() => setMyExpenses([]));
+        // CR-P (155) — everyone sees the expenses they logged, employees as well as subcontractors.
+        fetchMyExpenses().then(setMyExpenses).catch(() => setMyExpenses([]));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load profile."))
       .finally(() => setLoading(false));
@@ -366,8 +367,8 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Subcontractor — their own logged expenses across projects */}
-      {isGuest && (
+      {/* Their own logged expenses across projects (CR-P 155: employees too, once they have some). */}
+      {(isGuest || myExpenses.length > 0) && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -375,7 +376,7 @@ export default function Profile() {
           className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-10 lg:col-span-2"
         >
           <h2 className="text-xl font-display font-bold text-slate-900 mb-1">My Logged Expenses</h2>
-          <p className="text-xs text-slate-400 mb-6">Expenses you've added across the projects shared with you. Only you and the project team can see these.</p>
+          <p className="text-xs text-slate-400 mb-6">Expenses you've added across your projects. Only you and the project team can see these.</p>
           {myExpenses.length === 0 ? (
             <p className="text-sm text-slate-400 italic">You haven't logged any expenses yet.</p>
           ) : (

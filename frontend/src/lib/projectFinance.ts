@@ -19,12 +19,18 @@ export interface FiveNumbers {
 const ZERO: FiveNumbers = { approvedExpenses: 0, pendingExpenses: 0, incomeReceived: 0, remainingIncome: 0, estimatedProfit: 0 };
 
 // Compute the five numbers from the raw rows a project workspace already holds (live).
-export function fiveFromRaw(expenses: ApiExpense[], sentInvoices: ApiInvoice[]): FiveNumbers {
+export function fiveFromRaw(expenses: ApiExpense[], sentInvoices: ApiInvoice[], receivedInvoices: ApiInvoice[] = []): FiveNumbers {
   let approvedExpenses = 0, pendingExpenses = 0;
   for (const e of expenses) {
     const val = (n(e.qty) || 1) * n(e.amount);
     if (e.approval === "approved") approvedExpenses += val;
     else if (e.approval !== "rejected") pendingExpenses += val;   // pending (default); rejected ignored
+  }
+  // CR-P (160) — what is still owed on an invoice received is a payable, counted with the pending
+  // expenses (what has been paid is already an expense row, recorded with the payment).
+  for (const inv of receivedInvoices) {
+    if (NON_REVENUE.includes(inv.status || "")) continue;
+    pendingExpenses += Math.max(0, invTotal(inv) - invoicePaid(inv));
   }
   let totalInvoiced = 0, incomeReceived = 0;
   for (const inv of sentInvoices) {

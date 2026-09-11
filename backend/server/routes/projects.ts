@@ -87,7 +87,7 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
         .select("projectId amount lineItems payments").lean(),
       // CR-I-10 — received invoices (vendor/sub bills) are a project cost (accrual), regardless of payment.
       Invoice.find({ projectId: { $in: ids }, type: "received", status: { $nin: NON_REVENUE } })
-        .select("projectId amount lineItems").lean(),
+        .select("projectId amount lineItems payments").lean(),
     ]);
     // CR-P-15 — per-project 5-number overview + the legacy income/expenses (accrual) fields.
     type Fin = { income: number; expenses: number; approvedExpenses: number; pendingExpenses: number; incomeReceived: number; totalInvoiced: number; remainingIncome: number };
@@ -112,7 +112,13 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
       b.totalInvoiced += invTotal(inv);
       b.incomeReceived += invPaid(inv);
     }
-    for (const inv of receivedInvoices) bucket(inv.projectId).expenses += invTotal(inv);
+    for (const inv of receivedInvoices) {
+      const b = bucket(inv.projectId);
+      b.expenses += invTotal(inv);
+      // CR-P (160) — what is still owed on an invoice received is a payable: a pending expense.
+      // (What has been paid is already an expense row, recorded with the payment.)
+      b.pendingExpenses += Math.max(0, invTotal(inv) - invPaid(inv));
+    }
     for (const b of Object.values(map)) b.remainingIncome = Math.max(0, b.totalInvoiced - b.incomeReceived);
     res.json(map);
   } catch (err) { next(err); }
@@ -123,7 +129,14 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
 router.get("/my-expenses", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const projects = await Project.find({ "guests.userId": userId }).select("projectId name subcontractors").lean();
+    // CR-P (155) — employees see their own expenses on their profile too: the projects they own or
+    // are assigned to, besides the ones they were given access to.
+    const me = await User.findById(userId).select("empId role").lean();
+    const empId = (me as { empId?: string } | null)?.empId || "";
+    const staff = ((me as { role?: string } | null)?.role || req.user!.role) !== "subcontractor";
+    const projects = await Project.find(staff
+      ? { $or: [{ ownerId: userId }, { "guests.userId": userId }, ...(empId ? [{ assignedEmployees: empId }] : [])] }
+      : { "guests.userId": userId }).select("projectId name subcontractors").lean();
     const nameById: Record<string, string> = {};
     const mySubIds: string[] = [];
     projects.forEach((p) => {
