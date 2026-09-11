@@ -47,7 +47,7 @@ import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import SectionGroupTemplates from "./SectionGroupTemplates";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
-import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
+import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
 /** Step 7 - which proposal volume a section handler works on (both have sections). */
@@ -1203,6 +1203,21 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     (vol === "financial" ? setCoverFinancial : setCover)((c) => ({ ...c, status }));
     setDirty(true);
     setSaveRequested(true);
+  };
+  // Item 105 - the standard attachments list: the appendices a GT proposal carries (as in the
+  // client's samples), each filled from Company Documents where a document of that type exists.
+  const STANDARD_APPENDICES: Record<Vol, string[]> = {
+    technical: ["appx-sam", "appx-company-registration", "appx-business-licenses", "appx-insurance", "appx-dba", "appx-reference-letters"],
+    financial: ["appx-sam", "appx-bonding", "appx-insurance", "appx-dba"],
+  };
+  const addStandardAppendices = (vol: Vol) => {
+    const have = new Set(layoutOfVol(vol).map((m) => m.libraryKey).filter(Boolean));
+    const add = STANDARD_APPENDICES[vol]
+      .map((k) => APPENDIX_LIBRARY.find((a) => a.key === k))
+      .filter((a): a is NonNullable<typeof a> => !!a && !have.has(a.key));
+    if (!add.length) { toast("The standard appendices are already in this volume.", "info"); return; }
+    for (const a of add) addLayoutSection(a.title, "", { libraryKey: a.key, guide: a.hint, appendix: true, pageType: a.pageType || "external", divider: true }, vol);
+    toast(`Added ${add.length} standard appendix section${add.length === 1 ? "" : "s"}.`, "success");
   };
   const insertResource = (b: ApiResourceBlock) => {
     addLayoutSection(b.title, b.body);
@@ -4285,8 +4300,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <ActionButtons which="technical" />
                   </div>
 
-                  <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600">
-                    Edit this document's cover page in the <strong>Cover Page</strong> sub-tab above. Reorder sections with the <strong>↑ ↓</strong> arrows on each box below — that's the order they print in.
+                  <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600 flex items-center justify-between gap-3 flex-wrap">
+                    <span>Edit this document's cover page in the <strong>Cover Page</strong> sub-tab above. Reorder sections with the <strong>↑ ↓</strong> arrows on each box below; that is the order they print in.</span>
+                    {/* Item 105 - the standard attachments list, in one click. */}
+                    {canEdit && <button onClick={() => addStandardAppendices("technical")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0"><Plus size={12} /> Add the standard appendices</button>}
                   </div>
 
                   {/* Section manager — Add section lives here; the reorder list is collapsed by default */}
@@ -4558,6 +4575,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       <button onClick={() => addLayoutSection(FINANCIAL_SECTION_LIBRARY[0].title, "", { libraryKey: FINANCIAL_SECTION_LIBRARY[0].key, pageType: "government", divider: true, guide: FINANCIAL_SECTION_LIBRARY[0].hint }, "financial")}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary">
                         <Upload size={12} /> Add the client's price form
+                      </button>
+                    )}
+                    {/* Item 105 - the standard attachments list (SAM, bonding, insurance, DBA). */}
+                    {canEdit && (
+                      <button onClick={() => addStandardAppendices("financial")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:border-primary hover:text-primary ml-2">
+                        <Plus size={12} /> Add the standard appendices
                       </button>
                     )}
                   </div>

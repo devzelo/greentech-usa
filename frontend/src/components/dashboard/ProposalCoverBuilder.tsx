@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Upload, Image as ImageIcon, X, Loader2, Eye, Save, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Plus, Upload, Image as ImageIcon, X, Loader2, Eye, Save, RotateCcw, CheckCircle2, Wand2 } from "lucide-react";
 import { PDFViewer } from "@react-pdf/renderer";
 import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -142,6 +142,22 @@ export default function ProposalCoverBuilder({
     setGalleryOpen(false);
   };
   const removeCoverImage = (imgId: string) => setCover("images", cover.images.filter((im) => im.id !== imgId));
+  // Item 105 - the standard cover (from the client's samples). Fills only what is empty.
+  const applyStandard = () => {
+    onCoverChange({
+      ...cover,
+      coverStyle: cover.coverStyle || "hero",
+      responseLabel: cover.responseLabel || "Response to Solicitation #",
+      revisionLabel: cover.revisionLabel || "Initial Proposal",
+      volumeLabel: cover.volumeLabel || (volume === "financial" ? "Vol. II: Financial Proposal" : "Vol. I: Technical Proposal"),
+      restrictionNotice: true,
+      submittedBy: cover.submittedBy || defaultSubmitter(project),
+      clientName: cover.clientName || project.clientInfo?.name || "",
+      projectName: cover.projectName || project.name,
+      images: cover.images.length ? cover.images : galleryImages.slice(0, 4).map((g) => ({ id: uid(), url: g.url })),
+    });
+    toast("Standard cover applied. Empty fields were filled; nothing you typed was changed.", "success");
+  };
 
   return (
     <div className="space-y-6">
@@ -156,6 +172,7 @@ export default function ProposalCoverBuilder({
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {canEdit && <button type="button" onClick={applyStandard} title="Fill the empty fields the way the standard cover reads" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-[11px] font-bold hover:bg-primary/20"><Wand2 size={12} /> Standard cover</button>}
             <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Eye size={12} /> Preview cover</button>
             {canEdit && onCancel && <button type="button" onClick={onCancel} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-slate-900"><RotateCcw size={12} /> Cancel</button>}
             {canEdit && onSave && <button type="button" onClick={() => onSave("draft")} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200 disabled:opacity-50">{saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save as draft</button>}

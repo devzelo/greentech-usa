@@ -6,6 +6,8 @@ import {
 } from "../../lib/api";
 import { letterDefaults } from "../../lib/proposalLetter";
 import RichTextEditor from "./RichTextEditor";
+import { COMPANY } from "../pdf/brand";
+import { defaultSubmitter } from "./ProposalPDF";
 
 // CR-P (93) - the transmittal letter, laid out as on the client's samples: Date, To, Subject,
 // Dear ..., the paragraphs, Sincerely, then the signature with the company seal and the signer's
@@ -67,6 +69,27 @@ export default function ProposalLetterBuilder({
     set("signatories", [...letter.signatories, { id: uid(), name: s.name, title: s.jobTitle || "", signatureUrl: s.signatureUrl || "", email: s.email || "", phone: s.phone || "" }]);
   };
   const updateSig = (sid: string, patch: Partial<ProposalSignatory>) => set("signatories", letter.signatories.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
+
+  // Item 105 - the standard transmittal letter, written from the cover page (and the JV's own
+  // registration on a JV). Every word stays editable afterwards.
+  const insertStandard = () => {
+    if (letter.body.replace(/<[^>]*>/g, "").trim() && !window.confirm("Replace the letter body with the standard letter?")) return;
+    const jvEntity = project.jointVenture?.enabled ? project.jointVenture : undefined;
+    const firm = (cover.submittedBy || "").trim() || defaultSubmitter(project);
+    const uei = jvEntity ? jvEntity.uei || "" : COMPANY.uei;
+    const cage = jvEntity ? jvEntity.cage || "" : COMPANY.cage;
+    const sol = (cover.solicitationNo || "").trim();
+    const title = (cover.proposalTitle || project.name || "").trim();
+    const where = (cover.location || "").trim();
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const paras = [
+      `${firm} is pleased to submit the enclosed proposal ${sol ? `in response to Solicitation No. ${sol} ` : ""}for ${title}${where ? `, ${where}` : ""}.`,
+      `${firm} is a U.S. contractor headquartered in Virginia with extensive experience in the design-build, construction, operation and maintenance of water, wastewater and building systems for the U.S. Department of State, USAID and other international clients. We have reviewed the solicitation, its amendments and all of its requirements, and our proposal responds to each of them.`,
+      `Our offer remains valid for the period stated in the solicitation.${uei ? ` ${firm} is registered and active in SAM.gov (UEI ${uei}${cage ? `, CAGE ${cage}` : ""}).` : ""}`,
+      "Should you need any clarification, please contact the undersigned. We appreciate the opportunity to be considered and look forward to working with you.",
+    ];
+    set("body", paras.map((p) => `<p>${esc(p)}</p>`).join(""));
+  };
   const removeSig = (sid: string) => set("signatories", letter.signatories.filter((s) => s.id !== sid));
 
   return (
@@ -105,7 +128,14 @@ export default function ProposalLetterBuilder({
         </div>
 
         <div className="space-y-1.5">
-          <span className={lbl}>Letter body</span>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className={lbl}>Letter body</span>
+            {canEdit && (
+              <button type="button" onClick={insertStandard} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-[11px] font-bold hover:bg-primary/20">
+                <Plus size={12} /> Insert the standard letter
+              </button>
+            )}
+          </div>
           <RichTextEditor
             value={letter.body}
             onChange={(html) => set("body", html)}
