@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronRight, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock, Settings2 } from "lucide-react";
 import { getAuthUser } from "../../lib/api";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
@@ -211,7 +212,6 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
           <table className="w-full min-w-[760px] text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="w-8 px-3 py-2.5" />
                 {["No.", "Type", "Subject", "Date", "Responses", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}
               </tr>
             </thead>
@@ -221,7 +221,6 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 return (
                   <Fragment key={r._id}>
                     <tr className="hover:bg-slate-50/40 align-top">
-                      <td className="px-3 py-2.5"><button onClick={() => setOpenId(isOpen ? null : r._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button></td>
                       <td className="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">{r.number}</td>
                       <td className="px-3 py-2.5 text-slate-500">{r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type}</td>
                       <td className="px-3 py-2.5 font-bold text-slate-700">{r.title || <span className="text-slate-300 italic">—</span>}</td>
@@ -236,6 +235,9 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-end gap-1">
+                          {/* CR-P (149) — everything about a request (its content, documents and the
+                              client's responses) is edited in its Manage window. */}
+                          <button onClick={() => setOpenId(r._id)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary mr-1" title="Manage"><Settings2 size={12} /> Manage</button>
                           <button onClick={() => openPreview(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
                           <button onClick={() => download(r)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Download PDF"><Download size={14} /></button>
                           {/* CR-B-14a — Word export (description + sections are HTML). */}
@@ -251,8 +253,21 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         </div>
                       </td>
                     </tr>
-                    {isOpen && (
-                      <tr className="bg-slate-50/40"><td colSpan={8} className="px-6 py-4 space-y-3">
+                    {isOpen && createPortal(
+                      <div className="fixed inset-0 z-[70] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-10" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate">Manage · {r.number}{r.title ? ` · ${r.title}` : ""}</p>
+                              <p className="text-[11px] text-slate-400">Changes save as you type. The client's responses are at the bottom.</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <SaveStatus state={saveStatus.state} savedAt={saveStatus.savedAt} />
+                              <button onClick={() => openPreview(r)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:text-primary"><Eye size={13} /> Preview</button>
+                              <button onClick={() => setOpenId(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100" title="Close"><X size={18} /></button>
+                            </div>
+                          </div>
+                          <div className="px-6 py-5 space-y-3">
                         {/* Editable fields */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject
@@ -414,7 +429,10 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                             </div>
                           )}
                         </div>
-                      </td></tr>
+                          </div>
+                        </div>
+                      </div>,
+                      document.body,
                     )}
                   </Fragment>
                 );
