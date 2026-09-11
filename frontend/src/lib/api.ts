@@ -1207,7 +1207,10 @@ interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: 
 
 async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): Promise<T> {
   const token = getAuthToken();
-  const res = await fetch(url, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  // CR-P (139) — callers pass "/api/..."; it must go to the API server like every other request.
+  // Without API_BASE the upload only worked where the site itself proxies /api (task attachments,
+  // signatures, company files and saved versions failed on the live site).
+  const res = await fetch(url.startsWith('/') ? `${API_BASE}${url}` : url, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
   if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
   return res.json() as Promise<T>;
 }

@@ -5,11 +5,12 @@ import {
   fetchBoard, addBoardColumn, updateBoardColumn, deleteBoardColumn,
   createTask, updateTask, deleteTask, reorderBoard,
   fetchBoardMembers, uploadTaskAttachment, deleteTaskAttachment, attachmentUrl, addTaskComment, getAuthUser,
-  type ApiTaskColumn, type ApiTask, type BoardMember, type ApiTaskAssignee,
+  type ApiTaskColumn, type ApiTask, type BoardMember, type ApiTaskAssignee, type TaskInput,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import Avatar from "./Avatar";
+import DocumentViewer from "./DocumentViewer";
 
 // CR-P — Trello-style Kanban board on a project's Project Management tab. Columns (Pending /
 // In Progress / Done / Archive + custom), draggable task cards, and a task detail modal.
@@ -237,6 +238,11 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const [tagInput, setTagInput] = useState("");
   const [subtasks, setSubtasks] = useState(task.subtasks);
   const [subInput, setSubInput] = useState("");
+  const [columnId, setColumnId] = useState(task.columnId);
+  const [deadline, setDeadline] = useState(task.deadline || "");
+  const [assignees, setAssignees] = useState<ApiTaskAssignee[]>(task.assignees);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  const [viewFile, setViewFile] = useState<{ name: string; url: string; fileType: string } | null>(null);   // CR-P (139)
   const [saving, setSaving] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -261,19 +267,43 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   const mentionable = allMembers.filter((m) => m.userId && m.userId !== myId);
   const mentionMatches = mentionable.filter((m) => !mentionQuery || m.name.toLowerCase().includes(mentionQuery.toLowerCase()));
 
-  const save = async (patch: Parameters<typeof updateTask>[2], silent = false) => {
+  // CR-P (137) — edits stay in the pop-up until Save (or Save and close), so it is clear what is
+  // kept. Attachments and comments still go straight away.
+  const subKey = (list: ApiTask["subtasks"]) => JSON.stringify(list.map((s) => [s.title, s.done]));
+  const whoKey = (list: ApiTaskAssignee[]) => JSON.stringify(list.map((a) => a.userId || a.empId || a.name).sort());
+  const changes: TaskInput = {};
+  if (title.trim() !== task.title) changes.title = title.trim();
+  if (description !== task.description) changes.description = description;
+  if (columnId !== task.columnId) changes.columnId = columnId;
+  if (deadline !== (task.deadline || "")) changes.deadline = deadline;
+  if (JSON.stringify(tags) !== JSON.stringify(task.tags)) changes.tags = tags;
+  if (subKey(subtasks) !== subKey(task.subtasks)) changes.subtasks = subtasks;
+  if (whoKey(assignees) !== whoKey(task.assignees)) changes.assignees = assignees;
+  const dirty = canEdit && Object.keys(changes).length > 0;
+
+  const saveAll = async (close: boolean) => {
+    if (!dirty) { if (close) onClose(); return; }
+    if (!title.trim()) { toast("The task needs a title.", "error"); return; }
     setSaving(true);
-    try { const up = await updateTask(projectId, task._id, patch); onSaved(up); }
-    catch (e) { if (!silent) toast(e instanceof Error ? e.message : "Could not save.", "error"); }
+    try {
+      const up = await updateTask(projectId, task._id, changes);
+      onSaved(up);
+      toast("Task saved.", "success");
+      if (close) onClose();
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); }
     finally { setSaving(false); }
   };
-  const isAssigned = (m: BoardMember) => task.assignees.some((a) => sameMember(a, m));
-  const toggleAssignee = (m: BoardMember) => {
-    const next = isAssigned(m)
-      ? task.assignees.filter((a) => !sameMember(a, m))
-      : [...task.assignees, { userId: m.userId, empId: m.empId, name: m.name, kind: m.kind, avatarUrl: m.avatarUrl || "" }];
-    save({ assignees: next }, true);
+  const requestClose = async () => {
+    if (!dirty) { onClose(); return; }
+    if (await confirm({ title: "Save your changes?", message: "This task has changes that are not saved yet.", confirmLabel: "Save and close", cancelLabel: "Discard changes" })) await saveAll(true);
+    else onClose();
   };
+  const isAssigned = (m: BoardMember) => assignees.some((a) => sameMember(a, m));
+  const toggleAssignee = (m: BoardMember) => setAssignees((cur) => (
+    cur.some((a) => sameMember(a, m))
+      ? cur.filter((a) => !sameMember(a, m))
+      : [...cur, { userId: m.userId, empId: m.empId, name: m.name, kind: m.kind, avatarUrl: m.avatarUrl || "" }]
+  ));
   const uploadFile = async (file: File) => {
     setUploading(true);
     try { onSaved(await uploadTaskAttachment(projectId, task._id, file)); }
@@ -286,13 +316,17 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     try { onSaved(await deleteTaskAttachment(projectId, task._id, aid)); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   };
-  // Pick a member → add a removable mention chip and strip the @query from the text.
+  // CR-P (138) — pick a member: "@Name " goes into the text where the @ was typed, and writing
+  // carries on after it (like other chat tools). They are notified if their @Name is still in the
+  // comment when it is posted.
   const pickMention = (m: BoardMember) => {
     setPendingMentions((p) => (p.some((x) => x.userId === m.userId) ? p : [...p, m]));
-    setCommentText((c) => c.replace(/@([^\s@]*)$/, "").replace(/[ ]+$/, ""));
+    setCommentText((c) => (/@([^\s@]*)$/.test(c)
+      ? c.replace(/@([^\s@]*)$/, `@${m.name} `)
+      : `${c}${c && !/\s$/.test(c) ? " " : ""}@${m.name} `));
     setMentionOpen(false); setMentionQuery("");
+    setTimeout(() => { const el = commentRef.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } }, 0);
   };
-  const removePending = (m: BoardMember) => setPendingMentions((p) => p.filter((x) => x.userId !== m.userId));
   // Detect an @-token as the user types, and open the mention menu filtered by it.
   const onCommentInput = (val: string) => {
     setCommentText(val);
@@ -300,11 +334,9 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     if (m && mentionable.length) { setMentionQuery(m[1]); setMentionOpen(true); } else { setMentionOpen(false); setMentionQuery(""); }
   };
   const sendComment = async () => {
-    const msg = commentText.trim();
-    const mentionText = pendingMentions.map((m) => `@${m.name}`).join(" ");
-    const finalText = [mentionText, msg].filter(Boolean).join(" ");
+    const finalText = commentText.trim();
     if (!finalText) return;
-    const mentions = pendingMentions.map((m) => m.userId).filter(Boolean);
+    const mentions = pendingMentions.filter((m) => finalText.includes(`@${m.name}`)).map((m) => m.userId).filter(Boolean);
     setSending(true);
     try { onSaved(await addTaskComment(projectId, task._id, { text: finalText, mentions })); setCommentText(""); setPendingMentions([]); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not comment.", "error"); }
@@ -326,14 +358,11 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
     parts.push(text.slice(last));
     return parts;
   };
-  const addTag = () => { const t = tagInput.trim(); if (!t || tags.includes(t)) { setTagInput(""); return; } const next = [...tags, t]; setTags(next); setTagInput(""); save({ tags: next }, true); };
-  const removeTag = (t: string) => { const next = tags.filter((x) => x !== t); setTags(next); save({ tags: next }, true); };
-  const addSub = () => { const t = subInput.trim(); if (!t) return; const next = [...subtasks, { title: t, done: false }]; setSubtasks(next); setSubInput(""); save({ subtasks: next }, true); };
-  const toggleSub = (i: number) => { const next = subtasks.map((s, j) => (j === i ? { ...s, done: !s.done } : s)); setSubtasks(next); save({ subtasks: next }, true); };
-  const removeSub = async (i: number) => {
-    if (!(await confirm({ title: "Delete this subtask?", message: subtasks[i]?.title ? `“${subtasks[i].title}” is removed from this task.` : "The subtask is removed from this task.", confirmLabel: "Delete" }))) return;
-    const next = subtasks.filter((_, j) => j !== i); setSubtasks(next); save({ subtasks: next }, true);
-  };
+  const addTag = () => { const t = tagInput.trim(); if (!t || tags.includes(t)) { setTagInput(""); return; } setTags([...tags, t]); setTagInput(""); };
+  const removeTag = (t: string) => setTags(tags.filter((x) => x !== t));
+  const addSub = () => { const t = subInput.trim(); if (!t) return; setSubtasks([...subtasks, { title: t, done: false }]); setSubInput(""); };
+  const toggleSub = (i: number) => setSubtasks(subtasks.map((s, j) => (j === i ? { ...s, done: !s.done } : s)));
+  const removeSub = (i: number) => setSubtasks(subtasks.filter((_, j) => j !== i));
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
@@ -342,26 +371,26 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Task</p>
           <div className="flex items-center gap-1">
             {canEdit && <button onClick={onDelete} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500" title="Delete task"><Trash2 size={16} /></button>}
-            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            <button onClick={requestClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100" title="Close"><X size={18} /></button>
           </div>
         </div>
         <div className="p-5 space-y-4">
-          <input value={title} disabled={!canEdit} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== task.title && save({ title })} placeholder="Task title" className="w-full text-lg font-bold text-slate-900 outline-none border-b border-transparent focus:border-slate-200 pb-1" />
+          <input value={title} disabled={!canEdit} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" className="w-full text-lg font-bold text-slate-900 outline-none border-b border-transparent focus:border-slate-200 pb-1" />
 
           {/* Status = the column the card sits in. Changing it moves the card (same as dragging). */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</span>
-            <select value={task.columnId} disabled={!canEdit} onChange={(e) => save({ columnId: e.target.value })} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60">
+            <select value={columnId} disabled={!canEdit} onChange={(e) => setColumnId(e.target.value)} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60">
               {columns.map((c) => <option key={c._id} value={c._id}>{c.title}</option>)}
             </select>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1"><CalendarClock size={12} /> Deadline</span>
-            <input type="date" value={task.deadline || ""} disabled={!canEdit} onChange={(e) => save({ deadline: e.target.value })} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
-            {task.deadline && canEdit && <button onClick={() => save({ deadline: "" })} className="text-[10px] font-bold text-slate-400 hover:text-red-500">Clear</button>}
+            <input type="date" value={deadline} disabled={!canEdit} onChange={(e) => setDeadline(e.target.value)} className="text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1 bg-white text-slate-700 cursor-pointer outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
+            {deadline && canEdit && <button onClick={() => setDeadline("")} className="text-[10px] font-bold text-slate-400 hover:text-red-500">Clear</button>}
           </div>
 
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Description</p>
-            <textarea value={description} disabled={!canEdit} onChange={(e) => setDescription(e.target.value)} onBlur={() => description !== task.description && save({ description })} rows={4} placeholder="Add a description…" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+            <textarea value={description} disabled={!canEdit} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Add a description…" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
           </div>
 
           {/* Assignees — only people on this project (employees + subcontractors + partner) */}
@@ -370,9 +399,9 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Assignees</p>
               {canEdit && <button onClick={() => setAssignOpen((v) => !v)} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><UserPlus size={12} /> Assign</button>}
             </div>
-            {task.assignees.length === 0 ? <p className="text-[11px] text-slate-400 italic">No one assigned.</p> : (
+            {assignees.length === 0 ? <p className="text-[11px] text-slate-400 italic">No one assigned.</p> : (
               <div className="flex flex-wrap gap-1.5">
-                {task.assignees.map((a, i) => (
+                {assignees.map((a, i) => (
                   <span key={i} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
                     <Avatar url={a.avatarUrl || localMembers.find((mm) => mm.userId && mm.userId === a.userId)?.avatarUrl} name={a.name} size={20} />
                     {a.name}{a.kind && <span className="text-slate-400 font-medium">· {kindLabel[a.kind] || a.kind}</span>}
@@ -431,9 +460,12 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             {task.attachments.length === 0 ? <p className="text-[11px] text-slate-400 italic">No files attached.</p> : (
               <div className="space-y-1">{task.attachments.map((f) => (
                 <div key={f._id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-100 text-xs">
-                  <span className="flex items-center gap-1.5 min-w-0"><FileText size={13} className="text-slate-400 shrink-0" /><span className="font-bold text-slate-700 truncate" title={f.name}>{f.name}</span>{f.size && <span className="text-slate-400 shrink-0">· {f.size}</span>}</span>
+                  {/* CR-P (139) — the file opens right here, in the same viewer used everywhere else. */}
+                  <button onClick={() => setViewFile({ name: f.name, url: attachmentUrl(f.filePath), fileType: f.fileType || (f.name.split(".").pop() || "") })} className="flex items-center gap-1.5 min-w-0 text-left" title="View">
+                    <FileText size={13} className="text-slate-400 shrink-0" /><span className="font-bold text-slate-700 truncate hover:text-primary" title={f.name}>{f.name}</span>{f.size && <span className="text-slate-400 shrink-0">· {f.size}</span>}
+                  </button>
                   <span className="flex items-center gap-1 shrink-0">
-                    <a href={attachmentUrl(f.filePath)} target="_blank" rel="noreferrer" className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></a>
+                    <button onClick={() => setViewFile({ name: f.name, url: attachmentUrl(f.filePath), fileType: f.fileType || (f.name.split(".").pop() || "") })} className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></button>
                     <a href={attachmentUrl(f.filePath)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
                     {canEdit && <button onClick={() => removeFile(f._id)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                   </span>
@@ -459,19 +491,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
             </div>
             {canEdit && (
               <div>
-                {/* Selected mentions as removable tags (like assignees). */}
-                {pendingMentions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {pendingMentions.map((m) => (
-                      <span key={m.key} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                        <Avatar url={m.avatarUrl} name={m.name} size={20} />
-                        {m.name}
-                        <button onClick={() => removePending(m)} className="text-primary/60 hover:text-red-500"><X size={11} /></button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <textarea value={commentText} onChange={(e) => onCommentInput(e.target.value)} rows={2} placeholder="Write a comment… type @ to tag someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
+                <textarea ref={commentRef} value={commentText} onChange={(e) => onCommentInput(e.target.value)} rows={2} placeholder="Write a comment… type @ to tag someone" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y" />
                 {/* Inline @-mention suggestions as you type. */}
                 {mentionOpen && mentionMatches.length > 0 && (
                   <div className="mt-1 rounded-xl border border-slate-100 shadow-lg bg-white p-1.5 max-h-52 overflow-y-auto space-y-2">
@@ -486,16 +506,32 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-2 mt-1.5">
-                  <button onClick={() => { setMentionQuery(""); setMentionOpen((v) => !v); }} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Tag a member"}><AtSign size={12} /> Mention</button>
-                  <button onClick={sendComment} disabled={sending || (!commentText.trim() && pendingMentions.length === 0)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
+                  <button onClick={() => { setCommentText((c) => `${c}${c && !/\s$/.test(c) ? " " : ""}@`); setMentionQuery(""); setMentionOpen(true); commentRef.current?.focus(); }} disabled={mentionable.length === 0} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-primary disabled:opacity-40" title={mentionable.length === 0 ? "No members with a login to mention" : "Tag a member"}><AtSign size={12} /> Mention</button>
+                  <button onClick={sendComment} disabled={sending || !commentText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold disabled:opacity-40">{sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Comment</button>
                 </div>
               </div>
             )}
           </div>
 
-          <p className="text-[10px] text-slate-400 flex items-center gap-1.5">{saving && <Loader2 size={11} className="animate-spin" />} Changes save automatically.</p>
+        </div>
+        {/* CR-P (137) — an explicit Save / Save and close. */}
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
+          <p className={`text-[11px] font-bold ${dirty ? "text-amber-600" : "text-slate-400"}`}>{canEdit ? (dirty ? "Unsaved changes" : "All changes saved") : "View only"}</p>
+          <div className="flex items-center gap-2">
+            {canEdit ? (
+              <>
+                <button onClick={() => saveAll(false)} disabled={saving || !dirty} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">Save</button>
+                <button onClick={() => saveAll(true)} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-50">
+                  {saving && <Loader2 size={12} className="animate-spin" />} Save and close
+                </button>
+              </>
+            ) : (
+              <button onClick={onClose} className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold">Close</button>
+            )}
+          </div>
         </div>
       </div>
+      {viewFile && <DocumentViewer doc={viewFile} onClose={() => setViewFile(null)} />}
       {dialogs}
     </div>
   );
