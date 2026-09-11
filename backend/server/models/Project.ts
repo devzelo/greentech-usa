@@ -36,6 +36,10 @@ export interface IProject extends Document {
   fiscal: string;
   compliance: string;
   value: string; // contract value / project worth (free-form, e.g. "$2.5M" or "USD 2,500,000")
+  // Financial figures access (client request, 2026-09-11) — per person (userId → on/off), who sees
+  // the project's value and its expense / income / profit totals. With no entry, GT staff see them
+  // and outside logins do not (lib/access canSeeFigures).
+  figuresAccess: Record<string, boolean>;
   disciplines: string[];
   startDate: string;
   endDate: string;
@@ -175,6 +179,7 @@ const ProjectSchema = new Schema<IProject>(
     fiscal: { type: String, default: "" },
     compliance: { type: String, default: "" },
     value: { type: String, default: "" },
+    figuresAccess: { type: Schema.Types.Mixed, default: {} },   // financial figures access, per userId
     disciplines: [{ type: String }],
     startDate: { type: String, default: "" },
     endDate: { type: String, default: "" },

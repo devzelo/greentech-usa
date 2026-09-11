@@ -184,6 +184,10 @@ export interface ApiProject {
     combinedLogo?: string;   // the JV's combined logo
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
+  /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
+  figuresAccess?: Record<string, boolean>;
+  /** Set by the server: may the requester see this project's financial figures? */
+  canSeeFigures?: boolean;
   assignedEmployees: string[];
   subcontractors: Array<{ name: string; scope: string; subId: string; contact?: string; email?: string; phone?: string; notes?: string; invoiceAmount?: string; userId?: string; acceptedOfferId?: string; customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }> }>;
   customTabs: Array<{

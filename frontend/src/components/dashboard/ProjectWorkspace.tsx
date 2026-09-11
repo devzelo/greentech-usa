@@ -316,6 +316,7 @@ export default function ProjectWorkspace() {
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [editingGuest, setEditingGuest] = useState<ApiGuest | null>(null);
   const [guestStep, setGuestStep] = useState<1 | 2 | 3>(1);
+  const [gFigures, setGFigures] = useState(false);   // financial figures access in the access wizard
   const [gName, setGName] = useState("");
   const [gEmail, setGEmail] = useState("");
   const [gPassword, setGPassword] = useState("");
@@ -573,6 +574,7 @@ export default function ProjectWorkspace() {
   const [empAssignStep, setEmpAssignStep] = useState<1 | 2>(1);
   const [empAssignPerms, setEmpAssignPerms] = useState<Record<string, "none" | "view" | "edit">>({});
   const [empAssignBusy, setEmpAssignBusy] = useState(false);
+  const [empAssignFigures, setEmpAssignFigures] = useState(true);   // GT staff see the figures by default
   const [empPicked, setEmpPicked] = useState<string[]>([]);
   const [assignedEmployees, setAssignedEmployees] = useState<string[]>([]);
   const [empSearch, setEmpSearch] = useState("");
@@ -2089,6 +2091,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const initialPerms: Record<string, "none" | "view" | "edit"> = {};
     allTabsAll.forEach((t) => { initialPerms[t.id] = "none"; });
     setGPerms(initialPerms); setGAlsoProjects([]); setGExpiry(""); setGuestStep(1);
+    setGFigures(false);   // an outside login does not see the financial figures unless switched on
     setGrantingForSubIdx(null); setGrantingPartner(false); setGrantingVendor(false);
     setShowGuestModal(true);
     // Load the owner's other projects (for "also assign") and the reusable guest list.
@@ -2172,7 +2175,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setGName(""); setGEmail(""); setGPassword("");
   };
 
-  const closeEmpPicker = () => { setEmpPickerOpen(false); setEmpAssignStep(1); setEmpAssignPerms({}); setEmpPicked([]); };
+  const closeEmpPicker = () => { setEmpPickerOpen(false); setEmpAssignStep(1); setEmpAssignPerms({}); setEmpPicked([]); setEmpAssignFigures(true); };
   // CR-P (76)/(77) — assign the ticked employees in one go: pick them, choose the tabs they get
   // (every tab Hidden until allowed), Save. Each person's tab grant is written BEFORE they join the
   // project, so a newly assigned employee never has a moment of full access.
@@ -2196,8 +2199,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         else await createGuest(id, { name: p.name, email: p.email, password: "", tabPermissions: perms });
       }
       const next = Array.from(new Set([...assignedEmployees, ...empPicked]));
-      await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>);
+      // Financial figures: the choice made in the tab step, per person.
+      const figs = { ...(project?.figuresAccess || {}) };
+      for (const p of people) if (p.id) figs[p.id] = empAssignFigures;
+      await updateProject(id, { assignedEmployees: next, figuresAccess: figs } as Partial<ApiProject>);
       setAssignedEmployees(next);
+      setProject((pr) => (pr ? { ...pr, figuresAccess: figs } : pr));
       await refreshGuests();
       toast(`${people.length} employee${people.length === 1 ? "" : "s"} assigned.`, "success");
       closeEmpPicker();
@@ -2265,6 +2272,41 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     finally { setAccessBusy(null); }
   };
 
+  // Financial figures access (client request, 2026-09-11) — who sees this project's value and its
+  // expense / income / profit totals. GT staff do unless switched off; outside logins (subs,
+  // vendors, JV partners) only when switched on. The server applies the same rule.
+  const figuresOn = (userId: string | undefined, external: boolean): boolean => {
+    const set = userId ? project?.figuresAccess?.[userId] : undefined;
+    return typeof set === "boolean" ? set : !external;
+  };
+  const setFigures = async (userId: string, on: boolean) => {
+    if (!id || !userId) return;
+    const next = { ...(project?.figuresAccess || {}), [userId]: on };
+    try {
+      await updateProject(id, { figuresAccess: next } as Partial<ApiProject>);
+      setProject((p) => (p ? { ...p, figuresAccess: next } : p));
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
+  };
+  // The Hidden / View switch for one person's financial figures.
+  const figuresSwitch = (on: boolean, pick: (v: boolean) => void) => (
+    <span className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-bold shrink-0">
+      {([[false, "Hidden"], [true, "View"]] as const).map(([v, label]) => (
+        <button key={label} type="button" onClick={() => pick(v)}
+          className={`px-2.5 py-1 ${on === v ? (v ? "bg-slate-900 text-white" : "bg-red-500 text-white") : "bg-white text-slate-500 hover:bg-slate-50"}`}>{label}</button>
+      ))}
+    </span>
+  );
+  const figuresRow = (on: boolean, pick: (v: boolean) => void, note: string) => (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-amber-100 bg-amber-50/60">
+      <span className="min-w-0">
+        <span className="block text-xs font-bold text-slate-700">Financial figures</span>
+        <span className="block text-[10px] text-slate-500">{note}</span>
+      </span>
+      {figuresSwitch(on, pick)}
+    </div>
+  );
+  const figuresBadge = <span className="ml-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold whitespace-nowrap" title="Sees the project value and the expense, income and profit totals">Figures</span>;
+
   const openEditGuest = (guest: ApiGuest, asPartner = false) => {
     setGrantingPartner(asPartner);
     setEditingGuest(guest);
@@ -2274,6 +2316,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // Prefill the timeline as a custom date if one is set.
     setGExpiry(guest.expiresAt ? new Date(guest.expiresAt).toISOString().slice(0, 10) : "");
     setGPerms(perms); setGAlsoProjects([]); setGuestStep(2);
+    // Financial figures: an employee's grant defaults to on, an outside login's to off.
+    setGFigures(figuresOn(guest.userId, !employeePool.some((e) => e.id === guest.userId)));
     setShowGuestModal(true);
   };
 
@@ -2317,6 +2361,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           password: gPassword.trim() || undefined,
           expiresAt,
         });
+        await setFigures(editingGuest.userId, gFigures);
         toast(`${guestNoun} updated.`, "success");
       } else {
         const created = await createGuest(id, {
@@ -2334,6 +2379,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           setSubcontractors(next);
           try { await updateProject(id, { subcontractors: next } as Partial<ApiProject>); } catch { /* ignore */ }
         }
+        if (created?.userId) await setFigures(created.userId, gFigures);
         toast(`${guestNoun} created. Share the email & password manually.`, "success");
       }
       await refreshGuests();
@@ -2846,6 +2892,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const isAssigned = !isGuest && !!(project && myEmpId && assignedEmployees.includes(myEmpId));
   const guestHasAccess = isGuest && Object.keys(myGuestPerms).length > 0;
   const hasAnyAccess = isOwner || isAssigned || guestHasAccess;
+  // Financial figures access — the server decides (lib/access canSeeFigures): the project value,
+  // the finance strip, the expense totals and the Quick Report show only when it says yes.
+  const canSeeFigures = project?.canSeeFigures !== false;
   // CR-P-30 — Finances sub-tab permissions (expenses / invoice-sent / invoice-received), mirroring
   // the procurement model. Defined here so the active-tab edit flag can honour a per-sub-tab grant.
   // hasAnyFinPerm must be declared BEFORE finPermFor runs (finNav calls it during this render) —
@@ -3247,6 +3296,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <button key={v} type="button" onClick={() => setEmpAssignPerms(Object.fromEntries(allTabsAll.map((t) => [t.id, v])))} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-400">{label}</button>
                   ))}
                 </div>
+                {figuresRow(empAssignFigures, setEmpAssignFigures, "Project value, expense and income totals, estimated profit. On by default for GT employees.")}
                 <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
                   {allTabsAll.map((t) => {
                     const isChild = !!(customTabs.find((c) => c.id === t.id)?.parentId);
@@ -3423,7 +3473,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </span>
                   </>
                 )}
-                {project.value && (
+                {project.value && canSeeFigures && (
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
                     <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400" title="Project value / worth">
@@ -3501,7 +3551,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               )}
 
               {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
-              {!isGuest && (
+              {canSeeFigures && (
                 <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
                   <FileText size={14} /> Quick Report
                 </button>
@@ -3557,7 +3607,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           </div>
         </div>
         {/* CR-P-15 — five-number financial overview of this project */}
-        {!isGuest && (
+        {canSeeFigures && (
           <div className="mt-4 pt-4 border-t border-slate-100">
             <FinanceStrip five={projectFive} />
           </div>
@@ -4926,7 +4976,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </p>
                   </div>
                   {isOwner && (
-                    <button onClick={() => { setEmpPickerOpen(true); setEmpSearch(""); setEmpPicked([]); setEmpAssignStep(1); setEmpAssignPerms({}); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
+                    <button onClick={() => { setEmpPickerOpen(true); setEmpSearch(""); setEmpPicked([]); setEmpAssignStep(1); setEmpAssignPerms({}); setEmpAssignFigures(true); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
                       <Plus size={13} /> Assign employee
                     </button>
                   )}
@@ -4983,6 +5033,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{visibleTabCount} of {allTabsAll.length} tabs</span>
                                 )}
+                                {figuresOn(emp?.id, false) && figuresBadge}
                               </td>
                               {isOwner && (
                                 <td className="px-3 py-2.5 align-top">
@@ -5194,6 +5245,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
                                     : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
                                     : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
+                                  {g && figuresOn(g.userId, true) && figuresBadge}
                                 </td>
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center gap-1.5 justify-end">
@@ -5368,6 +5420,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
                                     : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
                                     : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
+                                  {g && figuresOn(g.userId, true) && figuresBadge}
                                 </td>
                                 <td className="px-3 py-2.5 align-top">
                                   <div className="flex items-center gap-1.5 justify-end">
@@ -5737,7 +5790,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   )}
                 </div>
               </div>
-              {/* CR-P-15 — approved / pending expense totals on top of the Expense Log. */}
+              {/* CR-P-15 — approved / pending expense totals on top of the Expense Log (only for those
+                  who may see the project's financial figures). */}
+              {canSeeFigures && (
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
                   <span className="text-lg font-display font-bold text-emerald-600 leading-none">{fmtMoney(projectFive.approvedExpenses)}</span>
@@ -5752,6 +5807,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Expenses</span>
                 </span>
               </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[920px] text-xs">
                   <thead>
@@ -7425,6 +7481,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </p>
               )}
 
+              {/* Financial figures — saved straight away, apart from the tabs (saving the tabs
+                  would also limit an employee who has full access). */}
+              {emp?.id && (
+                <div className="mb-3">
+                  {figuresRow(figuresOn(emp.id, false), (v) => { void setFigures(emp.id, v).then(() => toast(v ? "They can see the financial figures." : "Financial figures hidden from them.", "success")); }, "Project value, expense and income totals, estimated profit. Saved straight away.")}
+                </div>
+              )}
               <div className="space-y-1 overflow-y-auto pr-1 flex-grow">
                 {allTabsAll.map((t) => {
                   const isChild = !!(customTabs.find((c) => c.id === t.id)?.parentId);
@@ -7556,6 +7619,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       </div>
                     </div>
                   )}
+                  {figuresRow(gFigures, setGFigures, `Project value, expense and income totals, estimated profit. Off by default for a ${guestNounLc}.`)}
                   <div>
                     <p className="text-sm font-bold text-slate-700 mb-1">Tab Access</p>
                     <p className="text-[10px] text-slate-400 mb-3">Hidden tabs are invisible to the {guestNounLc}. View = read &amp; preview only. Edit = can also upload/change content.</p>

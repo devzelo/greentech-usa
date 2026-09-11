@@ -48,6 +48,25 @@ export function isProjectGuest(project: ProjectLike, userId: string): boolean {
 }
 
 /**
+ * Financial figures access (client request, 2026-09-11) — may this person see the project's
+ * financial figures: its value and its expense / income / profit totals? "By default only GT direct
+ * employees, not vendors, subs, etc. ... we can give permission to whoever needs to see them."
+ * The owner and admins always do. Otherwise the owner's switch for that person decides, and with no
+ * switch set, GT staff do and outside logins (subcontractors, vendors, JV partners) do not.
+ */
+export function canSeeFigures(
+  project: { ownerId?: unknown; figuresAccess?: Record<string, boolean> | null },
+  userId: string,
+  role: string,
+): boolean {
+  if (role === "admin") return true;
+  if (project.ownerId && String(project.ownerId) === String(userId)) return true;
+  const set = project.figuresAccess?.[String(userId)];
+  if (typeof set === "boolean") return set;
+  return role !== "subcontractor";
+}
+
+/**
  * Resolve a document's `section` to the workspace tab id that owns it, so we can
  * honour per-tab access (tabAccess for employees, tabPermissions for guests).
  * Returns null when the section doesn't belong to a gated tab.

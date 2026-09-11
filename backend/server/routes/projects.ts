@@ -8,7 +8,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { getProjectAccess, isProjectGuest } from "../lib/access";
+import { getProjectAccess, isProjectGuest, canSeeFigures } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
 import { duplicateProject } from "../lib/duplicateProject";
@@ -37,6 +37,21 @@ function accessStub(project: { toObject: () => unknown }) {
   return { ...stub, _id: src._id, createdAt: src.createdAt, updatedAt: src.updatedAt, noAccess: true };
 }
 
+// Financial figures access (client request, 2026-09-11) — a project as this requester may receive
+// it: without permission to see the figures (lib/access canSeeFigures) the project value comes back
+// blank, and who has been switched on or off is for the owner (and admins) only. `canSeeFigures`
+// tells the screen whether to show the value, the finance strip and the expense totals.
+function shapeFigures(project: unknown, userId: string, role: string): Record<string, unknown> {
+  const doc = project as { toObject?: () => unknown };
+  const obj = (typeof doc.toObject === "function" ? doc.toObject() : { ...(project as object) }) as Record<string, unknown>;
+  const can = canSeeFigures(obj as { ownerId?: unknown; figuresAccess?: Record<string, boolean> }, userId, role);
+  const isOwner = !!obj.ownerId && String(obj.ownerId) === String(userId);
+  if (!isOwner && role !== "admin") delete obj.figuresAccess;
+  if (!can) obj.value = "";
+  obj.canSeeFigures = can;
+  return obj;
+}
+
 const router = Router();
 
 // All routes require auth
@@ -46,7 +61,12 @@ router.use(requireAuth);
 // (qty x unit price) per project, for the report PDFs. Defined before "/:id".
 router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const requested = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!requested.length) return res.json({});
+    // Financial figures access — only the projects whose figures the requester may see.
+    const ids = (await Project.find({ projectId: { $in: requested } }).select("projectId ownerId figuresAccess").lean())
+      .filter((p) => canSeeFigures(p as { ownerId?: unknown; figuresAccess?: Record<string, boolean> }, req.user!.userId, req.user!.role))
+      .map((p) => p.projectId);
     if (!ids.length) return res.json({});
     const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,7 +160,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       // Guests only ever see the (non-draft, non-archived) projects they are assigned to.
       filter = { "guests.userId": userId, status: { $ne: "Draft" }, ...archiveClause };
       const projects = await Project.find(filter).sort({ createdAt: -1 });
-      return res.json(projects);
+      return res.json(projects.map((p) => shapeFigures(p, userId, role)));
     }
     if (scope === "mine") {
       // CR-P-18b — an owner sees ALL their own projects here (including their private Drafts, via
@@ -165,7 +185,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     }
 
     const projects = await Project.find(filter).sort({ createdAt: -1 });
-    res.json(projects);
+    res.json(projects.map((p) => shapeFigures(p, userId, role)));
   } catch (err) {
     next(err);
   }
@@ -219,9 +239,9 @@ router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
         (s) => s.userId === me || (s.email && s.email.toLowerCase() === myEmail && !!myEmail)
       );
       obj.guests = (obj.guests || []).filter((g) => String(g.userId) === me);
-      return res.json(obj);
+      return res.json(shapeFigures(obj, me, req.user!.role));
     }
-    res.json(project);
+    res.json(shapeFigures(project, req.user!.userId, req.user!.role));
   } catch (err) {
     next(err);
   }
@@ -285,6 +305,7 @@ const IDENTITY_FIELDS = new Set([
   // POs and agreements — owner-only, like the rest of the project identity.
   "jointVenture",
   "assignedEmployees", "tabAccess", "gallery", "showClientName",
+  "figuresAccess",   // financial figures access: only the owner decides who sees them
   "financialProposalLocked",  // CR-B-19b — restrict the Financial Proposal to the owner
 ]);
 
@@ -371,7 +392,7 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
       }
     }
 
-    res.json(project);
+    res.json(project ? shapeFigures(project, userId, req.user!.role) : project);
   } catch (err) {
     next(err);
   }
