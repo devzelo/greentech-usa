@@ -9,7 +9,10 @@ const KIND_BADGE: Record<string, string> = {
 
 export default function ProposalSectionManager({
   layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, userName,
+  numbering = "numbers", onNumberingChange,
 }: {
+  numbering?: "numbers" | "letters";                    // CR-P (95) - 1, 2, 3 or Section A, B, C
+  onNumberingChange?: (n: "numbers" | "letters") => void;
   layout: ProposalSectionMeta[];
   onLayoutChange: (next: ProposalSectionMeta[]) => void;
   onAdd: (title: string) => void;
@@ -50,6 +53,15 @@ export default function ProposalSectionManager({
             <p className="text-[10px] text-slate-400 mt-0.5">Reorder with the ↑ ↓ arrows on each section below, or expand this list. The document follows this order.</p>
           </div>
         </div>
+        {/* CR-P (95) - the client's proposals label sections A, B, C ("Section A: Performance Schedule"). */}
+        {onNumberingChange && (
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 ml-auto mr-2" role="radiogroup" aria-label="Section numbering">
+            {([["numbers", "1, 2, 3"], ["letters", "A, B, C"]] as const).map(([v, l]) => (
+              <button key={v} type="button" role="radio" aria-checked={numbering === v} disabled={!canEdit} onClick={() => onNumberingChange(v)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${numbering === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>{l}</button>
+            ))}
+          </div>
+        )}
         {canEdit && (
           <div className="relative flex items-center gap-2">
             <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800"><Plus size={12} /> Add section</button>
@@ -59,6 +71,11 @@ export default function ProposalSectionManager({
                 <div className="absolute right-0 mt-2 w-64 max-h-80 overflow-y-auto bg-white rounded-2xl shadow-2xl border border-slate-100 z-[160] p-2">
                   <button onClick={() => { onAdd(""); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-primary hover:bg-primary/5">+ Blank section (text)</button>
                   <button onClick={() => { onAddBlank(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-1.5"><FileX size={12} /> Blank page (no letterhead)</button>
+                  {/* CR-P (94/103) - client forms, SAM printouts, certificates: uploaded PDFs printed in place, as they are. */}
+                  <button onClick={() => { onAdd("Uploaded Documents"); setMenuOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">
+                    + Uploaded documents
+                    <span className="block text-[10px] font-medium text-slate-400">Client forms, SAM printouts, certificates. PDFs print in place, as uploaded.</span>
+                  </button>
                   <div className="my-1 border-t border-slate-100" />
                   <p className="px-3 py-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Standard sections</p>
                   {PROPOSAL_STANDARD_SECTIONS.map((s) => (
@@ -90,6 +107,18 @@ export default function ProposalSectionManager({
               disabled={!canEdit || locked}
               className="flex-grow min-w-[8rem] bg-transparent text-xs font-bold text-slate-700 outline-none border-b border-transparent focus:border-primary/30 py-1"
             />
+            {/* CR-P (95) - the RFP paragraph this section answers, printed in the table of contents. */}
+            {m.kind !== "blank" && (
+              <input
+                value={m.rfpRef || ""}
+                onChange={(e) => patch(i, { rfpRef: e.target.value })}
+                disabled={!canEdit || locked}
+                placeholder="RFP ref."
+                aria-label={`RFP reference for ${m.title}`}
+                title="The RFP paragraph this section answers, e.g. L.5.5.3.1. Printed in the table of contents."
+                className="w-20 bg-transparent text-[11px] text-slate-500 outline-none border-b border-slate-100 focus:border-primary/30 py-1"
+              />
+            )}
             {/* CR-B-15 — colour-coded per-section status. */}
             {canEdit && (
               <select value={m.status || ""} onChange={(e) => { const label = SECTION_STATUS_OPTS.find((o) => o.v === e.target.value)?.label || "No status"; patch(i, { status: e.target.value, history: [...(m.history || []), { at: new Date().toISOString(), by: userName || "Someone", text: `Status → ${label}` }] }); }} disabled={locked} className={`text-[10px] font-bold rounded-full px-2 py-1 border-0 cursor-pointer disabled:opacity-60 ${st.cls}`} title="Section status">
@@ -112,6 +141,12 @@ export default function ProposalSectionManager({
                 <button onClick={() => patch(i, { locked: !locked })} title={locked ? "Unlock section" : "Lock section"} className={`p-1.5 rounded hover:bg-slate-100 ${locked ? "text-amber-600" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
                 {m.kind !== "blank" && (
                   <button onClick={() => patch(i, { divider: !m.divider })} disabled={locked} title="Divider page before this section" className={`p-1.5 rounded hover:bg-slate-100 disabled:opacity-30 ${m.divider ? "text-primary" : "text-slate-300 hover:text-slate-600"}`}><SeparatorHorizontal size={13} /></button>
+                )}
+                {/* CR-P (103) - appendices are numbered apart: Appendix 1, 2, 3. */}
+                {m.kind !== "blank" && (
+                  <button onClick={() => patch(i, { appendix: !m.appendix })} disabled={locked} aria-pressed={!!m.appendix}
+                    title={m.appendix ? "Appendix (numbered Appendix 1, 2, ...). Click to make it a main section." : "Make this an appendix (numbered Appendix 1, 2, ...)"}
+                    className={`px-1.5 py-1 rounded text-[9px] font-extrabold tracking-wide hover:bg-slate-100 disabled:opacity-30 ${m.appendix ? "text-primary bg-primary/10" : "text-slate-300 hover:text-slate-600"}`}>APPX</button>
                 )}
                 <button onClick={() => patch(i, { hidden: !m.hidden })} title={m.hidden ? "Show" : "Hide"} className="p-1.5 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100">{m.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                 {m.kind === "custom" && <button onClick={() => onDuplicate(m)} title="Duplicate" className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-slate-100"><Copy size={13} /></button>}

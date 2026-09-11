@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
-import type { ReactNode } from "react";
+import { createElement } from "react";
+import type { ReactNode, ReactElement } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover } from "../../lib/api";
 import { resolveProposalLayout, resolveFinancialTables } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
@@ -9,6 +10,7 @@ import {
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
 import { resolveLetter } from "../../lib/proposalLetter";
+import type { ProposalPart } from "../../lib/proposalExport";
 
 // The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
 // letterhead, the look defined by the brand kit's generator scripts. Fonts register once.
@@ -46,6 +48,9 @@ const styles = StyleSheet.create({
   // Divider page
   dividerWrap: { marginTop: 200 },
   dividerTitle: { fontFamily: "Outfit", fontSize: 28, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15, marginBottom: 16 },
+  dividerKicker: { fontFamily: "Outfit", fontSize: 16, fontWeight: 600, color: BRAND.emerald, marginBottom: 4 },
+  dividerRef: { fontSize: 9, color: BRAND.s500, marginTop: -8, marginBottom: 14 },
+  dividerMeta: { fontSize: 9, color: BRAND.s600, marginTop: 3 },
 
   // Document title block (financial)
   docTitle: { fontFamily: "Outfit", fontSize: 22, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15 },
@@ -73,6 +78,7 @@ const styles = StyleSheet.create({
   tocRow: { flexDirection: "row", paddingVertical: 6, borderBottom: `0.6 solid ${BRAND.border}` },
   tocNum: { width: 30, fontSize: 9.5, fontWeight: 700, color: BRAND.emerald },
   tocText: { flex: 1, fontSize: 9.5, color: BRAND.slate },
+  tocRef: { fontSize: 8.5, color: BRAND.s500 },
 
   // Employee / project cards
   card: { backgroundColor: BRAND.mist, borderRadius: 6, padding: 10, marginBottom: 7, borderLeft: `3 solid ${BRAND.emerald}` },
@@ -392,7 +398,14 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
 }
 
 // ── Technical Proposal PDF ───────────────────────────────────────────────────
-function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [] }: { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] }) {
+type SectionFile = { name: string; url: string };
+/** The technical document as an ordered run of pages and uploaded files (see proposalParts). */
+type SeqItem = { page: ReactElement } | { files: SectionFile[] };
+type TechArgs = { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] };
+/** Does editor HTML hold anything printable (text, an image or a table)? */
+const htmlHasContent = (h: string) => !!h.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() || /<(img|table)\b/i.test(h);
+
+function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [] }: TechArgs): SeqItem[] {
   const LABEL = "Technical Proposal";
   const note = footNote(LABEL, project);
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
@@ -405,42 +418,64 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
       case "personnel": return content.employees.length > 0;
       case "pastPerformance": return content.similarProjects.length > 0;
       case "timeline": return content.timeline.length > 0;
-      case "custom": { const s = sectionFor(m.refId); return !!s && !!(s.heading || s.body); }
+      case "custom": { const s = sectionFor(m.refId); return !!s && !!(s.heading || s.body || s.attachments?.length); }
       case "blank": return true;
       default: return false;
     }
   };
   const visible = resolveProposalLayout(content).filter((m) => !m.hidden && hasContent(m));
 
-  // Number only real (non-blank) sections.
-  const numById = new Map<string, number>();
-  let nCounter = 0;
-  for (const m of visible) if (m.kind !== "blank") numById.set(m.id, ++nCounter);
-  const toc: Array<{ num?: number; title: string }> = [
-    ...visible.filter((m) => m.kind !== "blank").map((m) => ({ num: numById.get(m.id), title: m.title })),
-    ...(resumes.length > 0 ? [{ title: "Appendix: Team Resumes" }] : []),
-  ];
+  // CR-P (95/103) - labels. Main sections run 1, 2, 3, or A, B, C when the proposal uses letters
+  // (as the client's samples do: "Section A: Performance Schedule"). Appendices are numbered apart,
+  // Appendix 1, 2, 3. Blank pages get no label.
+  const letters = content.numbering === "letters";
+  const letterOf = (n: number) => { let s = ""; for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s; return s; };
+  const labelById = new Map<string, { short: string; heading: string; divider: string }>();
+  let mainN = 0, appxN = 0;
+  for (const m of visible) {
+    if (m.kind === "blank") continue;
+    if (m.appendix) {
+      const n = ++appxN;
+      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}` });
+    } else {
+      const n = ++mainN;
+      const short = letters ? letterOf(n) : String(n).padStart(2, "0");
+      labelById.set(m.id, { short, heading: `${short}.`, divider: `Section ${short}` });
+    }
+  }
+  const tocMain = visible.filter((m) => m.kind !== "blank" && !m.appendix);
+  const tocAppx = visible.filter((m) => m.kind !== "blank" && m.appendix);
+  const resumeAppx = appxN + 1;   // team resumes close the appendices
 
   // Effective per-section letterhead, then group consecutive same-letterhead sections onto shared pages.
   const eff = (m: ProposalSectionMeta): ProposalLetterhead => (m.letterhead && m.letterhead !== "inherit" ? m.letterhead : (letterhead || "gt"));
-  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] };
+  type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[] };
   const groups: Grp[] = [];
   let curGrp: Extract<Grp, { t: "content" }> | null = null;
   for (const m of visible) {
     if (m.kind === "blank") { groups.push({ t: "blank" }); curGrp = null; continue; }
     const elh = eff(m);
-    if (m.divider) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
-    if (!curGrp || curGrp.lh !== elh || m.pageBreakBefore) {
-      curGrp = { t: "content", lh: elh, items: [m] };
-      groups.push(curGrp);
-    } else {
-      curGrp.items.push(m);
+    // CR-P (94) - a section's uploaded files (client forms, SAM printouts, certificates) print right
+    // after it, as they are. A section holding only files prints as the client's samples do: a
+    // divider page, then the documents, with no empty text page in between.
+    const s = m.kind === "custom" ? sectionFor(m.refId) : undefined;
+    const files = (s?.attachments || []).filter((f) => !!f.url);
+    const filesOnly = m.kind === "custom" && files.length > 0 && !htmlHasContent(s?.body || "");
+    if (m.divider || filesOnly) { groups.push({ t: "divider", m, lh: elh }); curGrp = null; }
+    if (!filesOnly) {
+      if (!curGrp || curGrp.lh !== elh || m.pageBreakBefore) {
+        curGrp = { t: "content", lh: elh, items: [m] };
+        groups.push(curGrp);
+      } else {
+        curGrp.items.push(m);
+      }
     }
+    if (files.length) { groups.push({ t: "files", files }); curGrp = null; }
   }
   const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
-  const renderSection = (m: typeof visible[number], n: number) => {
-    const heading = <SectionHeading num={n} title={m.title} />;
+  const renderSection = (m: typeof visible[number]) => {
+    const heading = <SectionHeading label={labelById.get(m.id)?.heading} title={m.title} />;
     if (m.kind === "description") return (
       <View key={m.id}>{heading}<RichText html={content.description} keyBase="desc" /></View>
     );
@@ -496,58 +531,83 @@ function TechnicalPDF({ project, content, cover, coverLetter, backCover, letterh
     );
   };
 
-  return (
-    <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
-      <ProposalCoverPage variant={cover?.coverStyle} data={coverData("TECHNICAL PROPOSAL", cover, project)} />
+  const seq: SeqItem[] = [];
+  const page = (el: ReactElement) => { seq.push({ page: el }); };
 
-      <CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />
+  page(<ProposalCoverPage variant={cover?.coverStyle} data={coverData("TECHNICAL PROPOSAL", cover, project)} />);
+  if (coverLetter?.enabled) page(<CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />);
 
-      {toc.length > 0 && (
-        <Sheet lh={lh} label={LABEL} note={note}>
-          <SectionHeading title="Table of Contents" />
-          {toc.map((t, i) => (
-            <View key={i} style={styles.tocRow}>
-              <Text style={styles.tocNum}>{t.num !== undefined ? String(t.num).padStart(2, "0") : "A"}</Text>
-              <Text style={styles.tocText}>{t.title}</Text>
+  // Table of contents: main sections with their RFP reference, then the appendices.
+  if (tocMain.length || tocAppx.length || resumes.length) {
+    const row = (key: string, num: string, title: string, ref?: string) => (
+      <View key={key} style={styles.tocRow}>
+        <Text style={styles.tocNum}>{num}</Text>
+        <Text style={styles.tocText}>{title}{ref?.trim() ? <Text style={styles.tocRef}>{`  (reference ${ref.trim()})`}</Text> : null}</Text>
+      </View>
+    );
+    page(
+      <Sheet lh={lh} label={LABEL} note={note}>
+        <SectionHeading title="Table of Contents" />
+        {tocMain.map((m) => row(m.id, labelById.get(m.id)?.short || "", m.title, m.rfpRef))}
+        {(tocAppx.length > 0 || resumes.length > 0) && <Subhead>APPENDICES</Subhead>}
+        {tocAppx.map((m) => row(m.id, labelById.get(m.id)?.short || "", m.title, m.rfpRef))}
+        {resumes.length > 0 && row("resumes", String(resumeAppx), "Team Resumes")}
+      </Sheet>,
+    );
+  }
+
+  // Body: one page group per letterhead run, with divider / blank pages and uploaded files in place.
+  groups.forEach((g, gi) => {
+    if (g.t === "files") { seq.push({ files: g.files }); return; }
+    if (g.t === "blank") { page(<Page size="A4" style={styles.page} />); return; }
+    if (g.t === "divider") {
+      // As on the client's samples: document, "Section A:", title, reference, then who and which RFP.
+      const lbl = labelById.get(g.m.id);
+      page(
+        <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
+          <View style={styles.dividerWrap}>
+            <Eyebrow>{LABEL.toUpperCase()}</Eyebrow>
+            {!!lbl && <Text style={styles.dividerKicker}>{lbl.divider}:</Text>}
+            <Text style={styles.dividerTitle}>{g.m.title}</Text>
+            {!!g.m.rfpRef?.trim() && <Text style={styles.dividerRef}>Reference {g.m.rfpRef.trim()}</Text>}
+            <GradBar w={120} h={4} r={2} id={`divider-${gi}`} />
+            <View style={{ marginTop: 14 }}>
+              <Text style={styles.dividerMeta}>{cover?.submittedBy || defaultSubmitter(project)}</Text>
+              {!!cover?.solicitationNo && <Text style={styles.dividerMeta}>{cover.solicitationNo}</Text>}
             </View>
-          ))}
-        </Sheet>
-      )}
+          </View>
+        </Sheet>,
+      );
+      return;
+    }
+    page(
+      <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
+        {g.items.map((m) => renderSection(m))}
+      </Sheet>,
+    );
+  });
 
-      {/* Body: one page group per letterhead run, with optional divider / blank pages */}
-      {groups.map((g, gi) => {
-        if (g.t === "blank") return <Page key={`g-${gi}`} size="A4" style={styles.page} />;
-        if (g.t === "divider") {
-          const n = numById.get(g.m.id) || 0;
-          return (
-            <Sheet key={`g-${gi}`} lh={hConf(g.lh)} label={LABEL} note={note}>
-              <View style={styles.dividerWrap}>
-                <Eyebrow>{`SECTION ${String(n).padStart(2, "0")}`}</Eyebrow>
-                <Text style={styles.dividerTitle}>{g.m.title}</Text>
-                <GradBar w={120} h={4} r={2} id={`divider-${gi}`} />
-              </View>
-            </Sheet>
-          );
-        }
-        return (
-          <Sheet key={`g-${gi}`} lh={hConf(g.lh)} label={LABEL} note={note}>
-            {g.items.map((m) => renderSection(m, numById.get(m.id) || 0))}
-          </Sheet>
-        );
-      })}
+  // Team resumes, one section per person, numbered after the other appendices.
+  resumes.forEach((r, i) => page(
+    <Sheet lh={lh} label="Team Resumes" note={footNote("Team Resumes", project)}>
+      {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Team Resumes" />}
+      {!!r.role && <Text style={[styles.cardMeta, { marginBottom: 8 }]}>Proposed role: {r.role}</Text>}
+      <ResumeBlock resume={r.data.resume} person={r.data.user} />
+    </Sheet>,
+  ));
 
-      {/* Appendix: full resume of each team member, one section per person */}
-      {resumes.map((r, i) => (
-        <Sheet key={`resume-${i}`} lh={lh} label="Team Resumes" note={footNote("Team Resumes", project)}>
-          {i === 0 && <SectionHeading title="Appendix: Team Resumes" />}
-          {!!r.role && <Text style={[styles.cardMeta, { marginBottom: 8 }]}>Proposed role: {r.role}</Text>}
-          <ResumeBlock resume={r.data.resume} person={r.data.user} />
-        </Sheet>
-      ))}
+  if (backCover?.enabled) page(<BackCoverPage backCover={backCover} />);
+  return seq;
+}
 
-      <BackCoverPage backCover={backCover} />
-    </Document>
-  );
+// Pages passed as createElement arguments, so they need no list keys.
+const asDocument = (title: string, pages: ReactElement[]) => createElement(Document, { title, author: COMPANY.name }, ...pages);
+
+/** The technical proposal as one react-pdf document. Uploaded section files are not in it; the
+ *  assembled download and preview include them (see proposalParts). */
+function TechnicalPDF(props: TechArgs) {
+  const pages = technicalSequence(props).flatMap((s) => ("page" in s ? [s.page] : []));
+  return asDocument(`${props.cover?.proposalTitle || props.project.name} - Technical Proposal`, pages);
 }
 
 // ── Financial Proposal PDF ───────────────────────────────────────────────────
@@ -651,4 +711,39 @@ export default function ProposalPDF({
   return kind === "technical"
     ? <TechnicalPDF project={project} content={technical} cover={cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={logoUrl} resumes={resumes} />
     : <FinancialPDF project={project} content={financial} cover={cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={logoUrl} />;
+}
+
+export interface ProposalPdfProps {
+  kind: "technical" | "financial";
+  project: ApiProject;
+  cover?: ProposalCover;
+  coverLetter?: ProposalCoverLetter;
+  backCover?: ProposalBackCover;
+  letterhead?: ProposalLetterhead;
+  customLetterheadUrl?: string;
+  technical: TechnicalProposalContent;
+  financial: FinancialProposalContent;
+  logoUrl?: string;
+  resumes?: ProposalTeamResume[];
+}
+
+/**
+ * CR-P (94) - the proposal as parts for assembly: generated pages, split around each section's
+ * uploaded files so client forms land exactly where their section sits (lib/proposalExport).
+ */
+export function proposalParts(p: ProposalPdfProps): ProposalPart[] {
+  if (p.kind === "financial") {
+    return [{ type: "doc", element: <FinancialPDF project={p.project} content={p.financial} cover={p.cover} coverLetter={p.coverLetter} backCover={p.backCover} letterhead={p.letterhead} customLetterheadUrl={p.customLetterheadUrl} logoUrl={p.logoUrl} /> }];
+  }
+  const title = `${p.cover?.proposalTitle || p.project.name} - Technical Proposal`;
+  const seq = technicalSequence({ project: p.project, content: p.technical, cover: p.cover, coverLetter: p.coverLetter, backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl, resumes: p.resumes });
+  const parts: ProposalPart[] = [];
+  let pages: ReactElement[] = [];
+  const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages) }); pages = []; };
+  for (const s of seq) {
+    if ("page" in s) pages.push(s.page);
+    else { flush(); parts.push({ type: "files", files: s.files }); }
+  }
+  flush();
+  return parts;
 }

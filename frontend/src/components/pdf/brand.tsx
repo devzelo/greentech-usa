@@ -139,12 +139,13 @@ export function Eyebrow({ children, color = BRAND.emerald }: { children: ReactNo
   );
 }
 
-/** "01.  SECTION TITLE" with an emerald rule, the body heading from the proposal template. */
-export function SectionHeading({ num, title }: { num?: number; title: string }) {
+/** "01.  SECTION TITLE" with an emerald rule, the body heading from the proposal template. The
+ *  label is printed as given: "01.", "A." or "APPENDIX 1:". */
+export function SectionHeading({ label, title }: { label?: string; title: string }) {
   return (
     <View minPresenceAhead={60} style={{ flexDirection: "row", alignItems: "baseline", borderBottom: `1.4 solid ${BRAND.emerald}`, paddingBottom: 4, marginTop: 16, marginBottom: 10 }}>
-      {num !== undefined && (
-        <Text style={{ fontFamily: "Inter", fontSize: 11.5, fontWeight: 700, color: BRAND.emerald, marginRight: 8 }}>{String(num).padStart(2, "0")}.</Text>
+      {!!label && (
+        <Text style={{ fontFamily: "Inter", fontSize: 11.5, fontWeight: 700, color: BRAND.emerald, marginRight: 8 }}>{label}</Text>
       )}
       <Text style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.4, flex: 1 }}>{title.toUpperCase()}</Text>
     </View>

@@ -32,7 +32,7 @@ import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
-import ProposalPDF, { type ProposalTeamResume } from "./ProposalPDF";
+import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
 import * as XLSX from "xlsx";
@@ -54,7 +54,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
-import { assembleProposalPdf, downloadBlob } from "../../lib/proposalExport";
+import { assembleProposalParts, downloadBlob } from "../../lib/proposalExport";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
@@ -1107,14 +1107,28 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const buildProposalBlob = async (which: "technical" | "financial", withAttachments: boolean): Promise<Blob> => {
     if (!project || !id) throw new Error("Project not loaded.");
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
-    const el = (
-      <ProposalPDF kind={which} project={project} cover={which === "financial" ? coverFinancial : cover} coverLetter={which === "financial" ? coverLetterFinancial : coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />
-    );
+    // CR-P (94) - generated pages and each section's uploaded files, in document order.
+    const parts = proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes });
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
-    const { blob, skipped } = await assembleProposalPdf(el, atts);
+    const { blob, skipped } = await assembleProposalParts(parts, atts);
     if (skipped.length) toast(`Attached but couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
     return blob;
   };
+
+  // The preview shows the assembled file (section uploads in place, page numbers), rebuilt each
+  // time the preview opens.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!proposalPreview) { setPreviewUrl(null); return; }
+    let alive = true;
+    let made: string | null = null;
+    setPreviewUrl(null);
+    buildProposalBlob(proposalPreview, false)
+      .then((b) => { if (!alive) return; made = URL.createObjectURL(b); setPreviewUrl(made); })
+      .catch((e) => { if (alive) { toast(e instanceof Error ? e.message : "Could not build the preview.", "error"); setProposalPreview(null); } });
+    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalPreview]);
 
   // Build & download the proposal PDF — optionally merging the section's uploaded attachments.
   const downloadProposal = async (which: "technical" | "financial", withAttachments: boolean) => {
@@ -3835,10 +3849,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               <button onClick={() => setSectionAttachments(s.id, (s.attachments || []).filter((_, j) => j !== ai))} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
                             </span>
                           ))}
-                          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title="Attach a pre-made file to this section">
+                          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title="PDFs print right after this section, exactly as uploaded (no letterhead). Images get a page each. Word or Excel: save as PDF first.">
                             <Upload size={11} /> Upload
                             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSectionDoc(s.id, f); e.target.value = ""; }} />
                           </label>
+                          {/* CR-P (94) - these used to be stored but never printed. */}
+                          <span className="text-[10px] text-slate-400">PDFs print right after this section, as uploaded.</span>
                         </div>
                       )}
                     </div>
@@ -3879,6 +3895,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
                     onAssign={assignLayoutSection}
                     userName={getAuthUser()?.name}
+                    numbering={technical.numbering || "numbers"}
+                    onNumberingChange={(n) => setTech("numbering", n)}
                   />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}
@@ -4056,11 +4074,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </div>
                   </div>
                   <div className="flex-1 bg-slate-200">
-                    <BlobProvider document={<ProposalPDF kind={proposalPreview} project={project} cover={proposalPreview === "financial" ? coverFinancial : cover} coverLetter={proposalPreview === "financial" ? coverLetterFinancial : coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} technical={technical} financial={financial} logoUrl={logoUrl} resumes={teamResumes} />}>
-                      {({ url, loading }) => (loading || !url)
-                        ? <div className="flex items-center justify-center h-full text-slate-500 text-sm gap-2"><Loader2 className="animate-spin" size={18} /> Generating preview…</div>
-                        : <iframe src={url} title="Proposal preview" className="w-full h-full border-0" />}
-                    </BlobProvider>
+                    {/* CR-P (94) - the preview is the assembled file, so a section's uploaded client forms show in place. */}
+                    {!previewUrl
+                      ? <div className="flex items-center justify-center h-full text-slate-500 text-sm gap-2"><Loader2 className="animate-spin" size={18} /> Generating preview…</div>
+                      : <iframe src={previewUrl} title="Proposal preview" className="w-full h-full border-0" />}
                   </div>
                 </div>
               )}
