@@ -712,7 +712,8 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
       const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
       const finRev = Math.max(0, ((propDocs.financial[0]?.version) || 1) - 1);
       const note = `Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(out.size)}${overLimit ? " · over the 30 MB email limit" : ""}`;
-      await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial", note, status: "draft" }, out, `${safe}.pdf`);
+      // CR-P (87) - the pack is a produced document, not a draft: drafts live in the builder tabs.
+      await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial", note, status: "final" }, out, `${safe}.pdf`);
       await loadNextFinalVer();
       toast("Combined proposal created.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not combine the proposals.", "error"); }
@@ -3504,7 +3505,8 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                 {docs.length === 0 && (
                                   <tr>
                                     <td colSpan={8} className="px-5 py-6 text-center text-xs text-slate-400 italic">
-                                      No revisions yet. {p.which === "combined" ? "Combine the technical and financial proposals once both exist." : "Build it and use Mark as Final to file Rev 0 here, or upload one that already exists."}
+                                      {/* CR-P (87) - only produced proposals are listed; drafts stay in their own tab. */}
+                                      Nothing filed yet. {p.which === "combined" ? "Combine the technical and financial proposals once both exist." : "Drafts stay in the builder tab. Use Mark as Final there to file Rev 0 here, or upload one that already exists."}
                                     </td>
                                   </tr>
                                 )}
@@ -3661,7 +3663,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
               {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "versions" && (
                 <SavedVersionsPanel
                   heading={`Saved ${proposalSub === "technical" ? "Technical" : "Financial"} Proposal Versions`}
-                  subtitle="Freeze a PDF copy of this proposal (with attachments merged). Preview, print, or download any revision — including the one sent to the client."
+                  subtitle="Each save files a frozen PDF of this proposal (attachments merged) as the next revision in the proposals table. Work in progress stays here in the builder until you file it."
                   canEdit={canEdit}
                   formats={[{
                     label: "PDF", ext: "pdf",
@@ -3671,6 +3673,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                   // CR-P (84) - same stream as the overview table, so it numbers from Rev 0 too, and
                   // saving or deleting here keeps the overview's numbers in step.
                   zeroBased
+                  finalOnly
                   fetchNextVersion={() => fetchNextSavedVersion(id, "proposal", proposalSub)}
                   fetchList={() => fetchSavedDocuments(id, "proposal", proposalSub)}
                   saveVersion={(file, fileName, meta) => saveDocumentVersion(id, { kind: "proposal", refId: proposalSub, title: meta.title, status: meta.status }, file, fileName).then(async (d) => { await loadNextFinalVer(); return d; })}

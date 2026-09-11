@@ -27,6 +27,10 @@ export interface SavedVersionsPanelProps {
   // The real next number from the server. Deleted numbers are never reused, so "newest + 1" from
   // the list can be wrong after a deletion.
   fetchNextVersion?: () => Promise<number>;
+  // CR-P (87) - every save is a filed revision; no draft copies. Proposal drafts live in the builder
+  // itself ("the drafts live in their own tabs"), so only produced revisions reach the overview and
+  // no revision number is spent on a draft.
+  finalOnly?: boolean;
 }
 
 async function downloadFile(url: string, name: string) {
@@ -53,7 +57,7 @@ function printFile(url: string) {
 }
 
 export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
-  const { heading = "Saved Versions", subtitle, canEdit, formats, fetchList, saveVersion, update, remove, toast, zeroBased, fetchNextVersion } = props;
+  const { heading = "Saved Versions", subtitle, canEdit, formats, fetchList, saveVersion, update, remove, toast, zeroBased, fetchNextVersion, finalOnly } = props;
   const [list, setList] = useState<ApiSavedDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -85,12 +89,12 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
 
   const handleSave = async (fmt: SaveFormat) => {
     // CR-B-21 — finalizing files the frozen copy into this directory; confirm & name the revision.
-    if (isFinal && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you sure you're done with this? It will be saved as Final revision ${revNum(nextVersion)} in this directory (Saved Versions), a frozen copy you can preview, print, or download. It won't change when you keep editing.`, confirmLabel: "Save as Final", cancelLabel: "Keep editing", danger: false }))) return;
+    if ((finalOnly || isFinal) && !(await dlgConfirm({ title: "Mark as Final?", message: `Are you sure you're done with this? It will be saved as Final revision ${revNum(nextVersion)} in this directory (Saved Versions), a frozen copy you can preview, print, or download. It won't change when you keep editing.`, confirmLabel: "Save as Final", cancelLabel: "Keep editing", danger: false }))) return;
     setBusy(true);
     try {
       const blob = await fmt.build();
       const safe = fmt.baseName.replace(/[^a-z0-9._-]+/gi, "_");
-      const doc = await saveVersion(blob, `${safe}.${fmt.ext}`, { title: title.trim() || undefined, status: isFinal ? "final" : "draft" });
+      const doc = await saveVersion(blob, `${safe}.${fmt.ext}`, { title: title.trim() || undefined, status: finalOnly || isFinal ? "final" : "draft" });
       setList((p) => [doc, ...p]);
       setTitle(""); setIsFinal(false); setOpen(false);
       refreshNext();
@@ -141,10 +145,12 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
             placeholder="Label (optional, e.g. 'First draft' or 'Sent to client')"
             className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} className="accent-emerald-600" />
-            Mark as final (the copy sent to the client)
-          </label>
+          {!finalOnly && (
+            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+              <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} className="accent-emerald-600" />
+              Mark as final (the copy sent to the client)
+            </label>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {formats.map((f) => (
               <button key={f.label} disabled={busy} onClick={() => handleSave(f)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold hover:opacity-90 disabled:opacity-50">
@@ -184,7 +190,7 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
                   <button onClick={() => window.open(url, "_blank")} title="Preview" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Eye size={14} /></button>
                   <button onClick={() => printFile(url)} title="Print" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Printer size={14} /></button>
                   <button onClick={() => downloadFile(url, d.fileName)} title="Download" className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-white"><Download size={14} /></button>
-                  {canEdit && (
+                  {canEdit && !finalOnly && (
                     <button onClick={() => toggleFinal(d)} title={d.status === "final" ? "Mark as draft" : "Mark as final"} className={`p-1.5 rounded-lg hover:bg-white ${d.status === "final" ? "text-emerald-500" : "text-slate-300 hover:text-emerald-500"}`}><Lock size={14} /></button>
                   )}
                   {canEdit && (
