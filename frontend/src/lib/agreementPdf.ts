@@ -606,7 +606,7 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   {
     const colW = (PAGE_W - M * 2 - 24) / 2;
     const recipient = ag.signatures?.recipient;
-    const blocks: Array<{ party?: { name?: string; contactName?: string; email?: string; phone?: string }; sig: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string } }> = [
+    const blocks: Array<{ party?: { name?: string; contactName?: string; address?: string; email?: string; phone?: string }; sig: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string } }> = [
       { party: ag.partySnapshot?.party1, sig: ag.signatures?.company || {} },
       {
         party: ag.partySnapshot?.party2,
@@ -623,7 +623,7 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     const drawSig = async (
       x: number,
       topY: number,
-      party: { name?: string; contactName?: string; email?: string; phone?: string } | undefined,
+      party: { name?: string; contactName?: string; address?: string; email?: string; phone?: string } | undefined,
       s: { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string },
     ) => {
       let y = topY;
@@ -639,6 +639,12 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
       // The signer, falling back to the party's contact person so the line is never blank.
       cur.page.drawText((s.signerName || party?.contactName || "—").slice(0, 40), { x, y, size: 10, font: bold, color: INK }); y -= 12;
       if (s.signerTitle) { cur.page.drawText(s.signerTitle.slice(0, 50), { x, y, size: 8, font, color: MUTED }); y -= 11; }
+      // CR-P (46) — name, company, ADDRESS, email and phone, all from the party's Directory record.
+      // The address wraps to the column rather than being cut off.
+      for (const line of wrap(font, party?.address || "", 8, colW - 4)) {
+        if (!line) continue;
+        cur.page.drawText(line, { x, y, size: 8, font, color: MUTED }); y -= 10;
+      }
       for (const line of [party?.email, party?.phone].filter(Boolean) as string[]) {
         cur.page.drawText(line.slice(0, 46), { x, y, size: 8, font, color: MUTED }); y -= 10;
       }
@@ -648,7 +654,7 @@ export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
 
     for (let i = 0; i < blocks.length; i += 2) {
       cur.gap(18);
-      cur.need(150);           // a block must never be split across a page
+      cur.need(175);           // a block must never be split across a page (room for the address too)
       const topY = cur.y;
       const eL = await drawSig(M, topY, blocks[i].party, blocks[i].sig);
       const eR = blocks[i + 1] ? await drawSig(M + colW + 24, topY, blocks[i + 1].party, blocks[i + 1].sig) : topY;
