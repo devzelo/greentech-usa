@@ -37,6 +37,21 @@ const STATUS_META: Record<TechDocStatus, { label: string; cls: string; Icon: typ
 const STATUSES: TechDocStatus[] = ["Pending", "Approved", "ApprovedAsNoted", "Rejected"];
 const CUSTOM = "__custom__";
 
+// CR-P (141) — a submittal's default name: the project's abbreviation and the stage, e.g.
+// "CWPR 10% Submittal" (initials of the project name; a one-word name is shortened).
+export function projectAbbr(name?: string, fallback = ""): string {
+  const words = (name || "").replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
+  const a = words.length > 1 ? words.map((w) => w[0]).join("").slice(0, 6) : (words[0] || "").slice(0, 6);
+  return a.toUpperCase() || fallback;
+}
+const autoTitle = (abbr: string, stage: string) => [abbr, stage].filter(Boolean).join(" ");
+
+// CR-P (142) — the folders in one file bucket: saved ones and the ones files sit in.
+const folderCount = (row: ApiTechnicalDoc, key: string) => new Set([
+  ...(row.folders || []).filter((f) => f.category === key).map((f) => f.name),
+  ...row.files.filter((f) => f.category === key && f.folder).map((f) => f.folder),
+]).size;
+
 // A previewable file for the DocumentViewer / preview modal.
 const toViewable = (f: { name: string; filePath: string; fileType?: string }) => ({ name: f.name, url: techDocFileUrl(f), fileType: f.fileType || (f.name.split(".").pop() || "") });
 
@@ -51,6 +66,7 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
   const [manageId, setManageId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; files: ApiTechDocFile[] } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const abbr = projectAbbr(projectName, projectId);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
@@ -81,7 +97,7 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
 
   const addRow = async (kind: "drawing" | "other") => {
     setBusy(true);
-    try { const d = await createTechnicalDoc(projectId, { kind }); setRows((p) => [...p, d]); setManageId(d._id); }
+    try { const d = await createTechnicalDoc(projectId, kind === "drawing" ? { kind, title: autoTitle(abbr, "10% Submittal") } : { kind }); setRows((p) => [...p, d]); setManageId(d._id); }
     catch (e) { setErr(e instanceof Error ? e.message : "Failed to add."); }
     finally { setBusy(false); }
   };
@@ -105,12 +121,16 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
   const toggle = (key: string) => setExpanded((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const catFiles = (row: ApiTechnicalDoc, key: string) => row.files.filter((f) => f.category === key);
 
+  // CR-P (142) — the count is every file in the bucket (in folders or not); folders are counted
+  // separately beside it.
   const previewBtn = (row: ApiTechnicalDoc, key: string, label: string) => {
     const files = catFiles(row, key);
+    const nFolders = folderCount(row, key);
     return (
-      <button onClick={() => setPreview({ title: `${label} — ${row.submittalStage} Rev ${row.revNo}`, files })} disabled={!files.length}
+      <button onClick={() => setPreview({ title: `${label} — ${row.title || row.submittalStage} Rev ${row.revNo}`, files })} disabled={!files.length}
+        title={files.length ? `${files.length} file${files.length === 1 ? "" : "s"}${nFolders ? `, ${nFolders} folder${nFolders === 1 ? "" : "s"}` : ""}` : undefined}
         className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${files.length ? "bg-primary/10 text-primary hover:bg-primary/20" : "bg-slate-50 text-slate-300 cursor-default"}`}>
-        {files.length ? <><Eye size={11} /> {files.length}</> : "—"}
+        {files.length ? <><Eye size={11} /> {files.length}{nFolders > 0 && <span className="inline-flex items-center gap-0.5 ml-1 pl-1.5 border-l border-primary/20"><Folder size={10} /> {nFolders}</span>}</> : "—"}
       </button>
     );
   };
@@ -185,7 +205,11 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
                           )}
                         </td>
                         <td className="py-2.5 px-3 text-slate-400">{isCurrent ? i + 1 : ""}</td>
-                        <td className="py-2.5 px-3 font-medium text-slate-700">{isCurrent ? row.submittalStage : <span className="pl-3 text-slate-400">↳ {row.submittalStage}</span>}</td>
+                        <td className="py-2.5 px-3 font-medium text-slate-700">
+                          {isCurrent ? (row.title || row.submittalStage) : <span className="pl-3 text-slate-400">↳ {row.title || row.submittalStage}</span>}
+                          {row.title && row.title !== row.submittalStage && !row.title.endsWith(row.submittalStage) && <span className="block text-[10px] text-slate-400">{row.submittalStage}</span>}
+                          {row.note && <span className="block text-[10px] italic text-slate-400 max-w-[220px] truncate" title={row.note}>{row.note}</span>}
+                        </td>
                         <td className="py-2.5 px-3"><span className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-500">Rev {row.revNo}</span></td>
                         {DRAWING_CATEGORIES.map((c) => <td key={c.key} className="py-2.5 px-3 text-center">{previewBtn(row, c.key, c.label)}</td>)}
                         <td className="py-2.5 px-3"><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-semibold ${S.cls}`}><S.Icon size={11} /> {S.label}</span></td>
@@ -241,7 +265,10 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
                         <td className="py-2.5 px-2">{isCurrent && g.older.length > 0 && <button onClick={() => toggle(g.key)} className="p-1 rounded hover:bg-slate-100 text-slate-400">{expanded.has(g.key) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>}</td>
                         <td className="py-2.5 px-3 text-slate-400">{isCurrent ? i + 1 : ""}</td>
                         <td className="py-2.5 px-3"><span className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-500">Rev {row.revNo}</span></td>
-                        <td className="py-2.5 px-3 text-slate-700">{row.description || <span className="text-slate-300">—</span>}</td>
+                        <td className="py-2.5 px-3 text-slate-700">
+                          {row.description || <span className="text-slate-300">—</span>}
+                          {row.note && <span className="block text-[10px] italic text-slate-400 max-w-[260px] truncate" title={row.note}>{row.note}</span>}
+                        </td>
                         <td className="py-2.5 px-3 text-center">{previewBtn(row, "documents", "Documents")}</td>
                         <td className="py-2.5 px-3 text-slate-500 max-w-[180px] truncate" title={row.remarks}>{row.remarks || "—"}</td>
                         <td className="py-2.5 px-3">
@@ -262,7 +289,7 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
 
       {manageDoc && (
         <ManageModal
-          projectId={projectId} doc={manageDoc} canEdit={canEdit} projectName={projectName} confirm={confirm} prompt={prompt}
+          projectId={projectId} doc={manageDoc} canEdit={canEdit} projectName={projectName} abbr={abbr} confirm={confirm} prompt={prompt}
           onClose={() => setManageId(null)} onChange={replaceRow} onRevise={() => revise(manageDoc)} onExport={() => exportZip(manageDoc._id)}
           onPreview={(title, files) => setPreview({ title, files })}
         />
@@ -321,8 +348,8 @@ function PreviewModal({ title, files, projectName, onClose }: { title: string; f
 // ── Manage modal: everything editable for one submittal/revision. Header fields (stage, status,
 //    remarks, description, client comments) are buffered and saved with an explicit Save; closing
 //    with unsaved edits prompts to save. File actions persist immediately (they are actions). ─────
-function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, onClose, onChange, onRevise, onExport, onPreview }: {
-  projectId: string; doc: ApiTechnicalDoc; canEdit: boolean; projectName?: string; confirm: Confirm; prompt: Prompt;
+function ManageModal({ projectId, doc, canEdit, projectName, abbr, confirm, prompt, onClose, onChange, onRevise, onExport, onPreview }: {
+  projectId: string; doc: ApiTechnicalDoc; canEdit: boolean; projectName?: string; abbr: string; confirm: Confirm; prompt: Prompt;
   onClose: () => void; onChange: (d: ApiTechnicalDoc) => void; onRevise: () => void; onExport: () => void;
   onPreview: (title: string, files: ApiTechDocFile[]) => void;
 }) {
@@ -331,18 +358,22 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
   const isDrawing = doc.kind === "drawing";
   // Buffered editable fields — reset only when switching to a different row (doc._id), so live
   // file uploads (which update `doc`) don't wipe in-progress header edits.
-  const [form, setForm] = useState({ submittalStage: doc.submittalStage, status: doc.status, remarks: doc.remarks, description: doc.description, clientComments: doc.clientComments });
-  useEffect(() => { setForm({ submittalStage: doc.submittalStage, status: doc.status, remarks: doc.remarks, description: doc.description, clientComments: doc.clientComments }); }, [doc._id]);
+  // CR-P (141)/(143)/(144) — the name, the description and the revision note are part of the form.
+  const fromDoc = (d: ApiTechnicalDoc) => ({ submittalStage: d.submittalStage, title: d.title || "", note: d.note || "", status: d.status, remarks: d.remarks, description: d.description, clientComments: d.clientComments });
+  const [form, setForm] = useState(() => fromDoc(doc));
+  useEffect(() => { setForm(fromDoc(doc)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [doc._id]);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // A new stage renames the submittal while its name is still the automatic one.
+  const setStage = (stage: string) => setForm((f) => ({ ...f, submittalStage: stage, title: !f.title.trim() || f.title === autoTitle(abbr, f.submittalStage) ? autoTitle(abbr, stage) : f.title }));
 
-  const dirty = form.submittalStage !== doc.submittalStage || form.status !== doc.status || form.remarks !== doc.remarks || form.description !== doc.description || form.clientComments !== doc.clientComments;
+  const dirty = (Object.keys(form) as Array<keyof typeof form>).some((k) => form[k] !== fromDoc(doc)[k]);
   const S = STATUS_META[form.status];
   const stageIsCustom = !SUBMITTAL_STAGES.includes(form.submittalStage);
 
   const save = async () => {
     if (!dirty) return true;
     setSaving(true);
-    try { onChange(await updateTechnicalDoc(projectId, doc._id, { submittalStage: form.submittalStage, status: form.status, remarks: form.remarks, description: form.description, clientComments: form.clientComments })); return true; }
+    try { onChange(await updateTechnicalDoc(projectId, doc._id, { submittalStage: form.submittalStage, title: form.title.trim(), note: form.note, status: form.status, remarks: form.remarks, description: form.description, clientComments: form.clientComments })); return true; }
     catch (e) { setErr(e instanceof Error ? e.message : "Save failed."); return false; }
     finally { setSaving(false); }
   };
@@ -355,20 +386,27 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
   };
 
   return (
-    <Modal title={`Manage — ${isDrawing ? `${doc.submittalStage} · Rev ${doc.revNo}` : `Document · Rev ${doc.revNo}`}`} onClose={close} wide>
+    <Modal title={`Manage — ${isDrawing ? `${form.title || doc.submittalStage} · Rev ${doc.revNo}` : `Document · Rev ${doc.revNo}`}`} onClose={close} wide>
       {err && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-3 py-2 mb-3">{err}</div>}
       <div className="space-y-4">
+        {/* CR-P (141) — the submittal's name, filled in from the project abbreviation and the stage. */}
+        {isDrawing && (
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Submittal name</label>
+            <input disabled={!canEdit} value={form.title} placeholder={autoTitle(abbr, form.submittalStage)} onChange={(e) => set("title", e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs font-bold text-slate-800" />
+          </div>
+        )}
         {/* Header fields */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {isDrawing ? (
             <div className="sm:col-span-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Submittal</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Stage</label>
               <div className="flex gap-2">
-                <select disabled={!canEdit} value={stageIsCustom ? CUSTOM : form.submittalStage} onChange={(e) => set("submittalStage", e.target.value === CUSTOM ? "" : e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs">
+                <select disabled={!canEdit} value={stageIsCustom ? CUSTOM : form.submittalStage} onChange={(e) => setStage(e.target.value === CUSTOM ? "" : e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs">
                   {SUBMITTAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
                   <option value={CUSTOM}>Custom…</option>
                 </select>
-                {stageIsCustom && <input disabled={!canEdit} value={form.submittalStage} placeholder="Custom name" onChange={(e) => set("submittalStage", e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs" />}
+                {stageIsCustom && <input disabled={!canEdit} value={form.submittalStage} placeholder="Custom stage" onChange={(e) => setStage(e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs" />}
               </div>
             </div>
           ) : (
@@ -399,6 +437,13 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
             </div>
           </div>
         )}
+        {/* CR-P (143) — a submittal carries a description too, saved with the rest and editable later. */}
+        {isDrawing && (
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Description</label>
+            <textarea disabled={!canEdit} rows={2} value={form.description} placeholder="What this submittal contains" onChange={(e) => set("description", e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-xs resize-y" />
+          </div>
+        )}
         {!isDrawing && (
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Remarks</label>
@@ -413,6 +458,12 @@ function ManageModal({ projectId, doc, canEdit, projectName, confirm, prompt, on
               <CategorySection projectId={projectId} doc={doc} category={c.k} label={c.label} canEdit={canEdit} projectName={projectName} confirm={confirm} prompt={prompt} onChange={onChange} onPreview={onPreview} />
             </Fragment>
           ))}
+        </div>
+
+        {/* CR-P (144) — a note on this revision, before the client's response. */}
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Revision note</label>
+          <textarea disabled={!canEdit} rows={2} value={form.note} placeholder="e.g. Created after the client response: the specification is added in this revision." onChange={(e) => set("note", e.target.value)} className="w-full bg-amber-50/40 border border-amber-100 rounded-lg px-2 py-2 text-xs resize-y" />
         </div>
 
         {/* Client response — comments buffered here; files persist immediately. */}

@@ -31,6 +31,8 @@ export interface ITechnicalDoc extends Document {
   groupId: string;   // links revisions of the same submittal into one family (sub-rows in the UI)
   order: number;
   submittalStage: string;   // drawing kind
+  title: string;            // CR-P (141) — the submittal's name, e.g. "CWPR 10% Submittal"
+  note: string;             // CR-P (144) — why this revision exists ("created after the client response…")
   revNo: number;
   status: TechDocStatus;
   description: string;       // other kind
@@ -55,6 +57,8 @@ const TechnicalDocSchema = new Schema<ITechnicalDoc>(
     groupId: { type: String, default: "", index: true },
     order: { type: Number, default: 0 },
     submittalStage: { type: String, default: "10% Submittal" },
+    title: { type: String, default: "" },
+    note: { type: String, default: "" },
     revNo: { type: Number, default: 0 },
     status: { type: String, enum: ["Pending", "Approved", "ApprovedAsNoted", "Rejected"], default: "Pending" },
     description: { type: String, default: "" },

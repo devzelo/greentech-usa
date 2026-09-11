@@ -34,6 +34,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const doc = await TechnicalDoc.create({
       projectId: req.params.id, kind, order: count + 1,
       submittalStage: String(b.submittalStage || "10% Submittal"),
+      title: String(b.title || "").slice(0, 300),   // CR-P (141)
       revNo: Number(b.revNo) || 0,
       description: String(b.description || "").slice(0, 2000),
       remarks: String(b.remarks || "").slice(0, 2000),
@@ -46,7 +47,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
-const FIELDS = ["submittalStage", "description", "remarks", "clientComments"] as const;
+const FIELDS = ["submittalStage", "title", "note", "description", "remarks", "clientComments"] as const;
 router.patch("/:did", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const doc = await TechnicalDoc.findOne({ _id: req.params.did, projectId: req.params.id });
@@ -73,6 +74,7 @@ router.post("/:did/revise", async (req: AuthedRequest, res: Response, next: Next
       // Inherit the family so the new revision nests under the same submittal as a sub-row.
       groupId: src.groupId || src._id.toString(),
       submittalStage: String(req.body?.submittalStage || src.submittalStage),
+      title: src.title || "",   // CR-P (141) — the next revision keeps the submittal's name
       revNo: (src.revNo || 0) + 1,
       description: src.description, remarks: "",
       status: "Pending",

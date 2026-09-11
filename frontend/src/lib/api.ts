@@ -2157,6 +2157,10 @@ export interface ApiTechDocClientFile { _id: string; name: string; filePath: str
 export interface ApiTechnicalDoc {
   _id: string; projectId: string; kind: TechDocKind; groupId: string; order: number;
   submittalStage: string; revNo: number; status: TechDocStatus;
+  /** CR-P (141) - the submittal's name, e.g. "CWPR 10% Submittal". */
+  title?: string;
+  /** CR-P (144) - a note on this revision, before the client's response. */
+  note?: string;
   description: string; remarks: string;
   files: ApiTechDocFile[]; folders?: Array<{ category: string; name: string }>;
   clientComments: string; clientFiles: ApiTechDocClientFile[]; createdAt?: string;
@@ -2171,10 +2175,10 @@ const techBase = (projectId: string) => `/projects/${projectId}/technical-docs`;
 export async function fetchTechnicalDocs(projectId: string, kind?: TechDocKind): Promise<ApiTechnicalDoc[]> {
   return request(`${techBase(projectId)}${kind ? `?kind=${kind}` : ""}`);
 }
-export async function createTechnicalDoc(projectId: string, body: { kind: TechDocKind; submittalStage?: string; revNo?: number; description?: string; remarks?: string }): Promise<ApiTechnicalDoc> {
+export async function createTechnicalDoc(projectId: string, body: { kind: TechDocKind; submittalStage?: string; title?: string; revNo?: number; description?: string; remarks?: string }): Promise<ApiTechnicalDoc> {
   return request(techBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
-export async function updateTechnicalDoc(projectId: string, did: string, body: Partial<Pick<ApiTechnicalDoc, "submittalStage" | "revNo" | "status" | "description" | "remarks" | "clientComments">>): Promise<ApiTechnicalDoc> {
+export async function updateTechnicalDoc(projectId: string, did: string, body: Partial<Pick<ApiTechnicalDoc, "submittalStage" | "title" | "note" | "revNo" | "status" | "description" | "remarks" | "clientComments">>): Promise<ApiTechnicalDoc> {
   return request(`${techBase(projectId)}/${did}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 export async function reviseTechnicalDoc(projectId: string, did: string, submittalStage?: string): Promise<ApiTechnicalDoc> {
