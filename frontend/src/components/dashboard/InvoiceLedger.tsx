@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X, FileText, Upload, ChevronDown, ChevronRight, DollarSign, Link2, Wallet, Eye, Download, Send } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Loader2, Plus, Trash2, X, FileText, Upload, DollarSign, Link2, Wallet, Eye, Download, Send, Settings2, CheckCircle2 } from "lucide-react";
 import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
@@ -356,6 +357,23 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     } catch (err) { toast(err instanceof Error ? err.message : "Could not record the payment.", "error"); }
     finally { setSaving(false); }
   };
+  // CR-P (164)/(170) — in Manage: the whole outstanding amount marked received (sent) or paid
+  // (received) in one step; a paid invoice received is added to Expenses as usual.
+  const markFullyPaid = async (row: ApiInvoice) => {
+    const left = invoiceRemaining(row);
+    if (left <= 0) return;
+    if (!(await confirm({
+      title: isSent ? "Mark as received?" : "Mark as paid?",
+      message: `Record ${money(left)} as ${isSent ? "received from" : "paid to"} ${row.party || (isSent ? "the client" : "the vendor")} today.${isSent ? "" : " It is added to Expenses; upload the bank receipt on the payment."}`,
+      confirmLabel: isSent ? "Mark received" : "Mark paid",
+    }))) return;
+    try {
+      patch(await addInvoicePayment(projectId, row._id, { amount: String(left), date: new Date().toISOString().slice(0, 10), method: "Bank transfer", reference: "", notes: isSent ? "Marked as received" : "Marked as paid" }));
+      if (!isSent) onExpensesChanged?.();
+      toast(isSent ? "Marked as received." : "Marked as paid and added to Expenses.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not record it.", "error"); }
+  };
+  const previewInvoice = (row: ApiInvoice) => setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${row.number}`, fileName: `Invoice_${row.number || "draft"}.pdf`, build: () => buildInvoicePdf(row, { projectInfo, allInvoices: rows }) });
   const removePayment = async (row: ApiInvoice, pid: string) => {
     if (!(await confirm({ title: "Remove payment?", message: "The linked expense row is removed too.", confirmLabel: "Remove" }))) return;
     try { patch(await deleteInvoicePayment(projectId, row._id, pid)); onExpensesChanged?.(); }
@@ -411,14 +429,13 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         <table className="w-full min-w-[1000px] text-xs">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              <th className="w-8 px-3 py-3" />
               {[numLabel, partyLabel, "Description", "Total", isSent ? "Received" : "Paid", leftLabel, dateLabel, "Status", ""].map((h) => (
                 <th key={h} className="text-left px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {rows.length === 0 && <tr><td colSpan={10} className="px-3 py-10 text-center text-slate-400 italic">No invoices yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400 italic">No invoices yet.</td></tr>}
             {rows.map((row) => {
               const isOpen = openId === row._id;
               const rPaid = invoicePaid(row), rLeft = invoiceRemaining(row);
@@ -426,7 +443,6 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
               return (
                 <Fragment key={row._id}>
                   <tr className="hover:bg-slate-50/40 align-top">
-                    <td className="px-3 py-2"><button onClick={() => setOpenId(isOpen ? null : row._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button></td>
                     <td className="px-1 py-1"><input className={inp} value={row.number} disabled={!canEdit} onChange={(e) => edit(row._id, "number", e.target.value)} onBlur={(e) => save(row._id, "number", e.target.value)} /></td>
                     <td className="px-1 py-1">
                       <input className={inp} value={row.party} disabled={!canEdit} onChange={(e) => edit(row._id, "party", e.target.value)} onBlur={(e) => save(row._id, "party", e.target.value)} />
@@ -445,17 +461,50 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex items-center justify-end gap-1">
-                        {canEdit && <button onClick={() => openBuilder(row)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Open the full invoice builder — line items, bank, signature, payment application"><FileText size={11} /> Builder</button>}
+                        {/* CR-P (164) — payments and status are handled in Manage; the standard icons beside it. */}
+                        <button onClick={() => setOpenId(row._id)} className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary" title={isSent ? "Payments received, status, the invoice document" : "Payments made, receipts, status, the invoice document"}><Settings2 size={11} /> Manage</button>
+                        <button onClick={() => previewInvoice(row)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview PDF"><Eye size={13} /></button>
+                        {canEdit && <button onClick={() => openBuilder(row)} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Edit the invoice (line items, bank, signature, payment application)"><FileText size={13} /></button>}
                         {canEdit && <button onClick={() => duplicateInvoice(row)} className="p-1.5 rounded text-slate-300 hover:text-primary" title="Duplicate this invoice"><Plus size={13} /></button>}
-                        {canEdit && <button onClick={() => openPay(row)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold hover:bg-emerald-100" title={isSent ? "Record an amount received from the client" : "Record a payment made"}><Wallet size={11} /> {isSent ? "Received" : "Pay"}</button>}
                         {canEdit && <button onClick={() => removeRow(row)} className="p-1.5 rounded text-slate-300 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                       </div>
                     </td>
                   </tr>
 
-                  {isOpen && (
-                    <tr className="bg-slate-50/40">
-                      <td colSpan={10} className="px-6 py-4 space-y-3">
+                  {isOpen && createPortal(
+                    // CR-P (164)/(170) — Manage: status, mark received / paid, payments with their
+                    // receipts, and the invoice document, in one window.
+                    <div className="fixed inset-0 z-[65] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+                      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-10" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 truncate">Manage · {isSent ? "Invoice" : "Bill"} #{row.number}{row.party ? ` · ${row.party}` : ""}</p>
+                            <p className="text-[11px] text-slate-400">{row.date || "No date"}{row.description ? ` · ${row.description}` : ""}</p>
+                          </div>
+                          <button onClick={() => setOpenId(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100" title="Close"><X size={18} /></button>
+                        </div>
+                        <div className="px-6 py-5 space-y-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total</p><p className="text-sm font-bold text-slate-900"><Fig>{money(n(row.amount))}</Fig></p></div>
+                            <div className="rounded-xl bg-emerald-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{isSent ? "Received" : "Paid"}</p><p className="text-sm font-bold text-emerald-600"><Fig>{money(rPaid)}</Fig></p></div>
+                            <div className={`rounded-xl px-3 py-2 ${isSent ? "bg-blue-50" : "bg-amber-50"}`}><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{leftLabel}</p><p className={`text-sm font-bold ${isSent ? "text-blue-600" : "text-amber-600"}`}><Fig>{money(rLeft)}</Fig></p></div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Status</p>
+                              {canEdit ? (
+                                <select className="w-full bg-transparent text-sm font-bold text-slate-800 outline-none" value={row.status} onChange={(e) => { edit(row._id, "status", e.target.value); save(row._id, "status", e.target.value); }}>
+                                  {statusOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+                                  {!statusOpts.includes(row.status) && <option value={row.status}>{row.status}</option>}
+                                </select>
+                              ) : <p className="text-sm font-bold text-slate-800">{row.status}</p>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {canEdit && rLeft > 0 && <button onClick={() => markFullyPaid(row)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"><CheckCircle2 size={13} /> {isSent ? "Mark as fully received" : "Mark as fully paid"}</button>}
+                            {canEdit && rLeft > 0 && <button onClick={() => openPay(row)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-50"><Wallet size={13} /> {isSent ? "Record part received" : "Record part paid"}</button>}
+                            <button onClick={() => previewInvoice(row)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"><Eye size={13} /> Preview PDF</button>
+                            {canEdit && <button onClick={() => { setOpenId(null); openBuilder(row); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"><FileText size={13} /> Edit invoice</button>}
+                          </div>
+                          {!isSent && <p className="text-[11px] text-slate-400">Pay it at the bank, then mark it paid here and upload the bank receipt on the payment. Each payment is added to Expenses.</p>}
                         {/* Payments */}
                         <div>
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payments ({row.payments.length})</p>
@@ -508,8 +557,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                             </label>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body,
                   )}
                 </Fragment>
               );
@@ -518,10 +569,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
           {rows.length > 0 && (
             <tfoot>
               <tr className="border-t border-slate-100 bg-slate-50/60">
-                <td colSpan={4} className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Totals</td>
+                <td colSpan={3} className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Totals</td>
                 <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap"><Fig>{money(total)}</Fig></td>
                 <td className="px-3 py-2.5 font-bold text-emerald-600 whitespace-nowrap"><Fig>{money(paid)}</Fig></td>
-                <td className="px-3 py-2.5 font-bold text-amber-600 whitespace-nowrap"><Fig>{money(remaining)}</Fig></td>
+                <td className={`px-3 py-2.5 font-bold whitespace-nowrap ${isSent ? "text-blue-600" : "text-amber-600"}`}><Fig>{money(remaining)}</Fig></td>
                 <td colSpan={3} />
               </tr>
             </tfoot>
