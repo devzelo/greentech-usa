@@ -566,6 +566,10 @@ export default function ProjectWorkspace() {
   const [employeePool, setEmployeePool] = useState<ApiEmployee[]>([]);
   // CR-P (76)/(77) — assigning is now an explicit step: open a picker, tick people, assign.
   const [empPickerOpen, setEmpPickerOpen] = useState(false);
+  // CR-P (77) — assigning is two steps: pick the people, then the tabs they get (default Hidden).
+  const [empAssignStep, setEmpAssignStep] = useState<1 | 2>(1);
+  const [empAssignPerms, setEmpAssignPerms] = useState<Record<string, "none" | "view" | "edit">>({});
+  const [empAssignBusy, setEmpAssignBusy] = useState(false);
   const [empPicked, setEmpPicked] = useState<string[]>([]);
   const [assignedEmployees, setAssignedEmployees] = useState<string[]>([]);
   const [empSearch, setEmpSearch] = useState("");
@@ -1644,14 +1648,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!id) return;
     updateVendor(id, vid, { [field]: value } as Partial<ApiVendor>).catch((e) => toast(e instanceof Error ? e.message : "Could not save vendor.", "error"));
   };
+  // CR-P (80) — a vendor's project login, matched by the vendor's email (like the JV partner's).
+  const vendorGuest = (v: ApiVendor) =>
+    (v.email ? guestsList.find((g) => g.email && g.email.toLowerCase() === (v.email || "").toLowerCase()) : undefined);
   const removeVendor = async (v: ApiVendor) => {
     if (!id) return;
-    if (!(await brandedConfirm({ title: "Delete this vendor?", message: `Remove "${v.name || "vendor"}" from the shared supplier list? It disappears from Procurement → RFQs too. Existing RFQs/POs already sent keep their snapshot.`, confirmLabel: "Delete vendor", cancelLabel: "Cancel", danger: true }))) return;
+    // CR-P (79)/(80) — the same question as removing someone from the team.
+    if (!(await brandedConfirm({ title: "Are you sure you want to remove it?", message: `"${v.name || "vendor"}" is removed from this project's vendor list (Procurement → RFQs uses the same list) and its login loses access to this project. RFQs and POs already sent keep their copy.`, confirmLabel: "Remove", cancelLabel: "Cancel", danger: true }))) return;
     try {
+      const g = vendorGuest(v);
+      if (g) { await removeGuest(id, g.userId).catch(() => undefined); refreshGuests(); }
       await deleteVendor(id, v._id);
       setProjVendors((p) => { const next = p.filter((x) => x._id !== v._id); setActiveVendorId((cur) => (cur === v._id ? next[0]?._id || null : cur)); return next; });
-      toast("Vendor deleted.", "success");
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not delete vendor.", "error"); }
+      toast("Vendor removed.", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not remove the vendor.", "error"); }
   };
   useEffect(() => {
     if (subsSubTab !== "vendors" || !id) return;
@@ -1668,8 +1678,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [grantingForSubIdx, setGrantingForSubIdx] = useState<number | null>(null);
   // The access modal is shared with the Partners tab — this flips its copy to say "Partner".
   const [grantingPartner, setGrantingPartner] = useState(false);
-  const guestNoun = grantingPartner ? "Partner" : "Subcontractor";
-  const guestNounLc = grantingPartner ? "partner" : "subcontractor";
+  // CR-P (80) — and to say "Vendor" when a vendor's login is being given access.
+  const [grantingVendor, setGrantingVendor] = useState(false);
+  const guestNoun = grantingPartner ? "Partner" : grantingVendor ? "Vendor" : "Subcontractor";
+  const guestNounLc = guestNoun.toLowerCase();
 
   // Live financials for the Project Report PDF — income from subcontractor invoice
   // amounts, expenses from the Expenses tab. Declared after the states it reads.
@@ -1732,16 +1744,33 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (editingSubIdx !== null) {
       setSubcontractors((prev) => prev.map((s, i) => (i === editingSubIdx ? { ...subForm } : s)));
     } else {
-      setSubcontractors((prev) => [...prev, { ...subForm }]);
+      // CR-P (80) — the same flow as the employees: picked from the Directory, then straight on to
+      // which tabs its login can see (every tab starts Hidden). No email means no login yet, so
+      // that step waits until one is added.
+      const idx = subcontractors.length;
+      const added = { ...subForm };
+      setSubcontractors((prev) => [...prev, added]);
+      setActiveSubIdx(idx);
+      if (isOwner && added.email.trim()) void openGrantAccessFor(idx, added);
     }
     setShowSubModal(false);
     setEditingSubIdx(null);
   };
 
+  // CR-P (79)/(80) — "are you sure you want to remove it?", and removing a subcontractor also takes
+  // away its login's access to this project (the same rule as removing an employee, CR-P (81)).
   const handleDeleteSub = async (idx: number) => {
     const sub = subcontractors[idx];
     if (!sub) return;
-    if (!confirm(`Delete subcontractor "${sub.name}" and remove their agreements?`)) return;
+    if (!(await brandedConfirm({
+      title: "Are you sure you want to remove it?",
+      message: `"${sub.name}" is removed from this project, with its files here, and its login loses access to this project.`,
+      confirmLabel: "Remove",
+      danger: true,
+    }))) return;
+    const linked = (sub.userId ? guestsList.find((g) => g.userId === sub.userId) : undefined)
+      || (sub.email ? guestsList.find((g) => g.email && g.email.toLowerCase() === sub.email.toLowerCase()) : undefined);
+    if (linked && id) { try { await removeGuest(id, linked.userId); refreshGuests(); } catch { /* the record still goes */ } }
     // Delete agreements first
     const docs = subDocs[sub.subId] || [];
     for (const d of docs) {
@@ -2080,11 +2109,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const openCreateGuest = async () => {
     setEditingGuest(null);
     setGName(""); setGEmail(""); setGPassword(""); setGExistingId(null);
-    // Default every tab to "view" — owner downgrades to Hidden or upgrades to Edit.
+    // CR-P (77)/(80) — every tab starts Hidden: nothing is visible until the owner allows it.
     const initialPerms: Record<string, "none" | "view" | "edit"> = {};
-    allTabsAll.forEach((t) => { initialPerms[t.id] = "view"; });
+    allTabsAll.forEach((t) => { initialPerms[t.id] = "none"; });
     setGPerms(initialPerms); setGAlsoProjects([]); setGExpiry(""); setGuestStep(1);
-    setGrantingForSubIdx(null); setGrantingPartner(false);
+    setGrantingForSubIdx(null); setGrantingPartner(false); setGrantingVendor(false);
     setShowGuestModal(true);
     // Load the owner's other projects (for "also assign") and the reusable guest list.
     try {
@@ -2109,6 +2138,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setGrantingForSubIdx(idx);
   };
 
+  // CR-P (80) — a vendor's login gets project access through the same wizard (tabs start Hidden).
+  // The login is matched back to the vendor by its email, like the JV partner's.
+  const openGrantAccessForVendor = async (v: ApiVendor) => {
+    await openCreateGuest();
+    setGExistingId(null);
+    setGName(v.name || "");
+    setGEmail(v.email || "");
+    setGrantingVendor(true);
+  };
+
   // Grant the JV PARTNER a login — reuses the subcontractor guest system, but pre-granted FULL
   // access to every project tab (partners can see everything).
   const openPartnerAccess = async () => {
@@ -2126,7 +2165,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const partnerGuest = jvInfo.email ? guestsList.find((g) => g.email && g.email.toLowerCase() === jvInfo.email.toLowerCase()) : undefined;
   const removePartnerAccess = async (g: ApiGuest) => {
     if (!id) return;
-    if (!confirm(`Remove ${g.name || g.email}'s partner login to this project?`)) return;
+    if (!(await brandedConfirm({ title: "Are you sure you want to remove it?", message: `${g.name || g.email} loses their partner login to this project. Their records stay.`, confirmLabel: "Remove", danger: true }))) return;
     try { await removeGuest(id, g.userId); await refreshGuests(); toast("Partner access removed.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Failed to remove access.", "error"); }
   };
@@ -2134,7 +2173,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // Revoke a subcontractor's login and unlink it from the record.
   const removeSubAccess = async (idx: number, g: ApiGuest) => {
     if (!id) return;
-    if (!confirm(`Remove ${g.name || g.email}'s login access to this project?`)) return;
+    if (!(await brandedConfirm({ title: "Are you sure you want to remove it?", message: `${g.name || g.email} loses their login access to this project. Their records stay.`, confirmLabel: "Remove", danger: true }))) return;
     try {
       await removeGuest(id, g.userId);
       const next = subcontractors.map((s, i) => (i === idx ? { ...s, userId: "" } : s));
@@ -2157,15 +2196,37 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setGName(""); setGEmail(""); setGPassword("");
   };
 
-  // CR-P (76) — assign the ticked employees in one go.
+  const closeEmpPicker = () => { setEmpPickerOpen(false); setEmpAssignStep(1); setEmpAssignPerms({}); setEmpPicked([]); };
+  // CR-P (76)/(77) — assign the ticked employees in one go: pick them, choose the tabs they get
+  // (every tab Hidden until allowed), Save. Each person's tab grant is written BEFORE they join the
+  // project, so a newly assigned employee never has a moment of full access.
   const assignPickedEmployees = async () => {
-    if (!id || !empPicked.length) { setEmpPickerOpen(false); return; }
-    const next = Array.from(new Set([...assignedEmployees, ...empPicked]));
-    setAssignedEmployees(next);
-    setEmpPickerOpen(false);
-    setEmpPicked([]);
-    try { await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>); toast(`${empPicked.length} employee${empPicked.length === 1 ? "" : "s"} assigned.`, "success"); }
-    catch (err) { toast(err instanceof Error ? err.message : "Could not assign.", "error"); }
+    if (!id || !empPicked.length) { closeEmpPicker(); return; }
+    const people = empPicked.map((e) => employeePool.find((x) => x.empId === e)).filter((p): p is (typeof employeePool)[number] => !!p);
+    // Tab access rides on the person's login; without an email there is nothing to attach it to,
+    // and they would silently get the whole project.
+    const noEmail = people.filter((p) => !p.email);
+    if (noEmail.length) {
+      toast(`${noEmail.map((p) => p.name).join(", ")} ${noEmail.length === 1 ? "has" : "have"} no email on their account, so their tab access cannot be set. Add an email in Users first.`, "error");
+      return;
+    }
+    const perms: Record<string, "view" | "edit"> = {};
+    for (const [tab, v] of Object.entries(empAssignPerms)) if (v === "view" || v === "edit") perms[tab] = v;
+    setEmpAssignBusy(true);
+    try {
+      for (const p of people) {
+        const existing = guestsList.find((g) => g.userId === p.id);
+        if (existing) await updateGuest(id, existing.userId, { tabPermissions: perms });
+        else await createGuest(id, { name: p.name, email: p.email, password: "", tabPermissions: perms });
+      }
+      const next = Array.from(new Set([...assignedEmployees, ...empPicked]));
+      await updateProject(id, { assignedEmployees: next } as Partial<ApiProject>);
+      setAssignedEmployees(next);
+      await refreshGuests();
+      toast(`${people.length} employee${people.length === 1 ? "" : "s"} assigned.`, "success");
+      closeEmpPicker();
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not assign.", "error"); }
+    finally { setEmpAssignBusy(false); }
   };
   // CR-P (79) — "we'll remove it from there. It will ask you are you sure you want to remove it?"
   const unassignEmployee = async (empIdStr: string, label: string) => {
@@ -3187,15 +3248,52 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* CR-P (76)/(77) — assign employees: search, tick, assign. Scoped tab access is then set
-          per person with Manage access, which opens the same access modal the guest system uses. */}
+      {/* CR-P (76)/(77) — assign employees: step 1 search and tick, step 2 choose the tabs they get
+          (View / Edit / Hidden, every tab Hidden until allowed), then Save. Manage access on their
+          row changes it later. */}
       {empPickerOpen && (
         <div className="fixed inset-0 z-[90] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
-              <p className="text-sm font-bold text-slate-900">Assign employees to this project</p>
-              <button onClick={() => setEmpPickerOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
+              <p className="text-sm font-bold text-slate-900">
+                {empAssignStep === 1 ? "Assign employees to this project" : `Tab access for ${empPicked.length === 1 ? (employeePool.find((e) => e.empId === empPicked[0])?.name || "1 employee") : `${empPicked.length} employees`}`}
+                <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Step {empAssignStep} of 2</span>
+              </p>
+              <button onClick={closeEmpPicker} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>
+            {empAssignStep === 2 ? (
+              <div className="p-5 space-y-3">
+                <p className="text-xs text-slate-500">Which tabs they can use on this project. Every tab starts <span className="font-bold">Hidden</span>: nothing is visible until you allow it.</p>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                  <span className="text-slate-400 uppercase tracking-widest mr-1">Set all</span>
+                  {([["none", "Hidden"], ["view", "View"], ["edit", "Edit"]] as const).map(([v, label]) => (
+                    <button key={v} type="button" onClick={() => setEmpAssignPerms(Object.fromEntries(allTabsAll.map((t) => [t.id, v])))} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-400">{label}</button>
+                  ))}
+                </div>
+                <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+                  {allTabsAll.map((t) => {
+                    const isChild = !!(customTabs.find((c) => c.id === t.id)?.parentId);
+                    const cur = empAssignPerms[t.id] || "none";
+                    return (
+                      <div key={t.id} className={`flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-50 ${isChild ? "pl-5" : ""}`}>
+                        <span className="text-xs font-bold text-slate-700 truncate">{isChild ? "↳ " : ""}{t.label}</span>
+                        <span className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-bold shrink-0">
+                          {([["none", "Hidden"], ["view", "View"], ["edit", "Edit"]] as const).map(([v, label]) => (
+                            <button
+                              key={v} type="button"
+                              onClick={() => setEmpAssignPerms((p) => ({ ...p, [t.id]: v }))}
+                              className={`px-2.5 py-1 ${cur === v
+                                ? (v === "none" ? "bg-red-500 text-white" : v === "view" ? "bg-slate-900 text-white" : "bg-emerald-600 text-white")
+                                : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                            >{label}</button>
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
             <div className="p-5 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
@@ -3219,13 +3317,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 })}
               </div>
               <p className="text-[10px] text-slate-400 italic">
-                Assigned employees see the project normally. To limit them to certain tabs, use
-                <span className="font-bold"> Manage access</span> on their row afterwards.
+                Next you choose which tabs they can see. You can change it later with
+                <span className="font-bold"> Manage access</span> on their row.
               </p>
             </div>
+            )}
             <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100">
-              <button onClick={() => setEmpPickerOpen(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold">Cancel</button>
-              <button onClick={() => void assignPickedEmployees()} disabled={!empPicked.length} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50">Assign {empPicked.length || ""}</button>
+              {empAssignStep === 1 ? (
+                <>
+                  <button onClick={closeEmpPicker} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold">Cancel</button>
+                  <button onClick={() => setEmpAssignStep(2)} disabled={!empPicked.length} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50">Next: choose tabs</button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setEmpAssignStep(1)} disabled={empAssignBusy} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold">Back</button>
+                  <button onClick={() => void assignPickedEmployees()} disabled={empAssignBusy} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-primary disabled:opacity-50">{empAssignBusy ? "Saving..." : "Save"}</button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -4841,7 +4949,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </p>
                   </div>
                   {isOwner && (
-                    <button onClick={() => { setEmpPickerOpen(true); setEmpSearch(""); setEmpPicked([]); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
+                    <button onClick={() => { setEmpPickerOpen(true); setEmpSearch(""); setEmpPicked([]); setEmpAssignStep(1); setEmpAssignPerms({}); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
                       <Plus size={13} /> Assign employee
                     </button>
                   )}
@@ -5063,7 +5171,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
                 <div>
                   <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Vendors</h3>
-                  <p className="text-xs font-medium text-slate-400">GreenTech's shared supplier list (managed in Procurement → RFQs). Agreements you create here belong to <strong>this project</strong>. Vendors have no login, so download the agreement, share it outside the platform, and upload the counter-signed copy when it returns.</p>
+                  <p className="text-xs font-medium text-slate-400">Only the vendors on this project appear here (Procurement → RFQs uses the same list). Add one from the Directory; <strong>Manage access</strong> gives its login the tabs you choose. Agreements you create here belong to <strong>this project</strong>.</p>
                 </div>
                 {canEdit && !isGuest && (
                   <div className="max-w-sm">
@@ -5083,12 +5191,49 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <p className="text-sm text-slate-400 italic">No vendors yet — add one above (it joins the shared list used in <strong>Procurement → RFQs → Vendors</strong>).</p>
                 ) : (
                   <>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {projVendors.map((v) => (
-                        <button key={v._id} onClick={() => setActiveVendorId(v._id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeVendorId === v._id ? "bg-slate-900 text-white shadow" : "bg-white border border-slate-100 text-slate-500 hover:text-slate-900"}`}>
-                          <Building2 size={13} /> {v.name || "Vendor"}
-                        </button>
-                      ))}
+                    {/* CR-P (80) — the same table as the project team: who is on the project, their
+                        access, and Manage access / Remove per row. Open shows the details below. */}
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                      <table className="w-full min-w-[720px] text-left">
+                        <thead>
+                          <tr className="bg-slate-50/50 border-b border-slate-100">
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Access</th>
+                            <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {projVendors.map((v, idx) => {
+                            const g = vendorGuest(v);
+                            const tabs = g ? allTabsAll.filter((t) => !!g.tabPermissions?.[t.id]).length : 0;
+                            return (
+                              <tr key={v._id} className={activeVendorId === v._id ? "bg-primary/5" : "hover:bg-slate-50/40"}>
+                                <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums">{idx + 1}</td>
+                                <td className="px-3 py-2.5"><button onClick={() => setActiveVendorId(v._id)} className="text-xs font-bold text-slate-800 hover:text-primary text-left">{v.name || "Vendor"}</button></td>
+                                <td className="px-3 py-2.5 text-xs text-slate-600">{[v.contactName, v.email].filter(Boolean).join(" · ") || <span className="text-slate-300">-</span>}</td>
+                                <td className="px-3 py-2.5">
+                                  {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
+                                    : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
+                                    : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <button onClick={() => setActiveVendorId(v._id)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Open</button>
+                                    {isOwner && !isGuest && (
+                                      <button onClick={() => (g ? openEditGuest(g) : void openGrantAccessForVendor(v))} title="Choose which tabs this vendor's login can see" className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage access</button>
+                                    )}
+                                    {canEdit && !isGuest && (
+                                      <button onClick={() => void removeVendor(v)} title="Remove from this project" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                     {(() => {
                       const v = projVendors.find((x) => x._id === activeVendorId);
@@ -5193,29 +5338,81 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
             {subsSubTab === "subcontractors" && (
               <div className="space-y-6">
-                {/* Nested subcontractor pills */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {subcontractors.map((s, idx) => (
-                    <button
-                      key={s.subId || idx}
-                      onClick={() => setActiveSubIdx(idx)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${Math.min(activeSubIdx, subcontractors.length - 1) === idx ? "bg-slate-900 text-white shadow" : "bg-white border border-slate-100 text-slate-500 hover:text-slate-900"}`}
-                    >
-                      <Building2 size={13} /> {s.name || "Unnamed"}
-                    </button>
-                  ))}
-                  {canEdit && !isGuest && (
-                    <button onClick={openAddSub} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-primary border border-dashed border-primary/30 hover:bg-primary/5">
-                      <Plus size={13} /> Add subcontractor
-                    </button>
+                {/* CR-P (80) — the same flow as the project team: a table of the subcontractors on
+                    this project, "Add subcontractor" (Directory pick, then tab access), and per row
+                    Manage access and Remove with a confirmation. Open shows the record below. */}
+                <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Subcontractors</h3>
+                      <p className="text-xs font-medium text-slate-400">Only the subcontractors on this project appear here. Add one from the Directory, then choose which tabs its login can see.</p>
+                    </div>
+                    {canEdit && !isGuest && (
+                      <button onClick={openAddSub} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0">
+                        <Plus size={13} /> Add subcontractor
+                      </button>
+                    )}
+                  </div>
+                  {subcontractors.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-14 text-slate-400 bg-slate-50 rounded-3xl">
+                      <Building2 size={30} className="mb-2" />
+                      <p className="text-sm font-bold">No subcontractors yet.</p>
+                      {canEdit && !isGuest && <p className="text-xs mt-1">Click Add subcontractor to pick one from the Directory.</p>}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                      <table className="w-full min-w-[720px] text-left">
+                        <thead>
+                          <tr className="bg-slate-50/50 border-b border-slate-100">
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scope</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact</th>
+                            <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Access</th>
+                            <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {subcontractors.map((s, idx) => {
+                            const g = (s.userId ? guestsList.find((x) => x.userId === s.userId) : undefined)
+                              || (s.email ? guestsList.find((x) => x.email && x.email.toLowerCase() === s.email.toLowerCase()) : undefined);
+                            const tabs = g ? allTabsAll.filter((t) => !!g.tabPermissions?.[t.id]).length : 0;
+                            const active = Math.min(activeSubIdx, subcontractors.length - 1) === idx;
+                            return (
+                              <tr key={s.subId || idx} className={active ? "bg-primary/5" : "hover:bg-slate-50/40"}>
+                                <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{idx + 1}</td>
+                                <td className="px-3 py-2.5 align-top">
+                                  <button onClick={() => setActiveSubIdx(idx)} className="text-xs font-bold text-slate-800 hover:text-primary text-left">{s.name || "Unnamed"}</button>
+                                  {s.subId && <span className="block text-[10px] text-slate-400">{s.subId}</span>}
+                                </td>
+                                <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{s.scope || <span className="text-slate-300">-</span>}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{[s.contact, s.email].filter(Boolean).join(" · ") || <span className="text-slate-300">-</span>}</td>
+                                <td className="px-3 py-2.5 align-top">
+                                  {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
+                                    : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
+                                    : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
+                                </td>
+                                <td className="px-3 py-2.5 align-top">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <button onClick={() => setActiveSubIdx(idx)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Open</button>
+                                    {isOwner && !isGuest && (
+                                      <button onClick={() => (g ? openEditGuest(g) : void openGrantAccessFor(idx, s))} title="Choose which tabs this subcontractor's login can see" className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage access</button>
+                                    )}
+                                    {canEdit && !isGuest && (
+                                      <button onClick={() => void handleDeleteSub(idx)} title="Remove from this project" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
 
-                {subcontractors.length === 0 ? (
-                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm text-center text-sm text-slate-400 italic">
-                    No subcontractors yet.{canEdit ? " Click “Add subcontractor” to create the first one." : ""}
-                  </div>
-                ) : (() => {
+                {subcontractors.length === 0 ? null : (() => {
                   const i = Math.min(activeSubIdx, subcontractors.length - 1);
                   const sub = subcontractors[i];
                   const docs = subDocs[sub.subId] || [];
