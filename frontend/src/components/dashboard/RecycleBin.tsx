@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   fetchArchiveItems, fetchRecycleItems, restoreArchiveItem, restoreRecycleItem, purgeRecycleItem,
-  type ApiBinItem,
+  COMPANY_CATEGORIES, type ApiBinItem,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useMeta } from "../../hooks/useMeta";
@@ -46,6 +46,29 @@ const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: st
   "saved-document": { label: "Saved version", icon: FileText, cls: "bg-slate-100 text-slate-500" },
 };
 const metaFor = (k: string) => KIND_META[k] || { label: k, icon: FileText, cls: "bg-slate-100 text-slate-500" };
+
+// CR-P (74) — the Category column says WHAT the item is: a PDF or a Word document rather than just
+// "Document", and a vendor or a manufacturer rather than just "Company".
+const FILE_KINDS = new Set(["document", "technical-doc", "rfp-document", "saved-document", "saved-proposal"]);
+const fileType = (name: string): string => {
+  const ext = ((name || "").includes(".") ? name.split(".").pop() || "" : "").toLowerCase();
+  if (ext === "pdf") return "PDF document";
+  if (["doc", "docx", "rtf", "odt"].includes(ext)) return "Word document";
+  if (["xls", "xlsx", "csv", "ods"].includes(ext)) return "Excel file";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "heic"].includes(ext)) return "Image";
+  if (["dwg", "dxf"].includes(ext)) return "Drawing";
+  if (["zip", "rar", "7z"].includes(ext)) return "Compressed file";
+  return "";
+};
+const categoryOf = (it: ApiBinItem): string => {
+  const m = metaFor(it.kind);
+  if (FILE_KINDS.has(it.kind)) return fileType(it.name) || m.label;
+  if (it.kind === "company" || it.kind === "vendor") {
+    const first = (it.subtitle || "").split(/[·,]/)[0].trim().toLowerCase();
+    return COMPANY_CATEGORIES.find((c) => c.v === first)?.label || m.label;
+  }
+  return m.label;
+};
 const timeAgo = (iso?: string) => {
   if (!iso) return "";
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -177,7 +200,7 @@ export default function RecycleBin() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 align-top">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${m.cls}`}>{m.label}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${m.cls}`}>{categoryOf(it)}</span>
                     </td>
                     <td className="px-3 py-2.5 text-[11px] text-slate-600 align-top">
                       {it.origin || it.projectName || <span className="text-slate-300">—</span>}
