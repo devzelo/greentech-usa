@@ -1,10 +1,10 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
-import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject } from "../../lib/api";
+import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject, ProposalRequirement } from "../../lib/api";
 import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
 import { tableCalc, adjustmentLabel } from "../../lib/pricing";
-import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout } from "../../lib/api";
+import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout, requirementStatus, REQUIREMENT_STATUSES } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
   BRAND, COMPANY, A4, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
@@ -440,13 +440,16 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
 // ── Technical Proposal PDF ───────────────────────────────────────────────────
 type SectionFile = { name: string; url: string };
 /** The technical document as an ordered run of pages and uploaded files (see proposalParts). */
-type SeqItem = { page: ReactElement } | { files: SectionFile[]; key?: string };
+// `numbers`: the page prints page numbers of other sections (the Compliance Matrix), so its part is
+// rendered again once they are known, like the contents.
+type SeqItem = { page: ReactElement; numbers?: boolean } | { files: SectionFile[]; key?: string };
 type TechArgs = {
   project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover;
   letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[];
   // Step 7 - the same sequence builds the financial volume (its sections, our price table, appendices).
   volume?: "technical" | "financial";
   financial?: FinancialProposalContent;
+  requirements?: ProposalRequirement[];   // step 9 - printed by the Compliance Matrix section
 } & PageCtx;
 
 /** The financial volume in the section engine's shape: sections, layout, numbering (letters by default). */
@@ -690,7 +693,7 @@ function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: stri
   );
 }
 
-function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf, volume = "technical", financial }: TechArgs): SeqItem[] {
+function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf, volume = "technical", financial, requirements = [] }: TechArgs): SeqItem[] {
   // An invisible page marker (see PageCtx): absolutely positioned, so it never moves the layout.
   const mark = (k: string) => (probe ? <Text style={styles.pageMark} render={({ pageNumber }) => { probe(k, pageNumber); return " "; }} /> : null);
   const fin = volume === "financial";
@@ -818,6 +821,41 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   }
   const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
 
+  // Step 9 (spec 38) - the Compliance Matrix: each RFP requirement, the section that answers it and
+  // the page it starts on (filled in on the second pass, like the contents).
+  const finLayoutAll = financial ? resolveFinancialLayout(financial) : [];
+  const statusLabel = (s: string) => REQUIREMENT_STATUSES.find((x) => x.v === s)?.label || s;
+  const statusTone = (s: string) => (s === "compliant" ? "#047857" : s === "partial" ? "#B45309" : s === "not-addressed" ? "#B91C1C" : BRAND.s500);
+  const matrixTable = () => {
+    const cols: Array<[string, number]> = [["NO.", 5], ["RFP REQUIREMENT", 36], ["RFP REF.", 12], ["PROPOSAL SECTION", 25], ["PAGE", 8], ["STATUS", 14]];
+    const w = (k: number) => `${cols[k][1]}%`;
+    return (
+      <View>
+        <View style={styles.tHead} wrap={false} minPresenceAhead={30}>
+          {cols.map(([l], k) => <Text key={l} style={[styles.th, styles.ppTh, { width: w(k) }]}>{l}</Text>)}
+        </View>
+        {requirements.map((r, i) => {
+          const inThis = (r.volume || "technical") === volume;
+          const sec = r.sectionId ? (inThis ? fullLayout : finLayoutAll).find((x) => x.id === r.sectionId) : undefined;
+          const code = inThis && sec ? labelById.get(sec.id)?.toc || "" : "";
+          const where = sec ? `${!inThis ? "Financial Proposal: " : ""}${code ? `${code} ` : ""}${sec.title}` : "-";
+          const pg = inThis && r.sectionId ? pageOf?.[r.sectionId] : undefined;
+          const st = requirementStatus(r);
+          return (
+            <View key={r.id} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+              <Text style={[styles.td, styles.ppTd, { width: w(0) }]}>{i + 1}</Text>
+              <Text style={[styles.td, styles.ppTd, { width: w(1) }]}>{r.label || "-"}</Text>
+              <Text style={[styles.td, styles.ppTd, { width: w(2) }]}>{r.rfpRef || "-"}</Text>
+              <Text style={[styles.td, styles.ppTd, { width: w(3) }]}>{where}</Text>
+              <Text style={[styles.td, styles.ppTd, { width: w(4) }]}>{pg ? String(pg) : "-"}</Text>
+              <Text style={[styles.td, styles.ppTd, { width: w(5), fontWeight: 700, color: statusTone(st) }]}>{statusLabel(st)}</Text>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderSection = (m: typeof visible[number]) => {
     const heading = <>{mark(m.id)}<SectionHeading label={labelById.get(m.id)?.heading || undefined} title={m.title} /></>;
     if (m.kind === "description") return (
@@ -884,6 +922,13 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     // A custom section may run over several pages (it used to be held on one, so long text
     // overflowed); the heading keeps room below it so it is never left alone at a page foot.
     const s = sectionFor(m.refId);
+    if (m.libraryKey === "compliance-matrix") return (
+      <View key={m.id}>
+        {heading}
+        <RichText html={s?.body || ""} keyBase={`sec-${m.id}`} />
+        {requirements.length > 0 ? matrixTable() : <Text style={styles.cardMeta}>No RFP requirements listed yet (Proposal overview, RFP details and compliance).</Text>}
+      </View>
+    );
     const base = labelById.get(m.id)?.sub || "";
     return (
       <View key={m.id}>
@@ -919,7 +964,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   };
 
   const seq: SeqItem[] = [];
-  const page = (el: ReactElement) => { seq.push({ page: el }); };
+  const page = (el: ReactElement, numbers = false) => { seq.push({ page: el, numbers }); };
 
   page(<ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />);
   if (coverLetter?.enabled) page(<CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />);
@@ -994,6 +1039,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
         {g.items.map((m) => renderSection(m))}
       </Sheet>,
+      g.items.some((m) => m.libraryKey === "compliance-matrix"),
     );
   });
 
@@ -1070,6 +1116,7 @@ export interface ProposalPdfProps {
   financial: FinancialProposalContent;
   logoUrl?: string;
   resumes?: ProposalTeamResume[];
+  requirements?: ProposalRequirement[];   // step 9 - the Compliance Matrix
 }
 
 /**
@@ -1084,13 +1131,16 @@ export function proposalParts(p: ProposalPdfProps, ctx: PageCtx = {}): ProposalP
     project: p.project, content: fin ? financialAsContent(p.financial) : p.technical, cover: p.cover, coverLetter: p.coverLetter,
     backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl,
     resumes: fin ? [] : p.resumes, probe: ctx.probe, pageOf: ctx.pageOf, volume: p.kind, financial: p.financial,
+    requirements: p.requirements,
   });
   const parts: ProposalPart[] = [];
   let pages: ReactElement[] = [];
-  // The first run of pages holds the table of contents, so it is the part rebuilt with page numbers.
-  const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages), usesPageNumbers: parts.length === 0 }); pages = []; };
+  let numbered = false;
+  // The first run of pages holds the table of contents, so it is rebuilt with page numbers; so is any
+  // run holding the Compliance Matrix.
+  const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages), usesPageNumbers: parts.length === 0 || numbered }); pages = []; numbered = false; };
   for (const s of seq) {
-    if ("page" in s) pages.push(s.page);
+    if ("page" in s) { pages.push(s.page); if (s.numbers) numbered = true; }
     else { flush(); parts.push({ type: "files", files: s.files, key: s.key }); }
   }
   flush();

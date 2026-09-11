@@ -391,7 +391,32 @@ export interface ProposalCoverLetter {
   stampUrl?: string;    // the company seal printed beside the first signature
 }
 
-export interface ProposalRequirement { id: string; label: string; done: boolean }
+/** Step 9 (spec 38) - an RFP requirement: where the proposal answers it and whether it complies. */
+export type RequirementStatus = "compliant" | "partial" | "not-addressed" | "n/a";
+export interface ProposalRequirement {
+  id: string; label: string;
+  done: boolean;                           // legacy checklist tick (true = compliant)
+  rfpRef?: string;                         // e.g. "L.5.2.1"
+  volume?: "technical" | "financial";      // which volume answers it
+  sectionId?: string;                      // the layout section that answers it
+  status?: RequirementStatus;
+}
+export const REQUIREMENT_STATUSES: Array<{ v: RequirementStatus; label: string }> = [
+  { v: "compliant", label: "Compliant" },
+  { v: "partial", label: "Partially compliant" },
+  { v: "not-addressed", label: "Not yet addressed" },
+  { v: "n/a", label: "Not applicable" },
+];
+export const requirementStatus = (r: ProposalRequirement): RequirementStatus => r.status || (r.done ? "compliant" : "not-addressed");
+
+/** Step 9 (spec 6) - the RFP's own rules, kept on the proposal (the Compliance Matrix and the future AI read them). */
+export interface RfpDetails {
+  dueDate?: string; dueTime?: string; timeZone?: string; questionsDue?: string;
+  pageLimitTechnical?: string; pageLimitFinancial?: string;
+  submissionMethod?: string; submitTo?: string;
+  formatting?: string;       // font, size, margins, file format, size and naming rules
+  instructions?: string;     // anything else the RFP asks
+}
 
 // Customizable closing / back-cover page (brochure-style).
 export interface ProposalBackCover {
@@ -418,6 +443,7 @@ export interface ProposalContent {
   technical?: TechnicalProposalContent;
   financial?: FinancialProposalContent;
   eoi?: EoiContent;                    // step 8 - the project's Expression of Interest (no revisions)
+  rfp?: RfpDetails;                    // step 9 - the RFP's dates, page limits, formatting and submission rules
 }
 
 /**

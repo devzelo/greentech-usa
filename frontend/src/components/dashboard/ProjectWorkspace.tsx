@@ -43,7 +43,8 @@ import SubcontractorResumes from "./SubcontractorResumes";
 import CategoryMultiSelect from "./CategoryMultiSelect";
 import ProposalProjectsEditor from "./ProposalProjectsEditor";
 import EoiBuilder from "./EoiBuilder";
-import type { EoiContent } from "../../lib/api";
+import type { EoiContent, RfpDetails } from "../../lib/api";
+import RfpCompliancePanel from "./RfpCompliancePanel";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
@@ -661,6 +662,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [coverLetter, setCoverLetter] = useState<ProposalCoverLetter>(emptyCoverLetter());
   const [coverLetterFinancial, setCoverLetterFinancial] = useState<ProposalCoverLetter>(emptyCoverLetter());   // CR-P (93)
   const [eoi, setEoi] = useState<EoiContent>({});   // step 8 - the Expression of Interest (no revisions)
+  const [rfp, setRfp] = useState<RfpDetails>({});   // step 9 - the RFP's dates, page limits and rules
   const [backCover, setBackCover] = useState<ProposalBackCover>(emptyBackCover());
   const [letterhead, setLetterhead] = useState<ProposalLetterhead>("gt");
   const [customLetterheadUrl, setCustomLetterheadUrl] = useState("");
@@ -1146,7 +1148,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // ── Revision control + archive ───────────────────────────────────────────────
   const currentProposalSnapshot = (): ProposalContentType =>
-    ({ cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial });
+    ({ cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, rfp });
   const applyProposalSnapshot = (c: ProposalContentType) => {
     setCover({ ...emptyCover(), ...(c.cover || {}) });
     setCoverFinancial({ ...emptyCover(), ...(c.coverFinancial || c.cover || {}) });
@@ -1154,6 +1156,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setCoverLetterFinancial({ ...emptyCoverLetter(), ...(c.coverLetterFinancial || {}) });
     // Item 117 - revisions never carry the EOI; only a full reload (Discard) restores it.
     if (c.eoi) setEoi(c.eoi);
+    if (c.rfp) setRfp(c.rfp);
     setBackCover({ ...emptyBackCover(), ...(c.backCover || {}) });
     setLetterhead(c.letterhead || "gt");
     setCustomLetterheadUrl(c.customLetterheadUrl || "");
@@ -1255,7 +1258,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
-    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes }, ctx);
+    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes, requirements }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     // Item 104 / spec 6 - warn when a company document in the proposal has expired.
     {
@@ -1271,6 +1274,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }
     const { blob, skipped } = await assembleProposalParts(makeParts, atts);
     if (skipped.length) toast(`Attached but couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
+    // Step 9 - the RFP's page limit for this volume (spec: "page-limit issues").
+    const limit = parseInt(String(which === "technical" ? rfp.pageLimitTechnical : rfp.pageLimitFinancial || ""), 10) || 0;
+    if (limit > 0) {
+      const n = (await PDFDocument.load(await blob.arrayBuffer())).getPageCount();
+      if (n > limit) toast(`The ${which} proposal is ${n} pages; the RFP allows ${limit}. Check what the RFP counts: covers, contents and resumes are often excluded.`, "error");
+    }
     return blob;
   };
 
@@ -2443,6 +2452,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         setCoverLetter({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetter ?? {}) });
         setCoverLetterFinancial({ ...emptyCoverLetter(), ...(proj.proposalContent?.coverLetterFinancial ?? {}) });
         setEoi(proj.proposalContent?.eoi ?? {});
+        setRfp(proj.proposalContent?.rfp ?? {});
         setBackCover({ ...emptyBackCover(), ...(proj.proposalContent?.backCover ?? {}) });
         setLetterhead(proj.proposalContent?.letterhead ?? "gt");
         setCustomLetterheadUrl(proj.proposalContent?.customLetterheadUrl ?? "");
@@ -2960,7 +2970,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       }));
       payload.subcontractors = subcontractors;
       payload.proposals = proposals;
-      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, eoi } as ProposalContent;
+      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, eoi, rfp } as ProposalContent;
       const updated = await wsSave.track(updateProject(id, payload));
       setProject(updated);
       setDirty(false); // I5 — workspace is now saved
@@ -3769,6 +3779,30 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       </div>
                     </div>
                   )}
+                  {/* Step 9 (spec 6, 38) - the RFP's rules and requirements; the Compliance Matrix prints them. */}
+                  {(() => {
+                    const tl = resolveProposalLayout(technical);
+                    const fl = resolveFinancialLayout(financial);
+                    const opts = [
+                      ...tl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "technical" as const, label: m.title })),
+                      ...fl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "financial" as const, label: `Financial: ${m.title}` })),
+                    ];
+                    return (
+                      <RfpCompliancePanel
+                        rfp={rfp}
+                        onRfpChange={(v) => { setRfp(v); setDirty(true); }}
+                        requirements={requirements}
+                        onRequirementsChange={(v) => { setRequirements(v); setDirty(true); }}
+                        sections={opts}
+                        canEdit={canEdit}
+                        hasMatrix={tl.some((m) => m.libraryKey === "compliance-matrix")}
+                        onAddMatrix={() => {
+                          addLayoutSection("Compliance Matrix", "", { libraryKey: "compliance-matrix", pageType: "designed", guide: "A table linking each solicitation requirement to the response: RFP Requirement, RFP Reference, Proposal Section, Page Number, Compliance Status. The rows come from Proposal overview, RFP details and compliance." });
+                          toast("Compliance Matrix added to the technical proposal.", "success");
+                        }}
+                      />
+                    );
+                  })()}
                   {([
                     { which: "technical" as const, title: "Technical Proposal", section: "proposals-technical" },
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
