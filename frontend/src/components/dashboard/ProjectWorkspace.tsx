@@ -561,7 +561,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const emptyCover = (): ProposalCover => ({
     proposalTitle: "", projectName: "", solicitationNo: "", taskOrderNo: "", contractNo: "",
     clientName: "", dueDate: "", submissionDate: "", submittedTo: "", attentionTo: "", submittedBy: "",
-    logoMode: "single", jvLogoUrl: "", images: [], coverStyle: "hero", subtitle: "",
+    logoMode: "single", jvLogoUrl: "", images: [], coverStyle: "hero", subtitle: "", restrictionNotice: true,
   });
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
@@ -668,11 +668,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const copyTechnicalCover = async () => {
     if (!(await brandedConfirm({
       title: "Copy the technical cover?",
-      message: "The financial cover page is replaced with a copy of the technical one, with its title changed to Financial Proposal. Anything already on the financial cover is lost.",
+      message: "The financial cover page is replaced with a copy of the technical one, with \"Technical\" changed to \"Financial\" in its title and volume. Anything already on the financial cover is lost.",
       confirmLabel: "Copy it across",
     }))) return;
-    const title = (cover.title || "").replace(/technical/gi, "Financial").trim();
-    setCoverFinancial({ ...cover, title: title || "Financial Proposal" });
+    // It used to set a `title` field the cover does not have, so the copy kept "Technical".
+    const swap = (s?: string) => (s || "").replace(/technical/gi, "Financial").trim();
+    setCoverFinancial({ ...cover, proposalTitle: swap(cover.proposalTitle), volumeLabel: swap(cover.volumeLabel) });
     toast("Financial cover copied from the technical one.", "success");
   };
 

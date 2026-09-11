@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Upload, Image as ImageIcon, X, Loader2 } from "lucide-react";
 import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { COMPANY } from "../pdf/brand";
+import { RESTRICTION_LEGEND, defaultSubmitter } from "./ProposalPDF";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
 const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
@@ -42,18 +44,43 @@ function CoverThumb({ id }: { id: string }) {
   );
 }
 
-const COVER_FIELDS: Array<{ key: keyof ProposalCover; label: string; type?: string }> = [
-  { key: "proposalTitle", label: "Proposal Title" },
-  { key: "projectName", label: "Project Name" },
-  { key: "solicitationNo", label: "Solicitation Number" },
-  { key: "taskOrderNo", label: "Task Order Number" },
-  { key: "contractNo", label: "Contract Number" },
-  { key: "clientName", label: "Client Name" },
-  { key: "dueDate", label: "Proposal Due Date", type: "date" },
-  { key: "submissionDate", label: "Date of Submission", type: "date" },
-  { key: "submittedTo", label: "Submitted To" },
-  { key: "attentionTo", label: "Attention To" },
-  { key: "submittedBy", label: "Submitted By" },
+// Cover keys that hold text (the inputs below only ever write strings).
+type TextCoverKey = { [K in keyof ProposalCover]-?: NonNullable<ProposalCover[K]> extends string ? K : never }[keyof ProposalCover];
+type CoverFieldDef = { key: TextCoverKey; label: string; type?: string; placeholder?: string; list?: string[]; wide?: boolean };
+
+const RESPONSE_OPTIONS = ["Response to Solicitation #", "Response to Request for Proposal", "Response to Request for Quotation", "Response to Invitation for Bid", "Response to Sources Sought"];
+const REVISION_OPTIONS = ["Initial Proposal", "Revised Proposal", "Final Proposal Revision", "Best and Final Offer (BAFO)"];
+
+// Grouped the way the client's sample covers read: what the document is, which solicitation it
+// answers, who it is for, who to address, and who submits it.
+const COVER_GROUPS: Array<{ title: string; fields: CoverFieldDef[] }> = [
+  { title: "Document", fields: [
+    { key: "proposalTitle", label: "Proposal Title", wide: true },
+    { key: "volumeLabel", label: "Volume", placeholder: "e.g. Vol. II: Technical Proposal" },
+    { key: "revisionLabel", label: "Revision", placeholder: "e.g. Final Proposal Revision", list: REVISION_OPTIONS },
+  ] },
+  { title: "Solicitation", fields: [
+    { key: "responseLabel", label: "Response label", placeholder: "Response to Solicitation #", list: RESPONSE_OPTIONS },
+    { key: "solicitationNo", label: "Solicitation Number", placeholder: "e.g. RFP# 19GE5025R0001" },
+    { key: "taskOrderNo", label: "Task Order Number" },
+    { key: "contractNo", label: "Contract Number" },
+    { key: "dueDate", label: "Submittal Due Date", type: "date" },
+    { key: "submissionDate", label: "Date of Submission", type: "date" },
+  ] },
+  { title: "Client", fields: [
+    { key: "clientName", label: "Client Name" },
+    { key: "location", label: "Location", placeholder: "e.g. U.S. Embassy Manila, Philippines" },
+    { key: "projectName", label: "Project Name" },
+    { key: "submittedTo", label: "Submitted To", placeholder: "e.g. Contracting Officer, RPSO Frankfurt" },
+  ] },
+  { title: "Attention", fields: [
+    { key: "attentionTo", label: "Name", placeholder: "e.g. Ms. Joanna Catsamaki" },
+    { key: "attentionRole", label: "Role", placeholder: "e.g. Contracting Specialist" },
+    { key: "attentionEmail", label: "Email", type: "email" },
+  ] },
+  { title: "Submitted by", fields: [
+    { key: "submittedBy", label: "Submitted By", wide: true },
+  ] },
 ];
 
 export default function ProposalCoverBuilder({
@@ -82,6 +109,7 @@ export default function ProposalCoverBuilder({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const imgInput = useRef<HTMLInputElement>(null);
   const jvInput = useRef<HTMLInputElement>(null);
+  const clientLogoInput = useRef<HTMLInputElement>(null);
 
   const setCover = <K extends keyof ProposalCover>(k: K, v: ProposalCover[K]) => onCoverChange({ ...cover, [k]: v });
   const galleryImages = (project.gallery || []).filter((g) => g.type === "image");
@@ -144,32 +172,95 @@ export default function ProposalCoverBuilder({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {COVER_FIELDS.map((f) => (
-            <div key={String(f.key)} className="space-y-1.5">
-              <label className={lbl}>{f.label}</label>
-              <input
-                type={f.type || "text"}
-                value={(cover[f.key] as string) || ""}
-                onChange={(e) => setCover(f.key, e.target.value as ProposalCover[typeof f.key])}
-                disabled={!canEdit}
-                placeholder={f.key === "projectName" ? project.name : f.key === "clientName" ? (project.clientInfo?.name || "") : ""}
-                className={inp}
-              />
+        {COVER_GROUPS.map((g) => (
+          <div key={g.title} className="border-t border-slate-100 pt-4 space-y-3">
+            <p className="text-[11px] font-bold text-slate-700">{g.title}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {g.fields.map((f) => {
+                const id = `cover-${f.key}`;
+                const placeholder = f.key === "projectName" ? project.name
+                  : f.key === "clientName" ? (project.clientInfo?.name || "")
+                  : f.key === "submittedBy" ? defaultSubmitter(project)
+                  : (f.placeholder || "");
+                return (
+                  <div key={f.key} className={`space-y-1.5 ${f.wide ? "md:col-span-2" : ""}`}>
+                    <label htmlFor={id} className={lbl}>{f.label}</label>
+                    <input
+                      id={id}
+                      type={f.type || "text"}
+                      list={f.list ? `${id}-list` : undefined}
+                      value={(cover[f.key] as string | undefined) || ""}
+                      onChange={(e) => setCover(f.key, e.target.value as ProposalCover[typeof f.key])}
+                      disabled={!canEdit}
+                      placeholder={placeholder}
+                      className={inp}
+                    />
+                    {f.list && <datalist id={`${id}-list`}>{f.list.map((o) => <option key={o} value={o} />)}</datalist>}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-          <div className="space-y-1.5 md:col-span-2">
-            <label className={lbl}>Subtitle</label>
-            <textarea
-              value={cover.subtitle || ""}
-              onChange={(e) => setCover("subtitle", e.target.value)}
-              disabled={!canEdit}
-              rows={2}
-              placeholder="One or two lines under the title, e.g. Design-build delivery and operations & maintenance of the wastewater treatment plant."
-              className={`${inp} resize-y`}
-            />
+
+            {g.title === "Document" && (
+              <div className="space-y-1.5">
+                <label htmlFor="cover-subtitle" className={lbl}>Subtitle</label>
+                <textarea
+                  id="cover-subtitle"
+                  value={cover.subtitle || ""}
+                  onChange={(e) => setCover("subtitle", e.target.value)}
+                  disabled={!canEdit}
+                  rows={2}
+                  placeholder="One or two lines under the title, e.g. Design and construction of wastewater treatment upgrades at the Chancery."
+                  className={`${inp} resize-y`}
+                />
+              </div>
+            )}
+
+            {/* The client's seal or logo, printed opposite ours on the cover (the samples show the agency seal). */}
+            {g.title === "Client" && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className={lbl}>Client logo or seal</span>
+                {cover.clientLogoUrl ? (
+                  <div className="relative">
+                    <img src={withFileToken(cover.clientLogoUrl)} alt="Client logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
+                    {canEdit && <button onClick={() => setCover("clientLogoUrl", "")} aria-label="Remove client logo" className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">None yet.</span>
+                )}
+                {canEdit && (
+                  <button onClick={() => clientLogoInput.current?.click()} disabled={uploading === "client-logo"} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200">
+                    {uploading === "client-logo" ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                  </button>
+                )}
+                <input ref={clientLogoInput} type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const u = await doUpload(f, "client-logo"); if (u) setCover("clientLogoUrl", u); } e.target.value = ""; }} />
+              </div>
+            )}
+
+            {/* Contact details print automatically, so they are never retyped (or mistyped) per proposal. */}
+            {g.title === "Submitted by" && (
+              <>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-[11px] text-slate-600 space-y-1">
+                  <p className="font-bold text-slate-700">Printed on the cover automatically</p>
+                  <p>{COMPANY.name}: {COMPANY.phone} · {COMPANY.email} · {COMPANY.website} · UEI {COMPANY.uei} · CAGE {COMPANY.cage}</p>
+                  {isJvProject && (
+                    <p>
+                      {project.jointVenture?.partnerName || "JV partner"}: {[project.jointVenture?.phone, project.jointVenture?.email, project.jointVenture?.partnerAddress].filter(Boolean).join(" · ") || "no contact details yet"}
+                      <span className="text-slate-400"> (from Project Identity)</span>
+                    </p>
+                  )}
+                </div>
+                <label className="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+                  <input type="checkbox" checked={cover.restrictionNotice !== false} onChange={(e) => setCover("restrictionNotice", e.target.checked)} disabled={!canEdit} className="accent-emerald-600 mt-0.5" />
+                  <span>
+                    Print the data-restriction notice on the cover
+                    <span className="block font-normal text-slate-400">"{RESTRICTION_LEGEND}"</span>
+                  </span>
+                </label>
+              </>
+            )}
           </div>
-        </div>
+        ))}
 
         {/* Logos — CR-P (91): whether this is a joint venture is decided ONCE, when the project is
             created, so the cover must not ask again: "this project, we're going to choose it at the

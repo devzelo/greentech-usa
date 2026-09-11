@@ -278,6 +278,15 @@ export interface ProposalCover {
   // Brand-kit cover design: dark photo mosaic, light formal, or gradient side panel.
   coverStyle?: "hero" | "formal" | "panel";
   subtitle?: string;            // one or two lines under the title
+  // What the client's sample covers carry (all optional, older covers still render):
+  responseLabel?: string;       // "Response to Solicitation #" / "Response to Request for Quotation"
+  volumeLabel?: string;         // "Vol. II: Technical Proposal"
+  revisionLabel?: string;       // "Final Proposal Revision"
+  location?: string;            // place of performance, e.g. "U.S. Embassy Manila, Philippines"
+  attentionRole?: string;       // "Contracting Specialist"
+  attentionEmail?: string;
+  clientLogoUrl?: string;       // the client's seal or logo
+  restrictionNotice?: boolean;  // the data-restriction legend on the cover; on unless set false
 }
 export interface ProposalSignatory { id: string; name: string; title: string; signatureUrl: string }
 export interface ProposalCoverLetter {

@@ -246,23 +246,39 @@ const longDate = (s?: string) => {
   return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 };
 
-/** The cover's data, whatever its style: filled fields only, photos with a brand fallback. */
+/** The data-restriction legend the client's sample covers carry (FAR 52.215-1(e) sheet legend). */
+export const RESTRICTION_LEGEND = "Use or disclosure of data contained on this sheet is subject to the restriction on the title page of this proposal.";
+
+/** Who the proposal is from when the cover does not say: GreenTech, or the joint venture. */
+export const defaultSubmitter = (project: ApiProject) =>
+  project.jointVenture?.enabled && project.jointVenture.partnerName ? `GreenTech USA - ${project.jointVenture.partnerName} JV` : COMPANY.name;
+
+/**
+ * The cover's data, whatever its style, in the order the client's samples read: the solicitation
+ * answered, who it is for and where, the dates, who to address, and who submits it with their
+ * contact details (GreenTech always; a JV partner's from Project Identity). Filled fields only.
+ */
 function coverData(kind: string, c: ProposalCover | undefined, project: ApiProject): CoverData {
   const title = c?.proposalTitle || project.name;
   const projectName = c?.projectName || project.name;
+  const jv = project.jointVenture?.enabled ? project.jointVenture : undefined;
+  const lines = (...xs: Array<string | undefined>) => xs.map((x) => (x || "").trim()).filter(Boolean).join("\n");
   const fields = ([
-    ["SOLICITATION NO.", c?.solicitationNo],
+    [(c?.responseLabel || "Response to Solicitation #").toUpperCase(), c?.solicitationNo],
     ["PREPARED FOR", c?.clientName || project.clientInfo?.name || ""],
+    ["LOCATION", c?.location],
     ["PROJECT", projectName !== title ? projectName : ""],
     ["TASK ORDER NO.", c?.taskOrderNo],
     ["CONTRACT NO.", c?.contractNo],
-    ["DUE DATE", longDate(c?.dueDate)],
+    ["SUBMITTAL DUE DATE", longDate(c?.dueDate)],
     ["DATE OF SUBMISSION", longDate(c?.submissionDate)],
     ["SUBMITTED TO", c?.submittedTo],
-    ["ATTENTION", c?.attentionTo],
-    ["SUBMITTED BY", c?.submittedBy || COMPANY.name],
+    ["ATTENTION", lines(c?.attentionTo, c?.attentionRole, c?.attentionEmail)],
+    ["SUBMITTED BY", lines(c?.submittedBy || defaultSubmitter(project), COMPANY.address)],
+    [COMPANY.name.toUpperCase(), lines(COMPANY.phone, COMPANY.email, COMPANY.website, `UEI ${COMPANY.uei} · CAGE ${COMPANY.cage}`)],
+    [(jv?.partnerName || "").toUpperCase(), jv ? lines(jv.phone, jv.email, jv.partnerAddress) : ""],
   ] as Array<[string, string | undefined]>)
-    .filter(([, v]) => !!v && v.trim())
+    .filter(([l, v]) => !!l && !!v && v.trim())
     .map(([label, value]): CoverField => ({ label, value: value as string }));
   const images = (c?.images || []).map((im) => abs(im.url)).filter(Boolean).slice(0, 4);
   const dated = c?.submissionDate || c?.dueDate;
@@ -274,6 +290,10 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     fields,
     images: images.length ? images : [abs(COVER_FALLBACK)],
     jvLogo: c?.logoMode === "dual" ? c?.jvLogoUrl : "",
+    volume: (c?.volumeLabel || "").trim().toUpperCase() || undefined,
+    badge: (c?.revisionLabel || "").trim() || undefined,
+    clientLogo: c?.clientLogoUrl ? abs(c.clientLogoUrl) : undefined,
+    notice: c?.restrictionNotice === false ? "" : RESTRICTION_LEGEND,
   };
 }
 

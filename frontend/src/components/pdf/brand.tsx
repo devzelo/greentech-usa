@@ -32,7 +32,9 @@ export const COMPANY = {
   email: "info@gt-usa.com",
   website: "www.gt-usa.com",
   cage: "8ZJ10",
-  uei: "FYR1QQ8L3SM7",
+  // As registered on SAM.gov (matches the Company Profile and the submitted sample proposals; the
+  // brand kit's scripts carried a typo, FYR1QQ8L3SM7).
+  uei: "FYR1QQSL3SM7",
 } as const;
 
 export const A4 = { w: 595.28, h: 841.89 } as const;
