@@ -2,8 +2,11 @@ import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import SavedDocument, { SavedDocKind, SAVED_DOC_STATUSES } from "../models/SavedDocument";
+import mongoose from "mongoose";
+import SavedDocument, { SavedDocKind, SAVED_DOC_STATUSES, describeSavedDoc } from "../models/SavedDocument";
 import User from "../models/User";
+import Project from "../models/Project";
+import { moveToTrash } from "../lib/recycleBin";
 import Counter, { nextSequence } from "../models/Counter";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
@@ -51,6 +54,9 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const filter: Record<string, unknown> = { projectId: req.params.id };
     if (req.query.kind) filter.kind = String(req.query.kind);
     if (req.query.refId !== undefined) filter.refId = String(req.query.refId);
+    // CR-P (86) — archived versions are hidden unless asked for, so every existing list (Saved
+    // Versions, BOQ, RFQ, PO) leaves them out without changes of its own.
+    if (req.query.includeArchived !== "1") filter.archived = { $ne: true };
     const docs = await SavedDocument.find(filter).sort({ version: -1, createdAt: -1 }).lean();
     res.json(docs);
   } catch (err) { next(err); }
@@ -113,6 +119,7 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
     if (typeof req.body.note === "string") update.note = req.body.note;
     // CR-P (83) — the wider proposal lifecycle.
     if (SAVED_DOC_STATUSES.includes(req.body.status)) update.status = req.body.status;
+    if (typeof req.body.archived === "boolean") update.archived = req.body.archived;   // CR-P (86)
     // CR-P (83) — "last modified" names who made the change, not who created the revision.
     const me = await User.findById(req.user!.userId).select("name").lean();
     update.updatedByName = (me as { name?: string } | null)?.name || "";
@@ -126,12 +133,26 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
   } catch (err) { next(err); }
 });
 
-// DELETE /api/projects/:id/saved-documents/:docId — removes the stored file too.
+// DELETE /api/projects/:id/saved-documents/:docId — CR-P (86): moves the version to the recycle
+// bin. The file stays on disk until it is purged from there, so a deleted revision can be restored
+// exactly as it was (same number, same file). It used to be erased on the spot.
 router.delete("/:docId", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const doc = await SavedDocument.findOneAndDelete({ _id: req.params.docId, projectId: req.params.id });
-    if (doc?.filePath) fs.unlink(path.resolve(doc.filePath), () => {});
-    res.json({ message: "Saved document deleted." });
+    if (!mongoose.isValidObjectId(req.params.docId)) return res.status(404).json({ error: "Not found" });
+    const doc = await SavedDocument.findOne({ _id: req.params.docId, projectId: req.params.id });
+    if (!doc) return res.status(404).json({ error: "Not found" });
+    const pid = req.params.id;
+    const proj = await Project.findOne(mongoose.isValidObjectId(pid) ? { $or: [{ projectId: pid }, { _id: pid }] } : { projectId: pid }).select("name").lean();
+    const label = describeSavedDoc(doc);
+    await moveToTrash({
+      kind: label.binKind, refId: String(doc._id), projectId: pid,
+      projectName: (proj as { name?: string } | null)?.name || "",
+      name: label.name, subtitle: label.subtitle, data: doc.toObject(),
+      files: doc.filePath ? [{ filePath: doc.filePath }] : [],
+      deletedById: req.user!.userId, deletedByName: req.user!.name || "",
+    });
+    await doc.deleteOne();
+    res.json({ message: "Moved to the recycle bin." });
   } catch (err) { next(err); }
 });
 

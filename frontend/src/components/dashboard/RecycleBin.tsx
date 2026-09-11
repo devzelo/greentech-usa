@@ -41,6 +41,9 @@ const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: st
   "board-column": { label: "Board column", icon: ClipboardList, cls: "bg-blue-50 text-blue-600" },
   "procurement-section": { label: "Procurement section", icon: Package, cls: "bg-amber-50 text-amber-600" },
   "procurement-item": { label: "Procurement item", icon: Package, cls: "bg-amber-50 text-amber-600" },
+  // CR-P (86) — a filed proposal revision (a frozen PDF from the proposals table), and other saved versions.
+  "saved-proposal": { label: "Filed proposal", icon: FileText, cls: "bg-indigo-50 text-indigo-600" },
+  "saved-document": { label: "Saved version", icon: FileText, cls: "bg-slate-100 text-slate-500" },
 };
 const metaFor = (k: string) => KIND_META[k] || { label: k, icon: FileText, cls: "bg-slate-100 text-slate-500" };
 const timeAgo = (iso?: string) => {

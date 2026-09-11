@@ -8,7 +8,7 @@ import {
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
-  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows,
+  BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -47,6 +47,7 @@ import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
+import RevisionManage from "./RevisionManage";
 import { useDialogs } from "../../lib/useDialogs";
 import ContractTimeline from "./ContractTimeline";
 import { useRefreshSignal } from "../../lib/refreshBus";
@@ -633,6 +634,11 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
   // CR-P (85) - comparing two revisions of one stream. Opening from a row compares it with the
   // revision just before it (or just after, for the oldest).
   const [compareRevs, setCompareRevs] = useState<{ which: string; fromId: string; toId: string } | null>(null);
+  // CR-P (86) - archived revisions (kept out of the table, listed in a fold under it) and the
+  // revision open in the Manage window.
+  const [archivedDocs, setArchivedDocs] = useState<{ technical: ApiSavedDocument[]; financial: ApiSavedDocument[]; combined: ApiSavedDocument[] }>({ technical: [], financial: [], combined: [] });
+  const [showArchivedRevs, setShowArchivedRevs] = useState<Record<string, boolean>>({});
+  const [manageDoc, setManageDoc] = useState<ApiSavedDocument | null>(null);
   const openCompare = (which: string, docs: ApiSavedDocument[], d: ApiSavedDocument) => {
     const pdfs = docs.filter(isComparable);   // newest first
     const at = pdfs.findIndex((x) => x._id === d._id);
@@ -725,11 +731,22 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
     if (!id) return;
     if (!(await brandedConfirm({
       title: "Delete this revision?",
-      message: `Revision ${Math.max(0, (d.version || 1) - 1)}${d.title ? ` (${d.title})` : ""} and its file are removed. Other revisions are untouched.`,
+      message: `Revision ${Math.max(0, (d.version || 1) - 1)}${d.title ? ` (${d.title})` : ""} moves to the Recycle Bin (Archive & Bin), where it can be restored. Its revision number is not reused.`,
       confirmLabel: "Delete revision",
     }))) return;
-    try { await deleteSavedDocument(id, d._id); await loadNextFinalVer(); toast("Revision deleted.", "success"); }
+    try { await deleteSavedDocument(id, d._id); await loadNextFinalVer(); toast("Revision moved to the recycle bin.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
+  };
+
+  // CR-P (86) - archive a revision: out of the table but kept, restorable from the "Archived" fold
+  // under the table or from Archive & Bin.
+  const archiveProposalDoc = async (d: ApiSavedDocument, next: boolean) => {
+    if (!id) return;
+    try {
+      await updateSavedDocument(id, d._id, { archived: next });
+      await loadNextFinalVer();
+      toast(next ? `Rev ${Math.max(0, (d.version || 1) - 1)} archived. It is under "Archived" below the table, and in Archive & Bin.` : "Revision restored to the table.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not update the revision.", "error"); }
   };
 
   // CR-P (92) - reusable SECTION templates (distinct from whole-proposal templates). Stored as
@@ -768,16 +785,19 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
     if (!id) return;
     try {
       const [t, f, c, nt, nf] = await Promise.all([
-        fetchSavedDocuments(id, "proposal", "technical"),
-        fetchSavedDocuments(id, "proposal", "financial"),
-        fetchSavedDocuments(id, "proposal", "combined"),
+        fetchSavedDocuments(id, "proposal", "technical", true),
+        fetchSavedDocuments(id, "proposal", "financial", true),
+        fetchSavedDocuments(id, "proposal", "combined", true),
         // CR-P (84) - the real next number (deleted ones are never reused). Falls back to
         // "newest + 1" if the server cannot say.
         fetchNextSavedVersion(id, "proposal", "technical").catch(() => 0),
         fetchNextSavedVersion(id, "proposal", "financial").catch(() => 0),
       ]);
       setNextFinalVer({ technical: nt || ((t[0]?.version) || 0) + 1, financial: nf || ((f[0]?.version) || 0) + 1 });
-      setPropDocs({ technical: t, financial: f, combined: c });
+      const live = (l: ApiSavedDocument[]) => l.filter((d) => !d.archived);
+      const gone = (l: ApiSavedDocument[]) => l.filter((d) => d.archived);
+      setPropDocs({ technical: live(t), financial: live(f), combined: live(c) });
+      setArchivedDocs({ technical: gone(t), financial: gone(f), combined: gone(c) });
     } catch { /* ignore */ }
   };
   useEffect(() => { void loadNextFinalVer(); /* eslint-disable-next-line */ }, [id]);
@@ -3467,7 +3487,7 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                             on a fresh project the overview showed no table at all, which is the
                             opposite of what was asked for: "I want to see a table in here". */}
                           <div className="overflow-x-auto">
-                            <table className="w-full min-w-[960px] text-left">
+                            <table className="w-full min-w-[1040px] text-left">
                               <thead>
                                 <tr className="bg-slate-50/50 border-b border-slate-100">
                                   <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
@@ -3523,14 +3543,21 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                     <td className="px-3 py-2.5 align-top">
                                       {/* CR-P (85)/(86) - any revision can be opened or downloaded, not just the newest. */}
                                       <div className="flex items-center gap-1 justify-end">
-                                        <button onClick={() => window.open(savedDocUrl(d.filePath), "_blank")} title="Preview this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Eye size={14} /></button>
-                                        <a href={savedDocUrl(d.filePath)} download={d.fileName} title="Download this revision" className="p-1.5 rounded text-slate-400 hover:text-primary"><Download size={14} /></a>
+                                        {/* CR-P (86) - Manage: title, notes and status of the (frozen) revision. */}
+                                        {canEdit && (
+                                          <button onClick={() => setManageDoc(d)} className="px-2.5 py-1 mr-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200">Manage</button>
+                                        )}
+                                        <button onClick={() => window.open(savedDocUrl(d.filePath), "_blank")} title="Preview this revision" aria-label={`Preview Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-400 hover:text-primary"><Eye size={14} /></button>
+                                        <a href={savedDocUrl(d.filePath)} download={d.fileName} title="Export (download this revision)" aria-label={`Export Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-400 hover:text-primary"><Download size={14} /></a>
                                         {isComparable(d) && docs.filter(isComparable).length > 1 && (
                                           <button onClick={() => openCompare(p.which, docs, d)} title="Compare with another revision" aria-label={`Compare Rev ${revNo(d)} with another revision`} className="p-1.5 rounded text-slate-400 hover:text-primary"><GitCompareArrows size={14} /></button>
                                         )}
                                         <ShareMenu fileName={d.fileName} fileUrl={savedDocUrl(d.filePath)} size={14} />
                                         {canEdit && (
-                                          <button onClick={() => void removeProposalDoc(d)} title="Delete this revision" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+                                          <button onClick={() => void archiveProposalDoc(d, true)} title="Archive this revision" aria-label={`Archive Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-300 hover:text-amber-500"><Archive size={13} /></button>
+                                        )}
+                                        {canEdit && (
+                                          <button onClick={() => void removeProposalDoc(d)} title="Delete this revision (moves to the recycle bin)" aria-label={`Delete Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
                                         )}
                                       </div>
                                     </td>
@@ -3544,10 +3571,45 @@ const PROPOSAL_STATUSES = ["Draft", "Ready", "Submitted", "Awarded", "Rejected"]
                                 {expanded ? "Hide older revisions" : `Show ${older.length} older revision${older.length === 1 ? "" : "s"}`}
                               </button>
                             )}
+                            {/* CR-P (86) - archived revisions: out of the table, still here to open or restore. */}
+                            {archivedDocs[p.which].length > 0 && (
+                              <div className="border-t border-slate-100">
+                                <button onClick={() => setShowArchivedRevs((o) => ({ ...o, [p.which]: !o[p.which] }))} className="w-full px-4 py-2 text-[11px] font-bold text-slate-400 hover:text-slate-900 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                                  <Archive size={12} /> {showArchivedRevs[p.which] ? "Hide archived" : `Archived (${archivedDocs[p.which].length})`}
+                                </button>
+                                {showArchivedRevs[p.which] && (
+                                  <ul className="divide-y divide-slate-50 bg-amber-50/20">
+                                    {archivedDocs[p.which].map((d) => (
+                                      <li key={d._id} className="flex items-center gap-3 px-5 py-2 text-xs">
+                                        <span className="font-bold text-slate-500 whitespace-nowrap">Rev {revNo(d)}</span>
+                                        <span className="text-slate-500 truncate flex-1 min-w-0" title={d.title}>{d.title || "-"}</span>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${PROP_DOC_STATUS[d.status]?.cls || "bg-slate-100 text-slate-500"}`}>{PROP_DOC_STATUS[d.status]?.label || d.status}</span>
+                                        <button onClick={() => window.open(savedDocUrl(d.filePath), "_blank")} title="Preview this revision" aria-label={`Preview archived Rev ${revNo(d)}`} className="p-1.5 rounded text-slate-400 hover:text-primary"><Eye size={14} /></button>
+                                        {canEdit && (
+                                          <button onClick={() => void archiveProposalDoc(d, false)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-500 hover:text-slate-900 hover:bg-white"><RotateCcw size={11} /> Restore</button>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                         {compareRevs?.which === p.which && (
                           <RevisionCompare title={p.title} docs={docs} fromId={compareRevs.fromId} toId={compareRevs.toId} onClose={() => setCompareRevs(null)} />
+                        )}
+                        {manageDoc && docs.some((x) => x._id === manageDoc._id) && (
+                          <RevisionManage
+                            doc={manageDoc}
+                            statuses={PROP_DOC_STATUS}
+                            onClose={() => setManageDoc(null)}
+                            onSave={async (body) => {
+                              if (!id) return;
+                              try { await updateSavedDocument(id, manageDoc._id, body); await loadNextFinalVer(); toast("Revision updated.", "success"); }
+                              catch (err) { toast(err instanceof Error ? err.message : "Could not save the revision.", "error"); throw err; }
+                            }}
+                          />
                         )}
 
                         {p.which !== "combined" && (

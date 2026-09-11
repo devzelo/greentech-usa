@@ -997,6 +997,7 @@ export interface ApiSavedDocument {
   createdAt: string;
   updatedAt?: string;
   updatedByName?: string;
+  archived?: boolean;
 }
 interface SaveMeta { kind: SavedDocKind; refId?: string; title?: string; note?: string; status?: SavedDocStatus }
 
@@ -1007,8 +1008,9 @@ async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): P
   return res.json() as Promise<T>;
 }
 
-export async function fetchSavedDocuments(projectId: string, kind: SavedDocKind, refId = '') {
-  return request<ApiSavedDocument[]>(`/projects/${projectId}/saved-documents?kind=${encodeURIComponent(kind)}&refId=${encodeURIComponent(refId)}`);
+// Archived versions are left out unless `includeArchived` (CR-P (86)).
+export async function fetchSavedDocuments(projectId: string, kind: SavedDocKind, refId = '', includeArchived = false) {
+  return request<ApiSavedDocument[]>(`/projects/${projectId}/saved-documents?kind=${encodeURIComponent(kind)}&refId=${encodeURIComponent(refId)}${includeArchived ? '&includeArchived=1' : ''}`);
 }
 
 // CR-P (84) - the number the next save in a stream will get. Deleted numbers are never reused, so
@@ -1030,7 +1032,7 @@ export async function saveDocumentVersion(projectId: string, meta: SaveMeta, fil
   return postMultipart(`/api/projects/${projectId}/saved-documents`, fd);
 }
 
-export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus }) {
+export async function updateSavedDocument(projectId: string, docId: string, body: { title?: string; note?: string; status?: SavedDocStatus; archived?: boolean }) {
   return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 

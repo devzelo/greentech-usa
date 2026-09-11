@@ -32,6 +32,7 @@ import Task from "../models/Task";
 import TechnicalDoc from "../models/TechnicalDoc";
 import ProcurementSection from "../models/ProcurementSection";
 import ProcurementItem from "../models/ProcurementItem";
+import SavedDocument, { describeSavedDoc } from "../models/SavedDocument";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 // CR-P-26 — Archive & Recycle Bin. Staff-only. The Archive tab aggregates everything that carries an
@@ -56,8 +57,11 @@ const RECYCLE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   company: M(Company), user: M(User), vendor: M(Vendor), template: M(Template),
   "board-column": M(TaskColumn), "board-task": M(Task), "technical-doc": M(TechnicalDoc),
   "procurement-section": M(ProcurementSection), "procurement-item": M(ProcurementItem),
+  // CR-P (86) — filed proposal revisions and other saved document versions.
+  "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
 };
 const ARCHIVE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
+  "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
   project: Project as unknown as mongoose.Model<unknown>,
   agreement: Agreement as unknown as mongoose.Model<unknown>,
   submittal: Submittal as unknown as mongoose.Model<unknown>,
@@ -76,12 +80,13 @@ async function projectNames(): Promise<Record<string, string>> {
 router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const nameById = await projectNames();
-    const [projects, agreements, submittals, rfqs, companies] = await Promise.all([
+    const [projects, agreements, submittals, rfqs, companies, savedDocs] = await Promise.all([
       Project.find({ archived: true }).select("projectId name category location updatedAt").sort({ updatedAt: -1 }).lean(),
       Agreement.find({ archived: true }).select("name agreementType ownerProjectId ownerContextType updatedAt").sort({ updatedAt: -1 }).lean(),
       Submittal.find({ archived: true }).select("title productName projectId updatedAt").sort({ updatedAt: -1 }).lean(),
       Rfq.find({ archived: true }).select("rfqNo title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
       Company.find({ archived: true }).select("name category updatedAt").sort({ updatedAt: -1 }).lean(),
+      SavedDocument.find({ archived: true }).select("kind refId version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
     ]);
     const items = [
       ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", origin: "Projects", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),
@@ -89,6 +94,11 @@ router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunc
       ...submittals.map((s) => ({ kind: "submittal", id: String(s._id), refId: String(s._id), name: s.productName || s.title || "Submittal", subtitle: "Submittal", projectId: s.projectId, projectName: nameById[s.projectId] || "", origin: `Project · ${nameById[s.projectId] || s.projectId} · Submittals`, updatedAt: (s as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${s.projectId}?tab=procurement&proc=submittals` })),
       ...rfqs.map((r) => ({ kind: "rfq", id: String(r._id), refId: String(r._id), name: r.title || r.rfqNo || "RFQ", subtitle: `RFQ ${r.rfqNo || ""}`.trim(), projectId: r.projectId, projectName: nameById[r.projectId] || "", origin: `Project · ${nameById[r.projectId] || r.projectId} · RFQs`, updatedAt: (r as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${r.projectId}?tab=procurement&proc=rfqs` })),
       ...companies.map((c) => ({ kind: "company", id: String(c._id), refId: String(c._id), name: c.name || "Company", subtitle: c.category || "Company", projectId: "", projectName: "Directory", origin: "Directory", updatedAt: (c as { updatedAt?: unknown }).updatedAt, link: "/dashboard/directory" })),
+      // CR-P (86) — archived proposal revisions (and any other archived saved versions).
+      ...savedDocs.map((d) => {
+        const l = describeSavedDoc(d);
+        return { kind: l.binKind, id: String(d._id), refId: String(d._id), name: l.name, subtitle: l.subtitle, projectId: d.projectId, projectName: nameById[d.projectId] || "", origin: binOrigin(l.binKind, nameById[d.projectId] || d.projectId), updatedAt: (d as { updatedAt?: unknown }).updatedAt, link: binLink(l.binKind, d.projectId) };
+      }),
     ];
     items.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
     res.json(items);
@@ -111,7 +121,7 @@ router.post("/archive/:kind/:id/restore", async (req: AuthedRequest, res: Respon
 // "The second tab should be original location, so we can see where it was, where did we archive it
 // from." A bin row that only says "Agreement" tells you nothing about which one.
 function binOrigin(kind: string, projectName: string): string {
-  if (projectName) return `Project · ${projectName}`;
+  if (projectName) return kind === "saved-proposal" ? `Project · ${projectName} · Proposals` : `Project · ${projectName}`;
   switch (kind) {
     case "company": case "vendor": return "Directory";
     case "user": return "Users";
@@ -124,7 +134,8 @@ function binOrigin(kind: string, projectName: string): string {
 }
 function binLink(kind: string, projectId: string): string {
   if (projectId) {
-    if (["submittal", "rfq", "po", "shipment", "procurement-section", "procurement-item"].includes(kind)) {
+    if (kind === "saved-proposal") return `/dashboard/projects/${projectId}?tab=proposals`;
+    if (["submittal", "rfq", "po", "shipment", "procurement-section", "procurement-item", "saved-document"].includes(kind)) {
       return `/dashboard/projects/${projectId}?tab=procurement`;
     }
     return `/dashboard/projects/${projectId}`;

@@ -25,6 +25,25 @@ export interface ISavedDocument extends Document {
   createdByName: string;
   // CR-P (83) - the table shows "created" and "last modified" separately, each with a name.
   updatedByName: string;
+  // CR-P (86) - archived revisions leave the table but are kept, and listed in Archive & Bin.
+  archived: boolean;
+}
+
+/**
+ * How a saved version is named outside its own table (Archive & Bin). Proposals count revisions
+ * from Rev 0 and have their own bin kind so a restore link can open the Proposals tab.
+ */
+export function describeSavedDoc(d: { kind: string; refId?: string; version?: number; title?: string }) {
+  const isProposal = d.kind === "proposal";
+  const stream = isProposal
+    ? `${d.refId ? d.refId.charAt(0).toUpperCase() + d.refId.slice(1) + " " : ""}proposal`
+    : d.kind.toUpperCase();
+  const num = isProposal ? `Rev ${Math.max(0, (d.version || 1) - 1)}` : `v${d.version || 1}`;
+  return {
+    binKind: isProposal ? "saved-proposal" : "saved-document",
+    name: d.title || `${stream} ${num}`,
+    subtitle: `${stream.charAt(0).toUpperCase() + stream.slice(1)} · ${num}`,
+  };
 }
 
 export const SAVED_DOC_STATUSES = ["draft", "final", "completed", "sent", "submitted", "awarded", "not-awarded"] as const;
@@ -47,6 +66,7 @@ const SavedDocumentSchema = new Schema<ISavedDocument>(
     createdById: { type: Schema.Types.ObjectId, ref: "User", default: null },
     createdByName: { type: String, default: "" },
     updatedByName: { type: String, default: "" },
+    archived: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );
