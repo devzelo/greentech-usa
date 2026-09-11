@@ -14,6 +14,7 @@ import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
 import FinanceStrip from "./FinanceStrip";
+import { Fig, FiguresToggle } from "./FiguresPrivacy";
 import AggregateBoard from "./AggregateBoard";
 import ProjectActionsMenu from "./ProjectActionsMenu";
 import { fiveFromFinancials, sumFive } from "../../lib/projectFinance";
@@ -185,19 +186,23 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         <AggregateBoard />
       ) : (
       <>
+      {/* Privacy mode — the Show / Hide financial numbers switch, beside the figures it controls. */}
+      {(showValues || showFinance) && !loading && (
+        <div className="flex justify-end -mb-2"><FiguresToggle variant="inline" /></div>
+      )}
       {/* Portfolio value — All Projects, staff only. Total = GT-only + JV. */}
       {showValues && !loading && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-primary/5 border border-primary/10">
-            <span className="text-lg font-display font-bold text-primary leading-none">{money(valueTotals.total)}</span>
+            <span className="text-lg font-display font-bold text-primary leading-none"><Fig>{money(valueTotals.total)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total value of all projects</span>
           </span>
           <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-lg font-display font-bold text-slate-700 leading-none">{money(valueTotals.gt)}</span>
+            <span className="text-lg font-display font-bold text-slate-700 leading-none"><Fig>{money(valueTotals.gt)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">GT projects value</span>
           </span>
           <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-indigo-50 border border-indigo-100">
-            <span className="text-lg font-display font-bold text-indigo-600 leading-none">{money(valueTotals.jv)}</span>
+            <span className="text-lg font-display font-bold text-indigo-600 leading-none"><Fig>{money(valueTotals.jv)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">JV projects value</span>
           </span>
         </div>

@@ -25,6 +25,7 @@ import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 //   · A vendor invoice on a Procurement PO can be pulled straight in ("From a purchase order").
 
 const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+import { Fig } from "./FiguresPrivacy";
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 const inp = "w-full px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium";
 const finp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
@@ -344,15 +345,15 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoices</span>
           </span>
           <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
-            <span className="text-lg font-display font-bold text-primary leading-none">{money(total)}</span>
+            <span className="text-lg font-display font-bold text-primary leading-none"><Fig>{money(total)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Total invoiced" : "Total billed"}</span>
           </span>
           <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
-            <span className="text-lg font-display font-bold text-emerald-600 leading-none">{money(paid)}</span>
+            <span className="text-lg font-display font-bold text-emerald-600 leading-none"><Fig>{money(paid)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Received" : "Paid"}</span>
           </span>
           <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100">
-            <span className="text-lg font-display font-bold text-amber-600 leading-none">{money(remaining)}</span>
+            <span className="text-lg font-display font-bold text-amber-600 leading-none"><Fig>{money(remaining)}</Fig></span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remaining</span>
           </span>
         </div>
@@ -470,9 +471,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
             <tfoot>
               <tr className="border-t border-slate-100 bg-slate-50/60">
                 <td colSpan={4} className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Totals</td>
-                <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{money(total)}</td>
-                <td className="px-3 py-2.5 font-bold text-emerald-600 whitespace-nowrap">{money(paid)}</td>
-                <td className="px-3 py-2.5 font-bold text-amber-600 whitespace-nowrap">{money(remaining)}</td>
+                <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap"><Fig>{money(total)}</Fig></td>
+                <td className="px-3 py-2.5 font-bold text-emerald-600 whitespace-nowrap"><Fig>{money(paid)}</Fig></td>
+                <td className="px-3 py-2.5 font-bold text-amber-600 whitespace-nowrap"><Fig>{money(remaining)}</Fig></td>
                 <td colSpan={3} />
               </tr>
             </tfoot>

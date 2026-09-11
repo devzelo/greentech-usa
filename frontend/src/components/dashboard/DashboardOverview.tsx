@@ -14,7 +14,25 @@ import { statusMeta, statusMatches } from "../../lib/projectStatus";
 import { locationFlag } from "../../lib/countryFlag";
 import { useMeta } from "../../hooks/useMeta";
 
+import { useFiguresShown } from "../../lib/figuresPrivacy";
+import { Fig, FiguresToggle } from "./FiguresPrivacy";
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+// Privacy mode: the net profit card. While figures are hidden it keeps a neutral colour and label,
+// so neither the red of a loss nor the words "Net loss" give the result away.
+function ProfitCard({ profit, loading }: { profit: number; loading: boolean }) {
+  const shown = useFiguresShown();
+  const loss = shown && profit < 0;
+  return (
+    <div className={`rounded-2xl border shadow-sm p-4 flex items-center gap-3 ${loss ? "bg-red-50 border-red-100" : "bg-primary/5 border-primary/10"}`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${loss ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"}`}><DollarSign size={20} /></div>
+      <div>
+        <p className={`text-xl font-display font-bold leading-none ${loss ? "text-red-600" : "text-primary"}`}>{loading ? "—" : <Fig>{money(profit)}</Fig>}</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{!shown ? "Net profit / loss" : profit >= 0 ? "Net profit" : "Net loss"}</p>
+      </div>
+    </div>
+  );
+}
 const todayStr = () => new Date().toLocaleDateString("en-CA");
 const isToday = (iso: string) => { const d = new Date(iso); return !isNaN(d.getTime()) && d.toLocaleDateString("en-CA") === todayStr(); };
 const timeAgo = (iso: string) => {
@@ -162,21 +180,21 @@ export default function DashboardOverview() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">General information · My Finances</h2>
-            <button onClick={() => navigate("/dashboard/my-projects")} className="text-xs font-bold text-primary hover:underline">My projects</button>
+            <div className="flex items-center gap-4">
+              <FiguresToggle variant="inline" />
+              <button onClick={() => navigate("/dashboard/my-projects")} className="text-xs font-bold text-primary hover:underline">My projects</button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><TrendingUp size={20} /></div>
-              <div><p className="text-xl font-display font-bold text-slate-900 leading-none">{loading ? "—" : money(fin.income)}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total income</p></div>
+              <div><p className="text-xl font-display font-bold text-slate-900 leading-none">{loading ? "—" : <Fig>{money(fin.income)}</Fig>}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total income</p></div>
             </div>
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><TrendingDown size={20} /></div>
-              <div><p className="text-xl font-display font-bold text-slate-900 leading-none">{loading ? "—" : money(fin.expenses)}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total expenses</p></div>
+              <div><p className="text-xl font-display font-bold text-slate-900 leading-none">{loading ? "—" : <Fig>{money(fin.expenses)}</Fig>}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total expenses</p></div>
             </div>
-            <div className={`rounded-2xl border shadow-sm p-4 flex items-center gap-3 ${profit >= 0 ? "bg-primary/5 border-primary/10" : "bg-red-50 border-red-100"}`}>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${profit >= 0 ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"}`}><DollarSign size={20} /></div>
-              <div><p className={`text-xl font-display font-bold leading-none ${profit >= 0 ? "text-primary" : "text-red-600"}`}>{loading ? "—" : money(profit)}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{profit >= 0 ? "Net profit" : "Net loss"}</p></div>
-            </div>
+            <ProfitCard profit={profit} loading={loading} />
           </div>
         </div>
       )}

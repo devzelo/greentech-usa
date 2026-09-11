@@ -85,6 +85,7 @@ import { locationFlag, flagForCountry } from "../../lib/countryFlag";
 import CountrySelect from "./CountrySelect";
 import ScrollableTabs from "./ScrollableTabs";
 import FinanceStrip from "./FinanceStrip";
+import { Fig } from "./FiguresPrivacy";
 import { fiveFromRaw } from "../../lib/projectFinance";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import type { ProjectStatus } from "../../lib/api";
@@ -3477,7 +3478,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
                     <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400" title="Project value / worth">
-                      <DollarSign size={11} /> {project.value}
+                      <DollarSign size={11} /> <Fig>{project.value}</Fig>
                     </span>
                   </>
                 )}
@@ -5795,15 +5796,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {canSeeFigures && (
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
-                  <span className="text-lg font-display font-bold text-emerald-600 leading-none">{fmtMoney(projectFive.approvedExpenses)}</span>
+                  <span className="text-lg font-display font-bold text-emerald-600 leading-none"><Fig>{fmtMoney(projectFive.approvedExpenses)}</Fig></span>
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approved Expenses</span>
                 </span>
                 <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-amber-50 border border-amber-100">
-                  <span className="text-lg font-display font-bold text-amber-600 leading-none">{fmtMoney(projectFive.pendingExpenses)}</span>
+                  <span className="text-lg font-display font-bold text-amber-600 leading-none"><Fig>{fmtMoney(projectFive.pendingExpenses)}</Fig></span>
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pending Expenses</span>
                 </span>
                 <span className="inline-flex items-baseline gap-1.5 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <span className="text-lg font-display font-bold text-slate-700 leading-none">{fmtMoney(projectFive.approvedExpenses + projectFive.pendingExpenses)}</span>
+                  <span className="text-lg font-display font-bold text-slate-700 leading-none"><Fig>{fmtMoney(projectFive.approvedExpenses + projectFive.pendingExpenses)}</Fig></span>
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Expenses</span>
                 </span>
               </div>

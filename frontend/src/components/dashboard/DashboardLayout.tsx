@@ -31,6 +31,7 @@ import { requestRefresh } from "../../lib/refreshBus";
 import GlobalEscClose from "./GlobalEscClose";
 import Toaster from "./Toaster";
 import NotificationBell from "./NotificationBell";
+import { FiguresToggle } from "./FiguresPrivacy";
 import NewRecordMenu from "./NewRecordMenu";
 import PoweredByProjnell from "../PoweredByProjnell";
 
@@ -414,6 +415,9 @@ export default function DashboardLayout() {
             >
               <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
             </button>
+
+            {/* Privacy mode — Show / Hide financial numbers, in reach on every page (screen sharing). */}
+            <FiguresToggle />
 
             <GlobalSearch />
 
