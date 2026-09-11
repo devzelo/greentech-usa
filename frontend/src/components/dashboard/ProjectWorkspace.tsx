@@ -45,6 +45,7 @@ import ProposalProjectsEditor from "./ProposalProjectsEditor";
 import EoiBuilder from "./EoiBuilder";
 import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
+import SectionGroupTemplates from "./SectionGroupTemplates";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
@@ -813,10 +814,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-P (92) - reusable SECTION templates (distinct from whole-proposal templates). Stored as
   // proposal templates carrying a `section` marker, so no new collection was needed.
   const [sectionTemplates, setSectionTemplates] = useState<ApiProposalTemplate[]>([]);
+  const [groupTemplates, setGroupTemplates] = useState<ApiProposalTemplate[]>([]);   // step 9b
   const loadSectionTemplates = async () => {
     try {
       const all = await fetchProposalTemplates();
       setSectionTemplates(all.filter((t) => (t.content as { section?: boolean } | undefined)?.section));
+      setGroupTemplates(all.filter((t) => !!t.content?.group));
     } catch { /* the picker just stays empty */ }
   };
   useEffect(() => { void loadSectionTemplates(); }, []);
@@ -1131,6 +1134,49 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     editVol(vol, (b) => ({
       layout: [...b.layout, { id: `blank-${uid()}`, kind: "blank" as const, title: "Blank page", hidden: false, letterhead: "none" as const }],
     }));
+  // Step 9b (spec 1) - a selected group of sections saved as one template, inserted in one go.
+  // Project uploads stay behind (they belong to this project); company documents travel with it.
+  type GroupItem = NonNullable<ProposalTemplateContent["items"]>[number];
+  const saveGroupTemplate = async (vol: Vol, name: string, metaIds: string[]) => {
+    const secs = sectionsOfVol(vol);
+    const items: GroupItem[] = layoutOfVol(vol).filter((m) => m.kind === "custom" && metaIds.includes(m.id)).map((m) => {
+      const s = secs.find((x) => x.id === m.refId);
+      return {
+        meta: { kind: "custom", title: m.title, pageType: m.pageType, appendix: m.appendix, divider: m.divider, libraryKey: m.libraryKey, guide: m.guide, rfpRef: m.rfpRef, letterhead: m.letterhead, pageBreakBefore: m.pageBreakBefore },
+        section: { heading: s?.heading || m.title, body: s?.body || "", subsections: s?.subsections || [], projects: s?.projects, attachments: (s?.attachments || []).filter((a) => !!a.companyFileId) },
+      };
+    });
+    try {
+      await saveProposalTemplate({ name, description: `Section group (${items.length})`, content: { group: true, volume: vol, items } });
+      await loadSectionTemplates();
+      toast(`Saved "${name}" with ${items.length} section${items.length === 1 ? "" : "s"}.`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save the group.", "error"); }
+  };
+  const insertGroupTemplate = (vol: Vol, t: ApiProposalTemplate) => {
+    const items = t.content?.items || [];
+    if (!items.length) { toast("That group is empty.", "info"); return; }
+    editVol(vol, (b) => {
+      const secs: ProposalSection[] = [];
+      const metas: ProposalSectionMeta[] = [];
+      for (const it of items) {
+        const sid = uid();
+        secs.push({
+          id: sid, heading: it.section.heading || it.meta.title || "Section", body: it.section.body || "",
+          subsections: (it.section.subsections || []).map((x) => ({ ...x, id: uid() })),
+          ...(it.section.projects?.length ? { projects: it.section.projects.map((p) => ({ ...p, id: uid() })) } : {}),
+          ...(it.section.attachments?.length ? { attachments: it.section.attachments } : {}),
+        });
+        metas.push({ ...it.meta, id: `m-${sid}`, kind: "custom", refId: sid, title: it.meta.title || it.section.heading || "Section", hidden: false });
+      }
+      return { sections: [...b.sections, ...secs], layout: [...b.layout, ...metas] };
+    });
+    toast(`Inserted ${items.length} section${items.length === 1 ? "" : "s"} from "${t.name}".`, "success");
+  };
+  const deleteGroupTemplate = async (t: ApiProposalTemplate) => {
+    if (!(await brandedConfirm({ title: `Delete "${t.name}"?`, message: "The saved group is removed. Proposals that already used it keep their sections.", confirmLabel: "Delete group" }))) return;
+    try { await deleteProposalTemplate(t._id); await loadSectionTemplates(); toast("Group deleted.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not delete the group.", "error"); }
+  };
   const insertResource = (b: ApiResourceBlock) => {
     addLayoutSection(b.title, b.body);
     setLibraryOpen(false);
@@ -4218,6 +4264,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     appendixNumbering={technical.appendixNumbering || "numbers"}
                     onAppendixNumberingChange={(n) => setTech("appendixNumbering", n)}
                   />
+                  <SectionGroupTemplates layout={techLayout} templates={groupTemplates} canEdit={canEdit}
+                    onSave={(name, ids) => saveGroupTemplate("technical", name, ids)} onInsert={(t) => insertGroupTemplate("technical", t)} onDelete={deleteGroupTemplate} />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}
                   {techLayout.map((m, i) => (
@@ -4485,6 +4533,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     appendixNumbering={financial.appendixNumbering || "letters"}
                     onAppendixNumberingChange={(n) => setFin("appendixNumbering", n)}
                   />
+                  <SectionGroupTemplates layout={finLayout} templates={groupTemplates} canEdit={canEdit}
+                    onSave={(name, ids) => saveGroupTemplate("financial", name, ids)} onInsert={(t) => insertGroupTemplate("financial", t)} onDelete={deleteGroupTemplate} />
 
                   {finLayout.map((m, i) => (
                     <div key={m.id} className={m.hidden ? "opacity-50" : ""}>

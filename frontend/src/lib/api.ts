@@ -525,6 +525,10 @@ export interface ProposalTemplateContent {
   // Built-in scaffolds carry { letterhead, sectionTitles }; user templates carry a full snapshot.
   letterhead?: ProposalLetterhead;
   sectionTitles?: string[];
+  // Step 9b - a saved group of sections (inserted in one go), from either volume.
+  group?: boolean;
+  volume?: "technical" | "financial";
+  items?: Array<{ meta: Partial<ProposalSectionMeta>; section: Partial<ProposalSection> }>;
   cover?: ProposalCover;
   coverLetter?: ProposalCoverLetter;
   customLetterheadUrl?: string;
