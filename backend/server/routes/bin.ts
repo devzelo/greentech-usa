@@ -34,6 +34,7 @@ import ProcurementSection from "../models/ProcurementSection";
 import ProcurementItem from "../models/ProcurementItem";
 import SavedDocument, { describeSavedDoc } from "../models/SavedDocument";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { sectionToTabId } from "../lib/access";
 
 // CR-P-26 — Archive & Recycle Bin. Staff-only. The Archive tab aggregates everything that carries an
 // `archived` flag; the Recycle Bin lists snapshots of deleted records (see lib/recycleBin).
@@ -90,7 +91,7 @@ router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunc
     ]);
     const items = [
       ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", origin: "Projects", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),
-      ...agreements.map((a) => ({ kind: "agreement", id: String(a._id), refId: String(a._id), name: a.name || `${a.agreementType} agreement`, subtitle: `${a.agreementType || "Agreement"}`, projectId: a.ownerProjectId || "", projectName: nameById[a.ownerProjectId] || "", origin: a.ownerProjectId ? `Project · ${nameById[a.ownerProjectId] || a.ownerProjectId}` : "General Agreements", updatedAt: (a as { updatedAt?: unknown }).updatedAt, link: a.ownerProjectId ? `/dashboard/projects/${a.ownerProjectId}` : "/dashboard/agreements" })),
+      ...agreements.map((a) => ({ kind: "agreement", id: String(a._id), refId: String(a._id), name: a.name || `${a.agreementType} agreement`, subtitle: `${a.agreementType || "Agreement"}`, projectId: a.ownerProjectId || "", projectName: nameById[a.ownerProjectId] || "", origin: a.ownerProjectId ? `Project · ${nameById[a.ownerProjectId] || a.ownerProjectId} · Subcontractor & Employees` : "General Agreements", updatedAt: (a as { updatedAt?: unknown }).updatedAt, link: binLink("agreement", a.ownerProjectId || "") })),
       ...submittals.map((s) => ({ kind: "submittal", id: String(s._id), refId: String(s._id), name: s.productName || s.title || "Submittal", subtitle: "Submittal", projectId: s.projectId, projectName: nameById[s.projectId] || "", origin: `Project · ${nameById[s.projectId] || s.projectId} · Submittals`, updatedAt: (s as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${s.projectId}?tab=procurement&proc=submittals` })),
       ...rfqs.map((r) => ({ kind: "rfq", id: String(r._id), refId: String(r._id), name: r.title || r.rfqNo || "RFQ", subtitle: `RFQ ${r.rfqNo || ""}`.trim(), projectId: r.projectId, projectName: nameById[r.projectId] || "", origin: `Project · ${nameById[r.projectId] || r.projectId} · RFQs`, updatedAt: (r as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${r.projectId}?tab=procurement&proc=rfqs` })),
       ...companies.map((c) => ({ kind: "company", id: String(c._id), refId: String(c._id), name: c.name || "Company", subtitle: c.category || "Company", projectId: "", projectName: "Directory", origin: "Directory", updatedAt: (c as { updatedAt?: unknown }).updatedAt, link: "/dashboard/directory" })),
@@ -129,24 +130,39 @@ function binOrigin(kind: string, projectName: string): string {
     case "announcement": return "Announcements";
     case "template": case "proposal-template": return "Templates";
     case "document": case "technical-doc": case "rfp-document": return "Documents";
+    case "sub-resume": return "Company Documents · Resumes";
+    case "board-task": case "board-column": case "resource-block": return "My Workspace · Board";
     default: return "Company-wide";
   }
 }
-function binLink(kind: string, projectId: string): string {
+// CR-P (73) — where "Open" takes you after a restore. A project item goes straight to the tab it
+// lives in (an agreement to Subcontractor & Employees, a document to its own tab), not just to the
+// project; and every company-wide item gets a link too, so a restore never ends in "done" alone.
+function binLink(kind: string, projectId: string, data?: Record<string, unknown>): string {
   if (projectId) {
-    if (kind === "saved-proposal") return `/dashboard/projects/${projectId}?tab=proposals`;
+    const base = `/dashboard/projects/${projectId}`;
+    if (kind === "saved-proposal" || kind === "proposal-revision") return `${base}?tab=proposals`;
     if (["submittal", "rfq", "po", "shipment", "procurement-section", "procurement-item", "saved-document"].includes(kind)) {
-      return `/dashboard/projects/${projectId}?tab=procurement`;
+      return `${base}?tab=procurement`;
     }
-    return `/dashboard/projects/${projectId}`;
+    if (kind === "agreement" || kind === "sub-invoice" || kind === "sub-agreement") return `${base}?tab=subs`;
+    if (kind === "invoice") return `${base}?tab=finances`;
+    if (kind === "document") {
+      const tab = sectionToTabId(String(data?.section || ""));
+      if (tab) return `${base}?tab=${encodeURIComponent(tab)}`;
+    }
+    return base;
   }
   switch (kind) {
     case "company": case "vendor": return "/dashboard/directory";
     case "user": return "/dashboard/users";
     case "agreement": return "/dashboard/agreements";
-    case "announcement": return "/dashboard/announcements";
-    case "project": return "/dashboard/projects";
-    default: return "";
+    case "project": return "/dashboard/my-projects";
+    case "template": case "proposal-template": case "document": case "technical-doc": case "rfp-document": case "sub-resume":
+      return "/dashboard/documents";
+    case "board-task": case "board-column": case "resource-block": return "/dashboard/my-projects";
+    // Announcements live on the Overview; anything else lands on the dashboard rather than nowhere.
+    default: return "/dashboard";
   }
 }
 
@@ -158,7 +174,7 @@ router.get("/recycle", async (_req: AuthedRequest, res: Response, next: NextFunc
       projectId: e.projectId, projectName: e.projectName,
       origin: binOrigin(e.kind, e.projectName),
       // CR-P (73) — so the restore toast can offer "Open" and take you straight there.
-      link: e.kind === "project" ? `/dashboard/projects/${e.refId || ""}` : binLink(e.kind, e.projectId),
+      link: e.kind === "project" ? `/dashboard/projects/${e.refId || ""}` : binLink(e.kind, e.projectId, e.data as Record<string, unknown>),
       deletedByName: e.deletedByName, deletedAt: (e as { createdAt?: unknown }).createdAt,
     })));
   } catch (err) { next(err); }
@@ -177,7 +193,7 @@ router.post("/recycle/:id/restore", async (req: AuthedRequest, res: Response, ne
     if (entry.kind === "submittal" && Array.isArray(entry.extra)) {
       for (const rev of entry.extra as object[]) { try { await SubmittalRevision.create(rev); } catch { /* skip */ } }
     }
-    const link = entry.kind === "project" ? `/dashboard/projects/${entry.refId || ""}` : binLink(entry.kind, entry.projectId);
+    const link = entry.kind === "project" ? `/dashboard/projects/${entry.refId || ""}` : binLink(entry.kind, entry.projectId, entry.data as Record<string, unknown>);
     await entry.deleteOne();
     res.json({ message: "Restored", link, name: entry.name, kind: entry.kind });
   } catch (err) { next(err); }
