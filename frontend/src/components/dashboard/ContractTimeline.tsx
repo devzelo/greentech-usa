@@ -135,7 +135,7 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
 
       {/* Expanded: the full picture, as a dropdown on top of everything below. */}
       {open && (
-        <div className="absolute left-0 right-0 top-full mt-2 z-[300] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-4 max-h-[70vh] overflow-y-auto">
+        <div className="absolute left-0 right-0 top-full mt-2 z-[70] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-4 max-h-[70vh] overflow-y-auto">
           <div className="flex items-end gap-4 sm:gap-6">
             <div className="shrink-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Start date</p>

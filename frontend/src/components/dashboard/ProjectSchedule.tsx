@@ -138,7 +138,7 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
 
       {/* Expanded: the milestones, as a dropdown on top of everything below. */}
       {open && (
-        <div className="absolute left-0 right-0 top-full mt-2 z-[300] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-3 max-h-[70vh] overflow-y-auto">
+        <div className="absolute left-0 right-0 top-full mt-2 z-[70] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-3 max-h-[70vh] overflow-y-auto">
           {!hasMs ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-500 max-w-lg">
@@ -288,7 +288,7 @@ function MilestoneSetup({ current, startDate, onSave, onClose }: {
   const save = async () => { setSaving(true); try { await onSave(chosen); } catch { /* shown by the workspace */ } finally { setSaving(false); } };
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3 border-b border-slate-100">
           <div>
