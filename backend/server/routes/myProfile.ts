@@ -10,6 +10,7 @@ import SubInvoice from "../models/SubInvoice";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
 import { buildUserLinks, buildCompanyLinks, escapeRegex } from "../lib/profileLinks";
+import { partyMaySee } from "../lib/agreementAccess";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 // CR-P (16) — self-profile endpoints. Every role uses these for its own profile preview
@@ -88,8 +89,18 @@ router.get("/links", async (req: AuthedRequest, res: Response, next: NextFunctio
     const projects = [...userLinks.projects, ...(companyLinks?.projects || [])]
       .filter((p) => { const k = String((p as { projectId?: string }).projectId || (p as { _id: unknown })._id); if (seenPids.has(k)) return false; seenPids.add(k); return true; });
 
-    // Company agreements come back with `projectId`; user ones with `ownerProjectId` — align them.
-    const companyAgreements = (companyLinks?.agreements || []).map((a) => ({ ...a, ownerProjectId: (a as { projectId?: string }).projectId }));
+    // CR-P (62) — being NAMED on an agreement is not the same as having been GIVEN it. This list
+    // used to hold every agreement naming me or my company, drafts included. A party now gets only
+    // what was shared with them (see partyMaySee); agreements I created myself stay mine. Only the
+    // fields the list shows leave the server: never the sharing log or who else it went to.
+    const meParty = { email: String(user.email || "").trim().toLowerCase(), companyId: company ? String(company._id) : "" };
+    const partyView = (a: { _id: unknown; name?: string; agreementNo?: string; title?: string; agreementType?: string; status?: string; ownerProjectId?: string; ownerContextType?: string }) => ({
+      _id: a._id, name: a.name || "", agreementNo: a.agreementNo || "", title: a.title || "",
+      agreementType: a.agreementType || "", status: a.status || "",
+      ownerProjectId: a.ownerProjectId || "", ownerContextType: a.ownerContextType || "",
+    });
+    const myUserAgreements = userLinks.agreements.filter((a) => String(a.addedById || "") === uid || partyMaySee(a, meParty));
+    const companyAgreements = (companyLinks?.agreements || []).filter((a) => partyMaySee(a, meParty));
 
     const projectNames: Record<string, string> = { ...userLinks.projectNames };
     for (const p of [...projects, ...(companyLinks?.projects || [])] as Array<{ projectId?: string; name?: string }>)
@@ -101,7 +112,7 @@ router.get("/links", async (req: AuthedRequest, res: Response, next: NextFunctio
 
     res.json({
       projects,
-      agreements: dedupe(userLinks.agreements as Array<{ _id: unknown }>, companyAgreements as Array<{ _id: unknown }>),
+      agreements: dedupe(myUserAgreements.map(partyView), companyAgreements.map(partyView)),
       expenses: userLinks.expenses,
       reminders: userLinks.reminders,
       submittals: dedupe(userLinks.submittals as Array<{ _id: unknown }>, (companyLinks?.submittals || []) as Array<{ _id: unknown }>),

@@ -24,7 +24,8 @@ export async function buildUserLinks(uid: string, name: string) {
   const [owned, guest, agreements, expenses, reminders, submittals, pos] = await Promise.all([
     Project.find({ ownerId: uid }).select("projectId name status location").lean(),
     Project.find({ "guests.userId": uid }).select("projectId name status location").lean(),
-    Agreement.find({ $or: [{ ownerUserId: uid }, { addedById: uid }] }).select("name agreementType status ownerProjectId").sort({ createdAt: -1 }).limit(60).lean(),
+    // The sharing fields are selected so the self profile can apply CR-P (62) before anything leaves.
+    Agreement.find({ $or: [{ ownerUserId: uid }, { addedById: uid }] }).select("name agreementNo title agreementType status ownerProjectId ownerContextType ownerUserId addedById visibleTo shares archived").sort({ createdAt: -1 }).limit(60).lean(),
     Expense.find({ addedById: uid }).select("description amount qty approval projectId category").sort({ createdAt: -1 }).limit(60).lean(),
     Reminder.find({ userId: uid }).select("title dueAt projectId projectName").sort({ dueAt: -1 }).limit(60).lean(),
     nameRx ? Submittal.find({ addedByName: nameRx }).select("productName status projectId").sort({ createdAt: -1 }).limit(60).lean() : [],
@@ -63,7 +64,16 @@ export async function buildCompanyLinks(companyId: string, name: string, email =
   if (email) memberMatch.push({ "subcontractors.email": new RegExp(`^${escapeRegex(email)}$`, "i") });
   if (nameRx) memberMatch.push({ "subcontractors.name": nameRx });
 
-  const [invoices, rfqs, pos, shipments, quotes, agreements, submittals, memberProjects] = await Promise.all([
+  // CR-P (19)/(63) — a company is on an agreement as party 2, as party 3 or 4, or because it was
+  // shared with it. Rows from before the Directory link are matched on the party 2 name.
+  const agreementMatch: Record<string, unknown>[] = [
+    { "partySnapshot.party2.companyId": companyId },
+    { "partySnapshot.extraParties.companyId": companyId },
+    { "visibleTo.companyId": companyId },
+  ];
+  if (nameRx) agreementMatch.push({ "partySnapshot.party2.name": nameRx });
+
+  const [invoices, rfqs, pos, shipments, quotes, agreementRows, submittals, memberProjects] = await Promise.all([
     // Invoices link by companyId (receiver picker) OR by matching party name.
     Invoice.find(nameRx ? { $or: [{ companyId }, { party: nameRx }] } : { companyId }).select("number type party amount date status projectId").sort({ createdAt: -1 }).limit(200).lean(),
     Rfq.find({ "recipients.companyId": companyId }).select("rfqNo title status projectId sentAt").sort({ createdAt: -1 }).limit(200).lean(),
@@ -72,14 +82,16 @@ export async function buildCompanyLinks(companyId: string, name: string, email =
     // CR-P-06b — shipping/delivery records: shipments whose logistics agency is this company.
     nameRx ? Shipment.find({ agencyName: nameRx }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     vendorIds.length ? VendorQuote.find({ vendorId: { $in: vendorIds } }).select("rfqId total status accepted projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
-    // CR-P-06b — agreements/contracts with this company (matched on the counterparty name).
-    Agreement.find(nameRx
-      ? { $or: [{ "partySnapshot.party2.companyId": companyId }, { "partySnapshot.party2.name": nameRx }] }
-      : { "partySnapshot.party2.companyId": companyId }).select("name status projectId").sort({ createdAt: -1 }).limit(200).lean(),
+    // CR-P-06b — agreements/contracts with this company. The sharing fields ride along so the
+    // company's own login only gets what was shared with it (CR-P (62)).
+    Agreement.find({ $or: agreementMatch }).select("name agreementNo title agreementType status ownerProjectId ownerContextType visibleTo shares archived").sort({ createdAt: -1 }).limit(200).lean(),
     // CR-P-06b — submittals for this company's products (matched on manufacturer/brand).
     nameRx ? Submittal.find({ manufacturer: nameRx }).select("productName manufacturer status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     memberMatch.length ? Project.find({ $or: memberMatch }).select("projectId name status").limit(200).lean() : [],
   ]);
+  // An agreement's project lives in ownerProjectId. This used to select a `projectId` field that
+  // agreements do not have, so agreement rows never linked to their project.
+  const agreements = agreementRows.map((a) => ({ ...a, projectId: a.ownerProjectId || "" }));
 
   // "Projects they have been involved with": every project referenced by any linked record above,
   // plus (CR-P 16) projects where the company is a subcontractor or its login is a guest.

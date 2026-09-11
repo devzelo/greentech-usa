@@ -806,7 +806,7 @@ export function userFileUrl(f: UserFile): string {
 // CR-P-57 — everything related to a user (projects, agreements, POs, submittals, expenses, reminders).
 export interface UserLinks {
   projects: Array<{ _id: string; projectId?: string; name: string; status: string; location?: string }>;
-  agreements: Array<{ _id: string; name: string; agreementType: string; status: string; ownerProjectId?: string }>;
+  agreements: Array<{ _id: string; name: string; agreementNo?: string; title?: string; agreementType: string; status: string; ownerProjectId?: string; ownerContextType?: "user" | "project" | "general" | "" }>;
   expenses: Array<{ _id: string; description: string; amount: string; qty?: string; approval?: string; projectId?: string; category?: string }>;
   reminders: Array<{ _id: string; title: string; dueAt?: string; projectId?: string; projectName?: string }>;
   submittals: Array<{ _id: string; productName: string; status: string; projectId?: string }>;
