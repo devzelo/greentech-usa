@@ -46,7 +46,9 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
-import type { ProposalSubsection } from "../../lib/api";
+import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc } from "../../lib/api";
+import CompanyDocPicker from "./CompanyDocPicker";
+import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType } from "../../lib/proposalLibrary";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
@@ -926,7 +928,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const updateSectionRow = (sid: string, field: "heading" | "body", value: string) =>
     setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, [field]: value } : s)));
   // CR-B-18 — attach / remove pre-made files (resume/excel/pdf/picture) on a proposal section.
-  const setSectionAttachments = (sid: string, atts: Array<{ name: string; url: string }>) =>
+  // Proposal step 4 - company documents a proposal can pull in with no upload (item 104).
+  const [companyDocs, setCompanyDocs] = useState<ProposalDoc[]>([]);
+  useEffect(() => { fetchProposalDocs().then(setCompanyDocs).catch(() => {}); }, [id]);
+  const [docPickFor, setDocPickFor] = useState<string | null>(null);   // section id the picker is open for
+  const setSectionAttachments = (sid: string, atts: ProposalAttachment[]) =>
     setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, attachments: atts } : s)));
   // Spec 1 - unlimited subsections under a section, numbered in print (1.1, 1.2 / A.1, A.2).
   const setSubsections = (sid: string, subs: ProposalSubsection[]) =>
@@ -980,14 +986,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // Add a custom section (optionally with a standard-section title) and append it to the layout.
   // Spec 2/5 - a section from the library carries its identity (libraryKey), guidance, page type and
   // appendix flag; a custom one is plain designed content.
-  const addLayoutSection = (title: string, body = "", opts: SectionAddOpts = {}) =>
+  const addLayoutSection = (title: string, body = "", opts: SectionAddOpts = {}) => {
+    // Item 104 / spec 6 "Automatic Appendices": a library type pulls in the latest valid company
+    // document of that type (e.g. Insurance Certificates → the current certificate), no upload step.
+    const auto = opts.libraryKey ? bestDocFor(opts.libraryKey, companyDocs) : undefined;
     setTechnical((p) => {
       const newId = uid();
-      const section = { id: newId, heading: title || "New Section", body };
+      const section = { id: newId, heading: title || "New Section", body, ...(auto ? { attachments: [docAttachment(auto)] } : {}) };
       const meta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: title || "New Section", hidden: false, ...opts };
       const layout = [...resolveProposalLayout(p), meta];
       return { ...p, sections: [...p.sections, section], layout };
     });
+    if (auto) {
+      const ex = expiryInfo(auto.expiresAt);
+      toast(`Attached from Company Documents: ${auto.name}${ex.state === "expired" ? `. ${ex.label}: replace it before sending.` : ""}`, ex.state === "expired" ? "error" : "success");
+    }
+  };
   const duplicateLayoutSection = (meta: ProposalSectionMeta) =>
     setTechnical((p) => {
       const src = p.sections.find((s) => s.id === meta.refId);
@@ -1137,6 +1151,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
     const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
+    // Item 104 / spec 6 - warn when a company document in the proposal has expired.
+    if (which === "technical") {
+      const expired = technical.sections.flatMap((s) => s.attachments || [])
+        .filter((a) => a.companyFileId && expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt).state === "expired");
+      if (expired.length) toast(`Expired document${expired.length === 1 ? "" : "s"} in this proposal: ${expired.map((a) => a.name).join(", ")}. Replace ${expired.length === 1 ? "it" : "them"} before sending.`, "error");
+    }
     const { blob, skipped } = await assembleProposalParts(makeParts, atts);
     if (skipped.length) toast(`Attached but couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
     return blob;
@@ -3911,6 +3931,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           {(s.attachments || []).map((a, ai) => (
                             <span key={ai} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
                               <a href={assetSrc(a.url)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
+                              {/* Item 104 - a company document out of date is flagged where it is used. */}
+                              {a.companyFileId && (() => {
+                                const ex = expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt);
+                                return ex.state === "expired" || ex.state === "expiring" ? <span className={`px-1.5 rounded-full text-[9px] ${ex.cls}`}>{ex.label}</span> : null;
+                              })()}
                               <button onClick={() => setSectionAttachments(s.id, (s.attachments || []).filter((_, j) => j !== ai))} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
                             </span>
                           ))}
@@ -3918,6 +3943,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             <Upload size={11} /> Upload
                             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSectionDoc(s.id, f); e.target.value = ""; }} />
                           </label>
+                          {/* Item 104 - pull a fixed document straight from Company Documents, no upload. */}
+                          <button onClick={() => setDocPickFor(s.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-[10px] font-bold text-primary hover:bg-primary/20" title="Tick documents from Company Documents to insert, as they are">
+                            <FileText size={11} /> From Company Documents
+                          </button>
+                          {docPickFor === s.id && (
+                            <CompanyDocPicker
+                              docs={companyDocs}
+                              suggestKey={m.libraryKey}
+                              already={new Set((s.attachments || []).map((a) => a.companyFileId || "").filter(Boolean))}
+                              onPick={(files) => setSectionAttachments(s.id, [...(s.attachments || []), ...files.map(docAttachment)])}
+                              onClose={() => setDocPickFor(null)}
+                            />
+                          )}
                           {/* CR-P (94) - these used to be stored but never printed. */}
                           <span className="text-[10px] text-slate-400">PDFs print right after this section, as uploaded.</span>
                         </div>

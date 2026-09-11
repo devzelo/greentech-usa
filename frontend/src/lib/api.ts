@@ -187,7 +187,9 @@ export interface ApiProject {
 export interface ProposalEmployee { id: string; name: string; role: string; resumeName?: string; empId?: string; userId?: string }
 export interface ProposalSimilarProject { id: string; name: string; client: string; value: string; year: string; summary: string }
 export interface ProposalTimelinePhase { phase: string; start: string; end: string }
-export interface ProposalSection { id: string; heading: string; body: string; attachments?: Array<{ name: string; url: string }>; subsections?: ProposalSubsection[] } // body is HTML; CR-B-18 per-section files
+export interface ProposalSection { id: string; heading: string; body: string; attachments?: ProposalAttachment[]; subsections?: ProposalSubsection[] } // body is HTML; CR-B-18 per-section files
+/** A file on a section: uploaded, or pulled from Company Documents (companyFileId, for expiry checks). */
+export interface ProposalAttachment { name: string; url: string; companyFileId?: string }
 /** Spec 1 - a subsection under a section, numbered in print (1.1, 1.2 / A.1, A.2). */
 export interface ProposalSubsection { id: string; heading: string; body: string }
 
@@ -2682,7 +2684,12 @@ export interface CompanyFile {
   uploadedByName: string;
   createdAt: string;
   archived?: boolean;
+  libraryKey?: string;   // proposal step 4 - an Appendix Library key, e.g. "appx-sam"
+  version?: string;
+  expiresAt?: string;    // YYYY-MM-DD
 }
+/** A company document offered to a proposal, with the label of the tab it lives in. */
+export type ProposalDoc = CompanyFile & { tabLabel?: string };
 
 // CR-P-07 — per-company profile documents (catalogues / certifications / company docs).
 export async function fetchCompanyProfileFiles(companyId: string): Promise<CompanyFile[]> {
@@ -2770,6 +2777,13 @@ export async function uploadCompanyFile(file: File, opts: { kind: "company" | "c
 export async function deleteCompanyFile(id: string): Promise<void> {
   await request(`/company/files/${id}`, { method: 'DELETE' });
 }
+
+/** Proposal step 4 - set what a company document is, its version and expiry date. */
+export async function updateCompanyFile(id: string, body: { libraryKey?: string; version?: string; expiresAt?: string; description?: string }): Promise<CompanyFile> {
+  return request(`/company/files/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+/** Every active company document (and classified ones, if allowed), for picking into a proposal. */
+export async function fetchProposalDocs(): Promise<ProposalDoc[]> { return request('/company/proposal-docs'); }
 
 /** Resolve a company/classified file to a viewable URL (seeded `url`, else token-guarded upload). */
 export function companyFileUrl(f: CompanyFile): string {

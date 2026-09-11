@@ -16,6 +16,12 @@ export interface ICompanyFile extends Document {
   description: string;
   uploadedByName: string;
   archived: boolean; // CR-P-39 — hidden from the normal list, restorable from the Archived view
+  // Proposal step 4 (item 104; spec 3 and 6) - what the document is (an Appendix Library key such as
+  // "appx-sam" or "appx-insurance"), its version and its expiry date, so a proposal can pull in the
+  // latest valid one and warn when it is out of date.
+  libraryKey: string;
+  version: string;
+  expiresAt: string; // YYYY-MM-DD, "" when it does not expire
 }
 
 const CompanyFileSchema = new Schema<ICompanyFile>(
@@ -32,6 +38,9 @@ const CompanyFileSchema = new Schema<ICompanyFile>(
     description: { type: String, default: "" },
     uploadedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false },
+    libraryKey: { type: String, default: "", index: true },
+    version: { type: String, default: "" },
+    expiresAt: { type: String, default: "" },
   },
   { timestamps: true }
 );

@@ -6,9 +6,70 @@ import {
 } from "lucide-react";
 import {
   fetchCompanyTabs, createCompanyTab, renameCompanyTab, deleteCompanyTab,
-  fetchCompanyFiles, uploadCompanyFile, deleteCompanyFile, setCompanyFileArchived, companyFileUrl,
+  fetchCompanyFiles, uploadCompanyFile, deleteCompanyFile, setCompanyFileArchived, companyFileUrl, updateCompanyFile,
   CompanyTab, CompanyFile,
 } from "../../lib/api";
+import { APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
+import { expiryInfo } from "../../lib/docExpiry";
+import { createPortal } from "react-dom";
+
+// Proposal step 4 - what a document is (Appendix Library type), its version and expiry, shown as a
+// badge so an expiring insurance certificate is seen before it goes into a proposal.
+const typeTitle = (key?: string) => APPENDIX_LIBRARY.find((a) => a.key === key)?.title || "";
+function ExpiryBadge({ f }: { f: CompanyFile }) {
+  const ex = expiryInfo(f.expiresAt);
+  if (ex.state === "none") return null;
+  return <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${ex.cls}`}>{ex.label}</span>;
+}
+
+function DocMetaDialog({ file, onClose, onSaved }: { file: CompanyFile; onClose: () => void; onSaved: (f: CompanyFile) => void }) {
+  const [libraryKey, setLibraryKey] = useState(file.libraryKey || "");
+  const [version, setVersion] = useState(file.version || "");
+  const [expiresAt, setExpiresAt] = useState(file.expiresAt || "");
+  const [busy, setBusy] = useState(false);
+  const inp = "w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-primary/20";
+  const save = async () => {
+    setBusy(true);
+    try { onSaved(await updateCompanyFile(file._id, { libraryKey, version: version.trim(), expiresAt })); toast("Saved.", "success"); onClose(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
+    finally { setBusy(false); }
+  };
+  return createPortal(
+    <div className="fixed inset-0 z-[160] bg-slate-900/50 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`Details for ${file.name}`} className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 pt-5 pb-3">
+          <h3 className="font-display font-bold text-slate-900 text-base">Document details</h3>
+          <p className="text-[11px] text-slate-400 truncate" title={file.name}>{file.name}</p>
+        </div>
+        <div className="px-6 space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="doc-type" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Document type</label>
+            <select id="doc-type" value={libraryKey} onChange={(e) => setLibraryKey(e.target.value)} className={`${inp} appearance-none`}>
+              <option value="">Not set</option>
+              {APPENDIX_LIBRARY.map((a) => <option key={a.key} value={a.key}>{a.title}</option>)}
+            </select>
+            <p className="text-[10px] text-slate-400">A proposal appendix of this type attaches the latest valid document automatically.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label htmlFor="doc-version" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Version</label>
+              <input id="doc-version" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 2026" className={inp} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="doc-expiry" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Expires</label>
+              <input id="doc-expiry" type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className={inp} />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-4">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-50">Cancel</button>
+          <button onClick={() => void save()} disabled={busy} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-40">{busy ? "Saving..." : "Save"}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 import { iconFor, colorFor, classifyForFilter, formatDate } from "./fileHelpers";
 import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
@@ -30,6 +91,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
   const [tabDialog, setTabDialog] = useState<{ mode: "addMain" | "addSub" | "rename"; tab?: CompanyTab } | null>(null);
   const [confirmTab, setConfirmTab] = useState<CompanyTab | null>(null);
   const [confirmFile, setConfirmFile] = useState<CompanyFile | null>(null);
+  const [metaFile, setMetaFile] = useState<CompanyFile | null>(null);   // proposal step 4 - type/version/expiry
 
   const mains = useMemo(() => tabs.filter((t) => !t.parentId), [tabs]);
   const subsOf = (parentId: string) => tabs.filter((t) => t.parentId === parentId);
@@ -255,10 +317,17 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                 <div className="p-4 flex flex-col gap-1.5 flex-grow">
                   <p className="font-bold text-sm text-slate-900 line-clamp-1 break-all">{f.name}</p>
                   {!!f.description && <p className="text-xs text-slate-500 line-clamp-2 flex-grow">{f.description}</p>}
+                  {(!!f.libraryKey || !!f.expiresAt) && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {!!f.libraryKey && <span className="text-[10px] font-bold text-slate-500">{typeTitle(f.libraryKey)}{f.version ? ` · v${f.version}` : ""}</span>}
+                      <ExpiryBadge f={f} />
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 pt-2 mt-auto border-t border-slate-50">
                     <button onClick={() => openPreview(f)} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-primary px-2 py-1"><Eye size={14} /> Preview</button>
                     <a href={companyFileUrl(f)} download={f.name} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Download"><Download size={14} /></a>
                     <ShareMenu fileName={f.name} fileUrl={companyFileUrl(f)} size={14} />
+                    <button onClick={() => setMetaFile(f)} className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50" title="Type, version and expiry"><Pencil size={14} /></button>
                     <button onClick={() => archiveFile(f, !f.archived)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-50" title={f.archived ? "Restore" : "Archive"}>{f.archived ? <RotateCcw size={14} /> : <Archive size={14} />}</button>
                     <button onClick={() => setConfirmFile(f)} className="ml-auto p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-slate-50" title="Delete"><Trash2 size={14} /></button>
                   </div>
@@ -276,6 +345,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</th>
+                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Type &amp; expiry</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Added by</th>
                   <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</th>
                   <th className="text-right px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
@@ -292,6 +362,12 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                       </div>
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-500 max-w-xs truncate">{f.description || "—"}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col items-start gap-1">
+                        {f.libraryKey ? <span className="text-[11px] font-bold text-slate-600">{typeTitle(f.libraryKey)}{f.version ? ` · v${f.version}` : ""}</span> : <span className="text-[11px] text-slate-300">Not set</span>}
+                        <ExpiryBadge f={f} />
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-xs font-bold text-slate-400">{f.uploadedByName || "—"}</td>
                     <td className="px-6 py-4 text-xs text-slate-500">{f.createdAt ? formatDate(f.createdAt) : "—"}</td>
                     <td className="px-6 py-4 text-right">
@@ -299,6 +375,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
                         <button onClick={() => openPreview(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview"><Eye size={16} /></button>
                         <a href={companyFileUrl(f)} download={f.name} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={16} /></a>
                         <ShareMenu fileName={f.name} fileUrl={companyFileUrl(f)} size={16} />
+                        <button onClick={() => setMetaFile(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Type, version and expiry"><Pencil size={16} /></button>
                         <button onClick={() => archiveFile(f, !f.archived)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={f.archived ? "Restore" : "Archive"}>{f.archived ? <RotateCcw size={16} /> : <Archive size={16} />}</button>
                         <button onClick={() => setConfirmFile(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={16} /></button>
                       </div>
@@ -314,6 +391,10 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
       <AnimatePresence>
         {preview && <DocumentViewer doc={preview} onClose={() => setPreview(null)} />}
       </AnimatePresence>
+
+      {metaFile && (
+        <DocMetaDialog file={metaFile} onClose={() => setMetaFile(null)} onSaved={(nf) => setFiles((prev) => prev.map((x) => (x._id === nf._id ? { ...x, ...nf } : x)))} />
+      )}
 
       <PromptDialog
         open={!!tabDialog}

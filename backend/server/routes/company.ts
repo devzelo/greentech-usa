@@ -366,6 +366,25 @@ router.get("/files", async (req: AuthedRequest, res: Response, next: NextFunctio
   }
 });
 
+// GET /api/company/proposal-docs — every active company document (and the classified ones, for
+// people allowed to read them), across all tabs, for pulling straight into a proposal with no upload
+// step (proposal step 4, item 104). Each carries its tab's label.
+router.get("/proposal-docs", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    await ensureSeeded();
+    const kinds: Array<"company" | "classified"> = ["company"];
+    if (await classifiedAllowed(req)) kinds.push("classified");
+    const [files, tabs] = await Promise.all([
+      CompanyFile.find({ kind: { $in: kinds }, archived: { $ne: true } }).sort({ createdAt: -1 }).lean(),
+      CompanyTab.find().select("tabId label").lean(),
+    ]);
+    const labelOf = new Map(tabs.map((t) => [t.tabId, t.label]));
+    res.json(files.map((f) => ({ ...f, tabLabel: labelOf.get(f.tabId) || "" })));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/company/stamps — company stamps (the classified Stamps tab), readable by any staff
 // member so they can stamp a PO without full classified access.
 router.get("/stamps", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
@@ -451,6 +470,10 @@ router.patch("/files/:id", async (req: AuthedRequest, res: Response, next: NextF
     if (file.kind === "classified" && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
     if (typeof req.body?.archived === "boolean") file.archived = req.body.archived;
     if (typeof req.body?.description === "string") file.description = req.body.description.slice(0, 2000);
+    // Proposal step 4 - what the document is, its version and expiry.
+    if (typeof req.body?.libraryKey === "string") file.libraryKey = req.body.libraryKey.slice(0, 80);
+    if (typeof req.body?.version === "string") file.version = req.body.version.slice(0, 40);
+    if (typeof req.body?.expiresAt === "string" && (req.body.expiresAt === "" || /^\d{4}-\d{2}-\d{2}$/.test(req.body.expiresAt))) file.expiresAt = req.body.expiresAt;
     await file.save();
     res.json(file);
   } catch (err) { next(err); }
