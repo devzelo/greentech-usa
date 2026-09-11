@@ -1,7 +1,8 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
-import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover } from "../../lib/api";
+import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject } from "../../lib/api";
+import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
 import { resolveProposalLayout, resolveFinancialTables } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
@@ -104,6 +105,26 @@ const styles = StyleSheet.create({
   td: { fontSize: 8.5, padding: 6, color: BRAND.slate },
   staffBand: { backgroundColor: "#ECFDF5", paddingVertical: 3, paddingHorizontal: 6, borderBottom: `0.6 solid ${BRAND.border}` },
   staffBandText: { fontSize: 7, fontWeight: 700, color: "#047857", letterSpacing: 0.8 },
+
+  // Step 6 - project tables and data sheets (the company profile's featured-project style)
+  ppTh: { fontSize: 6.4, paddingVertical: 5, paddingHorizontal: 4 },
+  ppTd: { fontSize: 7.4, paddingVertical: 5, paddingHorizontal: 4, lineHeight: 1.35 },
+  ppHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 },
+  ppTitle: { fontFamily: "Outfit", fontSize: 16, fontWeight: 700, color: BRAND.slate, lineHeight: 1.2, flex: 1, paddingRight: 14 },
+  ppSide: { alignItems: "flex-end" },
+  ppValue: { fontFamily: "Outfit", fontSize: 13, fontWeight: 700, color: BRAND.emerald, lineHeight: 1.2 },
+  ppPill: { marginTop: 4, paddingVertical: 2.5, paddingHorizontal: 6, borderRadius: 4, backgroundColor: "#ECFDF5" },
+  ppPillOngoing: { backgroundColor: "#EFF6FF" },
+  ppPillText: { fontSize: 6.8, fontWeight: 700, letterSpacing: 0.8, color: "#047857", lineHeight: 1.2 },
+  ppPillTextOngoing: { color: "#1D4ED8" },
+  ppPhoto: { width: "100%", height: 200, objectFit: "cover", borderRadius: 8, marginBottom: 12 },
+  ppFacts: { flexDirection: "row", flexWrap: "wrap", borderTop: `0.8 solid ${BRAND.border}`, marginBottom: 12 },
+  ppFact: { width: "50%", paddingVertical: 6, paddingRight: 10, borderBottom: `0.8 solid ${BRAND.border}` },
+  ppFactLabel: { fontSize: 6.4, fontWeight: 700, color: BRAND.s400, letterSpacing: 0.9, lineHeight: 1.3 },
+  ppFactValue: { fontSize: 9, color: BRAND.slate, fontWeight: 500, marginTop: 2, lineHeight: 1.35 },
+  ppPoc: { backgroundColor: BRAND.mist, borderLeft: `3 solid ${BRAND.emerald}`, borderRadius: 6, padding: 10, marginBottom: 12 },
+  ppPocName: { fontSize: 10, fontWeight: 700, color: BRAND.slate, marginTop: 3, lineHeight: 1.3 },
+  ppPocLine: { fontSize: 8.5, color: BRAND.s600, marginTop: 2, lineHeight: 1.3 },
   totalRow: { flexDirection: "row", marginTop: 8, justifyContent: "flex-end" },
   totalBox: { backgroundColor: BRAND.mist, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 16, borderLeft: `3 solid ${BRAND.emerald}` },
   totalLabel: { fontSize: 7.5, color: BRAND.s500, letterSpacing: 1 },
@@ -431,6 +452,123 @@ function SubHeading({ label, title }: { label?: string; title: string }) {
   );
 }
 
+// ── Step 6: our projects as past performance / relevant experience / references ──────────────
+
+const shownValue = (e: ProposalSimilarProject) => (e.showValue !== false && e.value?.trim() ? e.value.trim() : "");
+const statusColor = (s?: string) => (s === "Completed" ? "#047857" : "#1D4ED8");
+
+/** Item 100 - the summary table that opens the section; the data sheets follow. */
+function ProjectSummaryTable({ items }: { items: ProposalSimilarProject[] }) {
+  const withValue = items.some((e) => !!shownValue(e));
+  const cols: Array<[string, number]> = withValue
+    // Contract numbers and values are single long words, so their columns get the room.
+    ? [["NO.", 4], ["PROJECT", 24], ["CLIENT", 17], ["LOCATION", 12], ["CONTRACT NO.", 16], ["PERIOD", 14], ["VALUE", 13]]
+    : [["NO.", 4], ["PROJECT", 29], ["CLIENT", 20], ["LOCATION", 14], ["CONTRACT NO.", 18], ["PERIOD", 15]];
+  const w = (k: number) => `${cols[k][1]}%`;
+  return (
+    <View style={{ marginBottom: 6 }}>
+      <View style={styles.tHead} wrap={false}>
+        {cols.map(([l], k) => <Text key={l} style={[styles.th, styles.ppTh, { width: w(k) }, l === "VALUE" ? { textAlign: "right" } : {}]}>{l}</Text>)}
+      </View>
+      {items.map((e, i) => (
+        <View key={e.id} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+          <Text style={[styles.td, styles.ppTd, { width: w(0) }]}>{i + 1}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(1), fontWeight: 700 }]}>{e.name || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(2) }]}>{e.client || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(3) }]}>{e.location || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(4) }]}>{e.contractNo || "-"}</Text>
+          <View style={[styles.td, styles.ppTd, { width: w(5) }]}>
+            <Text>{periodOf(e) || "-"}</Text>
+            {!!e.status && <Text style={{ fontSize: 6.6, fontWeight: 700, color: statusColor(e.status), marginTop: 1 }}>{e.status.toUpperCase()}</Text>}
+          </View>
+          {withValue && <Text style={[styles.td, styles.ppTd, { width: w(6), textAlign: "right", fontWeight: 700, color: BRAND.emerald }]}>{shownValue(e) || "-"}</Text>}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Spec 23 - Project References: one concise table with the point of contact. */
+function ProjectReferencesTable({ items }: { items: ProposalSimilarProject[] }) {
+  const cols: Array<[string, number]> = [["PROJECT", 17], ["AGENCY / CLIENT", 14], ["CONTRACT NO.", 15], ["VALUE", 11], ["DATES", 11], ["POINT OF CONTACT", 20], ["LOCATION", 12]];
+  const w = (k: number) => `${cols[k][1]}%`;
+  return (
+    <View style={{ marginBottom: 6 }}>
+      <View style={styles.tHead} wrap={false}>
+        {cols.map(([l], k) => <Text key={l} style={[styles.th, styles.ppTh, { width: w(k) }]}>{l}</Text>)}
+      </View>
+      {items.map((e, i) => (
+        <View key={e.id} style={[styles.tRow, i % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+          <Text style={[styles.td, styles.ppTd, { width: w(0), fontWeight: 700 }]}>{e.name || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(1) }]}>{e.client || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(2) }]}>{e.contractNo || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(3) }]}>{shownValue(e) || "-"}</Text>
+          <Text style={[styles.td, styles.ppTd, { width: w(4) }]}>{periodOf(e) || "-"}</Text>
+          <View style={[styles.td, styles.ppTd, { width: w(5) }]}>
+            <Text style={{ fontWeight: 700 }}>{e.poc || "-"}</Text>
+            {!!e.pocEmail && <Text>{e.pocEmail}</Text>}
+            {!!e.pocPhone && <Text>{e.pocPhone}</Text>}
+          </View>
+          <Text style={[styles.td, styles.ppTd, { width: w(6) }]}>{e.location || "-"}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Item 100 - one project's data sheet: the expanded page after the summary table. */
+function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: string }) {
+  const photo = e.showPhoto !== false && e.photo ? abs(e.photo) : "";
+  const value = shownValue(e);
+  const facts = ([
+    ["CLIENT", e.client], ["LOCATION", e.location], ["CONTRACT NO.", e.contractNo], ["CONTRACT TYPE", e.contractType],
+    ["WORK TYPE", e.workType], ["PERIOD OF PERFORMANCE", periodOf(e)], ["STATUS", e.status],
+    ["CONTRACT VALUE", value], ["CPARS / EVALUATION", e.cpars === "Yes" ? "Yes, on file" : e.cpars],
+  ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim());
+  const paras = (e.summary || "").split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  const ongoing = e.status === "Ongoing";
+  return (
+    <View>
+      <Eyebrow>{label.toUpperCase()}</Eyebrow>
+      <View style={styles.ppHead}>
+        <Text style={styles.ppTitle}>{e.name || "Untitled project"}</Text>
+        <View style={styles.ppSide}>
+          {!!value && <Text style={styles.ppValue}>{value}</Text>}
+          {!!e.status && (
+            <View style={[styles.ppPill, ongoing ? styles.ppPillOngoing : {}]}>
+              <Text style={[styles.ppPillText, ongoing ? styles.ppPillTextOngoing : {}]}>{e.status.toUpperCase()}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      {!!photo && <Image src={photo} style={styles.ppPhoto} />}
+      {facts.length > 0 && (
+        <View style={styles.ppFacts}>
+          {facts.map(([l, v]) => (
+            <View key={l} style={styles.ppFact} wrap={false}>
+              <Text style={styles.ppFactLabel}>{l}</Text>
+              <Text style={styles.ppFactValue}>{v}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      {(!!e.poc || !!e.pocEmail || !!e.pocPhone) && (
+        <View style={styles.ppPoc} wrap={false}>
+          <Text style={styles.ppFactLabel}>CLIENT POINT OF CONTACT</Text>
+          {!!e.poc && <Text style={styles.ppPocName}>{e.poc}</Text>}
+          {(!!e.pocEmail || !!e.pocPhone) && <Text style={styles.ppPocLine}>{[e.pocEmail, e.pocPhone].filter(Boolean).join("   ·   ")}</Text>}
+        </View>
+      )}
+      {paras.length > 0 && (
+        <>
+          <Subhead>DESCRIPTION OF WORK</Subhead>
+          {paras.map((p, k) => <Text key={k} style={styles.para}>{p}</Text>)}
+        </>
+      )}
+    </View>
+  );
+}
+
 function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf }: TechArgs): SeqItem[] {
   // An invisible page marker (see PageCtx): absolutely positioned, so it never moves the layout.
   const mark = (k: string) => (probe ? <Text style={styles.pageMark} render={({ pageNumber }) => { probe(k, pageNumber); return " "; }} /> : null);
@@ -462,7 +600,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         if (!s) return false;
         // Government forms and external documents print only their upload (and separator page).
         if (m.pageType === "government" || m.pageType === "external") return !!s.attachments?.length || !!m.divider;
-        return !!(s.heading || s.body || s.attachments?.length || s.subsections?.length);
+        return !!(s.heading || s.body || s.attachments?.length || s.subsections?.length || s.projects?.length);
       }
       case "blank": return true;
       default: return false;
@@ -512,7 +650,8 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   // Effective per-section letterhead, then group consecutive same-letterhead sections onto shared pages.
   const eff = (m: ProposalSectionMeta): ProposalLetterhead => (m.letterhead && m.letterhead !== "inherit" ? m.letterhead : (letterhead || "gt"));
   type Grp = { t: "divider"; m: ProposalSectionMeta; lh: ProposalLetterhead } | { t: "blank" } | { t: "content"; lh: ProposalLetterhead; items: ProposalSectionMeta[] } | { t: "files"; files: SectionFile[]; key: string }
-    | { t: "resumes"; m: ProposalSectionMeta; lh: ProposalLetterhead; headed: boolean };
+    | { t: "resumes"; m: ProposalSectionMeta; lh: ProposalLetterhead; headed: boolean }
+    | { t: "sheets"; m: ProposalSectionMeta; lh: ProposalLetterhead; items: ProposalSimilarProject[] };
   const groups: Grp[] = [];
   let curGrp: Extract<Grp, { t: "content" }> | null = null;
   for (const m of visible) {
@@ -526,7 +665,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     // Spec 4 - a Government form or external document prints only as uploaded, after a separator
     // page when one is switched on. A designed section holding only files gets a divider anyway.
     const original = isOriginal(m);
-    const hasText = htmlHasContent(s?.body || "") || printableSubs(s).length > 0;
+    const hasText = htmlHasContent(s?.body || "") || printableSubs(s).length > 0 || (s?.projects?.length ?? 0) > 0;
     const filesOnly = original || (m.kind === "custom" && files.length > 0 && !hasText);
     // The Resumes section: its own text (if any) first, then one resume per page.
     const isHost = !!resumeHost && m.id === resumeHost.id;
@@ -542,6 +681,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       } else {
         curGrp.items.push(m);
       }
+    }
+    // Step 6 - after the summary table, one data sheet per project (References are a table only).
+    const projs = m.kind === "pastPerformance" ? content.similarProjects : (s?.projects || []);
+    if (!original && !isHost && projs.length && !(m.kind === "custom" && referencesOnly(m.libraryKey))) {
+      groups.push({ t: "sheets", m, lh: elh, items: projs });
+      curGrp = null;
     }
     if (files.length) { groups.push({ t: "files", files, key: m.id }); curGrp = null; }
   }
@@ -586,13 +731,8 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     if (m.kind === "pastPerformance") return (
       <View key={m.id}>
         {heading}
-        {content.similarProjects.map((p) => (
-          <View key={p.id} style={styles.card} wrap={false}>
-            <Text style={styles.cardTitle}>{p.name || "-"}</Text>
-            <Text style={styles.cardMeta}>{[p.client, p.year, p.value].filter(Boolean).join("  ·  ")}</Text>
-            {!!p.summary && <Text style={[styles.para, { marginTop: 4 }]}>{p.summary}</Text>}
-          </View>
-        ))}
+        <ProjectSummaryTable items={content.similarProjects} />
+        <Text style={[styles.cardMeta, { marginTop: 2 }]}>A data sheet for each project follows.</Text>
       </View>
     );
     if (m.kind === "timeline") return (
@@ -627,6 +767,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
             <RichText html={ss.body} keyBase={`sub-${ss.id}`} />
           </View>
         ))}
+        {!!s?.projects?.length && (referencesOnly(m.libraryKey)
+          ? <ProjectReferencesTable items={s.projects} />
+          : <>
+              <ProjectSummaryTable items={s.projects} />
+              <Text style={[styles.cardMeta, { marginTop: 2 }]}>A data sheet for each project follows.</Text>
+            </>)}
       </View>
     );
   };
@@ -673,6 +819,16 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   // Body: one page group per letterhead run, with divider / blank pages and uploaded files in place.
   groups.forEach((g, gi) => {
     if (g.t === "files") { seq.push({ files: g.files, key: g.key }); return; }
+    if (g.t === "sheets") {
+      // Item 100 - "Past Performance 1, 2, 3...": one page each, after the summary table.
+      const label = sheetLabel(g.m.kind === "pastPerformance", g.m.libraryKey);
+      g.items.forEach((e, i) => page(
+        <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
+          <ProjectDataSheet e={e} label={`${label} ${i + 1}`} />
+        </Sheet>,
+      ));
+      return;
+    }
     if (g.t === "resumes") {
       // One resume per page run; field 3 is the role in THIS proposal.
       built.forEach(({ e, r }, i) => page(

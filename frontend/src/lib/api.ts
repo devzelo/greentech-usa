@@ -208,9 +208,30 @@ export interface ProposalEmployee {
   keyStaff?: boolean;     // false = listed under Non-Key Staff (default key)
   subResumeId?: string;   // a subcontractor person's resume from the company-wide library
 }
-export interface ProposalSimilarProject { id: string; name: string; client: string; value: string; year: string; summary: string }
+export interface ProposalSimilarProject {
+  id: string; name: string; client: string; value: string; year: string; summary: string;
+  // Step 6 (item 100, spec 21-23): filled from our own project record (spec 6: linked records, not
+  // free text) and editable per proposal. "Refresh" re-reads the record.
+  projectId?: string;
+  contractNo?: string;
+  start?: string; end?: string;          // period of performance (yyyy-mm-dd or yyyy-mm)
+  status?: string;                       // "Completed" | "Ongoing"
+  location?: string;
+  contractType?: string;
+  workType?: string;                     // the project's categories and nature types
+  poc?: string; pocEmail?: string; pocPhone?: string;   // client point of contact
+  cpars?: string;                        // "Yes" | "No" | "Pending" | ""
+  photo?: string;
+  showValue?: boolean;                   // item 100 - "total amount (optional)"; default shown
+  showPhoto?: boolean;                   // default shown when there is a photo
+}
 export interface ProposalTimelinePhase { phase: string; start: string; end: string }
-export interface ProposalSection { id: string; heading: string; body: string; attachments?: ProposalAttachment[]; subsections?: ProposalSubsection[] } // body is HTML; CR-B-18 per-section files
+export interface ProposalSection {
+  id: string; heading: string; body: string; // body is HTML
+  attachments?: ProposalAttachment[];         // CR-B-18 per-section files
+  subsections?: ProposalSubsection[];
+  projects?: ProposalSimilarProject[];        // step 6 - Past Performance / Relevant Experience / References library sections
+}
 /** A file on a section: uploaded, or pulled from Company Documents (companyFileId, for expiry checks). */
 export interface ProposalAttachment { name: string; url: string; companyFileId?: string }
 /** Spec 1 - a subsection under a section, numbered in print (1.1, 1.2 / A.1, A.2). */

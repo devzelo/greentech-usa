@@ -41,6 +41,8 @@ import ProjectInfoTab from "./ProjectInfoTab";
 import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
 import CategoryMultiSelect from "./CategoryMultiSelect";
+import ProposalProjectsEditor from "./ProposalProjectsEditor";
+import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
 import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePageBadge";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
@@ -48,7 +50,7 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
-import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc } from "../../lib/api";
+import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType } from "../../lib/proposalLibrary";
@@ -814,8 +816,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // Preview modal: which proposal's PDF to render full-screen.
   const [proposalPreview, setProposalPreview] = useState<"technical" | "financial" | null>(null);
   // Other projects, for the "import past performance" picker.
-  const [otherProjects, setOtherProjects] = useState<ApiProject[]>([]);
-  const [showSimilarPicker, setShowSimilarPicker] = useState(false);
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
   // Full resumes of proposal team members — appended to the technical proposal PDF.
   const [teamResumes, setTeamResumes] = useState<ProposalTeamResume[]>([]);
@@ -935,11 +935,25 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setTech("employees", technical.employees.map((e) => (e.id === eid ? { ...e, keyStaff: key } : e)));
   const removeEmployeeRow = (eid: string) => setTech("employees", technical.employees.filter((e) => e.id !== eid));
 
-  const addSimilarRow = (data?: Partial<{ name: string; client: string; value: string; year: string; summary: string }>) =>
-    setTech("similarProjects", [...technical.similarProjects, { id: uid(), name: "", client: "", value: "", year: "", summary: "", ...data }]);
-  const updateSimilarRow = (sid: string, field: "name" | "client" | "value" | "year" | "summary", value: string) =>
-    setTech("similarProjects", technical.similarProjects.map((s) => (s.id === sid ? { ...s, [field]: value } : s)));
-  const removeSimilarRow = (sid: string) => setTech("similarProjects", technical.similarProjects.filter((s) => s.id !== sid));
+  // Step 6 - the projects listed in a Past Performance / Relevant Experience / References section.
+  const setSectionProjects = (sid: string, projects: ProposalSimilarProject[]) =>
+    setTechnical((p) => ({ ...p, sections: p.sections.map((x) => (x.id === sid ? { ...x, projects } : x)) }));
+  // Item 102 - the optional recommendation / credit letters section goes right after past performance:
+  // an external document (the letters as they are), after a separator page.
+  const addLettersAfter = (afterMetaId: string) =>
+    setTechnical((p) => {
+      const newId = uid();
+      const title = "Client Recommendation / Credit Letters";
+      const meta: ProposalSectionMeta = {
+        id: `m-${newId}`, kind: "custom", refId: newId, title, hidden: false,
+        libraryKey: "appx-reference-letters", pageType: "external", divider: true,
+        guide: "Client reference, recommendation or credit letters, inserted as they are after a separator page. Upload them, or pick them From Company Documents.",
+      };
+      const resolved = resolveProposalLayout(p);
+      const at = resolved.findIndex((m) => m.id === afterMetaId);
+      const layout = at < 0 ? [...resolved, meta] : [...resolved.slice(0, at + 1), meta, ...resolved.slice(at + 1)];
+      return { ...p, sections: [...p.sections, { id: newId, heading: title, body: "" }], layout };
+    });
 
   const addTimelineRow = () => setTech("timeline", [...technical.timeline, { phase: "", start: "", end: "" }]);
   const updateTimelineRow = (idx: number, field: "phase" | "start" | "end", value: string) =>
@@ -1220,23 +1234,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }
   };
 
-  // Open the "import past performance" picker, loading the project list on demand.
-  const openSimilarPicker = async () => {
-    setShowSimilarPicker(true);
-    if (otherProjects.length === 0) {
-      try { setOtherProjects(await fetchProjects("all")); } catch { /* non-fatal */ }
-    }
-  };
-  const importSimilarProject = (p: ApiProject) => {
-    addSimilarRow({
-      name: p.name,
-      client: p.clientInfo?.name || p.owner || "",
-      value: "",
-      year: (p.endDate || p.startDate || "").slice(0, 4),
-      summary: p.description || "",
-    });
-    toast(`Added "${p.name}" to similar projects.`, "success");
-  };
 
   // Edit Project Identity modal (owner only)
   type IdentityForm = {
@@ -3812,6 +3809,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {/* TECHNICAL — Builder */}
               {proposalSub === "technical" && proposalDocTab === "builder" && (() => {
                 const techLayout = resolveProposalLayout(technical);
+                const hasLetters = techLayout.some((m) => m.libraryKey === "appx-reference-letters");
+                const pastPerfMetaId = techLayout.find((m) => m.kind === "pastPerformance")?.id || "";
                 // Built-in section editors (rendered in document order below, each with on-box arrows).
                 const descriptionEditor = (
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
@@ -3866,30 +3865,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <p className="text-[11px] text-slate-400">Résumés print in the "Resumes of Key Personnel" section when the layout has one, otherwise as the last appendix. Turn this off when the solicitation wants its own form, and upload that (for example SF 330) as a Government form section.</p>
                   </div>
                 );
+                // Step 6 (item 100) - past performance from our own project records.
                 const pastPerfEditor = (
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-800 text-sm">Similar Projects / Past Performance</h4>
-                      {canEdit && (
-                        <div className="flex gap-2">
-                          <button onClick={openSimilarPicker} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 text-[11px] font-bold hover:bg-indigo-100"><Download size={12} /> Import project</button>
-                          <button onClick={() => addSimilarRow()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Plus size={12} /> Add</button>
-                        </div>
-                      )}
-                    </div>
-                    {technical.similarProjects.length === 0 && <p className="text-xs text-slate-400">No reference projects added yet.</p>}
-                    {technical.similarProjects.map((s) => (
-                      <div key={s.id} className="rounded-2xl border border-slate-100 p-4 space-y-2 bg-slate-50/50">
-                        <div className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr_0.8fr_0.6fr_auto] gap-2">
-                          <input value={s.name} onChange={(ev) => updateSimilarRow(s.id, "name", ev.target.value)} disabled={!canEdit} placeholder="Project name" className={inp} />
-                          <input value={s.client} onChange={(ev) => updateSimilarRow(s.id, "client", ev.target.value)} disabled={!canEdit} placeholder="Client" className={inp} />
-                          <input value={s.value} onChange={(ev) => updateSimilarRow(s.id, "value", ev.target.value)} disabled={!canEdit} placeholder="Value" className={inp} />
-                          <input value={s.year} onChange={(ev) => updateSimilarRow(s.id, "year", ev.target.value)} disabled={!canEdit} placeholder="Year" className={inp} />
-                          {canEdit && <button onClick={() => removeSimilarRow(s.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>}
-                        </div>
-                        <textarea value={s.summary} onChange={(ev) => updateSimilarRow(s.id, "summary", ev.target.value)} disabled={!canEdit} placeholder="Short summary of the work performed…" rows={2} className={`${inp} resize-none`} />
-                      </div>
-                    ))}
+                  <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <ProposalProjectsEditor
+                      title="Past Performance"
+                      items={technical.similarProjects}
+                      onChange={(v) => setTech("similarProjects", v)}
+                      canEdit={canEdit}
+                      currentProjectId={id}
+                      mode="sheets"
+                      onAddLetters={() => addLettersAfter(pastPerfMetaId)}
+                      lettersAdded={hasLetters}
+                    />
                   </div>
                 );
                 const timelineEditor = (
@@ -3953,6 +3941,21 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         </div>
                       )}
                       {!original && <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />}
+                      {/* Step 6 (spec 21-23) - these library sections list projects from our records. */}
+                      {!original && PROJECT_SECTION_KEYS.has(m.libraryKey || "") && (
+                        <div className="rounded-2xl border border-slate-100 p-4">
+                          <ProposalProjectsEditor
+                            title="Projects from our records"
+                            items={s.projects || []}
+                            onChange={(v) => setSectionProjects(s.id, v)}
+                            canEdit={canEdit}
+                            currentProjectId={id}
+                            mode={referencesOnly(m.libraryKey) ? "references" : "sheets"}
+                            onAddLetters={m.libraryKey === "past-performance" ? () => addLettersAfter(m.id) : undefined}
+                            lettersAdded={hasLetters}
+                          />
+                        </div>
+                      )}
                       {/* Spec 1 - unlimited subsections, numbered automatically in print (1.1, 1.2 / A.1, A.2). */}
                       {!original && (
                         <div className="space-y-3 pt-1">
@@ -4299,27 +4302,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 );
               })()}
 
-              {/* Import past-performance project picker */}
-              {showSimilarPicker && (
-                <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="bg-white rounded-3xl p-6 w-full max-w-lg max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-display font-bold text-slate-900">Import a past project</h3>
-                      <button onClick={() => setShowSimilarPicker(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
-                    </div>
-                    {otherProjects.length === 0 && <p className="text-xs text-slate-400">Loading projects…</p>}
-                    <div className="space-y-1">
-                      {otherProjects.filter((p) => p.id !== id).map((p) => (
-                        <button key={p.id} onClick={() => { importSimilarProject(p); setShowSimilarPicker(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-left">
-                          <FileText size={16} className="text-slate-400 shrink-0" />
-                          <div className="min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{p.name}</p><p className="text-[10px] text-slate-400 truncate">{p.clientInfo?.name || p.category || p.id}</p></div>
-                          <Download size={14} className="ml-auto text-slate-300 shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
             );
           })()}
