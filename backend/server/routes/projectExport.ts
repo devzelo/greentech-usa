@@ -85,6 +85,8 @@ const SECTION_TITLES: Record<string, string> = {
   "project-info-bidding": "Bidding Documents",
   "project-info-change-orders": "Change Orders",
   "project-info-other": "Other Project Docs",
+  "project-info-award": "Award Documents",
+  "project-info-postaward": "Post Award Documents",   // CR-P (119)
   "proposals-technical": "Technical Proposal",
   "proposals-financial": "Financial Proposal",
   "pm-schedules": "Schedules",
