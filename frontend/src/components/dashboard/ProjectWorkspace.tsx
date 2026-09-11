@@ -387,6 +387,10 @@ export default function ProjectWorkspace() {
   const [selectedNature, setSelectedNature] = useState<string[]>([]);
   const [customNatureInput, setCustomNatureInput] = useState("");
   const [customNatureTypes, setCustomNatureTypes] = useState<string[]>([]);
+  // CR-P (129) — the Project Info box is locked until Edit; Save asks first and locks it again.
+  const [natureEditing, setNatureEditing] = useState(false);
+  const [natureSaving, setNatureSaving] = useState(false);
+  const natureBefore = useRef<{ selected: string[]; custom: string[] } | null>(null);
 
   // Client info (editable form on the Client Info tab)
   type ClientInfo = { name: string; reference: string; contactName: string; email: string; phone: string; country: string; address: string; notes: string; companyId: string };
@@ -2929,18 +2933,58 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Project Nature</span>
           <span className="text-[11px] text-slate-400 font-medium">— one or more types that apply to this engagement</span>
         </div>
-        {!canEditIdentity && <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 shrink-0">View only</span>}
+        {!canEditIdentity ? (
+          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 shrink-0">View only</span>
+        ) : !natureEditing ? (
+          <button
+            onClick={() => { natureBefore.current = { selected: selectedNature, custom: customNatureTypes }; setNatureEditing(true); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors shrink-0"
+          >
+            <Edit2 size={12} /> Edit
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => {
+                if (natureBefore.current) { setSelectedNature(natureBefore.current.selected); setCustomNatureTypes(natureBefore.current.custom); }
+                setCustomNatureInput(""); setNatureEditing(false);
+              }}
+              disabled={natureSaving}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!id) return;
+                if (!(await brandedConfirm({ title: "Save project info?", message: "Are you sure you want to save these changes? The box locks again after saving.", confirmLabel: "Save" }))) return;
+                setNatureSaving(true);
+                try {
+                  const u = await updateProject(id, { projectNature: { selected: selectedNature, custom: customNatureTypes } });
+                  setProject(u); setCustomNatureInput(""); setNatureEditing(false);
+                  toast("Project info saved.", "success");
+                } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); }
+                finally { setNatureSaving(false); }
+              }}
+              disabled={natureSaving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-white text-[11px] font-bold hover:bg-primary/90 disabled:opacity-50"
+            >
+              {natureSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap gap-2">
-        {[...PROJECT_NATURE_TYPES, ...customNatureTypes].map((type) => (
+        {/* Locked: only the chosen types show, as plain tags. Editing: every type, to tick or untick. */}
+        {(natureEditing ? [...PROJECT_NATURE_TYPES, ...customNatureTypes] : selectedNature).map((type) => (
           <button
             key={type}
-            disabled={!canEditIdentity}
+            disabled={!natureEditing}
             onClick={() => {
-              if (!canEditIdentity) return;
+              if (!natureEditing) return;
               setSelectedNature((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]));
             }}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:cursor-default ${
               selectedNature.includes(type)
                 ? "border-primary bg-primary/5 text-primary"
                 : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
@@ -2950,8 +2994,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             {type}
           </button>
         ))}
+        {!natureEditing && selectedNature.length === 0 && (
+          <span className="text-[11px] text-slate-400 italic">None chosen yet.{canEditIdentity ? " Click Edit to choose." : ""}</span>
+        )}
       </div>
-      {canEditIdentity && (
+      {canEditIdentity && natureEditing && (
         <div className="flex gap-2">
           <input
             type="text"
