@@ -5,8 +5,13 @@ import {
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
   invoicePaid, invoiceRemaining, fetchCompanies, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
-  type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq,
+  fetchCompanyBanks, createCompanyBank, updateCompanyBank, deleteCompanyBank, getAuthUser,
+  type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq, type ApiCompanyBank,
 } from "../../lib/api";
+
+// CR-P (162) — the bank block printed on an invoice, from one of our saved accounts.
+const bankOf = (b: ApiCompanyBank): InvoiceBank => ({ name: b.name, accountName: b.accountName, accountNumber: b.accountNumber, iban: b.iban, swift: b.swift, routing: b.routing });
+const sameBank = (a: InvoiceBank, b: InvoiceBank) => a.name.trim() === b.name.trim() && a.accountNumber.trim() === b.accountNumber.trim() && a.iban.trim() === b.iban.trim();
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
@@ -88,6 +93,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // CR-B-20 — while the invoice builder is open, warn before closing the window / leaving the site.
   useUnsavedGuard(!!builderId);
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
+  const [companyBanks, setCompanyBanks] = useState<ApiCompanyBank[]>([]);   // CR-P (162)
+  const isStaff = getAuthUser()?.role !== "subcontractor";
+  const defaultBank = companyBanks.find((b) => b.isDefault) || companyBanks[0];
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
   const [rfqList, setRfqList] = useState<ApiRfq[]>([]);
   const [receiverPickerOpen, setReceiverPickerOpen] = useState(false);
@@ -105,6 +113,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   const [recvSearch, setRecvSearch] = useState("");
   useEffect(() => {
     fetchCompanies().then(setCompanies).catch(() => {});
+    fetchCompanyBanks().then(setCompanyBanks).catch(() => {});
     fetchSignatories().then(setSignatories).catch(() => {});
     fetchRfqs(projectId).then(setRfqList).catch(() => {});
   }, [projectId]);
@@ -284,6 +293,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       const row = await addInvoice(projectId, {
         type: kind, status: isSent ? "Draft" : "Unpaid", date: new Date().toISOString().slice(0, 10),
         ...(isSent && clientName ? { party: clientName, receiverKind: "Client", companyId: clientCompanyId || "" } : {}),
+        // CR-P (162) — our default bank account goes on every new invoice sent.
+        ...(isSent && defaultBank ? { bank: bankOf(defaultBank) } : {}),
       });
       setRows((p) => [...p, row]); setNewOpen(false); openBuilder(row, true);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not start the invoice.", "error"); }
@@ -609,15 +620,32 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   </div>
                 )}
 
-                {/* Bank information (CR-I-04) */}
-                <details className="bg-slate-50 rounded-2xl p-4">
-                  <summary className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Bank information</summary>
-                  {savedBanks.length > 0 && (
-                    <select className={`${finp} mt-3 font-bold`} value="" onChange={(e) => { const b = savedBanks.find((x) => x.name === e.target.value); if (b) setB({ bank: { ...b } }); }}>
-                      <option value="">Choose a saved bank… (fills the block)</option>
-                      {savedBanks.map((b, i) => <option key={i} value={b.name}>{b.name}{b.accountNumber ? ` · ${b.accountNumber}` : ""}</option>)}
+                {/* Bank information (CR-I-04). CR-P (162) — picked from our saved bank accounts, not
+                    typed each time; the default one is already on a new invoice. */}
+                <details className="bg-slate-50 rounded-2xl p-4" open={isSent && !bDraft.bank.name && !bDraft.bank.accountNumber}>
+                  <summary className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Bank information{bDraft.bank.name ? ` · ${bDraft.bank.name}` : ""}</summary>
+                  {(companyBanks.length > 0 || savedBanks.length > 0) && (
+                    <select className={`${finp} mt-3 font-bold`} value="" onChange={(e) => {
+                      const v = e.target.value;
+                      const cb = companyBanks.find((b) => b._id === v);
+                      if (cb) { setB({ bank: bankOf(cb) }); return; }
+                      const b = savedBanks.find((x) => `prev:${x.name}` === v);
+                      if (b) setB({ bank: { ...b } });
+                    }}>
+                      <option value="">Choose one of our bank accounts… (fills the block)</option>
+                      {companyBanks.length > 0 && (
+                        <optgroup label="Our bank accounts">
+                          {companyBanks.map((b) => <option key={b._id} value={b._id}>{b.label || b.name}{b.accountNumber ? ` · ${b.accountNumber}` : ""}{b.isDefault ? " (default)" : ""}</option>)}
+                        </optgroup>
+                      )}
+                      {savedBanks.filter((s) => !companyBanks.some((c) => sameBank(bankOf(c), s))).length > 0 && (
+                        <optgroup label="Used on earlier invoices">
+                          {savedBanks.filter((s) => !companyBanks.some((c) => sameBank(bankOf(c), s))).map((b, i) => <option key={i} value={`prev:${b.name}`}>{b.name}{b.accountNumber ? ` · ${b.accountNumber}` : ""}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   )}
+                  {companyBanks.length === 0 && isStaff && <p className="text-[11px] text-slate-400 mt-2">No saved bank accounts yet. Fill in the details below and click <b>Save to our bank accounts</b>: next time it is one click.</p>}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
                     <input className={finp} placeholder="Bank name" value={bDraft.bank.name} onChange={(e) => setB({ bank: { ...bDraft.bank, name: e.target.value } })} />
                     <input className={finp} placeholder="Account name" value={bDraft.bank.accountName} onChange={(e) => setB({ bank: { ...bDraft.bank, accountName: e.target.value } })} />
@@ -626,6 +654,26 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     <input className={finp} placeholder="SWIFT/BIC" value={bDraft.bank.swift} onChange={(e) => setB({ bank: { ...bDraft.bank, swift: e.target.value } })} />
                     <input className={finp} placeholder="Routing" value={bDraft.bank.routing} onChange={(e) => setB({ bank: { ...bDraft.bank, routing: e.target.value } })} />
                   </div>
+                  {/* CR-P (162) — keep our accounts: save this one, pick the default, remove old ones. */}
+                  {isStaff && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                      {(bDraft.bank.name || bDraft.bank.accountNumber || bDraft.bank.iban) && !companyBanks.some((c) => sameBank(bankOf(c), bDraft.bank)) && (
+                        <button onClick={async () => {
+                          const label = await prompt({ title: "Save to our bank accounts", label: "Name it (as it shows in the list)", initialValue: bDraft.bank.name, confirmLabel: "Save" });
+                          if (label === null) return;
+                          try { const c = await createCompanyBank({ ...bDraft.bank, label: label.trim() || bDraft.bank.name }); setCompanyBanks((p) => [...p.map((x) => (c.isDefault ? { ...x, isDefault: false } : x)), c]); toast("Saved to our bank accounts.", "success"); }
+                          catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
+                        }} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Plus size={11} /> Save to our bank accounts</button>
+                      )}
+                      {companyBanks.map((b) => (
+                        <span key={b._id} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg border text-[10px] font-bold ${b.isDefault ? "border-primary/30 bg-primary/5 text-primary" : "border-slate-200 bg-white text-slate-600"}`}>
+                          {b.label || b.name}{b.isDefault ? " · default" : ""}
+                          {!b.isDefault && <button onClick={async () => { try { await updateCompanyBank(b._id, { isDefault: true }); setCompanyBanks((p) => p.map((x) => ({ ...x, isDefault: x._id === b._id }))); } catch { /* ignore */ } }} className="px-1 text-slate-400 hover:text-primary" title="Make default">★</button>}
+                          <button onClick={async () => { if (!(await confirm({ title: "Remove bank account?", message: `Remove "${b.label || b.name}" from our saved accounts? Invoices that already carry it keep their details.`, confirmLabel: "Remove", danger: true }))) return; try { await deleteCompanyBank(b._id); setCompanyBanks(await fetchCompanyBanks()); } catch { /* ignore */ } }} className="px-1 text-slate-300 hover:text-red-500" title="Remove"><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </details>
 
                 {/* Extra sections (CR-I-04 "add sections as needed") */}

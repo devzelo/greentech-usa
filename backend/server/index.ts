@@ -50,6 +50,7 @@ import { userAgreementRouter, projectAgreementRouter, generalAgreementRouter, ag
 import savedDocumentRoutes from "./routes/savedDocuments";
 import announcementRoutes from "./routes/announcements";
 import companiesRoutes, { publicCompanyRouter } from "./routes/companies";
+import companyBanksRoutes from "./routes/companyBanks";
 import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import stickyNoteRoutes from "./routes/stickyNotes";
@@ -127,6 +128,7 @@ app.use("/api/bin", binRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/companies", companiesRoutes);
+app.use("/api/company-banks", companyBanksRoutes);   // CR-P (162)
 app.use("/api/public/companies", publicCompanyRouter);   // vendor self-registration (no auth)
 app.use("/api/presence", presenceRoutes);                // live presence (who's here)
 app.use("/api/users", userRoutes);

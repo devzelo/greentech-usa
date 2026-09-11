@@ -1357,6 +1357,16 @@ export interface ApiInvoicePayment {
 }
 export interface InvoiceLineItem { description: string; qty: string; unitPrice: string; date?: string; remarks?: string }
 export interface InvoiceBank { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string }
+/** CR-P (162) - one of GreenTech's own bank accounts, entered once and picked on every invoice. */
+export interface ApiCompanyBank extends InvoiceBank { _id: string; label: string; isDefault: boolean }
+export async function fetchCompanyBanks(): Promise<ApiCompanyBank[]> { return request(`/company-banks`); }
+export async function createCompanyBank(body: Partial<Omit<ApiCompanyBank, "_id">>): Promise<ApiCompanyBank> {
+  return request(`/company-banks`, { method: "POST", body: JSON.stringify(body) });
+}
+export async function updateCompanyBank(id: string, body: Partial<Omit<ApiCompanyBank, "_id">>): Promise<ApiCompanyBank> {
+  return request(`/company-banks/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+export async function deleteCompanyBank(id: string): Promise<void> { await request(`/company-banks/${id}`, { method: "DELETE" }); }
 export interface ApiInvoice {
   _id: string; projectId: string; type: 'sent' | 'received';
   number: string; party: string; amount: string; date: string; status: string; description: string;
