@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarClock, CalendarPlus, ChevronDown, ChevronUp, AlertTriangle, Loader2, Trash2, X } from "lucide-react";
 import type { ApiExtension } from "../../lib/api";
 import { useDialogs } from "../../lib/useDialogs";
@@ -35,6 +35,17 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
   const [newEnd, setNewEnd] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  // The detail opens as a dropdown over the page (like the notifications): a click outside or
+  // Escape closes it. The dialogs render inside `root`, so answering one does not close it.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open]);
 
   const start = parseDate(startDate);
   const origEnd = parseDate(endDate);
@@ -101,7 +112,7 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
   };
 
   return (
-    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>
+    <div ref={root} className={`relative bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>
       {/* Collapsed: one line — click anywhere to see the detail. */}
       <button
         onClick={() => setOpen((v) => !v)}
@@ -122,9 +133,9 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
         {open ? <ChevronUp size={14} className="text-slate-400 shrink-0" /> : <ChevronDown size={14} className="text-slate-400 shrink-0" />}
       </button>
 
-      {/* Expanded: the full picture. */}
+      {/* Expanded: the full picture, as a dropdown on top of everything below. */}
       {open && (
-        <div className="px-4 pb-4 pt-1 border-t border-slate-50">
+        <div className="absolute left-0 right-0 top-full mt-2 z-[300] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-4 max-h-[70vh] overflow-y-auto">
           <div className="flex items-end gap-4 sm:gap-6">
             <div className="shrink-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Start date</p>

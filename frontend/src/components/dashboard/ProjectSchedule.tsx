@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Flag, Gauge, ListChecks, Loader2, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import type { ApiMilestone, ApiProject } from "../../lib/api";
 import { useDialogs } from "../../lib/useDialogs";
@@ -45,6 +45,18 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
   const [setup, setSetup] = useState(false);
   const [editingPct, setEditingPct] = useState(false);
   const [busy, setBusy] = useState("");
+  // The detail opens as a dropdown over the page (like the notifications), so it closes on a
+  // click outside or Escape. The milestone setup and the dialogs render inside `root`, so using
+  // them does not count as outside.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!setup && root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !setup) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open, setup]);
 
   const milestones = useMemo(() => project.schedule?.milestones || [], [project.schedule]);
   const startDate = project.startDate || project.contractDate || "";
@@ -72,7 +84,7 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
   const overdue = plan.overdue[0];
 
   return (
-    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>
+    <div ref={root} className={`relative bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>
       {/* Collapsed: one line. */}
       <div className="flex items-center gap-3 px-4 py-2.5">
         <Gauge size={14} className={pct === 100 ? "text-emerald-500 shrink-0" : "text-slate-400 shrink-0"} />
@@ -124,9 +136,9 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
         </button>
       </div>
 
-      {/* Expanded: the milestones. */}
+      {/* Expanded: the milestones, as a dropdown on top of everything below. */}
       {open && (
-        <div className="px-4 pb-4 pt-2 border-t border-slate-50">
+        <div className="absolute left-0 right-0 top-full mt-2 z-[300] bg-white rounded-2xl border border-slate-100 shadow-2xl px-4 py-3 max-h-[70vh] overflow-y-auto">
           {!hasMs ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-500 max-w-lg">
