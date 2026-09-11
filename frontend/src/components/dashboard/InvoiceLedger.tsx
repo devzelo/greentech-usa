@@ -54,9 +54,12 @@ type BuilderDraft = {
   signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
 };
 
-export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged }: {
+export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId }: {
   projectId: string; kind: "sent" | "received"; canEdit: boolean;
   projectInfo?: ProjectPdfInfo;
+  /** CR-P (161) — a new invoice sent goes to the project's client unless another receiver is picked. */
+  clientName?: string;
+  clientCompanyId?: string;
   /** Called after a payment posts/removes an expense, so the Expenses tab can reload. */
   onExpensesChanged?: () => void;
 }) {
@@ -80,6 +83,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // ── Invoice builder (CR-I-03/04/07) ─────────────────────────────────────────
   const [builderId, setBuilderId] = useState<string | null>(null);
   const [bDraft, setBDraft] = useState<BuilderDraft | null>(null);
+  // CR-P (161) — the invoice just created by New invoice: closed with nothing in it, it is removed.
+  const [freshId, setFreshId] = useState<string | null>(null);
   // CR-B-20 — while the invoice builder is open, warn before closing the window / leaving the site.
   useUnsavedGuard(!!builderId);
   const [companies, setCompanies] = useState<ApiCompany[]>([]);
@@ -123,12 +128,14 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   };
 
   const lineTotal = (items: InvoiceLineItem[]) => items.reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);
-  const openBuilder = (inv: ApiInvoice) => {
+  const openBuilder = (inv: ApiInvoice, fresh = false) => {
     setBuilderId(inv._id);
+    setFreshId(fresh ? inv._id : null);
     setBDraft({
       receiverKind: inv.receiverKind || "", party: inv.party || "", companyId: inv.companyId || "",
       date: inv.date || new Date().toISOString().slice(0, 10), description: inv.description || "",
-      mode: (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
+      // CR-P (169) — an invoice received is usually their PDF: a new one starts on Upload.
+      mode: fresh ? (isSent ? "build" : "upload") : (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
       lineItems: inv.lineItems?.length ? inv.lineItems : [{ description: "", qty: "1", unitPrice: "" }],
       bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
       sections: inv.sections ? inv.sections.map((s) => ({ ...s })) : [], rfqId: inv.rfqId || "",
@@ -152,10 +159,15 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   };
   const saveBuilder = async (status?: string) => {
     if (!builderId || !bDraft) return;
+    // CR-P (169) — an invoice received is kept with the invoice itself attached.
+    if (!isSent && !(rows.find((r) => r._id === builderId)?.attachments?.length)) {
+      toast("Attach the invoice you received (Upload invoice) before saving.", "error");
+      return;
+    }
     setSaving(true);
     const body = invoiceBody(bDraft);
     if (status) body.status = status;   // CR-I-01 — Save as Draft / Send set the status
-    try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); toast(status === "Sent" ? "Invoice sent." : "Invoice saved.", "success"); }
+    try { const srv = await updateInvoice(projectId, builderId, body); patch(srv); setBuilderId(null); setBDraft(null); setFreshId(null); toast(status === "Sent" ? "Invoice sent." : "Invoice saved.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
     finally { setSaving(false); }
   };
@@ -173,7 +185,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       const blob = await buildInvoicePdf(srv, { projectInfo, allInvoices: rows });
       await emailFileAttachment(blob, `Invoice_${srv.number}.pdf`, addr, `Invoice #${srv.number}`);
       toast(`Invoice #${srv.number} emailed to ${addr}.`, "success");
-      setBuilderId(null); setBDraft(null);
+      setBuilderId(null); setBDraft(null); setFreshId(null);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not send the invoice.", "error"); }
     finally { setSaving(false); }
   };
@@ -263,10 +275,33 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     URL.revokeObjectURL(url);
   };
 
-  // New invoice via a form popup (client request) — fill the fields, then it's added as a row.
+  // CR-P (161)/(169) — New invoice opens the full builder straight away (like Add Expense): who it
+  // goes to (the project's client by default, for an invoice sent), the automatic number, one date
+  // at the top, then the lines. With saved templates, a small pop-up offers them first.
+  const createBlank = async () => {
+    setSaving(true);
+    try {
+      const row = await addInvoice(projectId, {
+        type: kind, status: isSent ? "Draft" : "Unpaid", date: new Date().toISOString().slice(0, 10),
+        ...(isSent && clientName ? { party: clientName, receiverKind: "Client", companyId: clientCompanyId || "" } : {}),
+      });
+      setRows((p) => [...p, row]); setNewOpen(false); openBuilder(row, true);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not start the invoice.", "error"); }
+    finally { setSaving(false); }
+  };
   const openNew = () => {
     setDraft({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
-    setNewOpen(true);
+    if (templates.length) setNewOpen(true); else void createBlank();
+  };
+  // A brand-new invoice closed with nothing in it is removed again, so no empty rows pile up.
+  const closeBuilder = async () => {
+    const id = builderId, d = bDraft;
+    setBuilderId(null); setBDraft(null);
+    if (!id || !d || id !== freshId) return;
+    setFreshId(null);
+    const cur = rows.find((r) => r._id === id);
+    const empty = !d.lineItems.some((it) => it.description.trim() || n(it.unitPrice)) && !(cur?.attachments?.length) && !d.description.trim();
+    if (empty) { try { await deleteInvoice(projectId, id); setRows((p) => p.filter((r) => r._id !== id)); } catch { /* keep it */ } }
   };
   const submitNew = async () => {
     setSaving(true);
@@ -503,7 +538,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   {/* CR-B-14b — autosave status. */}
                   <SaveStatus {...invSave} />
                 </div>
-                <button onClick={() => { setBuilderId(null); setBDraft(null); }} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+                <button onClick={() => void closeBuilder()} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
               </div>
               <div className="p-6 space-y-4">
                 {/* Receiver (CR-I-03) */}
@@ -534,12 +569,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <div className="border border-slate-100 rounded-2xl overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400"><tr>
-                        <th className="text-left px-2 py-2 w-28">Date</th><th className="text-left px-3 py-2">Description</th><th className="text-left px-2 py-2 w-16">Qty</th><th className="text-left px-2 py-2 w-24">Unit price</th><th className="text-right px-3 py-2 w-28">Total</th><th className="text-left px-2 py-2 w-32">Remarks</th><th className="w-8" />
+                        <th className="text-left px-3 py-2">Description</th><th className="text-left px-2 py-2 w-16">Qty</th><th className="text-left px-2 py-2 w-24">Unit price</th><th className="text-right px-3 py-2 w-28">Total</th><th className="text-left px-2 py-2 w-32">Remarks</th><th className="w-8" />
                       </tr></thead>
                       <tbody>
                         {bDraft.lineItems.map((it, i) => (
                           <tr key={i} className="border-t border-slate-50">
-                            <td className="px-2 py-1"><input type="date" className={inp} value={it.date || ""} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)) })} /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.description} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} placeholder="Item / service" /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.qty} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.unitPrice} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} placeholder="0.00" /></td>
@@ -551,7 +585,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                       </tbody>
                       <tfoot>
                         <tr className="border-t border-slate-100 bg-slate-50/60">
-                          <td colSpan={4} className="px-3 py-2"><button onClick={() => setB({ lineItems: [...bDraft.lineItems, { description: "", qty: "1", unitPrice: "", date: "", remarks: "" }] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button></td>
+                          <td colSpan={3} className="px-3 py-2"><button onClick={() => setB({ lineItems: [...bDraft.lineItems, { description: "", qty: "1", unitPrice: "", remarks: "" }] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add line</button></td>
                           <td className="px-3 py-2 text-right font-display font-bold text-primary whitespace-nowrap">{money(lineTotal(bDraft.lineItems))}</td>
                           <td colSpan={2} />
                         </tr>
@@ -655,11 +689,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   {/* CR-B-14a — Word export. */}
                   <button onClick={() => {
                     const lt = bDraft.mode === "build" ? lineTotal(bDraft.lineItems) : n(cur?.amount);
-                    const rows = (bDraft.mode === "build" ? bDraft.lineItems : []).map((it) => [it.date || "", it.description || "", it.qty || "", it.unitPrice || "", money(n(it.qty) * n(it.unitPrice)), it.remarks || ""]);
+                    const rows = (bDraft.mode === "build" ? bDraft.lineItems : []).map((it) => [it.description || "", it.qty || "", it.unitPrice || "", money(n(it.qty) * n(it.unitPrice)), it.remarks || ""]);
                     const body = `<h1>${isSent ? "Invoice" : "Bill"} #${escapeHtml(cur?.number || "")}</h1>`
                       + `<p class="muted">${escapeHtml(bDraft.receiverKind || "")} · ${escapeHtml(bDraft.party || "")} · ${escapeHtml(bDraft.date || "")}</p>`
                       + (bDraft.description ? `<p>${escapeHtml(bDraft.description)}</p>` : "")
-                      + (rows.length ? htmlTable(["Date", "Description", "Qty", "Unit price", "Total", "Remarks"], rows, [2, 3, 4]) : "")
+                      + (rows.length ? htmlTable(["Description", "Qty", "Unit price", "Total", "Remarks"], rows, [1, 2, 3]) : "")
                       + `<p class="right"><strong>Total: ${escapeHtml(money(lt))}</strong></p>`
                       + (bDraft.terms ? `<h2>Terms</h2><p>${escapeHtml(bDraft.terms)}</p>` : "")
                       + (bDraft.bank?.name ? `<h2>Bank information</h2><p>${escapeHtml(bDraft.bank.name)}<br/>${escapeHtml(bDraft.bank.accountName || "")} ${escapeHtml(bDraft.bank.accountNumber || "")}<br/>${escapeHtml(bDraft.bank.iban || "")} ${escapeHtml(bDraft.bank.swift || "")}</p>` : "")
@@ -667,7 +701,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     downloadHtmlAsWord(`Invoice ${cur?.number || ""}`, body, `Invoice_${cur?.number || "draft"}`);
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><FileText size={13} /> Word</button>
                   {/* CR-B-14a — confirm before closing so changes aren't lost accidentally. */}
-                  <button onClick={async () => { if (await confirm({ title: "Are you sure you want to close?", message: "Any unsaved changes to this invoice will be lost.", confirmLabel: "Close", cancelLabel: "Keep editing", danger: true })) { setBuilderId(null); setBDraft(null); } }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
+                  <button onClick={async () => { if (await confirm({ title: "Are you sure you want to close?", message: "Any unsaved changes to this invoice will be lost.", confirmLabel: "Close", cancelLabel: "Keep editing", danger: true })) { void closeBuilder(); } }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>
                   <button onClick={() => saveBuilder("Draft")} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">Save as Draft</button>
                   <button onClick={() => saveBuilder()} disabled={saving} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={13} className="animate-spin" />} Save</button>
                   {isSent && <button onClick={sendInvoiceEmail} disabled={saving} title="Save, mark Sent, and email the invoice PDF" className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 disabled:opacity-50 inline-flex items-center gap-1.5"><Send size={13} /> Send</button>}
@@ -732,21 +766,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     {templates.map((t) => <option key={t._id} value={t._id}>#{t.number} · {t.party || "template"}</option>)}
                   </select></label>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numLabel} <span className="font-medium normal-case text-slate-400">— leave blank to auto-number ({isSent ? "9001, 9002…" : "4001, 4002…"})</span>
-                  <input className={`${finp} mt-1`} value={draft.number} onChange={(e) => setDraft({ ...draft, number: e.target.value })} placeholder={isSent ? "Auto (e.g. 9001)" : "Auto (e.g. 4001)"} /></label>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{dateLabel}
-                  <input type="date" className={`${finp} mt-1`} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
-              </div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{partyLabel}
-                <input className={`${finp} mt-1`} value={draft.party} onChange={(e) => setDraft({ ...draft, party: e.target.value })} placeholder={isSent ? "Client name" : "Vendor / subcontractor"} /></label>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description
-                <textarea rows={2} className={`${finp} mt-1 resize-y`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What is this invoice for?" /></label>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount
-                <input className={`${finp} mt-1 font-bold`} value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="0.00" /></label>
+              <p className="text-[11px] text-slate-400">Or start a blank one: the number is given automatically ({isSent ? "9001, 9002…" : "4001, 4002…"}) and the full invoice form opens.</p>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setNewOpen(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-                <button onClick={submitNew} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Add invoice</button>
+                <button onClick={createBlank} disabled={saving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{saving && <Loader2 size={12} className="animate-spin" />} Blank {isSent ? "invoice" : "bill"}</button>
               </div>
             </div>
           </div>
