@@ -10,13 +10,17 @@ type LevelName = NonNullable<TechnicalProposalContent["levelName"]>;
 const LEVEL_NAMES: LevelName[] = ["Section", "Tab", "Factor", "Volume", "Part"];
 
 const KIND_BADGE: Record<string, string> = {
-  description: "Built-in", personnel: "Built-in", pastPerformance: "Built-in", timeline: "Built-in", custom: "Custom", blank: "Blank",
+  description: "Built-in", personnel: "Built-in", pastPerformance: "Built-in", timeline: "Built-in", pricing: "Built-in", custom: "Custom", blank: "Blank",
 };
 
 export default function ProposalSectionManager({
   layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, userName,
   numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
+  appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical",
 }: {
+  appendixNumbering?: "numbers" | "letters";            // item 108 - Appendix 1, 2, 3 or A, B, C
+  onAppendixNumberingChange?: (n: "numbers" | "letters") => void;
+  volume?: "technical" | "financial";                   // step 7 - which section library Add opens
   numbering?: Numbering;                                 // CR-P (95) - 1, 2, 3 / A, B, C / off
   onNumberingChange?: (n: Numbering) => void;
   levelName?: LevelName;                                 // spec 1 - Section, Tab, Factor, Volume, Part
@@ -90,6 +94,13 @@ export default function ProposalSectionManager({
                 {LEVEL_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             )}
+            {onAppendixNumberingChange && (
+              <select value={appendixNumbering} onChange={(e) => onAppendixNumberingChange(e.target.value as "numbers" | "letters")} disabled={!canEdit} aria-label="Appendix numbering"
+                title="How appendices are numbered" className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white">
+                <option value="numbers">Appendix 1, 2, 3</option>
+                <option value="letters">Appendix A, B, C</option>
+              </select>
+            )}
           </div>
         )}
         {canEdit && (
@@ -102,6 +113,7 @@ export default function ProposalSectionManager({
             onPick={(title, opts) => onAdd(title, opts)}
             onBlankPage={onAddBlank}
             onClose={() => setMenuOpen(false)}
+            volume={volume}
           />
         )}
       </div>

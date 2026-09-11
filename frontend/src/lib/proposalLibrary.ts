@@ -59,6 +59,26 @@ export const SECTION_LIBRARY: LibraryItem[] = [
 ];
 
 const GOV: ProposalPageType = "government";
+
+/**
+ * Step 7 (items 107, 108) - sections of a financial volume, from the client's samples. Registrations,
+ * bonds and insurance are in the Appendix Library (appendices A, B, C, D close the volume).
+ */
+export const FINANCIAL_SECTION_LIBRARY: LibraryItem[] = [
+  { key: "fin-price-form", title: "Client Price Schedule / Bid Form", hint: "The client's standard pricing form (bid schedule, CLIN sheet, price proposal form), usually filled in Excel or Word, saved as PDF and uploaded as it is.", pageType: GOV },
+  { key: "fin-sf-offer", title: "SF 1442 / SF 33 / SF 18 (Solicitation, Offer and Award)", hint: "The signed standard-form offer page from the solicitation.", pageType: GOV },
+  { key: "fin-price-narrative", title: "Price Narrative / Basis of Estimate", hint: "How the price was built: labour, materials, equipment, subcontracts, travel, overhead, profit, escalation and currency." },
+  { key: "fin-price-breakdown", title: "Price Breakdown / Cost Summary", hint: "The breakdown behind the price schedule: by CLIN, phase, trade or cost element." },
+  { key: "fin-assumptions", title: "Pricing Assumptions & Exclusions", hint: "What the price includes and excludes, and the client-furnished items it relies on." },
+  { key: "fin-payment-terms", title: "Payment Terms & Offer Validity", hint: "Payment milestones, invoicing, retention, currency and how long the offer stays valid." },
+  { key: "fin-labour-rates", title: "Labour & Emergency Rates", hint: "Hourly or daily rates by position for additional or emergency work, with overtime and call-out terms." },
+  { key: "fin-reps-certs", title: "Representations & Certifications", hint: "FAR / DFARS representations and certifications, or the SAM.gov reps and certs printout.", pageType: GOV },
+  { key: "fin-tax-forms", title: "Tax Forms (W-9 / W-14 / VAT)", hint: "W-9, W-14 or local VAT / tax registration forms the solicitation requires.", pageType: GOV },
+  { key: "fin-quotations", title: "Subcontractor & Vendor Quotations", hint: "Supporting quotations from subcontractors, suppliers and manufacturers.", pageType: "external" },
+  { key: "fin-financial-capability", title: "Financial Capability / Bank Reference", hint: "Bank reference letter, line of credit or audited statements showing financial capacity.", pageType: "external" },
+];
+export const FINANCIAL_BUILT_INS = ["Cover Page", "Transmittal Letter", "Table of Contents", "Price Schedule (our own table)"];
+
 export const APPENDIX_LIBRARY: LibraryItem[] = [
   { key: "appx-sam", title: "SAM.gov Registration", hint: "The current SAM.gov entity registration printout." },
   { key: "appx-uei-cage", title: "UEI / CAGE Information", hint: "UEI and CAGE code records." },

@@ -3,7 +3,7 @@ import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject } from "../../lib/api";
 import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
-import { resolveProposalLayout, resolveFinancialTables } from "../../lib/api";
+import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
   BRAND, COMPANY, A4, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
@@ -435,7 +435,73 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
 type SectionFile = { name: string; url: string };
 /** The technical document as an ordered run of pages and uploaded files (see proposalParts). */
 type SeqItem = { page: ReactElement } | { files: SectionFile[]; key?: string };
-type TechArgs = { project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[] } & PageCtx;
+type TechArgs = {
+  project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover;
+  letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[];
+  // Step 7 - the same sequence builds the financial volume (its sections, our price table, appendices).
+  volume?: "technical" | "financial";
+  financial?: FinancialProposalContent;
+} & PageCtx;
+
+/** The financial volume in the section engine's shape: sections, layout, numbering (letters by default). */
+const financialAsContent = (f: FinancialProposalContent): TechnicalProposalContent => ({
+  coverTitle: "", coverSubtitle: "", refNo: "", date: "", description: "", employees: [], similarProjects: [], timeline: [],
+  sections: f.sections || [], layout: f.layout, numbering: f.numbering || "letters", levelName: f.levelName,
+  appendixNumbering: f.appendixNumbering || "letters", printResumes: false,
+});
+
+/** Our own price tables (the financial volume's built-in "Price Schedule" section). */
+function PricingBlock({ content }: { content: FinancialProposalContent }) {
+  const currency = content.currency || "$";
+  const tables = resolveFinancialTables(content);
+  const amtCols = (tb: typeof tables[number]) => tb.columns.filter((c) => c.kind === "amount").map((c) => c.id);
+  const tblTotal = (tb: typeof tables[number]) => tb.rows.reduce((s, r) => s + amtCols(tb).reduce((a, cid) => a + num(r.cells[cid] || ""), 0), 0);
+  const grand = tables.reduce((s, tb) => s + tblTotal(tb), 0);
+  const colFlex = (kind: string) => (kind === "text" ? 2.5 : kind === "amount" ? 1.3 : 1);
+  return (
+    <View>
+      {tables.filter((tb) => tb.rows.length > 0).map((tb) => (
+        <View key={tb.id} style={{ marginBottom: 16 }}>
+          {!!tb.title && <Subhead>{tb.title.toUpperCase()}</Subhead>}
+          <View style={styles.tHead} wrap={false} minPresenceAhead={30}>
+            {tb.columns.map((c) => (
+              <Text key={c.id} style={[styles.th, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>{(c.label || "").toUpperCase()}</Text>
+            ))}
+          </View>
+          {tb.rows.map((r, ri) => (
+            <View key={r.id} style={[styles.tRow, ri % 2 === 1 ? styles.tRowAlt : {}]} wrap={false}>
+              {tb.columns.map((c) => (
+                <Text key={c.id} style={[styles.td, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>
+                  {c.kind === "amount" && r.cells[c.id] ? money(num(r.cells[c.id]), currency) : (r.cells[c.id] || "")}
+                </Text>
+              ))}
+            </View>
+          ))}
+          <View style={styles.totalRow} wrap={false}>
+            <View style={styles.totalBox}>
+              <Text style={styles.totalLabel}>{tb.title ? `${tb.title.toUpperCase()} TOTAL` : "TOTAL"}</Text>
+              <Text style={styles.totalValue}>{money(tblTotal(tb), currency)}</Text>
+            </View>
+          </View>
+        </View>
+      ))}
+      {tables.filter((tb) => tb.rows.length > 0).length > 1 && (
+        <View style={styles.totalRow} wrap={false}>
+          <View style={[styles.totalBox, { backgroundColor: BRAND.slate }]}>
+            <Text style={[styles.totalLabel, { color: BRAND.s300 }]}>GRAND TOTAL</Text>
+            <Text style={[styles.totalValue, { color: BRAND.white }]}>{money(grand, currency)}</Text>
+          </View>
+        </View>
+      )}
+      {htmlHasContent(content.notes || "") && (
+        <>
+          <Subhead>NOTES AND TERMS</Subhead>
+          <RichText html={content.notes} keyBase="fin-notes" />
+        </>
+      )}
+    </View>
+  );
+}
 /** Does editor HTML hold anything printable (text, an image or a table)? */
 const htmlHasContent = (h: string) => !!h.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() || /<(img|table)\b/i.test(h);
 /** A section's subsections that have a title or text (empty ones are skipped in print). */
@@ -569,12 +635,14 @@ function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: stri
   );
 }
 
-function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf }: TechArgs): SeqItem[] {
+function technicalSequence({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl, resumes = [], probe, pageOf, volume = "technical", financial }: TechArgs): SeqItem[] {
   // An invisible page marker (see PageCtx): absolutely positioned, so it never moves the layout.
   const mark = (k: string) => (probe ? <Text style={styles.pageMark} render={({ pageNumber }) => { probe(k, pageNumber); return " "; }} /> : null);
-  const LABEL = "Technical Proposal";
+  const fin = volume === "financial";
+  const LABEL = fin ? "Financial Proposal" : "Technical Proposal";
   const note = footNote(LABEL, project);
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
+  const fullLayout = fin && financial ? resolveFinancialLayout(financial) : resolveProposalLayout(content);
 
   // Item 97/98 - the key personnel with their resumes, key staff first, in the list's order.
   const staff = content.employees.map((e) => ({ e, r: resumes.find((x) => x.rowId === e.id) || resumes.find((x) => !x.rowId && x.name === e.name) }));
@@ -586,7 +654,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const sectionFor = (refId?: string) => content.sections.find((s) => s.id === refId);
   const isOriginal = (m: ProposalSectionMeta) => m.pageType === "government" || m.pageType === "external";
   const resumeHost = built.length
-    ? resolveProposalLayout(content).find((m) => !m.hidden && m.kind === "custom" && !isOriginal(m) && RESUME_SECTION_KEYS.has(m.libraryKey || "") && !!sectionFor(m.refId))
+    ? fullLayout.find((m) => !m.hidden && m.kind === "custom" && !isOriginal(m) && RESUME_SECTION_KEYS.has(m.libraryKey || "") && !!sectionFor(m.refId))
     : undefined;
   const hasContent = (m: ProposalSectionMeta) => {
     if (resumeHost && m.id === resumeHost.id) return true;
@@ -595,6 +663,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       case "personnel": return content.employees.length > 0;
       case "pastPerformance": return content.similarProjects.length > 0;
       case "timeline": return content.timeline.length > 0;
+      case "pricing": return !!financial && (resolveFinancialTables(financial).some((tb) => tb.rows.length > 0) || htmlHasContent(financial.notes || ""));
       case "custom": {
         const s = sectionFor(m.refId);
         if (!s) return false;
@@ -606,7 +675,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       default: return false;
     }
   };
-  const visible = resolveProposalLayout(content).filter((m) => !m.hidden && hasContent(m));
+  const visible = fullLayout.filter((m) => !m.hidden && hasContent(m));
 
   // CR-P (95/103) - labels. Main sections run 1, 2, 3, or A, B, C when the proposal uses letters
   // (as the client's samples do: "Section A: Performance Schedule"). Appendices are numbered apart,
@@ -623,7 +692,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     if (m.kind === "blank") continue;
     if (m.appendix) {
       const n = ++appxN;
-      labelById.set(m.id, { short: String(n), heading: `APPENDIX ${n}:`, divider: `Appendix ${n}`, toc: String(n), sub: String(n) });
+      // Item 108 - appendices can run A, B, C, D (the financial volume's default).
+      const a = content.appendixNumbering === "letters" ? letterOf(n) : String(n);
+      labelById.set(m.id, { short: a, heading: `APPENDIX ${a}:`, divider: `Appendix ${a}`, toc: a, sub: a });
     } else {
       const n = ++mainN;
       const short = numbering === "letters" ? letterOf(n) : numbering === "numbers" ? String(n).padStart(2, "0") : "";
@@ -641,7 +712,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const tocMain = visible.filter((m) => m.kind !== "blank" && !m.appendix);
   const tocAppx = visible.filter((m) => m.kind !== "blank" && m.appendix);
   // Without a Resumes section in the layout, the resumes close the appendices.
-  const resumeAppx = appxN + 1;
+  const resumeAppx = content.appendixNumbering === "letters" ? letterOf(appxN + 1) : String(appxN + 1);
   const trailingResumes = !resumeHost && built.length > 0;
   const resumesWhere = resumeHost
     ? (labelById.get(resumeHost.id)?.divider ? `${labelById.get(resumeHost.id)!.divider}, ${resumeHost.title}` : resumeHost.title)
@@ -735,6 +806,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         <Text style={[styles.cardMeta, { marginTop: 2 }]}>A data sheet for each project follows.</Text>
       </View>
     );
+    if (m.kind === "pricing") return (
+      <View key={m.id}>{heading}{!!financial && <PricingBlock content={financial} />}</View>
+    );
     if (m.kind === "timeline") return (
       <View key={m.id}>
         {heading}
@@ -792,7 +866,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const seq: SeqItem[] = [];
   const page = (el: ReactElement) => { seq.push({ page: el }); };
 
-  page(<ProposalCoverPage variant={cover?.coverStyle} data={coverData("TECHNICAL PROPOSAL", cover, project)} />);
+  page(<ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />);
   if (coverLetter?.enabled) page(<CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />);
 
   // Table of contents: main sections with their RFP reference, then the appendices.
@@ -811,7 +885,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         {tocMain.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, tocW), ...subRows(m, tocW)])}
         {(tocAppx.length > 0 || trailingResumes) && <Subhead>APPENDICES</Subhead>}
         {tocAppx.map((m) => [row(m.id, labelById.get(m.id)?.toc || "", m.title, m.rfpRef, 30), ...subRows(m, 30)])}
-        {trailingResumes && row("resumes", String(resumeAppx), "Key Personnel Resumes", undefined, 30)}
+        {trailingResumes && row("resumes", resumeAppx, "Key Personnel Resumes", undefined, 30)}
       </Sheet>,
     );
   }
@@ -892,76 +966,11 @@ function TechnicalPDF(props: TechArgs) {
 }
 
 // ── Financial Proposal PDF ───────────────────────────────────────────────────
-function FinancialPDF({ project, content, cover, coverLetter, backCover, letterhead, customLetterheadUrl, logoUrl }: { project: ApiProject; content: FinancialProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover; letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string }) {
-  const LABEL = "Financial Proposal";
-  const note = footNote(LABEL, project);
-  const currency = content.currency || "$";
-  const tables = resolveFinancialTables(content);
-  const amtCols = (tb: typeof tables[number]) => tb.columns.filter((c) => c.kind === "amount").map((c) => c.id);
-  const tblTotal = (tb: typeof tables[number]) => tb.rows.reduce((s, r) => s + amtCols(tb).reduce((a, cid) => a + num(r.cells[cid] || ""), 0), 0);
-  const grand = tables.reduce((s, tb) => s + tblTotal(tb), 0);
-  const colFlex = (kind: string) => (kind === "text" ? 2.5 : kind === "amount" ? 1.3 : 1);
-  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
-
-  return (
-    <Document title={`${cover?.proposalTitle || project.name} - ${LABEL}`} author={COMPANY.name}>
-      <ProposalCoverPage variant={cover?.coverStyle} data={coverData("FINANCIAL PROPOSAL", cover, project)} />
-
-      <CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />
-
-      <Sheet lh={lh} label={LABEL} note={note}>
-        <View style={{ marginBottom: 12 }}>
-          <Eyebrow>FINANCIAL PROPOSAL</Eyebrow>
-          <Text style={styles.docTitle}>{cover?.proposalTitle || project.name}</Text>
-          <Text style={[styles.cardMeta, { marginTop: 4 }]}>{project.name} · {project.id}{project.clientInfo?.name ? `  ·  Prepared for ${project.clientInfo.name}` : ""}</Text>
-        </View>
-
-        {tables.map((tb) => (
-          <View key={tb.id} style={{ marginBottom: 16 }} wrap={false}>
-            {!!tb.title && <Subhead>{tb.title.toUpperCase()}</Subhead>}
-            <View style={styles.tHead}>
-              {tb.columns.map((c) => (
-                <Text key={c.id} style={[styles.th, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>{(c.label || "").toUpperCase()}</Text>
-              ))}
-            </View>
-            {tb.rows.map((r, ri) => (
-              <View key={r.id} style={[styles.tRow, ri % 2 === 1 ? styles.tRowAlt : {}]}>
-                {tb.columns.map((c) => (
-                  <Text key={c.id} style={[styles.td, { flex: colFlex(c.kind), textAlign: c.kind === "amount" ? "right" : "left" }]}>
-                    {c.kind === "amount" && r.cells[c.id] ? money(num(r.cells[c.id]), currency) : (r.cells[c.id] || "")}
-                  </Text>
-                ))}
-              </View>
-            ))}
-            <View style={styles.totalRow}>
-              <View style={styles.totalBox}>
-                <Text style={styles.totalLabel}>{tb.title ? `${tb.title.toUpperCase()} TOTAL` : "TOTAL"}</Text>
-                <Text style={styles.totalValue}>{money(tblTotal(tb), currency)}</Text>
-              </View>
-            </View>
-          </View>
-        ))}
-
-        {tables.length > 1 && (
-          <View style={styles.totalRow}>
-            <View style={[styles.totalBox, { backgroundColor: BRAND.slate }]}>
-              <Text style={[styles.totalLabel, { color: BRAND.s300 }]}>GRAND TOTAL</Text>
-              <Text style={[styles.totalValue, { color: BRAND.white }]}>{money(grand, currency)}</Text>
-            </View>
-          </View>
-        )}
-
-        {!!content.notes?.trim() && (
-          <>
-            <SectionHeading title="Notes" />
-            <RichText html={content.notes} keyBase="fin-notes" />
-          </>
-        )}
-      </Sheet>
-
-      <BackCoverPage backCover={backCover} />
-    </Document>
-  );
+// Step 7 - the financial volume runs through the same section engine as the technical one: cover,
+// letter, contents, the client's uploaded price form in place, our price table, appendices A to D.
+function FinancialPDF(props: Omit<TechArgs, "content" | "volume" | "financial"> & { financial: FinancialProposalContent }) {
+  const pages = technicalSequence({ ...props, content: financialAsContent(props.financial), volume: "financial", resumes: [] }).flatMap((s) => ("page" in s ? [s.page] : []));
+  return asDocument(`${props.cover?.proposalTitle || props.project.name} - Financial Proposal`, pages);
 }
 
 export default function ProposalPDF({
@@ -991,7 +1000,7 @@ export default function ProposalPDF({
 }) {
   return kind === "technical"
     ? <TechnicalPDF project={project} content={technical} cover={cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={logoUrl} resumes={resumes} />
-    : <FinancialPDF project={project} content={financial} cover={cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={logoUrl} />;
+    : <FinancialPDF project={project} financial={financial} cover={cover} coverLetter={coverLetter} backCover={backCover} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={logoUrl} />;
 }
 
 export interface ProposalPdfProps {
@@ -1013,11 +1022,14 @@ export interface ProposalPdfProps {
  * uploaded files so client forms land exactly where their section sits (lib/proposalExport).
  */
 export function proposalParts(p: ProposalPdfProps, ctx: PageCtx = {}): ProposalPart[] {
-  if (p.kind === "financial") {
-    return [{ type: "doc", element: <FinancialPDF project={p.project} content={p.financial} cover={p.cover} coverLetter={p.coverLetter} backCover={p.backCover} letterhead={p.letterhead} customLetterheadUrl={p.customLetterheadUrl} logoUrl={p.logoUrl} /> }];
-  }
-  const title = `${p.cover?.proposalTitle || p.project.name} - Technical Proposal`;
-  const seq = technicalSequence({ project: p.project, content: p.technical, cover: p.cover, coverLetter: p.coverLetter, backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl, resumes: p.resumes, probe: ctx.probe, pageOf: ctx.pageOf });
+  // Step 7 - both volumes: the financial one's uploaded client forms also print in place.
+  const fin = p.kind === "financial";
+  const title = `${p.cover?.proposalTitle || p.project.name} - ${fin ? "Financial" : "Technical"} Proposal`;
+  const seq = technicalSequence({
+    project: p.project, content: fin ? financialAsContent(p.financial) : p.technical, cover: p.cover, coverLetter: p.coverLetter,
+    backCover: p.backCover, letterhead: p.letterhead, customLetterheadUrl: p.customLetterheadUrl, logoUrl: p.logoUrl,
+    resumes: fin ? [] : p.resumes, probe: ctx.probe, pageOf: ctx.pageOf, volume: p.kind, financial: p.financial,
+  });
   const parts: ProposalPart[] = [];
   let pages: ReactElement[] = [];
   // The first run of pages holds the table of contents, so it is the part rebuilt with page numbers.

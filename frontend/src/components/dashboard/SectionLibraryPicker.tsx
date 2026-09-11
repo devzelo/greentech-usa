@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Search, Check, FileX, Plus } from "lucide-react";
 import type { ProposalPageType } from "../../lib/api";
-import { SECTION_LIBRARY, APPENDIX_LIBRARY, BUILT_IN_SECTIONS, PAGE_TYPES, isOriginalPageType, type LibraryItem } from "../../lib/proposalLibrary";
+import { SECTION_LIBRARY, APPENDIX_LIBRARY, BUILT_IN_SECTIONS, FINANCIAL_SECTION_LIBRARY, FINANCIAL_BUILT_INS, PAGE_TYPES, isOriginalPageType, type LibraryItem } from "../../lib/proposalLibrary";
 
 // Spec section 5: "When the proposal writer clicks Add Section, show the Section Library and allow
 // them to select a section." Sections and appendices each have their own library; the writer can
@@ -22,12 +22,14 @@ const TYPE_BADGE: Record<ProposalPageType, string> = {
   external: "bg-sky-50 text-sky-700",
 };
 
-export default function SectionLibraryPicker({ usedKeys, onPick, onBlankPage, onClose }: {
+export default function SectionLibraryPicker({ usedKeys, onPick, onBlankPage, onClose, volume = "technical" }: {
   usedKeys: Set<string>;
   onPick: (title: string, opts: SectionAddOpts) => void;
   onBlankPage: () => void;
   onClose: () => void;
+  volume?: "technical" | "financial";   // step 7 - the financial volume has its own section library
 }) {
+  const lib = volume === "financial" ? FINANCIAL_SECTION_LIBRARY : SECTION_LIBRARY;
   const [tab, setTab] = useState<"sections" | "appendices">("sections");
   const [q, setQ] = useState("");
   const [custom, setCustom] = useState("");
@@ -40,10 +42,10 @@ export default function SectionLibraryPicker({ usedKeys, onPick, onBlankPage, on
 
   const appendix = tab === "appendices";
   const items = useMemo(() => {
-    const src = appendix ? APPENDIX_LIBRARY : SECTION_LIBRARY;
+    const src = appendix ? APPENDIX_LIBRARY : lib;
     const needle = q.trim().toLowerCase();
     return needle ? src.filter((i) => `${i.title} ${i.hint}`.toLowerCase().includes(needle)) : src;
-  }, [appendix, q]);
+  }, [appendix, q, lib]);
 
   const pick = (item: LibraryItem) => {
     const pageType = item.pageType || (appendix ? "external" : "designed");
@@ -71,7 +73,7 @@ export default function SectionLibraryPicker({ usedKeys, onPick, onBlankPage, on
 
         <div className="px-6 space-y-3">
           <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 w-fit" role="tablist">
-            {([["sections", `Sections (${SECTION_LIBRARY.length})`], ["appendices", `Appendices & attachments (${APPENDIX_LIBRARY.length})`]] as const).map(([v, l]) => (
+            {([["sections", `Sections (${lib.length})`], ["appendices", `Appendices & attachments (${APPENDIX_LIBRARY.length})`]] as const).map(([v, l]) => (
               <button key={v} role="tab" aria-selected={tab === v} onClick={() => setTab(v)}
                 className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${tab === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>{l}</button>
             ))}
@@ -80,7 +82,7 @@ export default function SectionLibraryPicker({ usedKeys, onPick, onBlankPage, on
             <Search size={14} className="text-slate-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={appendix ? "Search appendices, e.g. insurance, SAM, SF 330" : "Search sections, e.g. quality, schedule, CTIP"} className="flex-1 text-xs outline-none" autoFocus aria-label="Search the library" />
           </label>
-          {!appendix && <p className="text-[10px] text-slate-400">Built in, on their own tabs: {BUILT_IN_SECTIONS.join(", ")}.</p>}
+          {!appendix && <p className="text-[10px] text-slate-400">Built in, on their own tabs: {(volume === "financial" ? FINANCIAL_BUILT_INS : BUILT_IN_SECTIONS).join(", ")}.</p>}
         </div>
 
         <ul className="flex-1 overflow-y-auto px-4 py-3 space-y-1">

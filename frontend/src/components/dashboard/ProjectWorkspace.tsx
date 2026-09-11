@@ -43,6 +43,10 @@ import SubcontractorResumes from "./SubcontractorResumes";
 import CategoryMultiSelect from "./CategoryMultiSelect";
 import ProposalProjectsEditor from "./ProposalProjectsEditor";
 import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
+import { FINANCIAL_SECTION_LIBRARY } from "../../lib/proposalLibrary";
+
+/** Step 7 - which proposal volume a section handler works on (both have sections). */
+type Vol = "technical" | "financial";
 import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePageBadge";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
@@ -50,7 +54,7 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
-import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject } from "../../lib/api";
+import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType } from "../../lib/proposalLibrary";
@@ -80,7 +84,7 @@ import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/a
 import type { ProjectStatus } from "../../lib/api";
 import AgreementsPanel from "./agreements/AgreementsPanel";
 import { type ProposalRequirement, type ApiResourceBlock, type ProposalContent as ProposalContentType, fetchProposalRevisions, createProposalRevision, deleteProposalRevision, type ApiProposalRevision } from "../../lib/api";
-import { resolveProposalLayout, PROPOSAL_BUILTINS, fetchProposalTemplates, saveProposalTemplate, deleteProposalTemplate, resolveFinancialTables, defaultFinancialColumns, type ProposalSectionMeta, type ProposalLetterhead, type ApiProposalTemplate, type ProposalTemplateContent } from "../../lib/api";
+import { resolveProposalLayout, resolveFinancialLayout, FINANCIAL_BUILTINS, PROPOSAL_BUILTINS,fetchProposalTemplates, saveProposalTemplate, deleteProposalTemplate, resolveFinancialTables, defaultFinancialColumns, type ProposalSectionMeta, type ProposalLetterhead, type ApiProposalTemplate, type ProposalTemplateContent } from "../../lib/api";
 import PortalMenu from "./PortalMenu";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
@@ -770,7 +774,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     } catch { /* the picker just stays empty */ }
   };
   useEffect(() => { void loadSectionTemplates(); }, []);
-  const applySectionTemplate = async (sectionId: string, t: ApiProposalTemplate) => {
+  const applySectionTemplate = async (sectionId: string, t: ApiProposalTemplate, vol: Vol = "technical") => {
     const body = String((t.content as { body?: unknown } | undefined)?.body || "");
     if (!body) { toast("That template has no content.", "info"); return; }
     if (!(await brandedConfirm({
@@ -778,7 +782,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       message: "This replaces whatever is currently written in this section. Anything already there is lost.",
       confirmLabel: "Insert template",
     }))) return;
-    updateSectionRow(sectionId, "body", body);
+    updateSectionRow(sectionId, "body", body, vol);
     toast("Template inserted.", "success");
   };
   const saveSectionAsTemplate = async (sec: { title?: string; body?: string }) => {
@@ -936,8 +940,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const removeEmployeeRow = (eid: string) => setTech("employees", technical.employees.filter((e) => e.id !== eid));
 
   // Step 6 - the projects listed in a Past Performance / Relevant Experience / References section.
-  const setSectionProjects = (sid: string, projects: ProposalSimilarProject[]) =>
-    setTechnical((p) => ({ ...p, sections: p.sections.map((x) => (x.id === sid ? { ...x, projects } : x)) }));
+  const setSectionProjects = (sid: string, projects: ProposalSimilarProject[], vol: Vol = "technical") =>
+    patchSection(sid, { projects }, vol);
   // Item 102 - the optional recommendation / credit letters section goes right after past performance:
   // an external document (the letters as they are), after a separator page.
   const addLettersAfter = (afterMetaId: string) =>
@@ -960,105 +964,115 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setTech("timeline", technical.timeline.map((t, i) => (i === idx ? { ...t, [field]: value } : t)));
   const removeTimelineRow = (idx: number) => setTech("timeline", technical.timeline.filter((_, i) => i !== idx));
 
-  const updateSectionRow = (sid: string, field: "heading" | "body", value: string) =>
-    setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, [field]: value } : s)));
+  // Step 7 - section handlers work on either volume: the financial one has sections too.
+  const sectionsOfVol = (vol: Vol) => (vol === "financial" ? financial.sections || [] : technical.sections);
+  const setVolSections = (vol: Vol, fn: (all: ProposalSection[]) => ProposalSection[]) =>
+    vol === "financial"
+      ? setFinancial((p) => ({ ...p, sections: fn(p.sections || []) }))
+      : setTechnical((p) => ({ ...p, sections: fn(p.sections) }));
+  const patchSection = (sid: string, patch: Partial<ProposalSection>, vol: Vol = "technical") =>
+    setVolSections(vol, (all) => all.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
+  const updateSectionRow = (sid: string, field: "heading" | "body", value: string, vol: Vol = "technical") =>
+    patchSection(sid, { [field]: value }, vol);
   // CR-B-18 — attach / remove pre-made files (resume/excel/pdf/picture) on a proposal section.
   // Proposal step 4 - company documents a proposal can pull in with no upload (item 104).
   const [companyDocs, setCompanyDocs] = useState<ProposalDoc[]>([]);
   useEffect(() => { fetchProposalDocs().then(setCompanyDocs).catch(() => {}); }, [id]);
   const [docPickFor, setDocPickFor] = useState<string | null>(null);   // section id the picker is open for
-  const setSectionAttachments = (sid: string, atts: ProposalAttachment[]) =>
-    setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, attachments: atts } : s)));
+  const setSectionAttachments = (sid: string, atts: ProposalAttachment[], vol: Vol = "technical") =>
+    patchSection(sid, { attachments: atts }, vol);
   // Spec 1 - unlimited subsections under a section, numbered in print (1.1, 1.2 / A.1, A.2).
-  const setSubsections = (sid: string, subs: ProposalSubsection[]) =>
-    setTech("sections", technical.sections.map((s) => (s.id === sid ? { ...s, subsections: subs } : s)));
-  const subsOf = (sid: string) => technical.sections.find((s) => s.id === sid)?.subsections || [];
-  const addSub = (sid: string) => setSubsections(sid, [...subsOf(sid), { id: uid(), heading: "", body: "" }]);
-  const updateSub = (sid: string, subId: string, p: Partial<ProposalSubsection>) =>
-    setSubsections(sid, subsOf(sid).map((x) => (x.id === subId ? { ...x, ...p } : x)));
-  const moveSub = (sid: string, k: number, dir: -1 | 1) => {
-    const a = subsOf(sid).slice();
+  const setSubsections = (sid: string, subs: ProposalSubsection[], vol: Vol = "technical") =>
+    patchSection(sid, { subsections: subs }, vol);
+  const subsOf = (sid: string, vol: Vol = "technical") => sectionsOfVol(vol).find((s) => s.id === sid)?.subsections || [];
+  const addSub = (sid: string, vol: Vol = "technical") => setSubsections(sid, [...subsOf(sid, vol), { id: uid(), heading: "", body: "" }], vol);
+  const updateSub = (sid: string, subId: string, p: Partial<ProposalSubsection>, vol: Vol = "technical") =>
+    setSubsections(sid, subsOf(sid, vol).map((x) => (x.id === subId ? { ...x, ...p } : x)), vol);
+  const moveSub = (sid: string, k: number, dir: -1 | 1, vol: Vol = "technical") => {
+    const a = subsOf(sid, vol).slice();
     const j = k + dir;
     if (j < 0 || j >= a.length) return;
     [a[k], a[j]] = [a[j], a[k]];
-    setSubsections(sid, a);
+    setSubsections(sid, a, vol);
   };
-  const removeSub = async (sid: string, subId: string) => {
-    const x = subsOf(sid).find((y) => y.id === subId);
+  const removeSub = async (sid: string, subId: string, vol: Vol = "technical") => {
+    const x = subsOf(sid, vol).find((y) => y.id === subId);
     const hasText = !!(x?.heading.trim() || (x?.body || "").replace(/<[^>]*>/g, "").trim());
     if (hasText && !(await brandedConfirm({ title: "Delete this subsection?", message: `"${x?.heading || "Untitled"}" and its text are removed.`, confirmLabel: "Delete subsection" }))) return;
-    setSubsections(sid, subsOf(sid).filter((y) => y.id !== subId));
+    setSubsections(sid, subsOf(sid, vol).filter((y) => y.id !== subId), vol);
   };
-  const uploadSectionDoc = async (sid: string, file: File) => {
+  const uploadSectionDoc = async (sid: string, file: File, vol: Vol = "technical") => {
     if (!id) return;
     try {
       const { url } = await uploadProposalAsset(id, file);
-      const s = technical.sections.find((x) => x.id === sid);
-      setSectionAttachments(sid, [...(s?.attachments || []), { name: file.name, url }]);
+      const s = sectionsOfVol(vol).find((x) => x.id === sid);
+      setSectionAttachments(sid, [...(s?.attachments || []), { name: file.name, url }], vol);
       toast("File attached — remember to Save Workspace.", "success");
     } catch (e) { toast(e instanceof Error ? e.message : "Upload failed.", "error"); }
   };
 
   // ── Section engine (order / visibility / titles) ─────────────────────────────
-  const setLayout = (next: ProposalSectionMeta[]) => setTech("layout", next);
+  // Step 7 - every layout handler takes the volume (technical by default).
+  type SecBox = { sections: ProposalSection[]; layout: ProposalSectionMeta[] };
+  const layoutOfVol = (vol: Vol) => (vol === "financial" ? resolveFinancialLayout(financial) : resolveProposalLayout(technical));
+  const editVol = (vol: Vol, fn: (b: SecBox) => Partial<SecBox> | null) =>
+    vol === "financial"
+      ? setFinancial((p) => { const r = fn({ sections: p.sections || [], layout: resolveProposalLayout({ sections: p.sections || [], layout: p.layout }, FINANCIAL_BUILTINS) }); return r ? { ...p, ...r } : p; })
+      : setTechnical((p) => { const r = fn({ sections: p.sections, layout: resolveProposalLayout(p) }); return r ? { ...p, ...r } : p; });
+  const setLayout = (next: ProposalSectionMeta[], vol: Vol = "technical") => editVol(vol, () => ({ layout: next }));
   // CR-B-19a — colleagues that can be tagged on a proposal section (notified via a reminder).
   const [projUsers, setProjUsers] = useState<AdminUser[]>([]);
   useEffect(() => { fetchUsers().then(setProjUsers).catch(() => {}); }, []);
-  const assignLayoutSection = (index: number, userId: string, name: string) => {
-    const secTitle = resolveProposalLayout(technical)[index]?.title || "Section";
+  const assignLayoutSection = (index: number, userId: string, name: string, vol: Vol = "technical") => {
+    const secTitle = layoutOfVol(vol)[index]?.title || "Section";
     createReminder({ userId, title: `Review proposal section "${secTitle}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: id ? `/dashboard/projects/${id}` : "/dashboard", projectId: id || undefined, projectName: project?.name || "Proposal" })
       .then(() => toast(`${name} was notified.`, "success")).catch(() => {});
   };
   // Reorder a section by index against the *resolved* layout (used by the on-box arrows).
-  const moveProposalSection = (index: number, dir: -1 | 1) => {
-    const cur = resolveProposalLayout(technical);
+  const moveProposalSection = (index: number, dir: -1 | 1, vol: Vol = "technical") => {
+    const cur = layoutOfVol(vol);
     const j = index + dir;
     if (j < 0 || j >= cur.length) return;
     const next = cur.slice();
     [next[index], next[j]] = [next[j], next[index]];
-    setLayout(next);
+    setLayout(next, vol);
   };
   // Add a custom section (optionally with a standard-section title) and append it to the layout.
   // Spec 2/5 - a section from the library carries its identity (libraryKey), guidance, page type and
   // appendix flag; a custom one is plain designed content.
-  const addLayoutSection = (title: string, body = "", opts: SectionAddOpts = {}) => {
+  const addLayoutSection = (title: string, body = "", opts: SectionAddOpts = {}, vol: Vol = "technical") => {
     // Item 104 / spec 6 "Automatic Appendices": a library type pulls in the latest valid company
     // document of that type (e.g. Insurance Certificates → the current certificate), no upload step.
     const auto = opts.libraryKey ? bestDocFor(opts.libraryKey, companyDocs) : undefined;
-    setTechnical((p) => {
+    editVol(vol, (b) => {
       const newId = uid();
       const section = { id: newId, heading: title || "New Section", body, ...(auto ? { attachments: [docAttachment(auto)] } : {}) };
       const meta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: title || "New Section", hidden: false, ...opts };
-      const layout = [...resolveProposalLayout(p), meta];
-      return { ...p, sections: [...p.sections, section], layout };
+      return { sections: [...b.sections, section], layout: [...b.layout, meta] };
     });
     if (auto) {
       const ex = expiryInfo(auto.expiresAt);
       toast(`Attached from Company Documents: ${auto.name}${ex.state === "expired" ? `. ${ex.label}: replace it before sending.` : ""}`, ex.state === "expired" ? "error" : "success");
     }
   };
-  const duplicateLayoutSection = (meta: ProposalSectionMeta) =>
-    setTechnical((p) => {
-      const src = p.sections.find((s) => s.id === meta.refId);
-      if (!src) return p;
+  const duplicateLayoutSection = (meta: ProposalSectionMeta, vol: Vol = "technical") =>
+    editVol(vol, (b) => {
+      const src = b.sections.find((s) => s.id === meta.refId);
+      if (!src) return null;
       const newId = uid();
       const section = { id: newId, heading: `${src.heading} (copy)`, body: src.body, subsections: (src.subsections || []).map((x) => ({ ...x, id: uid() })) };
-      const resolved = resolveProposalLayout(p);
-      const at = resolved.findIndex((m) => m.id === meta.id);
+      const at = b.layout.findIndex((m) => m.id === meta.id);
       const newMeta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: `${meta.title} (copy)`, hidden: meta.hidden, pageType: meta.pageType, appendix: meta.appendix, divider: meta.divider, libraryKey: meta.libraryKey, guide: meta.guide, rfpRef: meta.rfpRef };
-      const layout = [...resolved.slice(0, at + 1), newMeta, ...resolved.slice(at + 1)];
-      return { ...p, sections: [...p.sections, section], layout };
+      return { sections: [...b.sections, section], layout: [...b.layout.slice(0, at + 1), newMeta, ...b.layout.slice(at + 1)] };
     });
-  const removeLayoutSection = (meta: ProposalSectionMeta) =>
-    setTechnical((p) => ({
-      ...p,
-      sections: p.sections.filter((s) => s.id !== meta.refId),
-      layout: resolveProposalLayout(p).filter((m) => m.id !== meta.id),
+  const removeLayoutSection = (meta: ProposalSectionMeta, vol: Vol = "technical") =>
+    editVol(vol, (b) => ({
+      sections: b.sections.filter((s) => s.id !== meta.refId),
+      layout: b.layout.filter((m) => m.id !== meta.id),
     }));
-  const addBlankPage = () =>
-    setTechnical((p) => ({
-      ...p,
-      layout: [...resolveProposalLayout(p), { id: `blank-${uid()}`, kind: "blank" as const, title: "Blank page", hidden: false, letterhead: "none" as const }],
+  const addBlankPage = (vol: Vol = "technical") =>
+    editVol(vol, (b) => ({
+      layout: [...b.layout, { id: `blank-${uid()}`, kind: "blank" as const, title: "Blank page", hidden: false, letterhead: "none" as const }],
     }));
   const insertResource = (b: ApiResourceBlock) => {
     addLayoutSection(b.title, b.body);
@@ -1187,12 +1201,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     // Item 104 / spec 6 - warn when a company document in the proposal has expired.
-    if (which === "technical") {
-      const expired = technical.sections.flatMap((s) => s.attachments || [])
+    {
+      const expired = (which === "technical" ? technical.sections : financial.sections || []).flatMap((s) => s.attachments || [])
         .filter((a) => a.companyFileId && expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt).state === "expired");
       if (expired.length) toast(`Expired document${expired.length === 1 ? "" : "s"} in this proposal: ${expired.map((a) => a.name).join(", ")}. Replace ${expired.length === 1 ? "it" : "them"} before sending.`, "error");
       // Item 98 - a resume is two pages at most.
-      if (technical.printResumes !== false && teamResumes.length) {
+      if (which === "technical" && technical.printResumes !== false && teamResumes.length) {
         const counts = await Promise.all(teamResumes.map(async (r) => ({ name: r.name, n: await countResumePages(r.data.resume, r.data.user).catch(() => 0) })));
         const long = counts.filter((c) => c.n > RESUME_PAGE_LIMIT);
         if (long.length) toast(`Resume${long.length === 1 ? "" : "s"} over ${RESUME_PAGE_LIMIT} pages: ${long.map((c) => `${c.name} (${c.n})`).join(", ")}. Shorten ${long.length === 1 ? "it" : "them"} in the resume builder.`, "info");
@@ -2666,6 +2680,129 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       )}
     </div>
   );
+  // The editor for a custom (library or free) section, in either proposal volume (step 7).
+  const customEditorFor = (m: ProposalSectionMeta, vol: Vol) => {
+    const s = sectionsOfVol(vol).find((x) => x.id === m.refId);
+    if (!s) return null;
+    // Spec 4 - Government forms and external documents are inserted as uploaded: no text
+    // page of ours, so the editor is the upload, not a text box.
+    const original = isOriginalPageType(m.pageType);
+    const hasLetters = resolveProposalLayout(technical).some((x) => x.libraryKey === "appx-reference-letters");
+    return (
+      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+        {!!m.guide && (
+          <p className="text-[11px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2"><span className="font-bold text-slate-600">What goes here: </span>{m.guide}</p>
+        )}
+        {original && (
+          <div className="rounded-2xl border-2 border-dashed border-slate-200 p-4 space-y-1.5">
+            <p className="text-xs font-bold text-slate-700">{m.pageType === "government" ? "Government form" : "External document"}: inserted exactly as uploaded, never on our letterhead.</p>
+            <p className="text-[11px] text-slate-500">{m.divider ? "A GT/JV separator page prints before it." : "No separator page. Turn one on with the divider icon in Sections."} Upload PDFs or images below; save Word or Excel files as PDF first.</p>
+            {(s.attachments || []).length === 0 && <p className="text-[11px] font-bold text-amber-600">Nothing uploaded yet: this section prints {m.divider ? "only its separator page" : "nothing"}.</p>}
+          </div>
+        )}
+        {/* CR-P (92) - a section can be seeded from a saved section template and any section can
+            become one, so the standard wording is written once and reused. */}
+        {canEdit && !original && (
+          <div className="flex flex-wrap items-center gap-2 pb-1">
+            <select
+              value=""
+              onChange={(e) => { const t = sectionTemplates.find((x) => x._id === e.target.value); if (t) void applySectionTemplate(s.id, t, vol); }}
+              className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600"
+              title="Replace this section's content with a saved template"
+            >
+              <option value="">Insert from template…</option>
+              {sectionTemplates.length === 0 && <option value="" disabled>No section templates saved yet</option>}
+              {sectionTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
+            </select>
+            <button
+              onClick={() => void saveSectionAsTemplate(s)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"
+              title="Save this section's content as a reusable template"
+            >
+              <Plus size={11} /> Save as template
+            </button>
+          </div>
+        )}
+        {!original && <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html, vol)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />}
+        {/* Step 6 (spec 21-23) - these library sections list projects from our records. */}
+        {!original && PROJECT_SECTION_KEYS.has(m.libraryKey || "") && (
+          <div className="rounded-2xl border border-slate-100 p-4">
+            <ProposalProjectsEditor
+              title="Projects from our records"
+              items={s.projects || []}
+              onChange={(v) => setSectionProjects(s.id, v, vol)}
+              canEdit={canEdit}
+              currentProjectId={id}
+              mode={referencesOnly(m.libraryKey) ? "references" : "sheets"}
+              onAddLetters={vol === "technical" && m.libraryKey === "past-performance" ? () => addLettersAfter(m.id) : undefined}
+              lettersAdded={hasLetters}
+            />
+          </div>
+        )}
+        {/* Spec 1 - unlimited subsections, numbered automatically in print (1.1, 1.2 / A.1, A.2). */}
+        {!original && (
+          <div className="space-y-3 pt-1">
+            {(s.subsections || []).map((ss, k, arr) => (
+              <div key={ss.id} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-primary shrink-0">Subsection {k + 1}</span>
+                  <input value={ss.heading} onChange={(e) => updateSub(s.id, ss.id, { heading: e.target.value }, vol)} disabled={!canEdit} placeholder="Subsection title" aria-label={`Subsection ${k + 1} title`}
+                    className="flex-1 min-w-0 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
+                  {canEdit && (
+                    <>
+                      <button onClick={() => moveSub(s.id, k, -1, vol)} disabled={k === 0} aria-label="Move subsection up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronUp size={13} /></button>
+                      <button onClick={() => moveSub(s.id, k, 1, vol)} disabled={k === arr.length - 1} aria-label="Move subsection down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronDown size={13} /></button>
+                      <button onClick={() => void removeSub(s.id, ss.id, vol)} aria-label="Delete subsection" className="p-1 rounded text-slate-300 hover:text-red-500"><Trash2 size={12} /></button>
+                    </>
+                  )}
+                </div>
+                <RichTextEditor value={ss.body} onChange={(html) => updateSub(s.id, ss.id, { body: html }, vol)} disabled={!canEdit} placeholder="Subsection content…" minHeight={100} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
+              </div>
+            ))}
+            {canEdit && (
+              <button onClick={() => addSub(s.id, vol)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Plus size={12} /> Add subsection</button>
+            )}
+          </div>
+        )}
+        {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {(s.attachments || []).map((a, ai) => (
+              <span key={ai} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
+                <a href={assetSrc(a.url)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
+                {/* Item 104 - a company document out of date is flagged where it is used. */}
+                {a.companyFileId && (() => {
+                  const ex = expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt);
+                  return ex.state === "expired" || ex.state === "expiring" ? <span className={`px-1.5 rounded-full text-[9px] ${ex.cls}`}>{ex.label}</span> : null;
+                })()}
+                <button onClick={() => setSectionAttachments(s.id, (s.attachments || []).filter((_, j) => j !== ai), vol)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+              </span>
+            ))}
+            <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title="PDFs print right after this section, exactly as uploaded (no letterhead). Images get a page each. Word or Excel: save as PDF first.">
+              <Upload size={11} /> Upload
+              <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSectionDoc(s.id, f, vol); e.target.value = ""; }} />
+            </label>
+            {/* Item 104 - pull a fixed document straight from Company Documents, no upload. */}
+            <button onClick={() => setDocPickFor(s.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-[10px] font-bold text-primary hover:bg-primary/20" title="Tick documents from Company Documents to insert, as they are">
+              <FileText size={11} /> From Company Documents
+            </button>
+            {docPickFor === s.id && (
+              <CompanyDocPicker
+                docs={companyDocs}
+                suggestKey={m.libraryKey}
+                already={new Set((s.attachments || []).map((a) => a.companyFileId || "").filter(Boolean))}
+                onPick={(files) => setSectionAttachments(s.id, [...(s.attachments || []), ...files.map(docAttachment)], vol)}
+                onClose={() => setDocPickFor(null)}
+              />
+            )}
+            {/* CR-P (94) - these used to be stored but never printed. */}
+            <span className="text-[10px] text-slate-400">PDFs print right after this section, as uploaded.</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Load everything on mount
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
@@ -3897,128 +4034,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     ))}
                   </div>
                 );
-                const customEditor = (m: ProposalSectionMeta) => {
-                  const s = technical.sections.find((x) => x.id === m.refId);
-                  if (!s) return null;
-                  // Spec 4 - Government forms and external documents are inserted as uploaded: no text
-                  // page of ours, so the editor is the upload, not a text box.
-                  const original = isOriginalPageType(m.pageType);
-                  return (
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
-                      {!!m.guide && (
-                        <p className="text-[11px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2"><span className="font-bold text-slate-600">What goes here: </span>{m.guide}</p>
-                      )}
-                      {original && (
-                        <div className="rounded-2xl border-2 border-dashed border-slate-200 p-4 space-y-1.5">
-                          <p className="text-xs font-bold text-slate-700">{m.pageType === "government" ? "Government form" : "External document"}: inserted exactly as uploaded, never on our letterhead.</p>
-                          <p className="text-[11px] text-slate-500">{m.divider ? "A GT/JV separator page prints before it." : "No separator page. Turn one on with the divider icon in Sections."} Upload PDFs or images below; save Word or Excel files as PDF first.</p>
-                          {(s.attachments || []).length === 0 && <p className="text-[11px] font-bold text-amber-600">Nothing uploaded yet: this section prints {m.divider ? "only its separator page" : "nothing"}.</p>}
-                        </div>
-                      )}
-                      {/* CR-P (92) - "we need to maybe put here insert template... then you can add
-                          that first page later". A section can be seeded from a saved section
-                          template and any section can become one, so the standard wording (the
-                          transmittal letter, the key-staff blurb) is written once and reused. */}
-                      {canEdit && !original && (
-                        <div className="flex flex-wrap items-center gap-2 pb-1">
-                          <select
-                            value=""
-                            onChange={(e) => { const t = sectionTemplates.find((x) => x._id === e.target.value); if (t) void applySectionTemplate(s.id, t); }}
-                            className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600"
-                            title="Replace this section's content with a saved template"
-                          >
-                            <option value="">Insert from template…</option>
-                            {sectionTemplates.length === 0 && <option value="" disabled>No section templates saved yet</option>}
-                            {sectionTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
-                          </select>
-                          <button
-                            onClick={() => void saveSectionAsTemplate(s)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"
-                            title="Save this section's content as a reusable template"
-                          >
-                            <Plus size={11} /> Save as template
-                          </button>
-                        </div>
-                      )}
-                      {!original && <RichTextEditor value={s.body} onChange={(html) => updateSectionRow(s.id, "body", html)} disabled={!canEdit} placeholder="Section content…" minHeight={160} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />}
-                      {/* Step 6 (spec 21-23) - these library sections list projects from our records. */}
-                      {!original && PROJECT_SECTION_KEYS.has(m.libraryKey || "") && (
-                        <div className="rounded-2xl border border-slate-100 p-4">
-                          <ProposalProjectsEditor
-                            title="Projects from our records"
-                            items={s.projects || []}
-                            onChange={(v) => setSectionProjects(s.id, v)}
-                            canEdit={canEdit}
-                            currentProjectId={id}
-                            mode={referencesOnly(m.libraryKey) ? "references" : "sheets"}
-                            onAddLetters={m.libraryKey === "past-performance" ? () => addLettersAfter(m.id) : undefined}
-                            lettersAdded={hasLetters}
-                          />
-                        </div>
-                      )}
-                      {/* Spec 1 - unlimited subsections, numbered automatically in print (1.1, 1.2 / A.1, A.2). */}
-                      {!original && (
-                        <div className="space-y-3 pt-1">
-                          {(s.subsections || []).map((ss, k, arr) => (
-                            <div key={ss.id} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-3 space-y-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-primary shrink-0">Subsection {k + 1}</span>
-                                <input value={ss.heading} onChange={(e) => updateSub(s.id, ss.id, { heading: e.target.value })} disabled={!canEdit} placeholder="Subsection title" aria-label={`Subsection ${k + 1} title`}
-                                  className="flex-1 min-w-0 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60" />
-                                {canEdit && (
-                                  <>
-                                    <button onClick={() => moveSub(s.id, k, -1)} disabled={k === 0} aria-label="Move subsection up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronUp size={13} /></button>
-                                    <button onClick={() => moveSub(s.id, k, 1)} disabled={k === arr.length - 1} aria-label="Move subsection down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronDown size={13} /></button>
-                                    <button onClick={() => void removeSub(s.id, ss.id)} aria-label="Delete subsection" className="p-1 rounded text-slate-300 hover:text-red-500"><Trash2 size={12} /></button>
-                                  </>
-                                )}
-                              </div>
-                              <RichTextEditor value={ss.body} onChange={(html) => updateSub(s.id, ss.id, { body: html })} disabled={!canEdit} placeholder="Subsection content…" minHeight={100} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
-                            </div>
-                          ))}
-                          {canEdit && (
-                            <button onClick={() => addSub(s.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Plus size={12} /> Add subsection</button>
-                          )}
-                        </div>
-                      )}
-                      {/* CR-B-18 — attach pre-made docs (resume/excel/pdf/picture) to this section. */}
-                      {canEdit && (
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {(s.attachments || []).map((a, ai) => (
-                            <span key={ai} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[10px] font-bold bg-white border-slate-100 text-slate-600">
-                              <a href={assetSrc(a.url)} target="_blank" rel="noreferrer" className="hover:text-primary max-w-[160px] truncate" title={a.name}><FileText size={10} className="inline mr-1" />{a.name}</a>
-                              {/* Item 104 - a company document out of date is flagged where it is used. */}
-                              {a.companyFileId && (() => {
-                                const ex = expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt);
-                                return ex.state === "expired" || ex.state === "expiring" ? <span className={`px-1.5 rounded-full text-[9px] ${ex.cls}`}>{ex.label}</span> : null;
-                              })()}
-                              <button onClick={() => setSectionAttachments(s.id, (s.attachments || []).filter((_, j) => j !== ai))} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
-                            </span>
-                          ))}
-                          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 cursor-pointer" title="PDFs print right after this section, exactly as uploaded (no letterhead). Images get a page each. Word or Excel: save as PDF first.">
-                            <Upload size={11} /> Upload
-                            <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSectionDoc(s.id, f); e.target.value = ""; }} />
-                          </label>
-                          {/* Item 104 - pull a fixed document straight from Company Documents, no upload. */}
-                          <button onClick={() => setDocPickFor(s.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-[10px] font-bold text-primary hover:bg-primary/20" title="Tick documents from Company Documents to insert, as they are">
-                            <FileText size={11} /> From Company Documents
-                          </button>
-                          {docPickFor === s.id && (
-                            <CompanyDocPicker
-                              docs={companyDocs}
-                              suggestKey={m.libraryKey}
-                              already={new Set((s.attachments || []).map((a) => a.companyFileId || "").filter(Boolean))}
-                              onPick={(files) => setSectionAttachments(s.id, [...(s.attachments || []), ...files.map(docAttachment)])}
-                              onClose={() => setDocPickFor(null)}
-                            />
-                          )}
-                          {/* CR-P (94) - these used to be stored but never printed. */}
-                          <span className="text-[10px] text-slate-400">PDFs print right after this section, as uploaded.</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                };
+                const customEditor = (m: ProposalSectionMeta) => customEditorFor(m, "technical");
                 const editorFor = (m: ProposalSectionMeta) => {
                   switch (m.kind) {
                     case "description": return descriptionEditor;
@@ -4058,6 +4074,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onNumberingChange={(n) => setTech("numbering", n)}
                     levelName={technical.levelName || "Section"}
                     onLevelNameChange={(n) => setTech("levelName", n)}
+                    appendixNumbering={technical.appendixNumbering || "numbers"}
+                    onAppendixNumberingChange={(n) => setTech("appendixNumbering", n)}
                   />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}
@@ -4108,13 +4126,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {proposalSub === "financial" && proposalDocTab === "builder" && (() => {
                 const finTables = resolveFinancialTables(financial);
                 const grandTotal = finTables.reduce((s, tb) => s + tableTotal(tb), 0);
-                return (
+                const finLayout = resolveFinancialLayout(financial);
+                // Step 7 - our own price table is the built-in "Price Schedule" section (item 107: optional).
+                const pricingEditor = (
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <h3 className="text-xl font-display font-bold text-slate-900">Financial Proposal</h3>
-                    <ActionButtons which="financial" />
-                  </div>
-
                   {/* Top controls */}
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-end justify-between gap-3">
                     <div className="space-y-1.5">
@@ -4205,6 +4220,67 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <h4 className="font-bold text-slate-800 text-sm">Notes / Terms</h4>
                     <RichTextEditor value={financial.notes} onChange={(html) => setFin("notes", html)} disabled={!canEdit} placeholder="Payment terms, validity period, assumptions…" minHeight={120} onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined} />
                   </div>
+                </div>
+                );
+                const finEditorFor = (m: ProposalSectionMeta) =>
+                  m.kind === "pricing" ? pricingEditor
+                  : m.kind === "custom" ? customEditorFor(m, "financial")
+                  : <div className="bg-white p-5 rounded-[2rem] border border-dashed border-slate-200 text-[11px] text-slate-400 italic">Blank page, no content (a spacer in the exported PDF).</div>;
+                const hasPriceForm = finLayout.some((m) => m.libraryKey === "fin-price-form");
+                return (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <h3 className="text-xl font-display font-bold text-slate-900">Financial Proposal</h3>
+                    <ActionButtons which="financial" />
+                  </div>
+
+                  {/* Items 107 and 108 - the financial volume's order. */}
+                  <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600 space-y-2">
+                    <p>The order: the <strong>Letter</strong> tab first, then the client's standard price form (filled in Excel or Word, saved as PDF and uploaded as it is), then our own <strong>Price Schedule</strong> table if you need one (hide it with the eye icon in Sections if not), then appendices A, B, C, D.</p>
+                    {canEdit && !hasPriceForm && (
+                      <button onClick={() => addLayoutSection(FINANCIAL_SECTION_LIBRARY[0].title, "", { libraryKey: FINANCIAL_SECTION_LIBRARY[0].key, pageType: "government", divider: true, guide: FINANCIAL_SECTION_LIBRARY[0].hint }, "financial")}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary">
+                        <Upload size={12} /> Add the client's price form
+                      </button>
+                    )}
+                  </div>
+
+                  <ProposalSectionManager
+                    volume="financial"
+                    layout={finLayout}
+                    onLayoutChange={(n) => setLayout(n, "financial")}
+                    onAdd={(title, opts) => addLayoutSection(title, "", opts, "financial")}
+                    onAddBlank={() => addBlankPage("financial")}
+                    onDuplicate={(m) => duplicateLayoutSection(m, "financial")}
+                    onRemove={(m) => removeLayoutSection(m, "financial")}
+                    canEdit={canEdit}
+                    collapsed={!showSectionList}
+                    onToggleCollapsed={() => setShowSectionList((v) => !v)}
+                    users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
+                    onAssign={(i, u, n) => assignLayoutSection(i, u, n, "financial")}
+                    userName={getAuthUser()?.name}
+                    numbering={financial.numbering || "letters"}
+                    onNumberingChange={(n) => setFin("numbering", n)}
+                    levelName={financial.levelName || "Section"}
+                    onLevelNameChange={(n) => setFin("levelName", n)}
+                    appendixNumbering={financial.appendixNumbering || "letters"}
+                    onAppendixNumberingChange={(n) => setFin("appendixNumbering", n)}
+                  />
+
+                  {finLayout.map((m, i) => (
+                    <div key={m.id} className={m.hidden ? "opacity-50" : ""}>
+                      <div className="flex items-center gap-2 mb-1 px-1">
+                        {canEdit && (
+                          <div className="flex items-center">
+                            <button disabled={i === 0} onClick={() => moveProposalSection(i, -1, "financial")} title="Move up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={14} /></button>
+                            <button disabled={i === finLayout.length - 1} onClick={() => moveProposalSection(i, 1, "financial")} title="Move down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={14} /></button>
+                          </div>
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{i + 1}. {m.title}{m.hidden ? " · hidden" : ""}{m.divider ? " · divider page" : ""}</span>
+                      </div>
+                      {finEditorFor(m)}
+                    </div>
+                  ))}
                 </div>
                 );
               })()}

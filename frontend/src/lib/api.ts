@@ -241,7 +241,7 @@ export interface ProposalSubsection { id: string; heading: string; body: string 
 // visibility, heading, and (reserved) per-section letterhead.
 export type ProposalLetterhead = "gt" | "jv" | "custom" | "none";
 export type ProposalSectionLetterhead = ProposalLetterhead | "inherit"; // "inherit" = use the proposal default
-export type ProposalSectionKind = "description" | "personnel" | "pastPerformance" | "timeline" | "custom" | "blank";
+export type ProposalSectionKind = "description" | "personnel" | "pastPerformance" | "timeline" | "pricing" | "custom" | "blank";
 /** Spec section 4: GT/JV designed content, a Government form, or an external supporting document. */
 export type ProposalPageType = "designed" | "government" | "external";
 export interface ProposalSectionMeta {
@@ -279,6 +279,7 @@ export interface TechnicalProposalContent {
   layout?: ProposalSectionMeta[]; // section order / visibility / titles
   numbering?: "numbers" | "letters" | "none"; // CR-P (95) - 1, 2, 3 / A, B, C (client samples) / off (spec 1)
   levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part"; // what a top-level section is called ("Tab A", "Factor 2")
+  appendixNumbering?: "numbers" | "letters"; // Appendix 1, 2, 3 (default) or A, B, C
   // Item 98 - print each person's resume in the GT format (default on). Off when the solicitation
   // wants its own form (e.g. SF 330 uploaded as a Government form section).
   printResumes?: boolean;
@@ -296,6 +297,13 @@ export interface FinancialProposalContent {
   notes: string; // HTML
   lineItems?: FinancialLineItem[]; // legacy single-table data (migrated into `tables`)
   tables?: FinancialTable[];
+  // Step 7 (items 107, 108): the financial volume has sections too - after the letter, the client's
+  // price form uploaded as a Government form, our own price table (optional), appendices A, B, C, D.
+  sections?: ProposalSection[];
+  layout?: ProposalSectionMeta[];
+  numbering?: "numbers" | "letters" | "none";           // default letters, as in the samples
+  levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part";
+  appendixNumbering?: "numbers" | "letters";            // default letters (item 108: "Appendices A, B, C, D")
 }
 
 export function defaultFinancialColumns(): FinancialColumn[] {
@@ -524,8 +532,17 @@ export const PROPOSAL_STANDARD_SECTIONS: string[] = [
   "Schedule", "Quality Control Plan", "Health and Safety Plan", "Appendix",
 ];
 
+/** Step 7 - the financial volume's one built-in section: our own price table (optional, can be hidden). */
+export const FINANCIAL_BUILTINS: { kind: ProposalSectionKind; title: string }[] = [
+  { kind: "pricing", title: "Price Schedule" },
+];
+
+/** The financial volume's section order (item 107). */
+export const resolveFinancialLayout = (f: FinancialProposalContent) =>
+  resolveProposalLayout({ sections: f.sections || [], layout: f.layout }, FINANCIAL_BUILTINS);
+
 /** Reconcile a stored layout with the current section data (adds missing, drops orphans). */
-export function resolveProposalLayout(t: TechnicalProposalContent): ProposalSectionMeta[] {
+export function resolveProposalLayout(t: { sections: ProposalSection[]; layout?: ProposalSectionMeta[] }, builtins = PROPOSAL_BUILTINS): ProposalSectionMeta[] {
   const existing = t.layout || [];
   const out: ProposalSectionMeta[] = [];
   const seenBuiltins = new Set<string>();
@@ -538,12 +555,12 @@ export function resolveProposalLayout(t: TechnicalProposalContent): ProposalSect
       }
     } else if (m.kind === "blank") {
       out.push(m); // blank pages are standalone — keep every one, allow duplicates
-    } else if (!seenBuiltins.has(m.kind)) {
+    } else if (builtins.some((b) => b.kind === m.kind) && !seenBuiltins.has(m.kind)) {
       seenBuiltins.add(m.kind);
       out.push(m);
     }
   }
-  for (const b of PROPOSAL_BUILTINS) {
+  for (const b of builtins) {
     if (!seenBuiltins.has(b.kind)) out.push({ id: `b-${b.kind}`, kind: b.kind, title: b.title, hidden: false });
   }
   for (const s of t.sections) {
