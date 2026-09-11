@@ -6,7 +6,8 @@ import { PAGE_NUMBER_POS, abs } from "../components/pdf/brand";
 /** A piece of an assembled proposal: generated pages, or uploaded files inserted as they are. */
 export type ProposalPart =
   | { type: "doc"; element: unknown; usesPageNumbers?: boolean }   // usesPageNumbers: re-rendered once page numbers are known
-  | { type: "files"; files: Array<{ name: string; url: string }>; key?: string };   // key: the section these files start
+  | { type: "files"; files: Array<{ name: string; url: string }>; key?: string }   // key: the section these files start
+  | { type: "bytes"; name: string; bytes: ArrayBuffer };   // a file already in memory (e.g. chosen but not yet uploaded)
 
 /**
  * Page tracking for the table of contents (spec 1: "Automatically generate and update the Table of
@@ -42,16 +43,21 @@ async function renderDoc(element: unknown): Promise<Source> {
   return { kind: "pdf", bytes, asIs: false, pages: (await PDFDocument.load(bytes)).getPageCount() };
 }
 
-async function fetchFile(name: string, url: string, skipped: string[]): Promise<Source | null> {
+async function sourceFromBytes(name: string, bytes: ArrayBuffer, skipped: string[], url = ""): Promise<Source | null> {
   const ext = extOf(name, url);
+  try {
+    if (ext === "pdf") return { kind: "pdf", bytes, asIs: true, pages: (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount() };
+    if (ext === "png" || ext === "jpg" || ext === "jpeg") return { kind: "image", bytes, ext };
+  } catch { /* an unreadable file is skipped below */ }
+  skipped.push(name); // docx/xlsx etc. can't be embedded into a PDF
+  return null;
+}
+
+async function fetchFile(name: string, url: string, skipped: string[]): Promise<Source | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) { skipped.push(name); return null; }
-    const bytes = await res.arrayBuffer();
-    if (ext === "pdf") return { kind: "pdf", bytes, asIs: true, pages: (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount() };
-    if (ext === "png" || ext === "jpg" || ext === "jpeg") return { kind: "image", bytes, ext };
-    skipped.push(name); // docx/xlsx etc. can't be embedded into a PDF
-    return null;
+    return await sourceFromBytes(name, await res.arrayBuffer(), skipped, url);
   } catch {
     skipped.push(name);
     return null;
@@ -84,6 +90,8 @@ function computePageOf(parts: ProposalPart[], rendered: Source[][], found: Array
 export async function assembleProposalParts(
   input: ProposalPart[] | ((ctx: PageCtx) => ProposalPart[]),
   trailing: ApiDocument[] = [],
+  // numberFirstPage: a document with no cover (an agreement) numbers its first page too.
+  opts: { numberFirstPage?: boolean } = {},
 ): Promise<{ blob: Blob; skipped: string[] }> {
   const build = typeof input === "function" ? input : () => input;
   const skipped: string[] = [];
@@ -105,6 +113,9 @@ export async function assembleProposalParts(
     const part = parts[i];
     if (part.type === "doc") {
       rendered[i] = [await renderDoc(part.element)];
+    } else if (part.type === "bytes") {
+      const src = await sourceFromBytes(part.name, part.bytes, skipped);
+      rendered[i] = src ? [src] : [];
     } else {
       const srcs: Source[] = [];
       for (const f of part.files) { const s = await fetchFile(f.name, fetchUrl(f.url), skipped); if (s) srcs.push(s); }
@@ -156,7 +167,7 @@ export async function assembleProposalParts(
   const font = await merged.embedFont(StandardFonts.Helvetica);
   const pages = merged.getPages();
   pages.forEach((p, i) => {
-    if (i === 0 || asIs.has(i)) return;
+    if ((i === 0 && !opts.numberFirstPage) || asIs.has(i)) return;
     const { width } = p.getSize();
     const text = `Page ${i + 1} of ${pages.length}`;
     const size = 7.5;
