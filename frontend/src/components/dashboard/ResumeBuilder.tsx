@@ -9,6 +9,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import ResumePDF from "./ResumePDF";
+import ResumePageBadge from "./ResumePageBadge";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 
 const EMPTY: ApiResume = {
@@ -292,8 +293,15 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
               </div>
           )))}
 
+          {/* Length check: proposal resumes are two pages at most (item 98). */}
+          {hasContent && (
+            <div className="flex items-center justify-end gap-2 mt-10 text-[11px] text-slate-400">
+              Resume length <ResumePageBadge resume={pdfResume} person={{ name: me.name, email: me.email, phone: me.phone, avatarUrl: me.avatarUrl }} />
+            </div>
+          )}
+
           {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-3 mt-10">
+          <div className="flex flex-col sm:flex-row gap-3 mt-3">
             <button
               onClick={handleSave}
               disabled={saving}

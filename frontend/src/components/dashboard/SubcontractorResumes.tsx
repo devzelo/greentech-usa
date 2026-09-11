@@ -8,6 +8,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import ResumePDF from "./ResumePDF";
+import ResumePageBadge from "./ResumePageBadge";
 import { ConfirmDialog } from "./Dialogs";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium text-slate-700 focus:bg-white focus:ring-2 focus:ring-primary/10 outline-none transition-all";
@@ -308,7 +309,10 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
               </div>
             )))}
 
-            <div className="flex flex-wrap gap-3 mt-8">
+            <div className="flex items-center justify-end gap-2 mt-8 text-[11px] text-slate-400">
+              Resume length <ResumePageBadge resume={{ ...draft, skills: skillsText.split(",").map((s) => s.trim()).filter(Boolean) }} person={{ name: draft.personName }} />
+            </div>
+            <div className="flex flex-wrap gap-3 mt-3">
               <button onClick={() => setEditorOpen(false)} className="flex-1 py-3 rounded-2xl border border-slate-200 font-bold text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
               <button onClick={() => setPreviewDraft(true)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-700 font-bold text-sm hover:bg-slate-200 flex items-center justify-center gap-2"><Eye size={15} /> Preview</button>
               <button onClick={save} disabled={saving} className="flex-1 py-3 rounded-2xl bg-gt-gradient text-white font-bold text-sm shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2">

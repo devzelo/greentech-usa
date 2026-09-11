@@ -40,6 +40,7 @@ import DocSection from "./DocSection";
 import ProjectInfoTab from "./ProjectInfoTab";
 import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
+import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePageBadge";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
 import ProjectBoard from "./ProjectBoard";
@@ -1176,6 +1177,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const expired = technical.sections.flatMap((s) => s.attachments || [])
         .filter((a) => a.companyFileId && expiryInfo(companyDocs.find((d) => d._id === a.companyFileId)?.expiresAt).state === "expired");
       if (expired.length) toast(`Expired document${expired.length === 1 ? "" : "s"} in this proposal: ${expired.map((a) => a.name).join(", ")}. Replace ${expired.length === 1 ? "it" : "them"} before sending.`, "error");
+      // Item 98 - a resume is two pages at most.
+      if (technical.printResumes !== false && teamResumes.length) {
+        const counts = await Promise.all(teamResumes.map(async (r) => ({ name: r.name, n: await countResumePages(r.data.resume, r.data.user).catch(() => 0) })));
+        const long = counts.filter((c) => c.n > RESUME_PAGE_LIMIT);
+        if (long.length) toast(`Resume${long.length === 1 ? "" : "s"} over ${RESUME_PAGE_LIMIT} pages: ${long.map((c) => `${c.name} (${c.n})`).join(", ")}. Shorten ${long.length === 1 ? "it" : "them"} in the resume builder.`, "info");
+      }
     }
     const { blob, skipped } = await assembleProposalParts(makeParts, atts);
     if (skipped.length) toast(`Attached but couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
@@ -3841,6 +3848,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           <span className={`text-[11px] font-bold flex items-center gap-1.5 px-2 ${tr ? "text-emerald-600" : "text-slate-400"}`} title="Resumes are pulled from each person's profile, or from the subcontractor resume library">
                             {tr ? <><Check size={13} /> {e.subResumeId ? "Subcontractor résumé" : "Résumé attached"}</> : e.subResumeId ? "Résumé not found" : "No résumé on profile"}
                           </span>
+                          {tr && technical.printResumes !== false && <ResumePageBadge resume={tr.data.resume} person={tr.data.user} compact />}
                         </div>
                       </div>
                       );
