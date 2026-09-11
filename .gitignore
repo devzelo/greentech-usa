@@ -29,4 +29,5 @@ graphics-frontend/
 # Client-supplied sample proposals (real client documents), reference only. Never committed.
 frontend/assets/proposal-template/
 frontend/assets/EOI/
+frontend/assets/Resume/
 frontend/assets/Proposal Builder Requirement.docx
