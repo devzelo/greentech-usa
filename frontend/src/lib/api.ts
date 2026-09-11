@@ -2284,6 +2284,8 @@ export interface ApiAgreement {
     extra?: Array<{ signerName: string; signerTitle?: string; signatureUrl: string; stampUrl: string; signedAt: string; method: "" | "account" | "upload" }>;
   };
   signedDocument: { name: string; filePath: string; fileType: string; size: string } | null;
+  /** CR-P (56) - the latest PDF made for Copy link / Email / Notify a teammate. */
+  shareCopy?: { name: string; filePath: string; fileType: string; size: string; madeAt: string } | null;
   attachments: ApiAgreementFile[];
   activity: Array<{ at: string; actorName: string; action: string; note: string }>;
   sentAt: string; addedById: string; addedByName: string; createdAt?: string;
@@ -2359,9 +2361,6 @@ export async function updateAgreement(ctx: AgreementCtx, aid: string, body: Agre
 export async function deleteAgreement(ctx: AgreementCtx, aid: string): Promise<void> {
   await request(`${agrBase(ctx)}/${aid}`, { method: "DELETE" });
 }
-export async function sendAgreement(ctx: AgreementCtx, aid: string): Promise<ApiAgreement> {
-  return request(`${agrBase(ctx)}/${aid}/send`, { method: "POST" });
-}
 export async function signAgreement(ctx: AgreementCtx, aid: string, body: { signerName?: string; signatureUrl?: string }): Promise<ApiAgreement> {
   return request(`${agrBase(ctx)}/${aid}/sign`, { method: "POST", body: JSON.stringify(body) });
 }
@@ -2381,6 +2380,11 @@ async function agrMultipart(path: string, fd: FormData): Promise<ApiAgreement> {
 export async function freezeAgreementPdf(ctx: AgreementCtx, aid: string, file: File): Promise<ApiAgreement> {
   const fd = new FormData(); fd.append("file", file);
   return agrMultipart(`${agrBase(ctx)}/${aid}/freeze`, fd);
+}
+// CR-P (56) — store the agreement's current PDF as its share copy (for Copy link / Email / Notify).
+export async function uploadAgreementShareCopy(ctx: AgreementCtx, aid: string, file: File): Promise<ApiAgreement> {
+  const fd = new FormData(); fd.append("file", file);
+  return agrMultipart(`${agrBase(ctx)}/${aid}/share-copy`, fd);
 }
 // Upload an already-made agreement file — it becomes the document (documentMode "uploaded").
 export async function uploadAgreementDocument(ctx: AgreementCtx, aid: string, file: File): Promise<ApiAgreement> {

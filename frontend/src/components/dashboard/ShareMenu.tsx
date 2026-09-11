@@ -14,6 +14,11 @@ interface Props {
   className?: string;
   /** Item 110 - told when the document is emailed out, so the caller can log the send. */
   onSent?: (e: { to: string; method: "email" }) => void;
+  /**
+   * CR-P (56) - for a document with no stored file yet (a built agreement): make one and return its
+   * /uploads URL. Runs as the menu opens, so the link is ready by the time it is copied.
+   */
+  prepareFile?: () => Promise<string>;
 }
 
 /**
@@ -24,8 +29,23 @@ interface Props {
  * The dropdown renders in a portal (document.body) so it is never clipped by an
  * ancestor's overflow (tables, modals) — z-index alone can't escape an overflow clip.
  */
-export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, variant = "icon", className, onSent }: Props) {
+export default function ShareMenu({ fileName, fileUrl: givenUrl, projectName, size = 13, variant = "icon", className, onSent, prepareFile }: Props) {
   const [open, setOpen] = useState(false);
+  // CR-P (56) - the URL actually shared: the given one, or the file made by prepareFile.
+  const [prepared, setPrepared] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const fileUrl = prepareFile ? prepared : givenUrl;
+  useEffect(() => {
+    if (!open || !prepareFile) return;
+    let alive = true;
+    setPrepared(""); setPreparing(true);
+    prepareFile()
+      .then((u) => { if (alive) setPrepared(u); })
+      .catch((err) => { if (alive) { toast(err instanceof Error ? err.message : "Could not prepare the PDF.", "error"); setOpen(false); } })
+      .finally(() => { if (alive) setPreparing(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const [copied, setCopied] = useState(false);
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
   const [empId, setEmpId] = useState("");
@@ -66,6 +86,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
   }, [open]);
 
   const copyLink = async () => {
+    if (!fileUrl) return;
     try {
       let link = plainUrl;
       try { const signed = await createShareLink(fileUrl); link = new URL(signed, window.location.origin).toString(); } catch { /* fall back to plain link */ }
@@ -80,6 +101,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
   const sendEmail = async () => {
     const addr = email.trim();
     if (!isValidEmail(addr)) { toast("Enter a valid email address.", "error"); return; }
+    if (!fileUrl) return;
     setEmailing(true);
     try {
       await emailDocument({ path: fileUrl.split("?")[0], to: addr, docName: fileName, note: projectName ? `Project: ${projectName}` : "" });
@@ -92,6 +114,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
 
   const notify = async () => {
     if (!empId) { toast("Select a teammate first.", "error"); return; }
+    if (!fileUrl) return;
     setSending(true);
     try {
       await shareDocumentWithEmployee({ empId, docName: fileName, link: fileUrl.split("?")[0], projectName });
@@ -126,8 +149,11 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
             <button onClick={() => setOpen(false)} className="p-1 rounded text-slate-300 hover:text-slate-600"><X size={14} /></button>
           </div>
           <p className="text-[11px] text-slate-500 mb-3 truncate" title={fileName}>{fileName}</p>
+          {preparing && (
+            <p className="text-[11px] text-slate-400 mb-3 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Preparing the PDF...</p>
+          )}
 
-          <button onClick={copyLink} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary transition-all mb-4">
+          <button onClick={copyLink} disabled={!fileUrl} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary transition-all mb-4">
             {copied ? <Check size={14} className="text-emerald-500" /> : <Link2 size={14} />}
             {copied ? "Link copied" : "Copy link"}
           </button>
@@ -138,7 +164,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
             placeholder="name@example.com"
             className="w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 mb-2"
           />
-          <button onClick={sendEmail} disabled={emailing || !email.trim()} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary transition-all disabled:opacity-40 mb-4">
+          <button onClick={sendEmail} disabled={emailing || !email.trim() || !fileUrl} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary transition-all disabled:opacity-40 mb-4">
             {emailing ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Email document
           </button>
 
@@ -147,7 +173,7 @@ export default function ShareMenu({ fileName, fileUrl, projectName, size = 13, v
             <option value="">Select a teammate…</option>
             {employees.filter((e) => e.empId).map((e) => <option key={e.empId} value={e.empId}>{e.name} · {e.empId}</option>)}
           </select>
-          <button onClick={notify} disabled={sending || !empId} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary transition-all disabled:opacity-40">
+          <button onClick={notify} disabled={sending || !empId || !fileUrl} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary transition-all disabled:opacity-40">
             {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send notification
           </button>
         </div>,

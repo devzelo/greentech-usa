@@ -200,22 +200,6 @@ function ownerFilter(ctx: Ctx, req: AuthedRequest): Record<string, string> {
   return { ownerContextType: "project", ownerProjectId: String(req.params.id) };
 }
 
-// Recipient's login account id (for notifications) — null when there is none (e.g. vendors).
-async function recipientUserId(ctx: Ctx, ag: IAgreement): Promise<string | null> {
-  if (ctx === "user") return ag.ownerUserId || null;
-  const project = await Project.findOne({ projectId: ag.ownerProjectId }).select("subcontractors jointVenture").lean();
-  if (ag.ownerEntityType === "partner") {
-    // The partner's login is the account whose email matches the JV partner email.
-    const jvEmail = String(project?.jointVenture?.email || "").trim();
-    if (!jvEmail) return null;
-    const u = await User.findOne({ email: new RegExp(`^${jvEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }).select("_id").lean();
-    return u ? String(u._id) : null;
-  }
-  if (ag.ownerEntityType !== "subcontractor" || !ag.ownerEntityId) return null;
-  const sub = (project?.subcontractors || []).find((s: { subId?: string }) => String(s.subId) === ag.ownerEntityId);
-  return (sub as { userId?: string } | undefined)?.userId || null;
-}
-
 // Plain string fields an editor may change. `linkedProjects` used to be listed here, but the loop
 // below coerces every entry with String(), which turned the array into "[object Object]" — it is
 // handled on its own now (CR-P (27)).
@@ -430,29 +414,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
     } catch (err) { next(err); }
   });
 
-  // ── Send (staff): Draft/Rejected → Sent, snapshot locks, recipient notified ─
-  router.post("/:aid/send", async (req: AuthedRequest, res: Response, next: NextFunction) => {
-    try {
-      if (!permsOf(req).staff) return res.status(403).json({ error: "Only staff can send agreements." });
-      const ag = await findAg(req);
-      if (!ag) return res.status(404).json({ error: "Not found" });
-      if (!["Draft", "Rejected"].includes(ag.status)) return res.status(400).json({ error: `Cannot send an agreement in status ${ag.status}.` });
-      ag.status = "Sent";
-      ag.sentAt = today();
-      act(ag, req.user!.name || "", "sent");
-      await ag.save();
-      const rid = await recipientUserId(ctx, ag);
-      if (rid) {
-        await createNotification({
-          userId: rid, type: "general",
-          title: "Agreement awaiting your review",
-          message: `${req.user!.name || "GreenTech USA"} sent you the agreement "${ag.name || ag.agreementType}".`,
-          link: `${ctx === "user" ? "/dashboard/profile" : ctx === "general" ? "/dashboard/agreements" : `/dashboard/projects/${ag.ownerProjectId}`}?hl=ag-${ag._id}`,
-        });
-      }
-      res.json(ag);
-    } catch (err) { next(err); }
-  });
+  // CR-P (57) — the old one-shot "Send" route lived here. It is gone: Share (below) replaces it.
 
   // ── Share with the parties (CR-P (57)/(58)/(59)/(61)/(63)) ────────────────
   // Replaces the old one-shot "Send". Staff pick WHICH parties receive it and why, the chosen
@@ -649,6 +611,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
       const files: Array<{ filePath: string }> = [];
       for (const a of ag.attachments || []) if (a.filePath) files.push({ filePath: a.filePath });
       if (ag.signedDocument?.filePath) files.push({ filePath: ag.signedDocument.filePath });
+      if (ag.shareCopy?.filePath) files.push({ filePath: ag.shareCopy.filePath });
       await moveToTrash({
         kind: "agreement", refId: String(ag._id), projectId: ag.ownerProjectId || "",
         name: ag.name || `${ag.agreementType} agreement`, subtitle: `${ag.agreementType || "Agreement"}`,
@@ -691,6 +654,21 @@ function buildAgreementRouter(ctx: Ctx): Router {
       act(ag, req.user!.name || "", "snapshot-frozen", req.file.originalname);
       await ag.save();
       res.status(201).json(outFor(req, ag));
+    } catch (err) { next(err); }
+  });
+
+  // CR-P (56)/(57) — the current PDF of an agreement, made on demand (drafts included) so Copy
+  // link, Email and Notify a teammate have a real file to point at. Each share makes a fresh copy;
+  // earlier copies are kept on disk because a link already emailed must keep working.
+  router.post("/:aid/share-copy", upload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+      if (!permsOf(req).staff) { fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: "Only staff can share agreements." }); }
+      const ag = await findAg(req);
+      if (!ag) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Not found" }); }
+      ag.shareCopy = { ...fileMeta(req.file), madeAt: new Date().toISOString() };
+      await ag.save();
+      res.status(201).json(ag);
     } catch (err) { next(err); }
   });
 

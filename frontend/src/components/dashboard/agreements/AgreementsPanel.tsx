@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
 import {
-  fetchAgreements, createAgreement, updateAgreement, deleteAgreement, sendAgreement, setAgreementArchived,
-  signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument,
+  fetchAgreements, createAgreement, updateAgreement, deleteAgreement, setAgreementArchived,
+  signAgreement, rejectAgreement, cancelAgreement, freezeAgreementPdf, uploadSignedAgreement, uploadAgreementDocument, uploadAgreementShareCopy,
   fetchAgreementTemplates, fetchSignatories, fetchNdaFiles, fetchTermsFiles, fetchMe, fetchMySignatures, type ApiSignature,
   attachmentUrl, companyFileUrl,
   fetchUsers, createReminder, uploadAgreementSectionFile, deleteAgreementSectionFile, getAuthUser,
@@ -366,13 +366,6 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   // The company parties that still aren't Directory records. Used for the badge on each card and
   // the check before sending.
-  const unlinkedParties = (d: Draft | null): Array<{ slot: number; name: string }> => {
-    if (!d || ctx.kind === "user") return [];
-    return [2, ...d.extraParties.map((_, i) => i + 3)]
-      .map((slot) => ({ slot, p: partyAt(d, slot) }))
-      .filter(({ p }) => p.name.trim() && !p.companyId)
-      .map(({ slot, p }) => ({ slot, name: p.name.trim() }));
-  };
 
   // Deleting a custom section throws away whatever was written in it, so it asks first.
   const removeExtraSection = async (idx: number) => {
@@ -571,19 +564,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   // Returns whether the save actually went through, so a caller that wants to close afterwards
   // (CR-P (48)) never closes over a failure and throws the work away.
-  const saveDraft = async (thenSend = false): Promise<boolean> => {
+  // CR-P (20) — the "not in the Directory" warning moved to Share (directoryCheck), where the party
+  // details actually leave us; saving is never blocked by it.
+  const saveDraft = async (): Promise<boolean> => {
     if (!draft || !editor) return false;
-    // CR-P (20) — sending freezes the party details, so an unlinked party would be frozen outside
-    // the Directory for good. Warn while it can still be fixed; saving a draft stays unblocked.
-    if (thenSend) {
-      const loose = unlinkedParties(draft);
-      if (loose.length && !(await confirm({
-        title: loose.length === 1 ? "This party is not in the Directory" : "Some parties are not in the Directory",
-        message: `${loose.map((l) => `Party ${l.slot} (${l.name})`).join(", ")} ${loose.length === 1 ? "is" : "are"} not linked to a Directory company, so ${loose.length === 1 ? "its" : "their"} details will be frozen onto this agreement only. Add ${loose.length === 1 ? "it" : "them"} to the Directory first to keep one record per company.`,
-        confirmLabel: "Send anyway",
-        danger: false,
-      }))) return false;
-    }
     setSaving(true);
     try {
       let ag: ApiAgreement;
@@ -607,15 +591,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         ag = await uploadAgreementDocument(ctx, ag._id, draft.uploadFile);
         patch(ag);
       }
-      if (thenSend) {
-        ag = await sendAgreement(ctx, ag._id);
-        patch(ag);
-        toast("Agreement sent — the recipient can now review and sign it.", "success");
-        setEditor(null); setDraft(null);
-      } else {
-        // Stay open so you can keep editing, preview, or attach files after saving.
-        toast("Agreement saved.", "success");
-      }
+      // Stay open so you can keep editing, preview, or attach files after saving. (CR-P (57) — the
+      // old "save and send" path is gone; an agreement goes out through Share.)
+      toast("Agreement saved.", "success");
       return true;
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save the agreement.", "error"); return false; }
     finally { setSaving(false); }
@@ -741,7 +719,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       danger: false,
     }))) return;
     // A failed save keeps the editor open so nothing is lost; the toast explains why.
-    if (isDirty() && !(await saveDraft(false))) return;
+    if (isDirty() && !(await saveDraft())) return;
     setEditor(null); setDraft(null); savedSnapRef.current = "";
   };
 
@@ -844,6 +822,21 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       downloadBlob(await buildAgreementPdf(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); }
   };
+  // CR-P (56) — a built agreement has no stored file until it is signed, so the share menu had
+  // nothing to link to (drafts shared a dead link and the email failed). The current PDF is made
+  // on demand and stored as the agreement's share copy; the link points at that.
+  const shareCopyUrl = async (ag: ApiAgreement): Promise<string> => {
+    const blob = ag.documentMode === "uploaded" ? await uploadedMergedBlob(ag) : await buildAgreementPdf(ag);
+    const name = `${(ag.agreementNo || ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`;
+    const next = await uploadAgreementShareCopy(ctx, ag._id, new File([blob], name, { type: "application/pdf" }));
+    patch(next);
+    return attachmentUrl((next.shareCopy?.filePath || "").replace(/^\/+/, ""));
+  };
+  // The file a row shares as-is: the signed copy, or a non-general uploaded document. Anything
+  // else (a built agreement, or a general upload that gets our cover page) is made on demand.
+  const storedShareFile = (ag: ApiAgreement) =>
+    ag.signedDocument?.filePath || (ag.documentMode === "uploaded" && ctx.kind !== "general" ? ag.uploadedDocument?.filePath || "" : "");
+
   // CR-P (52) — uploading again REPLACES the signed copy; the previous one is kept in history.
   const uploadSigned = async (ag: ApiAgreement, file: File) => {
     const replacing = !!ag.signedDocument?.filePath;
@@ -987,11 +980,14 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Export to Word"><FileText size={14} /></button>
       {/* CR-P (56) — Share on EVERY row. It used to appear only once a file existed on the server,
           so drafts had no share at all: "even if it's draft, we should be able to share them." */}
-      <ShareMenu
-        fileName={`${ag.name || "agreement"}.pdf`}
-        fileUrl={attachmentUrl((ag.signedDocument?.filePath || ag.uploadedDocument?.filePath || "").replace(/^\/+/, ""))}
-        size={14}
-      />
+      {canManage && (
+        <ShareMenu
+          fileName={`${ag.agreementNo || ag.name || "agreement"}.pdf`}
+          fileUrl={storedShareFile(ag) ? attachmentUrl(storedShareFile(ag).replace(/^\/+/, "")) : ""}
+          prepareFile={storedShareFile(ag) ? undefined : () => shareCopyUrl(ag)}
+          size={14}
+        />
+      )}
       {/* CR-P (53) — "upload the counter copy, you need to remove it. We don't need it because it's
           already inside." The signed copy is handled in the Signed copy box inside Manage. */}
       {canManage && !["Draft", "Cancelled"].includes(ag.status) && (
@@ -2139,8 +2135,8 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   }}
                   onReset={() => applyTemplate("")}
                   onCancel={() => { setEditor(null); setDraft(null); savedSnapRef.current = ""; }}
-                  onSaveDraft={() => saveDraft(false)}
-                  onSave={() => saveDraft(false)}
+                  onSaveDraft={() => saveDraft()}
+                  onSave={() => saveDraft()}
                 />
               </div>
             </div>

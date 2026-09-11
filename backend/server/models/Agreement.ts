@@ -108,6 +108,9 @@ export interface IAgreement extends Document {
   };
 
   signedDocument: { name: string; filePath: string; fileType: string; size: string } | null; // frozen PDF once Signed
+  // CR-P (56)/(57) — the agreement's current PDF, made on demand for Copy link / Email / Notify a
+  // teammate. A built agreement has no stored file until it is signed, so there was nothing to share.
+  shareCopy: { name: string; filePath: string; fileType: string; size: string; madeAt: string } | null;
   // CR-P (52) — every signed copy that was replaced, newest last. A counterparty re-sending a
   // corrected scan must not erase the one we had on file: the record of what we held, and when,
   // is part of the paper trail.
@@ -228,6 +231,7 @@ const AgreementSchema = new Schema<IAgreement>(
     },
 
     signedDocument: { type: { name: String, filePath: String, fileType: String, size: String }, default: null },
+    shareCopy: { type: { name: String, filePath: String, fileType: String, size: String, madeAt: String }, default: null },  // CR-P (56)
     signedDocumentHistory: {   // CR-P (52)
       type: [{ name: String, filePath: String, fileType: String, size: String, replacedAt: String, replacedByName: String }],
       default: [],
