@@ -295,7 +295,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
   };
   const requestClose = async () => {
     if (!dirty) { onClose(); return; }
-    if (await confirm({ title: "Save your changes?", message: "This task has changes that are not saved yet.", confirmLabel: "Save and close", cancelLabel: "Discard changes" })) await saveAll(true);
+    if (await confirm({ title: "Save your changes?", message: "This task has changes that are not saved yet.", confirmLabel: "Save and close", cancelLabel: "Discard changes", danger: false })) await saveAll(true);
     else onClose();
   };
   const isAssigned = (m: BoardMember) => assignees.some((a) => sameMember(a, m));

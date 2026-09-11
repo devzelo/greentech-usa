@@ -61,7 +61,7 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
   };
 
   const setDone = async (m: ApiMilestone, done: boolean) => {
-    if (done && !(await confirm({ title: "Milestone finished?", message: `Confirm that "${m.name}" is finished. It turns green and counts toward the project's progress.`, confirmLabel: "Yes, it is finished" }))) return;
+    if (done && !(await confirm({ title: "Milestone finished?", message: `Confirm that "${m.name}" is finished. It turns green and counts toward the project's progress.`, confirmLabel: "Yes, it is finished", danger: false }))) return;
     setBusy(m.id);
     try {
       const next = milestones.map((x) => (x.id === m.id ? { ...x, doneAt: done ? toIso(new Date()) : "", doneBy: done ? userName : "" } : x));

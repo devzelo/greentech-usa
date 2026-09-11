@@ -40,7 +40,10 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
   const origEnd = parseDate(endDate);
   if (!origEnd) return null;                       // nothing to count down to
 
-  const exts = sortedExtensions(extensions).filter((e) => parseDate(e.endDate)! > origEnd);
+  // Every extension on record, and the ones in effect (after the original end date). Saves always
+  // send the full list, so an extension is never lost when the original end date moves past it.
+  const all = sortedExtensions(extensions);
+  const exts = all.filter((e) => parseDate(e.endDate)! > origEnd);
   const end = exts.length ? parseDate(exts[exts.length - 1].endDate)! : origEnd;
   const extended = exts.length > 0;
 
@@ -73,9 +76,12 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
     </div>
   );
 
-  const addedBy = (e: ApiExtension, i: number) => {
-    const prev = i === 0 ? origEnd : parseDate(exts[i - 1].endDate)!;
-    return humanGap(prev, parseDate(e.endDate)!);
+  // The time an extension added beyond the deadline before it (the original end date at least).
+  const gapFor = (e: ApiExtension, i: number) => {
+    const prevExt = i > 0 ? parseDate(all[i - 1].endDate)! : origEnd;
+    const prev = prevExt > origEnd ? prevExt : origEnd;
+    const d = parseDate(e.endDate)!;
+    return d > prev ? `+${humanGap(prev, d)}` : "not in effect (on or before the end date)";
   };
 
   const newEndDate = parseDate(newEnd);
@@ -83,7 +89,7 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
     if (!onSaveExtensions || !newEndDate) return;
     setSaving(true);
     try {
-      const next = [...exts, { id: newMilestoneId(), endDate: toIso(newEndDate), reason: reason.trim(), addedAt: toIso(new Date()), addedBy: userName }];
+      const next = [...all, { id: newMilestoneId(), endDate: toIso(newEndDate), reason: reason.trim(), addedAt: toIso(new Date()), addedBy: userName }];
       await onSaveExtensions(next, `Extension added: new end date ${fmt(newEndDate)}.`);
       setAdding(false); setNewEnd(""); setReason("");
     } catch { /* the workspace shows the error */ } finally { setSaving(false); }
@@ -91,7 +97,7 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
   const remove = async (e: ApiExtension) => {
     if (!onSaveExtensions) return;
     if (!(await confirm({ title: "Remove extension?", message: `Remove the extension to ${fmt(parseDate(e.endDate)!)}? The deadline goes back to the one before it.`, confirmLabel: "Remove", danger: true }))) return;
-    try { await onSaveExtensions(exts.filter((x) => x.id !== e.id), "Extension removed."); } catch { /* shown by the workspace */ }
+    try { await onSaveExtensions(all.filter((x) => x.id !== e.id), "Extension removed."); } catch { /* shown by the workspace */ }
   };
 
   return (
@@ -151,7 +157,7 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
           </div>
 
           {/* CR-P (126) — the extensions of time. */}
-          {(extended || canEdit) && (
+          {(all.length > 0 || canEdit) && (
             <div className="mt-4 pt-3 border-t border-slate-50">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Extensions of time</p>
@@ -161,14 +167,14 @@ export default function ContractTimeline({ startDate, endDate, extensions = [], 
                   </button>
                 )}
               </div>
-              {!extended && !adding && <p className="text-[11px] text-slate-400">No extension. If the client approves extra time, add it here with the new end date.</p>}
-              {exts.length > 0 && (
+              {all.length === 0 && !adding && <p className="text-[11px] text-slate-400">No extension. If the client approves extra time, add it here with the new end date.</p>}
+              {all.length > 0 && (
                 <ol className="space-y-1">
-                  {exts.map((e, i) => (
-                    <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs rounded-lg bg-violet-50/50 px-3 py-1.5">
+                  {all.map((e, i) => (
+                    <li key={e.id} className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs rounded-lg px-3 py-1.5 ${parseDate(e.endDate)! > origEnd ? "bg-violet-50/50" : "bg-slate-50 text-slate-400"}`}>
                       <span className="font-bold text-violet-700">#{i + 1}</span>
                       <span className="font-bold text-slate-800">To {fmt(parseDate(e.endDate)!)}</span>
-                      <span className="text-violet-700 font-bold">+{addedBy(e, i)}</span>
+                      <span className={`font-bold ${parseDate(e.endDate)! > origEnd ? "text-violet-700" : "text-slate-400"}`}>{gapFor(e, i)}</span>
                       {e.reason && <span className="text-slate-500">{e.reason}</span>}
                       <span className="text-[10px] text-slate-400 ml-auto">{[e.addedBy, e.addedAt && fmt(parseDate(e.addedAt)!)].filter(Boolean).join(" · ")}</span>
                       {canEdit && onSaveExtensions && (

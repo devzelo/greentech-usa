@@ -401,8 +401,8 @@ export default function ProjectWorkspace() {
   const [clientInfo, setClientInfo] = useState<ClientInfo>({
     name: "", reference: "", contactName: "", email: "", phone: "", country: "", address: "", notes: "", companyId: "",
   });
-  const updateClient = (field: keyof ClientInfo, value: string) =>
-    setClientInfo((prev) => ({ ...prev, [field]: value }));
+  // Marked unsaved, so the autosave and the leave-page warning cover the client too.
+  const updateClient = (field: keyof ClientInfo, value: string) => { setClientInfo((prev) => ({ ...prev, [field]: value })); setDirty(true); };
 
   // §M — Joint Venture info (partner company for a JV project)
   type JVImage = { name: string; url: string };
@@ -1550,7 +1550,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         value: identityForm.value,
         startDate: identityForm.startDate,
         endDate: identityForm.endDate,
-        progress: Number(identityForm.progress) || 0,
+        // With milestones set up, the progress is counted from them (CR-P 123) and not typed here.
+        progress: project.schedule?.milestones?.length ? project.progress : Number(identityForm.progress) || 0,
         disciplines: identityForm.disciplines.split(",").map((d) => d.trim()).filter(Boolean),
         contractNo: identityForm.contractNo,
         contractYear: identityForm.contractYear,
@@ -2965,7 +2966,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             <button
               onClick={async () => {
                 if (!id) return;
-                if (!(await brandedConfirm({ title: "Save project info?", message: "Are you sure you want to save these changes? The box locks again after saving.", confirmLabel: "Save" }))) return;
+                if (!(await brandedConfirm({ title: "Save project info?", message: "Are you sure you want to save these changes? The box locks again after saving.", confirmLabel: "Save", danger: false }))) return;
                 setNatureSaving(true);
                 try {
                   const u = await updateProject(id, { projectNature: { selected: selectedNature, custom: customNatureTypes } });
@@ -3216,7 +3217,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       if (canEditIdentity) {
         payload.published = isPublished;
         payload.financialProposalLocked = financialLocked;
-        payload.projectNature = { selected: selectedNature, custom: customNatureTypes };
+        // Project Nature is saved by its own box (Edit → Save, with the confirmation; CR-P (129)),
+        // never by Save Workspace or the autosave.
         payload.assignedEmployees = assignedEmployees;
         payload.tabAccess = tabAccess;
         payload.clientInfo = clientInfo;
@@ -3889,7 +3891,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   value={clientInfo.name}
                   category="client"
                   // Typing a new name drops the old link until a company is picked.
-                  onNameChange={(v) => setClientInfo((prev) => ({ ...prev, name: v, companyId: "" }))}
+                  onNameChange={(v) => { setClientInfo((prev) => ({ ...prev, name: v, companyId: "" })); setDirty(true); }}
                   onSelectCompany={(c) => {
                     const cp = c.contactPersons?.[0];
                     setClientInfo((prev) => ({
@@ -3901,6 +3903,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       phone: c.phone || cp?.phone || "",
                       address: c.address || "",
                     }));
+                    setDirty(true);
                   }}
                   placeholder="Search the Directory for the client…"
                   hint="Not in the Directory? Type the name and add it, or use Open in Directory to create it with the full details, then pick it here."
@@ -6821,11 +6824,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress (%)</label>
                   <input
                     type="number" min={0} max={100}
-                    value={identityForm.progress}
+                    value={project?.schedule?.milestones?.length ? project.progress : identityForm.progress}
                     onChange={(e) => setIdentityForm({ ...identityForm, progress: Number(e.target.value) })}
-                    disabled={!isOwner}
+                    disabled={!isOwner || !!project?.schedule?.milestones?.length}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
+                  {!!project?.schedule?.milestones?.length && <p className="text-[10px] text-slate-400">Counted from the milestones (the Progress bar in the project).</p>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Start Date</label>
