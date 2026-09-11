@@ -64,6 +64,9 @@ const shortCode = (r: ApiProjectRequest) => r.type.match(/\(([^)]+)\)/)?.[1] || 
 const footNote = (r: ApiProjectRequest) => [r.number, r.title || typeLabel(r)].filter(Boolean).join(" · ");
 const embeddable = (name: string) => /\.(pdf|png|jpe?g)$/i.test(name || "");
 const recipient = (r: ApiProjectRequest, clientName?: string) => r.to?.name || clientName || "Client";
+// A section with nothing in it (e.g. the untouched "Questions" list with one empty point) is left out.
+const hasContent = (html: string) =>
+  /<(img|table)\b/i.test(html) || !!html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").trim();
 
 function Sheet({ r, children }: { r: ApiProjectRequest; children?: ReactNode }) {
   return (
@@ -144,29 +147,32 @@ function SectionBlock({ n, title, body }: { n: number; title: string; body: stri
   );
 }
 
-function Signatures({ r, clientName }: { r: ApiProjectRequest; clientName?: string; key?: string }) {
+// GreenTech's signer, the JV partner's signer on a joint-venture project (CR-P 146), and a line for
+// the recipient.
+function Signatures({ r, clientName, info }: { r: ApiProjectRequest; clientName?: string; info?: ProjectPdfInfo; key?: string }) {
+  const blocks: Array<{ who: string; name?: string; title?: string; sig?: string; stamp?: string; date?: string }> = [
+    { who: COMPANY.name, name: r.signerName, title: r.signerTitle, sig: r.signatureUrl, stamp: r.stampUrl, date: r.date },
+    ...(info?.partner?.name ? [{ who: info.partner.name, name: r.partnerSignerName, title: r.partnerSignerTitle, sig: r.partnerSignatureUrl, stamp: r.partnerStampUrl, date: r.partnerSignatureUrl ? r.date : "" }] : []),
+    { who: recipient(r, clientName), name: r.to?.contactName },
+  ];
+  const w = blocks.length === 3 ? "31.5%" : "48.5%";
   return (
     <View wrap={false}>
       <SectionHeading title="Signatures" />
       <View style={s.sigRow}>
-        <View style={[s.sigBlock, { marginRight: "3%" }]}>
-          <Text style={s.sigFor}>FOR {COMPANY.name.toUpperCase()}</Text>
-          <View style={s.sigArea}>
-            {!!r.signatureUrl && <Image src={pdfAssetUrl(r.signatureUrl)} style={s.sigImg} />}
-            {!!r.stampUrl && <Image src={pdfAssetUrl(r.stampUrl)} style={s.stampImg} />}
+        {blocks.map((b, i) => (
+          <View key={i} style={[s.sigBlock, { width: w, marginRight: i < blocks.length - 1 ? "2.5%" : 0 }]}>
+            <Text style={s.sigFor}>FOR {b.who.toUpperCase()}</Text>
+            <View style={s.sigArea}>
+              {!!b.sig && <Image src={pdfAssetUrl(b.sig)} style={s.sigImg} />}
+              {!!b.stamp && <Image src={pdfAssetUrl(b.stamp)} style={s.stampImg} />}
+            </View>
+            <View style={s.sigLine} />
+            <Text style={s.sigName}>{b.name || "Name: ____________________"}</Text>
+            {!!b.title && <Text style={s.sigSmall}>{b.title}</Text>}
+            <Text style={[s.sigSmall, { marginTop: 3 }]}>Date: {b.date || "____________"}</Text>
           </View>
-          <View style={s.sigLine} />
-          <Text style={s.sigName}>{r.signerName || "Name: ____________________"}</Text>
-          {!!r.signerTitle && <Text style={s.sigSmall}>{r.signerTitle}</Text>}
-          <Text style={[s.sigSmall, { marginTop: 3 }]}>Date: {r.date || "____________"}</Text>
-        </View>
-        <View style={s.sigBlock}>
-          <Text style={s.sigFor}>FOR {recipient(r, clientName).toUpperCase()}</Text>
-          <View style={s.sigArea} />
-          <View style={s.sigLine} />
-          <Text style={s.sigName}>{r.to?.contactName || "Name: ____________________"}</Text>
-          <Text style={[s.sigSmall, { marginTop: 3 }]}>Date: ____________</Text>
-        </View>
+        ))}
       </View>
     </View>
   );
@@ -196,7 +202,7 @@ export async function buildBrandRequestPdf(r: ApiProjectRequest, info?: ProjectP
   const sections = [
     { title: "Description / Request", body: r.description || "", files: [] as File[] },
     ...(r.sections || []).filter((x) => !x.hidden).map((x) => ({ title: x.title || "Section", body: x.body || "", files: (x.attachments || []) as File[] })),
-  ].filter((x) => x.body.trim() || x.files.length);
+  ].filter((x) => hasContent(x.body) || x.files.length);
 
   let chunk: ReactNode[] = [<Head key="head" r={r} info={info} />, <FromTo key="fromto" r={r} clientName={clientName} />, <ProjectBlock key="project" r={r} info={info} />];
   sections.forEach((sec, i) => {
@@ -208,7 +214,7 @@ export async function buildBrandRequestPdf(r: ApiProjectRequest, info?: ProjectP
       for (const f of sec.files) parts.push(...fileParts(r, sec.title, f));
     }
   });
-  chunk.push(<Signatures key="sigs" r={r} clientName={clientName} />);
+  chunk.push(<Signatures key="sigs" r={r} clientName={clientName} info={info} />);
   parts.push({ type: "doc", element: one(r, chunk) });
 
   // Our supporting documents / appendices, at the end.

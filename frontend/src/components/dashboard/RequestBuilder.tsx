@@ -6,7 +6,7 @@ import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
   REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
-  uploadRequestSectionFile, deleteRequestSectionFile, fetchUsers, createReminder,
+  uploadRequestSectionFile, deleteRequestSectionFile, fetchUsers, createReminder, fetchStamps, type CompanyFile,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
   type RequestSection, type RequestSectionStatus, type AdminUser, type ApiRequestTo, type ApiCompany,
 } from "../../lib/api";
@@ -28,6 +28,11 @@ const withQuestions = <T extends { title: string; body: string }>(type: string, 
 // A new section goes before the questions, which stay last.
 const insertSection = <T extends { title: string; body: string }>(secs: T[], blank: T): T[] =>
   isQuestions(secs[secs.length - 1]) ? [...secs.slice(0, -1), blank, secs[secs.length - 1]] : [...secs, blank];
+// Moving or duplicating sections never pushes the questions off the end.
+const keepQuestionsLast = <T extends { title: string }>(secs: T[]): T[] => {
+  const q = secs.filter(isQuestions);
+  return q.length ? [...secs.filter((s) => !isQuestions(s)), ...q] : secs;
+};
 
 // Per-section status options (client CR-B-15). Locked/Unlocked is a separate toggle.
 const SECTION_STATUS_OPTS: { v: RequestSectionStatus; label: string; cls: string }[] = [
@@ -182,13 +187,21 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     const arr = [...(r.sections || [])]; const j = i + dir;
     if (j < 0 || j >= arr.length) return;
     [arr[i], arr[j]] = [arr[j], arr[i]];
-    onSectionsChange(r._id, arr, true);
+    onSectionsChange(r._id, keepQuestionsLast(arr), true);
   };
   const secDup = (r: ApiProjectRequest, i: number) => {
     const arr = [...(r.sections || [])]; const s = arr[i];
     arr.splice(i + 1, 0, { ...s, title: s.title ? `${s.title} (copy)` : "", locked: false });
-    onSectionsChange(r._id, arr, true);
+    onSectionsChange(r._id, keepQuestionsLast(arr), true);
   };
+  // CR-P (146) — the company stamps (classified Stamps tab) for the GreenTech signer.
+  const [stamps, setStamps] = useState<CompanyFile[]>([]);
+  useEffect(() => { fetchStamps().then(setStamps).catch(() => {}); }, []);
+  const saveFields = (r: ApiProjectRequest, body: Parameters<typeof updateProjectRequest>[2]) => {
+    patch({ ...r, ...body });
+    saveStatus.track(updateProjectRequest(projectId, r._id, body).then(patch)).catch(() => {});
+  };
+  const partner = projectInfo?.partner;
   // CR-B-18 — per-section file attachments.
   const secUploadFile = async (r: ApiProjectRequest, i: number, file: File) => {
     try { patch(await uploadRequestSectionFile(projectId, r._id, i, file)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
@@ -303,7 +316,8 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                           <CompanyPicker
                             label="To (who receives this request)"
                             size="sm"
-                            value={r.to?.name ?? clientName ?? ""}
+                            value={r.to?.name ?? ""}
+                            hint={!r.to?.name && clientName ? `Left empty, the document is addressed to the project's client, ${clientName}.` : undefined}
                             category="client"
                             categories={[...TO_CATEGORIES]}
                             onNameChange={(v) => setTo(r, { name: v, companyId: "", contactName: "", email: "", address: "" }, false)}
@@ -428,6 +442,39 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                               {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
                             </select>
                             {r.signatureUrl && <div className="flex items-center gap-3 mt-2"><img src={sigSrc(r.signatureUrl)} alt="signature" className="h-10 object-contain bg-white rounded-lg px-2 py-1 border border-slate-200" /><span className="text-[11px] font-bold text-slate-600 normal-case">{r.signerName}{r.signerTitle ? ` · ${r.signerTitle}` : ""}</span></div>}
+                            {/* CR-P (146) — the company stamp beside the GreenTech signature. */}
+                            <div className="flex items-center gap-2 mt-2">
+                              <select className={`${inp} font-bold max-w-xs`} value={r.stampUrl || ""} onChange={(e) => saveFields(r, { stampUrl: e.target.value })} title="Company stamp">
+                                <option value="">— No stamp —</option>
+                                {stamps.map((s) => <option key={s._id} value={s.filePath || s.url}>{s.name}</option>)}
+                              </select>
+                              {r.stampUrl && <img src={sigSrc(r.stampUrl)} alt="stamp" className="h-10 object-contain bg-white rounded-lg px-1 border border-slate-200" />}
+                            </div>
+                          </div>
+                        )}
+                        {/* CR-P (146) — on a joint-venture project the JV partner signs too, with the
+                            signatures and stamps saved on the partner's profile. */}
+                        {canEdit && partner?.name && (
+                          <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{partner.name} (JV partner) signature
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                              <input className={inp} placeholder="Signer name" defaultValue={r.partnerSignerName || ""} onBlur={(e) => e.target.value !== (r.partnerSignerName || "") && saveFields(r, { partnerSignerName: e.target.value })} />
+                              <input className={inp} placeholder="Signer title" defaultValue={r.partnerSignerTitle || ""} onBlur={(e) => e.target.value !== (r.partnerSignerTitle || "") && saveFields(r, { partnerSignerTitle: e.target.value })} />
+                              <select className={`${inp} font-bold`} value={r.partnerSignatureUrl || ""} onChange={(e) => saveFields(r, { partnerSignatureUrl: e.target.value })}>
+                                <option value="">— No signature —</option>
+                                {(partner.signatures || []).map((s, i) => <option key={i} value={s.url}>{s.name || `Signature ${i + 1}`}</option>)}
+                              </select>
+                              <select className={`${inp} font-bold`} value={r.partnerStampUrl || ""} onChange={(e) => saveFields(r, { partnerStampUrl: e.target.value })}>
+                                <option value="">— No stamp —</option>
+                                {(partner.stamps || []).map((s, i) => <option key={i} value={s.url}>{s.name || `Stamp ${i + 1}`}</option>)}
+                              </select>
+                            </div>
+                            {(r.partnerSignatureUrl || r.partnerStampUrl) && (
+                              <div className="flex items-center gap-2 mt-2">
+                                {r.partnerSignatureUrl && <img src={sigSrc(r.partnerSignatureUrl)} alt="partner signature" className="h-10 object-contain bg-white rounded-lg px-2 py-1 border border-slate-200" />}
+                                {r.partnerStampUrl && <img src={sigSrc(r.partnerStampUrl)} alt="partner stamp" className="h-10 object-contain bg-white rounded-lg px-1 border border-slate-200" />}
+                              </div>
+                            )}
+                            {(partner.signatures || []).length === 0 && <p className="text-[10px] font-medium normal-case tracking-normal text-slate-400 mt-1">No signatures saved on the partner profile yet (Project Identity → Joint Venture).</p>}
                           </div>
                         )}
 

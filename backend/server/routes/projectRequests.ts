@@ -103,7 +103,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
-const FIELDS = ["title", "date", "description", "customTitle", "signerName", "signerTitle", "signatureUrl", "stampUrl"] as const;
+const FIELDS = ["title", "date", "description", "customTitle", "signerName", "signerTitle", "signatureUrl", "stampUrl",
+  "partnerSignerName", "partnerSignerTitle", "partnerSignatureUrl", "partnerStampUrl"] as const;   // CR-P (146)
 router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const doc = await ProjectRequest.findOne({ _id: req.params.rid, projectId: req.params.id });

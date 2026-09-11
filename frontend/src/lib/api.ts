@@ -2109,6 +2109,8 @@ export interface ApiProjectRequest {
   archived?: boolean;
   /** CR-P (147) - who receives the request (client, partner, subcontractor), from the Directory. */
   to?: ApiRequestTo;
+  /** CR-P (146) - the JV partner's signer on a joint-venture project. */
+  partnerSignerName?: string; partnerSignerTitle?: string; partnerSignatureUrl?: string; partnerStampUrl?: string;
   attachments: ApiRequestFile[]; responses: ApiRequestResponse[];
   addedById: string; addedByName: string; createdAt?: string;
 }
@@ -2147,7 +2149,7 @@ export async function fetchProjectRequests(projectId: string, category?: Request
 export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
-export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to">>): Promise<ApiProjectRequest> {
+export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to" | "partnerSignerName" | "partnerSignerTitle" | "partnerSignatureUrl" | "partnerStampUrl">>): Promise<ApiProjectRequest> {
   return request(`${reqBase(projectId)}/${rid}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 export async function deleteProjectRequest(projectId: string, rid: string): Promise<void> { await request(`${reqBase(projectId)}/${rid}`, { method: "DELETE" }); }
