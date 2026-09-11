@@ -2083,9 +2083,12 @@ export interface ApiProjectRequest {
   contextLines?: Array<{ label: string; value: string }>;
   sections?: RequestSection[];
   archived?: boolean;
+  /** CR-P (147) - who receives the request (client, partner, subcontractor), from the Directory. */
+  to?: ApiRequestTo;
   attachments: ApiRequestFile[]; responses: ApiRequestResponse[];
   addedById: string; addedByName: string; createdAt?: string;
 }
+export type ApiRequestTo = { name: string; companyId: string; contactName: string; email: string; address: string };
 // A custom named section with per-section status / lock / notes (client CR-B-15/17/19).
 export type RequestSectionStatus = "" | "NotStarted" | "InProgress" | "WaitingInfo" | "UnderReview" | "Complete" | "NeedsRevision";
 export type RequestSectionFile = { _id?: string; name: string; filePath: string; fileType: string; size: string };
@@ -2117,10 +2120,10 @@ export async function fetchProjectRequests(projectId: string, category?: Request
   if (archived) parts.push("archived=true");
   return request(`${reqBase(projectId)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
-export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[] }): Promise<ApiProjectRequest> {
+export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
-export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived">>): Promise<ApiProjectRequest> {
+export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to">>): Promise<ApiProjectRequest> {
   return request(`${reqBase(projectId)}/${rid}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 export async function deleteProjectRequest(projectId: string, rid: string): Promise<void> { await request(`${reqBase(projectId)}/${rid}`, { method: "DELETE" }); }

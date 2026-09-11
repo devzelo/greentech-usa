@@ -33,6 +33,9 @@ export interface IProjectRequest extends Document {
   signatureUrl: string;
   stampUrl: string;
   contextLines: Array<{ label: string; value: string }>;  // custom info lines printed on the document
+  // CR-P (147) — who receives the request: usually the client, sometimes a partner or a
+  // subcontractor; picked from the Directory and printed as "To".
+  to: { name: string; companyId: string; contactName: string; email: string; address: string };
   // Extra named rich-text sections (HTML). Per-section status/lock/notes/hidden/assignee/files
   // (client CR-B-15/17/18/19).
   sections: Array<{ title: string; body: string; status?: string; locked?: boolean; notes?: string; hidden?: boolean; assignedTo?: string; viewLock?: boolean; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string }>; history?: Array<{ at: string; by: string; text: string }> }>;
@@ -69,6 +72,13 @@ const ProjectRequestSchema = new Schema<IProjectRequest>(
     signatureUrl: { type: String, default: "" },
     stampUrl: { type: String, default: "" },
     contextLines: { type: [{ label: { type: String, default: "" }, value: { type: String, default: "" } }], default: [] },
+    to: {
+      name: { type: String, default: "" },
+      companyId: { type: String, default: "" },
+      contactName: { type: String, default: "" },
+      email: { type: String, default: "" },
+      address: { type: String, default: "" },
+    },
     sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" }, status: { type: String, default: "" }, locked: { type: Boolean, default: false }, notes: { type: String, default: "" }, hidden: { type: Boolean, default: false }, assignedTo: { type: String, default: "" }, viewLock: { type: Boolean, default: false }, attachments: { type: [{ name: String, filePath: String, fileType: String, size: String }], default: [] }, history: { type: [{ at: String, by: String, text: String }], default: [] } }], default: [] },
     archived: { type: Boolean, default: false },
     attachments: { type: [FileSchema], default: [] },

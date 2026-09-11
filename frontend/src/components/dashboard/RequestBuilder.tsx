@@ -8,8 +8,26 @@ import {
   REQUEST_TYPES, attachmentUrl, fetchSignatories, uploadInlineImage,
   uploadRequestSectionFile, deleteRequestSectionFile, fetchUsers, createReminder,
   type ApiProjectRequest, type RequestCategory, type ProjectRequestStatus, type ApiSignatory,
-  type RequestSection, type RequestSectionStatus, type AdminUser,
+  type RequestSection, type RequestSectionStatus, type AdminUser, type ApiRequestTo, type ApiCompany,
 } from "../../lib/api";
+import CompanyPicker from "./CompanyPicker";
+
+// CR-P (147) — the recipient comes from the Directory: the client most of the time, but an RFI can
+// also go to a partner or a subcontractor.
+const TO_CATEGORIES = ["client", "partner", "subcontractor", "vendor", "consultant"] as const;
+const toFromCompany = (c: ApiCompany): ApiRequestTo => {
+  const cp = c.contactPersons?.[0];
+  return { name: c.name, companyId: c._id, contactName: cp?.name || "", email: c.email || cp?.email || "", address: c.address || "" };
+};
+// CR-P (148) — an RFI / clarification ends with the questions we want answered.
+const QUESTIONS_TITLE = "Questions / Clarifications";
+const asksQuestions = (type: string) => /\((RFI|RFC)\)|Clarification/i.test(type);
+const isQuestions = (s?: { title: string }) => !!s && s.title.trim().toLowerCase() === QUESTIONS_TITLE.toLowerCase();
+const withQuestions = <T extends { title: string; body: string }>(type: string, secs: T[]): T[] =>
+  asksQuestions(type) && !secs.some(isQuestions) ? [...secs, { title: QUESTIONS_TITLE, body: "<ol><li></li></ol>" } as T] : secs;
+// A new section goes before the questions, which stay last.
+const insertSection = <T extends { title: string; body: string }>(secs: T[], blank: T): T[] =>
+  isQuestions(secs[secs.length - 1]) ? [...secs.slice(0, -1), blank, secs[secs.length - 1]] : [...secs, blank];
 
 // Per-section status options (client CR-B-15). Locked/Unlocked is a separate toggle.
 const SECTION_STATUS_OPTS: { v: RequestSectionStatus; label: string; cls: string }[] = [
@@ -54,13 +72,15 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string }> }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: [] });
+  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string }> }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) });
+  const blankTo = (): ApiRequestTo => ({ name: clientName || "", companyId: "", contactName: "", email: "", address: "" });
+  const [draftTo, setDraftTo] = useState<ApiRequestTo>(blankTo);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [respDraft, setRespDraft] = useState<{ rid: string; note: string; date: string } | null>(null);
   const [signatories, setSignatories] = useState<ApiSignatory[]>([]);
   const { confirm, dialogs } = useDialogs();
-  const blankDraft = { type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [] as Array<{ label: string; value: string }>, sections: [] as Array<{ title: string; body: string }> };
+  const blankDraft = { type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [] as Array<{ label: string; value: string }>, sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) };
   const sigSrc = (url: string) => (!url ? "" : url.startsWith("http") || url.startsWith("data:") ? url : attachmentUrl(url.replace(/^\/+/, "")));
   const imageUpload = (file: File) => uploadInlineImage(projectId, file);
   const pickSigner = (id: string, onPick: (s: { signerName: string; signerTitle: string; signatureUrl: string }) => void) => {
@@ -85,11 +105,11 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     if (!draft.title.trim() && draft.type !== "Custom Request") { toast("Give the request a subject.", "error"); return; }
     setSaving(true);
     try {
-      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body) });
+      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body), to: draftTo });
       // "Save & send" marks it Sent; "Save as draft" leaves it as a Draft.
       if (send) r = await updateProjectRequest(projectId, r._id, { status: "Sent" });
       setRows((p) => [r, ...p]); setCreating(false); setOpenId(r._id);
-      setDraft(blankDraft);
+      setDraft(blankDraft); setDraftTo(blankTo());
       toast(send ? "Request saved & sent." : "Saved as draft.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
     finally { setSaving(false); }
@@ -146,7 +166,16 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
   const secUpdate = (r: ApiProjectRequest, i: number, p: Partial<RequestSection>, immediate: boolean) =>
     onSectionsChange(r._id, (r.sections || []).map((x, j) => (j === i ? { ...x, ...p } : x)), immediate);
-  const secAdd = (r: ApiProjectRequest) => onSectionsChange(r._id, [...(r.sections || []), { title: "", body: "" }], true);
+  const secAdd = (r: ApiProjectRequest) => onSectionsChange(r._id, insertSection(r.sections || [], { title: "", body: "" }), true);
+  // CR-P (147) — the recipient on an existing request: typed names save after a pause, a picked
+  // Directory company saves at once.
+  const toTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const setTo = (r: ApiProjectRequest, to: ApiRequestTo, immediate: boolean) => {
+    setRows((p) => p.map((x) => (x._id === r._id ? { ...x, to } : x)));
+    clearTimeout(toTimers.current[r._id]);
+    const commit = () => { saveStatus.track(updateProjectRequest(projectId, r._id, { to }).then(patch)).catch(() => {}); };
+    if (immediate) commit(); else toTimers.current[r._id] = setTimeout(commit, 700);
+  };
   const secDel = (r: ApiProjectRequest, i: number) => onSectionsChange(r._id, (r.sections || []).filter((_, j) => j !== i), true);
   // Section actions (CR-B-17): reorder + duplicate.
   const secMove = (r: ApiProjectRequest, i: number, dir: -1 | 1) => {
@@ -212,7 +241,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
           <table className="w-full min-w-[760px] text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {["No.", "Type", "Subject", "Date", "Responses", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}
+                {["No.", "Type", "To", "Subject", "Date", "Responses", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -223,6 +252,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                     <tr className="hover:bg-slate-50/40 align-top">
                       <td className="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">{r.number}</td>
                       <td className="px-3 py-2.5 text-slate-500">{r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type}</td>
+                      <td className="px-3 py-2.5 text-slate-600 font-medium">{r.to?.name || clientName || <span className="text-slate-300">—</span>}</td>
                       <td className="px-3 py-2.5 font-bold text-slate-700">{r.title || <span className="text-slate-300 italic">—</span>}</td>
                       <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{r.date || "—"}</td>
                       <td className="px-3 py-2.5 text-slate-500">{r.responses.length || "—"}</td>
@@ -268,6 +298,21 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                             </div>
                           </div>
                           <div className="px-6 py-5 space-y-3">
+                        {/* CR-P (147) — who receives this request, before the subject. */}
+                        {canEdit ? (
+                          <CompanyPicker
+                            label="To (who receives this request)"
+                            size="sm"
+                            value={r.to?.name ?? clientName ?? ""}
+                            category="client"
+                            categories={[...TO_CATEGORIES]}
+                            onNameChange={(v) => setTo(r, { name: v, companyId: "", contactName: "", email: "", address: "" }, false)}
+                            onSelectCompany={(c) => setTo(r, toFromCompany(c), true)}
+                            placeholder="Search the Directory: the client, a partner, a subcontractor…"
+                          />
+                        ) : (
+                          <p className="text-xs text-slate-600"><span className="font-bold text-slate-400 uppercase tracking-widest text-[10px] mr-2">To</span>{r.to?.name || clientName || "—"}</p>
+                        )}
                         {/* Editable fields */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject
@@ -455,13 +500,25 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
             </div>
             <div className="p-5 space-y-3">
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Type
-                <select className={`${inp} mt-1 font-bold`} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}>
+                <select className={`${inp} mt-1 font-bold`} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value, sections: withQuestions(e.target.value, draft.sections) })}>
                   {REQUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select></label>
               {draft.type === "Custom Request" && (
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Custom title
                   <input className={`${inp} mt-1`} value={draft.customTitle} onChange={(e) => setDraft({ ...draft, customTitle: e.target.value })} placeholder="Name this request" /></label>
               )}
+              {/* CR-P (147) — the recipient, from the Directory; the project's client by default. */}
+              <CompanyPicker
+                label="To (who receives this request)"
+                size="sm"
+                value={draftTo.name}
+                category="client"
+                categories={[...TO_CATEGORIES]}
+                onNameChange={(v) => setDraftTo({ name: v, companyId: "", contactName: "", email: "", address: "" })}
+                onSelectCompany={(c) => setDraftTo(toFromCompany(c))}
+                placeholder="Search the Directory: the client, a partner, a subcontractor…"
+                hint="Usually the client; an RFI can also go to a partner or a subcontractor."
+              />
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject
                   <input className={`${inp} mt-1`} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="e.g. Clarify pipe spec on drawing A-12" /></label>
@@ -482,7 +539,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                   <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, sections: draft.sections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={120} placeholder="Section content — tables, pictures, lists…" onImageUpload={imageUpload} />
                 </div>
               ))}
-              <button onClick={() => setDraft({ ...draft, sections: [...draft.sections, { title: "", body: "" }] })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Plus size={13} /> Add section</button>
+              <button onClick={() => setDraft({ ...draft, sections: insertSection(draft.sections, { title: "", body: "" }) })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Plus size={13} /> Add section</button>
 
               {/* Custom info lines — a label/value block printed on the request document. */}
               <div className="bg-slate-50 rounded-2xl p-3 space-y-2">
@@ -521,7 +578,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                   confirm={confirm}
                   saving={saving}
                   dirty
-                  onReset={() => setDraft(blankDraft)}
+                  onReset={() => { setDraft(blankDraft); setDraftTo(blankTo()); }}
                   onCancel={() => setCreating(false)}
                   onSaveDraft={() => create(false)}
                   onSave={() => create(false)}

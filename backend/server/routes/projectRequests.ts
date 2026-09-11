@@ -48,6 +48,18 @@ const cleanSections = (v: unknown): CleanSection[] =>
        .filter((s) => s.title || s.body || s.status || s.notes || s.attachments.length).slice(0, 40)
     : [];
 
+// CR-P (147) — the recipient, as picked from the Directory.
+const cleanTo = (t: unknown) => {
+  const o = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+  return {
+    name: String(o.name ?? "").slice(0, 200),
+    companyId: String(o.companyId ?? "").slice(0, 60),
+    contactName: String(o.contactName ?? "").slice(0, 120),
+    email: String(o.email ?? "").slice(0, 160),
+    address: String(o.address ?? "").slice(0, 400),
+  };
+};
+
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const filter: Record<string, unknown> = { projectId: req.params.id };
@@ -82,6 +94,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       signatureUrl: String(b.signatureUrl || ""),
       stampUrl: String(b.stampUrl || ""),
       contextLines: cleanLines(b.contextLines),
+      to: cleanTo(b.to),
       sections: cleanSections(b.sections),
       addedById: req.user!.userId,
       addedByName: req.user!.name || "",
@@ -98,6 +111,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const b = req.body || {};
     for (const f of FIELDS) if (typeof b[f] === "string") (doc as unknown as Record<string, unknown>)[f] = b[f].slice(0, f === "description" ? 20000 : 200);
     if (Array.isArray(b.contextLines)) doc.contextLines = cleanLines(b.contextLines);
+    if (b.to && typeof b.to === "object") doc.to = cleanTo(b.to);
     if (Array.isArray(b.sections)) doc.sections = cleanSections(b.sections);
     if (typeof b.archived === "boolean") doc.archived = b.archived;
     if (b.status && ["Draft", "Sent", "Responded", "Closed", "Cancelled"].includes(b.status)) doc.status = b.status as RequestStatus;
