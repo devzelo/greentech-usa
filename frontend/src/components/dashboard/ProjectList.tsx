@@ -59,9 +59,11 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     fetchProjects(scope)
       .then((ps) => {
         setProjects(ps);
-        // Load income/expense totals for the portfolio report (best-effort).
-        if (!isGuest && ps.length) {
-          fetchProjectFinancials(ps.map((p) => p.id)).then(setFinancials).catch(() => setFinancials({}));
+        // Load income/expense totals for the portfolio report (best-effort), only for the projects
+        // whose figures this person may see. The server applies the same rule.
+        const withFigures = ps.filter((p) => p.canSeeFigures !== false).map((p) => p.id);
+        if (withFigures.length) {
+          fetchProjectFinancials(withFigures).then(setFinancials).catch(() => setFinancials({}));
         }
       })
       .finally(() => setLoading(false));
@@ -121,6 +123,10 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   // CR-P-15 / CR-P-33 — five-number financial overview totalled across the shown projects. Shown on
   // All Projects and My Projects (staff); on My Projects it sums only the user's own projects.
   const showFinance = (mode === "all" || mode === "my") && isStaff;
+  // Quick Report — it carries project values and finances, so it covers only the projects whose
+  // financial figures this person may see (the server marks each project; GT staff by default,
+  // outside logins only where GT has switched the figures on for them). With none, no button.
+  const reportProjects = filtered.filter((p) => p.canSeeFigures !== false);
   const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
   return (
@@ -141,7 +147,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
 
         <div className="flex items-center gap-3 flex-wrap md:justify-end shrink-0">
           {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
-          {filtered.length > 0 && mode !== "drafts" && !isGuest && (
+          {reportProjects.length > 0 && mode !== "drafts" && (
             <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
               <FileText size={13} /> Quick Report
             </button>
@@ -469,7 +475,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
           fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
           build={() => pdf(
             <PortfolioReportPDF
-              projects={filtered}
+              projects={reportProjects}
               financials={financials}
               logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
               title={mode === "my" ? "My Projects — Portfolio Report" : "All Projects — Portfolio Report"}
