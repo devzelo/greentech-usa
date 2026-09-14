@@ -13,6 +13,8 @@ import { useNavigate } from "react-router-dom";
 import { Building2 } from "lucide-react";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
+import { buildTableReportPdf, showPdfInTab } from "../../lib/reportPdf";
+import { C, LETTER } from "../../lib/pdfBrand";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import { AddressPicker } from "./AddressPicker";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
@@ -287,19 +289,28 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const poTotal = pos.reduce((s, po) => s + n(po.total), 0);
   const paidTotal = pos.filter((po) => po.status === "Paid").reduce((s, po) => s + n(po.total), 0);
   const esc = (s: string) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] || c));
-  const printSummary = () => {
-    const rows = pos.map((po) => `<tr><td>${esc(po.poNo)}</td><td>${esc(poRef(po) || "—")}</td><td>${esc(po.vendorName || vendorName(po.vendorId))}</td><td>${esc(po.status)}</td><td>${esc(po.invoiceNo || "")}</td><td style="text-align:right">${money(n(po.total))}</td></tr>`).join("");
-    const proj = projectInfo ? `${esc(projectInfo.name || "")}${projectInfo.number ? ` · No ${esc(projectInfo.number)}` : ""}${projectInfo.location ? ` · ${esc(projectInfo.location)}` : ""}` : "";
-    const html = `<!doctype html><html><head><title>Purchase Orders Summary</title>
-      <style>@page{size:letter landscape;margin:12mm}body{font-family:Arial,sans-serif;padding:8px;color:#0f172a}h1{font-size:18px;margin:0}p{color:#64748b;font-size:12px;margin:2px 0 12px}
-      table{width:100%;border-collapse:collapse;font-size:12px}th{background:#0f172a;color:#fff;text-align:left;padding:6px}td{border-bottom:1px solid #e7ebf0;padding:6px}
-      tfoot td{font-weight:bold;border-top:2px solid #0f172a}</style></head>
-      <body><h1>Purchase Orders Summary</h1><p>${proj}${proj ? " · " : ""}${pos.length} purchase order(s) · ${new Date().toLocaleDateString()}</p>
-      <table><thead><tr><th>PO #</th><th>BOQ #</th><th>Vendor</th><th>Status</th><th>Invoice #</th><th style="text-align:right">Total</th></tr></thead>
-      <tbody>${rows}</tbody><tfoot><tr><td colspan="5" style="text-align:right">TOTAL</td><td style="text-align:right">${money(poTotal)}</td></tr></tfoot></table>
-      <script>window.onload=function(){window.print();}</script></body></html>`;
-    const w = window.open("", "_blank");
-    if (w) { w.document.write(html); w.document.close(); }
+  // The summary as a branded PDF on Letter (letterhead, footer, page numbers).
+  const printSummary = async () => {
+    const win = window.open("", "_blank");   // opened in the click, so a popup blocker lets it through
+    try {
+      const blob = await buildTableReportPdf({
+        size: LETTER, eyebrow: "Purchase orders summary", title: projectInfo?.name || "Purchase Orders",
+        meta: [["Orders", String(pos.length)], ["Date", new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })]],
+        projectInfo, note: ["Purchase orders summary", projectInfo?.name].filter(Boolean).join("  ·  "),
+        cols: [
+          { label: "PO #", w: 60 }, { label: "BOQ #", w: 70, wrap: true }, { label: "Vendor", w: 150, wrap: true },
+          { label: "Status", w: 60 }, { label: "Invoice #", w: 58 }, { label: "Total", w: 70, align: "right" },
+        ],
+        rows: [
+          ...pos.map((po) => ({ cells: [po.poNo, poRef(po) || "-", po.vendorName || vendorName(po.vendorId), po.status, po.invoiceNo || "", money(n(po.total))] })),
+          { cells: ["", "", "", "", "TOTAL", money(poTotal)], bold: true, fill: C.mint, color: C.slate },
+        ],
+      });
+      showPdfInTab(win, blob);
+    } catch (err) {
+      win?.close();
+      toast(err instanceof Error ? err.message : "Could not build the summary.", "error");
+    }
   };
 
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;

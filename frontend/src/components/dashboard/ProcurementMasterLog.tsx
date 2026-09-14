@@ -8,6 +8,9 @@ import {
 } from "../../lib/api";
 import { projectInfoHtml, type ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { buildBoqPdf } from "../../lib/boqPdf";
+import { buildTableReportPdf, showPdfInTab } from "../../lib/reportPdf";
+import { TABLOID_LANDSCAPE } from "../../lib/pdfBrand";
+import { toast } from "../../lib/toast";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useDialogs } from "../../lib/useDialogs";
 
@@ -198,32 +201,34 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
     updateProcurementItem(projectId, iid, { status }).catch(() => {});
   };
 
-  // Printable report — opens a clean window honouring the current section/status filter + sort.
-  // 11" x 17" landscape @page (client request) so every column and full text fits without truncation.
-  const printReport = () => {
+  // Printable report as a branded PDF (letterhead, footer, page numbers), honouring the current
+  // section/status filter + sort. 11" x 17" landscape (client request) so every column fits in full.
+  const printReport = async () => {
+    const win = window.open("", "_blank");   // opened in the click, so a popup blocker lets it through
     const scope = sectionFilter === "all" ? "All categories" : sectionName(sectionFilter);
-    const rows = sorted.map((it) => `
-      <tr>
-        <td>${sectionName(it.sectionId)}</td><td>${boqNo[it._id] || ""}</td>
-        <td>RV${it.revNo || 0}</td><td>${esc(it.description)}</td>
-        <td>${esc(it.manufacturer)}</td><td>${esc(it.vendorName || "")}</td><td>${esc(it.spec)}</td><td>${it.qty || ""} ${esc(it.unit)}</td>
-        <td>${it.needOnSiteDate || ""}</td><td>${orderByDate(it.needOnSiteDate, it.leadTimeDays) || ""}</td>
-        <td>${esc(subDispoLabel(it._id))}</td>
-        <td>${STATUS_META[it.status as Exclude<ProcurementStatus, "Cancelled">]?.label || it.status}</td>
-      </tr>`).join("");
-    const html = `<!doctype html><html><head><title>Procurement Status Report</title>
-      <style>@page{size:17in 11in;margin:12mm}body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{font-size:18px}p{color:#64748b;font-size:12px}
-      table{width:100%;border-collapse:collapse;margin-top:12px;font-size:11px;table-layout:fixed}
-      td{word-wrap:break-word}
-      th{background:#0f172a;color:#fff;text-align:left;padding:6px}td{border-bottom:1px solid #e7ebf0;padding:6px}</style></head>
-      <body><h1>Procurement Status Report</h1>
-      ${projectInfoHtml(projectInfo)}
-      <p>${esc(scope)} · ${sorted.length} item(s) · ${new Date().toLocaleDateString()}</p>
-      <table><thead><tr><th>Category</th><th>#</th><th>Rev</th><th>Description</th><th>Brand</th><th>Vendor</th><th>Spec</th><th>Qty</th><th>Need on site</th><th>Order by</th><th>Submittal</th><th>Status</th></tr></thead>
-      <tbody>${rows}</tbody></table>
-      <script>window.onload=function(){window.print();}</script></body></html>`;
-    const w = window.open("", "_blank");
-    if (w) { w.document.write(html); w.document.close(); }
+    try {
+      const blob = await buildTableReportPdf({
+        size: TABLOID_LANDSCAPE, eyebrow: "Procurement status report", title: projectInfo?.name || "Procurement Master Log",
+        meta: [["Scope", scope], ["Items", String(sorted.length)], ["Date", new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })]],
+        projectInfo, note: ["Procurement status report", projectInfo?.name].filter(Boolean).join("  ·  "),
+        cols: [
+          { label: "Category", w: 100, wrap: true }, { label: "#", w: 30 }, { label: "Rev", w: 36 }, { label: "Description", w: 210, wrap: true },
+          { label: "Brand", w: 95, wrap: true }, { label: "Vendor", w: 95, wrap: true }, { label: "Spec", w: 160, wrap: true }, { label: "Qty", w: 60 },
+          { label: "Need on site", w: 70 }, { label: "Order by", w: 70 }, { label: "Submittal", w: 84, wrap: true }, { label: "Status", w: 70, wrap: true },
+        ],
+        rows: sorted.map((it) => ({
+          cells: [
+            sectionName(it.sectionId), String(boqNo[it._id] || ""), `RV${it.revNo || 0}`, it.description || "", it.manufacturer || "", it.vendorName || "",
+            it.spec || "", `${it.qty || ""} ${it.unit || ""}`.trim(), it.needOnSiteDate || "", orderByDate(it.needOnSiteDate, it.leadTimeDays) || "",
+            subDispoLabel(it._id), STATUS_META[it.status as Exclude<ProcurementStatus, "Cancelled">]?.label || it.status,
+          ],
+        })),
+      });
+      showPdfInTab(win, blob);
+    } catch (err) {
+      win?.close();
+      toast(err instanceof Error ? err.message : "Could not build the report.", "error");
+    }
   };
 
   // Export the current (filtered + sorted) log to CSV — opens in Excel.
