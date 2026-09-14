@@ -223,15 +223,15 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
           </View>
         )}
 
-        {/* Each project in detail */}
-        {projects.length > 0 && <SectionHeading title="Project Details" />}
-        {projects.map((p) => {
+        {/* Each project in detail. The heading travels with the first card (unbreakable together),
+            so it is never left alone at the foot of a page. */}
+        {projects.map((p, i) => {
           const progress = Math.max(0, Math.min(100, p.progress ?? 0));
           const [bg, fg] = tone(p.status);
           const f = fin(p.id);
           const profit = f.income - f.expenses;
           const pl = profit >= 0;
-          return (
+          const card = (
             <View key={p.id} style={s.card} wrap={false}>
               <View style={s.cardHead}>
                 <Text style={s.cardName}>{p.name}</Text>
@@ -258,6 +258,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
               <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
             </View>
           );
+          return i === 0 ? <View key={p.id} wrap={false}><SectionHeading title="Project Details" />{card}</View> : card;
         })}
 
         <LetterheadFooter note={scope ? `${title} · ${scope}` : title} />
