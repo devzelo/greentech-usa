@@ -15,6 +15,7 @@ import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import { buildPoPackage } from "../../lib/poPdf";
+import { LETTER, dividerPage, imagePage, loadBrand, stampPageNumbers } from "../../lib/pdfBrand";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
@@ -117,22 +118,17 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // drawings / picture) and, when "Include Submittal Package?" is ticked, the current submittal
   // package. Each item is introduced by a labelled divider page.
   const buildRfqWithSubmittals = async (rfq: ApiRfq, vendor?: ApiVendor): Promise<Blob> => {
-    const base = await buildRfqPdf(pdfRfq(rfq), vendor, projectInfo);
     const lines = rfq.lineItems || [];
     const hasExtras = lines.some((li) => li.includeSubmittal || (li.attachments && li.attachments.length));
-    if (!hasExtras) return base;
+    if (!hasExtras) return buildRfqPdf(pdfRfq(rfq), vendor, projectInfo);
+    // The merged package is numbered as a whole below, so the RFQ itself is built without numbers.
+    const base = await buildRfqPdf(pdfRfq(rfq), vendor, projectInfo, undefined, { pageNumbers: false });
     try {
       const merged = await PDFDocument.load(await base.arrayBuffer());
-      const font = await merged.embedFont(StandardFonts.Helvetica);
-      const bold = await merged.embedFont(StandardFonts.HelveticaBold);
-      const INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55), GREEN = rgb(0.06, 0.72, 0.51);
-      // A labelled divider page announcing the item / document that follows.
-      const divider = (title: string, subtitle: string) => {
-        const p = merged.addPage([612, 792]); // US Letter, to match the RFQ base
-        p.drawRectangle({ x: 0, y: p.getHeight() - 8, width: p.getWidth(), height: 8, color: GREEN });
-        p.drawText(title.slice(0, 44), { x: 48, y: p.getHeight() - 120, size: 20, font: bold, color: INK });
-        if (subtitle) p.drawText(subtitle.slice(0, 90), { x: 48, y: p.getHeight() - 148, size: 11, font, color: MUTED });
-      };
+      const b = await loadBrand(merged);
+      const asIs = new Set<number>();   // uploaded pages keep their own look and get no page number
+      // A branded divider page announcing the item / document that follows.
+      const divider = (title: string, subtitle: string) => { dividerPage(merged, b, LETTER, title, subtitle, "RFQ item"); };
       // Fetch a file and append its pages (PDF) or a full-page image (png/jpg). Best-effort.
       const appendFile = async (filePath: string, fileType: string, name: string) => {
         try {
@@ -142,12 +138,11 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           const bytes = await res.arrayBuffer();
           if (ext === "pdf") {
             const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-            (await merged.copyPages(src, src.getPageIndices())).forEach((p) => merged.addPage(p));
+            (await merged.copyPages(src, src.getPageIndices())).forEach((p) => { asIs.add(merged.getPageCount()); merged.addPage(p); });
           } else if (["png", "jpg", "jpeg"].includes(ext)) {
             const img = ext === "png" ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
-            const page = merged.addPage([612, 792]); // US Letter, to match the RFQ base
-            const m = 48, scale = Math.min((page.getWidth() - m * 2) / img.width, (page.getHeight() - m * 2) / img.height, 1);
-            page.drawImage(img, { x: (page.getWidth() - img.width * scale) / 2, y: (page.getHeight() - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+            asIs.add(merged.getPageCount());
+            imagePage(merged, img, LETTER);
           }
         } catch { /* skip unreadable file */ }
       };
@@ -162,12 +157,13 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           const sub = submittalFor(li.itemId);
           const rev = sub?.revisions?.find((r) => r.isCurrent) || sub?.revisions?.[(sub?.revisions?.length || 1) - 1];
           if (sub && rev) {
-            const { blob } = await buildSubmittalPackage(sub, rev);
+            const { blob } = await buildSubmittalPackage(sub, rev, { pageNumbers: false });
             const pkg = await PDFDocument.load(await blob.arrayBuffer());
             (await merged.copyPages(pkg, pkg.getPageIndices())).forEach((p) => merged.addPage(p));
           }
         }
       }
+      stampPageNumbers(merged, b, asIs);   // one numbering across the RFQ, dividers and submittals
       return new Blob([await merged.save()], { type: "application/pdf" });
     } catch { return base; }
   };

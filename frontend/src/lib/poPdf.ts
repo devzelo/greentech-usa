@@ -1,15 +1,16 @@
-import { PDFDocument, PDFFont, PDFImage, StandardFonts, rgb, type PDFPage } from "pdf-lib";
-import { PDF_COLORS } from "./docStyle";
+import { PDFDocument, PDFImage, type PDFPage } from "pdf-lib";
 import { attachmentUrl, type ApiProcurementPO, type ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
-import { drawWrapped, fitOneLine, wrapText, wrappedHeight } from "./pdfText";
+import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
+import {
+  C, GUTTER, LETTER, brandPage, dividerPage, drawTable, flowText, imagePage, label, loadBrand, partyBlock,
+  stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol,
+} from "./pdfBrand";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
-
-const PAGE_W = 612, PAGE_H = 792, M = 48; // US Letter, 8.5" x 11" (client request); descriptions wrap to keep the full text
-// CR-P (41) — the one GreenTech palette (lib/docStyle), shared by every generated document.
-const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;
+// US Letter, 8.5" x 11" (client request), on the letterhead; descriptions wrap to keep the full text.
+const X = GUTTER, W = LETTER.w - GUTTER * 2;
 
 // GreenTech's own company details (constant — the "our company" side of the PO & RFQ).
 export const GREENTECH = {
@@ -87,147 +88,98 @@ export function drawFitted(page: PDFPage, img: PDFImage, x: number, topY: number
   return h;
 }
 
-// The stacked party details block ("FROM / PARTNER / VENDOR / SHIP TO").
-function drawPartyBlock(page: PDFPage, font: PDFFont, bold: PDFFont, x: number, y: number, w: number, heading: string, lines: string[]): number {
-  page.drawText(heading, { x, y, size: 8, font: bold, color: MUTED }); y -= 13;
-  // Wrapped by measure — pdf-lib's own maxWidth wraps at a 24pt line height and would overlap.
-  lines.filter(Boolean).forEach((l, i) => {
-    y = drawWrapped(page, i === 0 ? bold : font, String(l), { x, y, size: i === 0 ? 10 : 9, maxW: w, lineHeight: 13, color: INK, maxLines: 3 });
-  });
-  return y;
-}
+// The signature & stamp block sits from here down on the last page of the order itself, so the
+// table, totals and notes above it never reach this line (a long order continues on a new page).
+const SIG_TOP = 238;
 
-// Page 1: header (logos), parties, item table, totals.
-async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: ApiProcurementPO, vendor: ApiVendor | undefined, projectInfo: ProjectPdfInfo | undefined, ref: string): Promise<PDFPage> {
-  let page = doc.addPage([PAGE_W, PAGE_H]);
-  const partner = projectInfo?.partner;
-  page.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
-  let y = PAGE_H - 30;
+// Page 1 (and its continuation pages): title block, parties, item table, totals, notes.
+async function drawOrder(doc: PDFDocument, b: Brand, po: ApiProcurementPO, vendor: ApiVendor | undefined, info: ProjectPdfInfo | undefined, ref: string, note: string): Promise<PDFPage> {
+  const newPage = (): Flow => brandPage(doc, b, LETTER, note);
+  let f = newPage();
+  const partner = info?.partner;
+  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  let y = titleBlock(f.page, b, { x: X, y: f.y, w: W, eyebrow: "Purchase order", title: `Order to ${po.vendorName || vendor?.name || "vendor"}`, meta: [["PO number", ref], ["Date", today]] });
+  y = drawProjectInfo(f.page, b.regular, info, X, y, W) - 4;
 
-  // 1) Logos: GreenTech (left) + partner (right, if JV).
-  const gtLogo = await embedImage(doc, "/gt-usa-logo-new.png");
-  if (gtLogo) drawFitted(page, gtLogo, M, y, 150, 42); else page.drawText("GreenTech USA", { x: M, y: y - 18, size: 18, font: bold, color: INK });
-  if (partner) {
-    const pLogo = await embedImage(doc, partner.logoUrl);
-    if (pLogo) { const scale = Math.min(150 / pLogo.width, 42 / pLogo.height, 1); const w = pLogo.width * scale; drawFitted(page, pLogo, PAGE_W - M - w, y, 150, 42); }
-    else if (partner.name) page.drawText(partner.name.slice(0, 24), { x: PAGE_W - M - bold.widthOfTextAtSize(partner.name.slice(0, 24), 12), y: y - 16, size: 12, font: bold, color: INK });
-  }
-  y -= 54;
-
-  page.drawText("PURCHASE ORDER", { x: M, y, size: 13, font: bold, color: GREEN });
-  const refLabel = `PO Number: ${ref}`;
-  page.drawText(refLabel, { x: PAGE_W - M - bold.widthOfTextAtSize(refLabel, 11), y, size: 11, font: bold, color: INK });
-  y -= 18;
-  y = drawProjectInfo(page, font, projectInfo, M, y, PAGE_W - M * 2);
-  y -= 6;
-
-  // 2) Parties — two columns (us / partner), then vendor + ship-to underneath.
-  const colW = (PAGE_W - M * 2 - 24) / 2, rx = M + colW + 24;
-  const leftEnd = drawPartyBlock(page, font, bold, M, y, colW, "FROM", [GREENTECH.name, GREENTECH.address, GREENTECH.email, GREENTECH.phone]);
+  // Parties — us and the JV partner, then the vendor and where it ships to.
+  const colW = (W - 24) / 2, rx = X + colW + 24;
+  const leftEnd = partyBlock(f.page, b, X, y, colW, "From", [GREENTECH.name, GREENTECH.address, GREENTECH.email, GREENTECH.phone]);
   let rightEnd = y;
-  if (partner) rightEnd = drawPartyBlock(page, font, bold, rx, y, colW, "PARTNER", [partner.name, partner.address, partner.email, partner.phone]);
-  y = Math.min(leftEnd, rightEnd) - 8;
-
-  const vEnd = drawPartyBlock(page, font, bold, M, y, colW, "VENDOR", [po.vendorName || vendor?.name || "(vendor)", [vendor?.city, vendor?.country].filter(Boolean).join(", "), vendor?.contactName ? `Attn: ${vendor.contactName}` : "", vendor?.email || ""]);
+  if (partner) {
+    // The GreenTech logo is in the band; the partner's sits at the top right of its own block.
+    const pLogo = await embedImage(doc, partner.logoUrl);
+    if (pLogo) { const s = Math.min(90 / pLogo.width, 26 / pLogo.height, 1); drawFitted(f.page, pLogo, rx + colW - pLogo.width * s, y + 8, 90, 26); }
+    rightEnd = partyBlock(f.page, b, rx, y, colW - 96, "Partner", [partner.name, partner.address, partner.email, partner.phone]);
+  }
+  y = Math.min(leftEnd, rightEnd) - 10;
+  const vEnd = partyBlock(f.page, b, X, y, colW, "Vendor", [po.vendorName || vendor?.name || "(vendor)", [vendor?.city, vendor?.country].filter(Boolean).join(", "), vendor?.contactName ? `Attn: ${vendor.contactName}` : "", vendor?.email || ""]);
   let shipEnd = y;
-  if (po.shipTo || po.deliveryMethod) shipEnd = drawPartyBlock(page, font, bold, rx, y, colW, "SHIP TO", [po.deliveryMethod || "Delivery", po.shipTo || ""]);
-  y = Math.min(vEnd, shipEnd) - 10;
+  if (po.shipTo || po.deliveryMethod) shipEnd = partyBlock(f.page, b, rx, y, colW, "Ship to", [po.deliveryMethod || "Delivery", po.shipTo || ""]);
+  f.y = Math.min(vEnd, shipEnd) - 12;
 
-  // 3) Item table.
-  // Description takes the width left over and wraps onto more lines, so the full text still prints.
-  let cx = M;
-  const col = (label: string, w: number, right = false) => { const c = { label, x: cx, w, right }; cx += w; return c; };
-  const fixedW = 22 + 40 + 40 + 76 + 84;
-  const cols = [
-    col("#", 22), col("Description", PAGE_W - M * 2 - fixedW), col("Qty", 40), col("Unit", 40),
-    col("Unit Price", 76, true), col("Amount", 84, true),
+  // Items. Description takes the width left over and wraps, so the full text still prints.
+  const cols: TableCol[] = [
+    { label: "#", w: 24 }, { label: "Description", w: W - 24 - 40 - 40 - 78 - 84, wrap: true }, { label: "Qty", w: 40, align: "right" },
+    { label: "Unit", w: 40 }, { label: "Unit price", w: 78, align: "right" }, { label: "Amount", w: 84, align: "right" },
   ];
-  // The signature & stamp block always occupies y ≈ 232 downward on whichever page it lands on,
-  // so nothing above it may cross that line. Long orders continue onto extra pages instead of
-  // being silently truncated.
-  const drawTableHead = () => {
-    page.drawRectangle({ x: M, y: y - 4, width: PAGE_W - M * 2, height: 18, color: INK });
-    cols.forEach((c) => page.drawText(c.label, { x: c.right ? c.x + c.w - 3 - bold.widthOfTextAtSize(c.label, 8) : c.x + 3, y: y + 1, size: 8, font: bold, color: rgb(1, 1, 1) }));
-    y -= 18;
-  };
-  const nextPage = () => {
-    page = doc.addPage([PAGE_W, PAGE_H]);
-    page.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
-    y = PAGE_H - 56;
-  };
-  drawTableHead();
   let subtotal = 0;
-  const DESC_LINES = 6;
-  po.lineItems.forEach((li, i) => {
-    const desc = li.description || "";
-    const lines = Math.min(DESC_LINES, Math.max(1, wrapText(font, desc, 8, cols[1].w - 6).length));
-    const rowH = Math.max(16, lines * 10 + 6);
-    if (y - rowH < 60) { nextPage(); drawTableHead(); }   // continue the table on a new page
+  f = drawTable(b, f, X, cols, po.lineItems.map((li, i) => {
     const amt = n(li.qty) * n(li.unitPrice); subtotal += amt;
-    const cells = [String(i + 1), desc, li.qty || "", li.unit || "", li.unitPrice ? money(n(li.unitPrice)) : "", money(amt)];
-    cells.forEach((t, ci) => {
-      const c = cols[ci];
-      if (ci === 1) { drawWrapped(page, font, desc, { x: c.x + 3, y: y + 2, size: 8, maxW: c.w - 6, lineHeight: 10, color: INK, maxLines: DESC_LINES }); return; }
-      const s = fitOneLine(font, String(t), 8, c.w - 6);
-      page.drawText(s, { x: c.right ? c.x + c.w - 3 - font.widthOfTextAtSize(s, 8) : c.x + 3, y: y + 2, size: 8, font, color: INK });
-    });
-    // The divider sits in the gap between this row's last line and the next row's text.
-    y -= rowH; page.drawLine({ start: { x: M, y: y + 12 }, end: { x: PAGE_W - M, y: y + 12 }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
-  });
+    return { cells: [String(i + 1), li.description || "", li.qty || "", li.unit || "", li.unitPrice ? money(n(li.unitPrice)) : "", money(amt)] };
+  }), { newPage });
 
-  // Reserve the room the totals + notes + signature block genuinely need; break the page if short.
+  // Totals and notes, kept clear of the signature block (a new page when there is no room).
   const totalsRows = (n(po.shipping) ? 1 : 0) + (n(po.tax) ? 1 : 0) + 1;
   const notesBody = (po.notes || "").slice(0, 600);
-  const notesH = notesBody ? 13 + wrappedHeight(font, notesBody, 8, PAGE_W - M * 2, 11) + 8 : 0;
-  const SIG_TOP = 232;
-  if (y - 10 - totalsRows * 16 - notesH < SIG_TOP) nextPage();
-
-  y -= 10;
-  // Totals right-anchored to the page so they line up with the Amount column.
-  const rowR = (label: string, value: string, b = false) => {
-    page.drawText(label, { x: PAGE_W - M - 250, y, size: b ? 10 : 9, font: b ? bold : font, color: b ? INK : MUTED });
-    const v = fitOneLine(font, value, b ? 10 : 9, 120);
-    page.drawText(v, { x: PAGE_W - M - 120, y, size: b ? 10 : 9, font: b ? bold : font, color: INK });
-    y -= 16;
+  const notesH = notesBody ? 16 + wrappedHeight(b.regular, notesBody, 8.5, W, 12) + 6 : 0;
+  if (f.y - 18 - totalsRows * 18 - notesH < SIG_TOP) f = newPage();
+  f.y -= 18;
+  const rowR = (k: string, v: string, strong = false) => {
+    if (strong) f.page.drawLine({ start: { x: X + W - 236, y: f.y + 13 }, end: { x: X + W, y: f.y + 13 }, thickness: 0.8, color: C.border });
+    f.page.drawText(k, { x: X + W - 230, y: f.y, size: strong ? 9.5 : 9, font: strong ? b.bold : b.regular, color: strong ? C.slate : C.s500 });
+    const font = strong ? b.display : b.bold, size = strong ? 14 : 9.5;
+    const vv = fitOneLine(font, v, size, 150);
+    f.page.drawText(vv, { x: X + W - 6 - font.widthOfTextAtSize(vv, size), y: f.y - (strong ? 1 : 0), size, font, color: strong ? C.emerald : C.slate });
+    f.y -= strong ? 24 : 18;
   };
   if (n(po.shipping)) rowR("Shipping", money(n(po.shipping)));
   if (n(po.tax)) rowR("Tax / Duty", money(n(po.tax)));
   rowR("TOTAL", money(n(po.total) || subtotal + n(po.shipping) + n(po.tax)), true);
   // Notes — extra info for the vendor, printed after the table and before the signature section.
   if (notesBody) {
-    page.drawText("Notes:", { x: M, y, size: 9, font: bold, color: INK }); y -= 13;
-    drawWrapped(page, font, notesBody, { x: M, y, size: 8, maxW: PAGE_W - M * 2, lineHeight: 11, color: INK });
+    label(f.page, b, "Notes", X, f.y); f.y -= 13;
+    drawWrapped(f.page, b.regular, notesBody, { x: X, y: f.y, size: 8.5, maxW: W, lineHeight: 12, color: C.s700 });
   }
-  return page;   // the LAST page — the signature block is drawn on this one
+  return f.page;   // the LAST page of the order — the signature block is drawn on this one
 }
 
-// The signature & stamp section — drawn right AFTER the table (client spec). Left column is
-// GreenTech (name/email/phone/address/signature/stamp), right is the partner (JV only).
-async function drawSignatureStamp(doc: PDFDocument, page: PDFPage, font: PDFFont, bold: PDFFont, po: ApiProcurementPO, partner?: ProjectPdfInfo["partner"]): Promise<void> {
-  const colW = (PAGE_W - M * 2 - 24) / 2, rx = M + colW + 24;
+// The signature & stamp section — right AFTER the table (client spec). Left column is GreenTech
+// (name/email/phone/address/signature/stamp), right is the partner (JV only).
+async function drawSignatureStamp(doc: PDFDocument, b: Brand, page: PDFPage, po: ApiProcurementPO, partner?: ProjectPdfInfo["partner"]): Promise<void> {
+  const colW = (W - 24) / 2, rx = X + colW + 24;
+  page.drawLine({ start: { x: X, y: SIG_TOP }, end: { x: X + W, y: SIG_TOP }, thickness: 0.8, color: C.border });
 
   const drawSide = async (x: number, heading: string, party: { name: string; title?: string; email?: string; phone?: string; address?: string; signatureUrl?: string; stampUrl?: string }) => {
-    let y = 210;
-    page.drawText(heading, { x, y, size: 8, font: bold, color: MUTED }); y -= 14;
+    let y = SIG_TOP - 18;
+    label(page, b, heading, x, y); y -= 14;
     // Signature image (or a ruled line if none) with the stamp RIGHT NEXT to it — the stamp
     // belongs to this party's block, overlapping the signature area like a real stamped document.
     const sigTop = y;
     const sig = await embedImage(doc, party.signatureUrl);
     if (sig) { drawFitted(page, sig, x, y, colW - 70, 40); y -= 44; }
-    else { page.drawLine({ start: { x, y: y - 30 }, end: { x: x + colW - 70, y: y - 30 }, thickness: 1, color: INK }); y -= 40; }
+    else { page.drawLine({ start: { x, y: y - 30 }, end: { x: x + colW - 70, y: y - 30 }, thickness: 0.8, color: C.s400 }); y -= 42; }
     const stamp = await embedImage(doc, party.stampUrl);
     if (stamp) drawFitted(page, stamp, x + colW - 62, sigTop + 4, 56, 56);
     // Keep every detail line clear of the stamp box, which starts at x + colW - 62.
     const textW = colW - 70;
-    page.drawText(fitOneLine(bold, party.name || "-", 10, textW), { x, y, size: 10, font: bold, color: INK }); y -= 12;
-    if (party.title) { page.drawText(fitOneLine(font, party.title, 8, textW), { x, y, size: 8, font, color: MUTED }); y -= 11; }
-    if (party.email) { page.drawText(fitOneLine(font, party.email, 8, textW), { x, y, size: 8, font, color: INK }); y -= 11; }
-    if (party.phone) { page.drawText(fitOneLine(font, party.phone, 8, textW), { x, y, size: 8, font, color: INK }); y -= 11; }
-    if (party.address) { page.drawText(fitOneLine(font, party.address, 8, textW), { x, y, size: 8, font, color: MUTED }); y -= 11; }
+    page.drawText(fitOneLine(b.bold, party.name || "-", 10, textW), { x, y, size: 10, font: b.bold, color: C.slate }); y -= 12;
+    for (const [v, muted] of [[party.title, true], [party.email, false], [party.phone, false], [party.address, true]] as Array<[string | undefined, boolean]>) {
+      if (!v) continue;
+      page.drawText(fitOneLine(b.regular, v, 8.3, textW), { x, y, size: 8.3, font: b.regular, color: muted ? C.s500 : C.s700 }); y -= 11;
+    }
   };
 
-  // Ensure there's room; the section lives near the bottom of page 1 (y ~= 210 downward).
-  await drawSide(M, "Authorized by: GreenTech USA", {
+  await drawSide(X, "Authorized by: GreenTech USA", {
     name: po.signerName || "", title: po.signerTitle, email: po.signerEmail || GREENTECH.email, phone: po.signerPhone || GREENTECH.phone,
     address: GREENTECH.address, signatureUrl: po.signatureUrl, stampUrl: po.stampUrl,
   });
@@ -239,14 +191,10 @@ async function drawSignatureStamp(doc: PDFDocument, page: PDFPage, font: PDFFont
   }
 }
 
-// Append an attachment's pages (PDF pages copied, images fitted) behind a labeled divider page.
-async function appendAttachment(doc: PDFDocument, font: PDFFont, bold: PDFFont, att: { name: string; filePath: string; fileType: string }, label: string, skipped: string[]) {
-  const d = doc.addPage([PAGE_W, PAGE_H]);
-  d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
-  const lab = label.toUpperCase();
-  d.drawText(lab, { x: (PAGE_W - bold.widthOfTextAtSize(lab, 24)) / 2, y: PAGE_H / 2 + 20, size: 24, font: bold, color: INK });
-  const nm = fitOneLine(font, att.name, 10, PAGE_W - M * 2);
-  d.drawText(nm, { x: (PAGE_W - font.widthOfTextAtSize(nm, 10)) / 2, y: PAGE_H / 2 - 28, size: 10, font, color: MUTED });
+// Append an attachment behind a branded divider page: PDF pages copied as they are, pictures fitted
+// on a page. Those pages keep their own look and are not numbered (`asIs`).
+async function appendAttachment(doc: PDFDocument, b: Brand, att: { name: string; filePath: string; fileType: string }, kicker: string, skipped: string[], asIs: Set<number>) {
+  dividerPage(doc, b, LETTER, kicker, att.name, "Attachment");
   const ext = (att.fileType || att.name.split(".").pop() || "").toLowerCase();
   try {
     const res = await fetch(attachmentUrl(att.filePath));
@@ -255,60 +203,56 @@ async function appendAttachment(doc: PDFDocument, font: PDFFont, bold: PDFFont, 
     if (ext === "pdf") {
       const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const copied = await doc.copyPages(src, src.getPageIndices());
-      copied.forEach((p) => doc.addPage(p));
+      copied.forEach((p) => { asIs.add(doc.getPageCount()); doc.addPage(p); });
     } else if (["png", "jpg", "jpeg"].includes(ext)) {
       const img = ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-      const p = doc.addPage([PAGE_W, PAGE_H]);
-      const m = 48;
-      const scale = Math.min((PAGE_W - m * 2) / img.width, (PAGE_H - m * 2) / img.height, 1);
-      const w = img.width * scale, h = img.height * scale;
-      p.drawImage(img, { x: (PAGE_W - w) / 2, y: (PAGE_H - h) / 2, width: w, height: h });
+      asIs.add(doc.getPageCount());
+      imagePage(doc, img, LETTER);
     } else {
       skipped.push(att.name);
     }
   } catch { skipped.push(att.name); }
 }
 
-// A page of the standard (constant) Terms & Conditions text.
-function drawConstantTermsPage(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: ApiProcurementPO, ref: string) {
-  const p = doc.addPage([PAGE_W, PAGE_H]);
-  p.drawRectangle({ x: 0, y: PAGE_H - 8, width: PAGE_W, height: 8, color: GREEN });
-  let y = PAGE_H - 56;
-  p.drawText("Terms & Conditions", { x: M, y, size: 13, font: bold, color: INK });
-  p.drawText(ref, { x: PAGE_W - M - bold.widthOfTextAtSize(ref, 10), y, size: 10, font: bold, color: MUTED });
-  y -= 20;
-  if (po.terms) p.drawText(po.terms.slice(0, 3000), { x: M, y, size: 9, font, color: INK, maxWidth: PAGE_W - M * 2, lineHeight: 13 });
+// The standard (constant) Terms & Conditions, on as many letterhead pages as they need.
+function drawConstantTerms(doc: PDFDocument, b: Brand, po: ApiProcurementPO, ref: string, note: string) {
+  const newPage = (): Flow => brandPage(doc, b, LETTER, note);
+  const f = newPage();
+  f.y = titleBlock(f.page, b, { x: X, y: f.y, w: W, eyebrow: "Terms & conditions", title: "Terms and Conditions", meta: [["PO number", ref]] });
+  if (po.terms) flowText(f, po.terms.slice(0, 20000), { x: X, w: W, font: b.regular, size: 9, lineHeight: 13, color: C.s700, newPage });
 }
 
 // The full PO PACKAGE we CREATE, following the PO_Insulation first-page order:
-//   1) logos (GreenTech + partner)  2) parties (us / partner / vendor / ship-to)
-//   3) item table  4) signature & stamp section (parallel columns)
+//   1) title block (the GreenTech logo is in the letterhead; the partner's in its block)
+//   2) parties (us / partner / vendor / ship-to)  3) item table  4) signature & stamp section
 //   5) other uploaded documents (vendor quote, invoice, submittals, other)
 //   6) Terms & Conditions — ALWAYS the last page.
 export async function buildPoPackage(po: ApiProcurementPO, vendor?: ApiVendor, projectInfo?: ProjectPdfInfo, refLabel?: string): Promise<{ blob: Blob; skipped: string[] }> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const b = await loadBrand(doc);
   const ref = refLabel || po.poNo;
+  const note = [`Purchase Order ${ref}`, projectInfo?.name].filter(Boolean).join("  ·  ");
   const skipped: string[] = [];
+  const asIs = new Set<number>();
 
-  const page1 = await drawPoPage1(doc, font, bold, po, vendor, projectInfo, ref);
-  await drawSignatureStamp(doc, page1, font, bold, po, projectInfo?.partner);
+  const last = await drawOrder(doc, b, po, vendor, projectInfo, ref, note);
+  await drawSignatureStamp(doc, b, last, po, projectInfo?.partner);
 
   const atts = po.attachments || [];
   const LABELS: Record<string, string> = { quote: "Vendor Quotation", invoice: "Vendor Invoice", submittal: "Approved Submittal", other: "Attachment" };
   for (const kind of ["quote", "invoice", "submittal", "other"]) {
-    for (const a of atts.filter((x) => x.kind === kind)) await appendAttachment(doc, font, bold, a, LABELS[kind] || "Attachment", skipped);
+    for (const a of atts.filter((x) => x.kind === kind)) await appendAttachment(doc, b, a, LABELS[kind] || "Attachment", skipped, asIs);
   }
 
   // Terms & Conditions — always last.
   if (po.termsMode === "file") {
     const t = atts.find((a) => a.kind === "terms");
-    if (t) await appendAttachment(doc, font, bold, t, "Terms & Conditions", skipped);
+    if (t) await appendAttachment(doc, b, t, "Terms & Conditions", skipped, asIs);
   } else {
-    drawConstantTermsPage(doc, font, bold, po, ref);
+    drawConstantTerms(doc, b, po, ref, note);
   }
 
+  stampPageNumbers(doc, b, asIs);
   const out = await doc.save();
   return { blob: new Blob([out], { type: "application/pdf" }), skipped };
 }

@@ -9,47 +9,13 @@ import type { ReactNode } from "react";
  * every page of every document this platform generates, so it is defined once, here.
  */
 
-export const BRAND = {
-  emerald: "#10B981",
-  blue: "#3B82F6",
-  cyan: "#2DE0C4",
-  slate: "#0F172A",
-  s700: "#334155",
-  s600: "#475569",
-  s500: "#64748B",
-  s400: "#94A3B8",
-  s300: "#CBD5E1",
-  border: "#E2E8F0",
-  mist: "#F8FAFC",
-  white: "#FFFFFF",
-} as const;
-
-export const COMPANY = {
-  name: "GreenTech USA LLC",
-  tagline: "Environmental Engineering & General Contracting",
-  address: "Chantilly, Virginia, USA",
-  mailingAddress: "25214 Larks Ter, Chantilly, VA, USA",   // the full address, as on the client's EOI letters
-  phone: "+1 571-337-1358",
-  email: "info@gt-usa.com",
-  website: "www.gt-usa.com",
-  cage: "8ZJ10",
-  // As registered on SAM.gov (matches the Company Profile and the submitted sample proposals; the
-  // brand kit's scripts carried a typo, FYR1QQ8L3SM7).
-  uei: "FYR1QQSL3SM7",
-} as const;
+// Colours, company details and the asset origin are plain data shared with the pdf-lib kit.
+import { BRAND, COMPANY, abs, setAssetOrigin } from "../../lib/brandTokens";
+export { BRAND, COMPANY, abs, setAssetOrigin };
 
 // The page every branded document prints on: US Letter, 8.5" x 11" (client request, 2026-09-14).
 // Only the BOQ, the procurement master log and submittal packages use 11" x 17" landscape.
 export const PAGE = { w: 612, h: 792 } as const;
-
-// Where root-relative assets are served from. In the browser that is the page's own origin; a
-// renderer outside the browser (server-side or a preview script) sets it with setAssetOrigin().
-let assetOrigin = "";
-export function setAssetOrigin(origin: string) { assetOrigin = origin.replace(/\/+$/, ""); }
-
-/** Root-relative asset URLs (/uploads/..., /brand/...) as absolute URLs, which react-pdf needs. */
-export const abs = (url?: string) =>
-  !url ? "" : /^(https?:|data:|blob:)/.test(url) ? url : `${assetOrigin || (typeof window !== "undefined" ? window.location.origin : "")}${url}`;
 
 // The letterhead art is 3264 px wide; at the page width its height follows from the ratio.
 export const LETTERHEAD = {
