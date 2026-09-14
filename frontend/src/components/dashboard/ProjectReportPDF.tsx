@@ -2,7 +2,7 @@ import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/render
 import type { ReactNode } from "react";
 import type { ApiProject } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
-import { effectiveEndDate } from "../../lib/projectSchedule";
+import { effectiveEndDate, fmtDate, milestoneLength, parseDate, planSchedule } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
 
 registerBrandFonts();
@@ -153,7 +153,9 @@ export default function ProjectReportPDF({ project, financials }: Props) {
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
   const assigned = project.assignedEmployees || [];
-  const progress = Math.max(0, Math.min(100, project.progress ?? 0));
+  // With milestones set up, the progress counts from the confirmed ones (as in the project).
+  const plan = planSchedule(project.schedule?.milestones || [], project.startDate || project.contractDate || "");
+  const progress = plan.milestones.length ? plan.progress : Math.max(0, Math.min(100, project.progress ?? 0));
   const nature = [...(project.projectNature?.selected || []), ...(project.projectNature?.custom || [])].join(", ");
   const income = financials?.income ?? 0;
   const expenses = financials?.expenses ?? 0;
@@ -196,6 +198,36 @@ export default function ProjectReportPDF({ project, financials }: Props) {
           </View>
           <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
         </View>
+
+        {/* CR-P (120)-(125) — the milestones behind the progress. */}
+        {plan.milestones.length > 0 && (
+          <View>
+            <SectionHeading title="Milestones" />
+            <View style={s.tHead} wrap={false} minPresenceAhead={24}>
+              <Text style={[s.th, { width: 24 }]}>#</Text>
+              <Text style={[s.th, { flex: 2.2 }]}>MILESTONE</Text>
+              <Text style={[s.th, { flex: 1 }]}>DURATION</Text>
+              <Text style={[s.th, { flex: 2 }]}>PLANNED</Text>
+              <Text style={[s.th, { flex: 1.5 }]}>STATUS</Text>
+            </View>
+            {plan.milestones.map((m, i) => {
+              const done = parseDate(m.doneAt);
+              const [label, color] = m.state === "done" ? [`Finished${done ? ` ${fmtDate(done)}` : ""}`, BRAND.emerald]
+                : m.state === "overdue" ? ["Due, not confirmed", "#B45309"]
+                : m.state === "current" ? ["In progress", "#1D4ED8"]
+                : ["Upcoming", BRAND.s500];
+              return (
+                <View key={m.id || i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
+                  <Text style={[s.td, { width: 24 }]}>{i + 1}</Text>
+                  <Text style={[s.td, { flex: 2.2, fontWeight: 700 }]}>{m.name}</Text>
+                  <Text style={[s.td, { flex: 1 }]}>{milestoneLength(m)}</Text>
+                  <Text style={[s.td, { flex: 2 }]}>{m.start && m.end ? `${fmtDate(m.start)} to ${fmtDate(m.end)}` : "-"}</Text>
+                  <Text style={[s.td, { flex: 1.5, fontWeight: 700, color }]}>{label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Narrative / notes, rich text (tables and pictures) from the report notes editor */}
         {!!project.reportNotes?.trim() && (

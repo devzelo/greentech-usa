@@ -10,6 +10,7 @@ import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, proj
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
 import { effectiveEndDate } from "../../lib/projectSchedule";
+import MilestoneTrack from "./MilestoneTrack";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
@@ -350,18 +351,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           <span className={`w-1.5 h-1.5 rounded-full ${sm.dot}`} /> {sm.label}
                         </span>
                       </td>
-                      <td className="px-4 sm:px-6 py-4 sm:py-6">
-                        <div className="w-24 space-y-1.5">
-                          <div className="text-[10px] font-bold text-slate-400">{p.progress}%</div>
-                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${p.progress}%` }}
-                              className={`h-full rounded-full ${p.progress === 100 ? "bg-emerald-500" : "bg-primary"}`}
-                            />
-                          </div>
-                        </div>
-                      </td>
+                      {/* CR-P (120)-(125) — the milestones, not only the percentage. */}
+                      <td className="px-4 sm:px-6 py-4 sm:py-6"><MilestoneTrack project={p} compact /></td>
                       <td className="px-4 sm:px-8 py-4 sm:py-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -431,19 +422,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                     {p.endDate && <span title={effectiveEndDate(p) !== p.endDate ? `Extended; original end date ${p.endDate}` : undefined}><span className="text-slate-400">Deadline:</span> <span className={`font-bold ${overdue(p) ? "text-red-600" : "text-slate-700"}`}>{effectiveEndDate(p)}{overdue(p) ? " ⚠" : ""}</span></span>}
                   </div>
 
-                  <div className="space-y-3 mb-6">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      <span>Progress</span><span>{p.progress}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${p.progress}%` }}
-                        transition={{ delay: i * 0.05 + 0.2 }}
-                        className={`h-full rounded-full ${p.progress === 100 ? "bg-emerald-500" : "bg-primary"}`}
-                      />
-                    </div>
-                  </div>
+                  <div className="mb-6"><MilestoneTrack project={p} /></div>
 
                   <div className="space-y-3 pt-5 border-t border-slate-50">
                     <div className="flex justify-between items-center text-sm">

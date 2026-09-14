@@ -127,3 +127,31 @@ export function effectiveEndDate(p: { endDate?: string; schedule?: { extensions?
 }
 
 export const newMilestoneId = () => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/** Bar segment colour per milestone state (project header and project lists alike). */
+export const MILESTONE_SEG: Record<MilestoneState, string> = {
+  done: "bg-emerald-500",
+  overdue: "bg-amber-400 animate-pulse",
+  current: "bg-primary/40",
+  upcoming: "bg-slate-200",
+};
+
+export const MILESTONE_STATE_LABEL: Record<MilestoneState, string> = {
+  done: "finished", overdue: "due, not confirmed", current: "in progress", upcoming: "upcoming",
+};
+
+/** A milestone's length as written: "2 months", "1 week". */
+export const milestoneLength = (m: Pick<ApiMilestone, "duration" | "unit">) =>
+  `${m.duration} ${m.duration === 1 ? UNIT_LABEL[m.unit].replace(/s$/, "") : UNIT_LABEL[m.unit]}`;
+
+/** Where a project stands on its milestones: finished count, the one in progress, the next, and any overdue. */
+export function milestoneFocus(plan: SchedulePlan) {
+  const ms = plan.milestones;
+  return {
+    done: ms.filter((m) => m.state === "done").length,
+    total: ms.length,
+    overdue: plan.overdue,
+    current: ms.find((m) => m.state === "current"),
+    next: ms.find((m) => m.state === "upcoming"),
+  };
+}

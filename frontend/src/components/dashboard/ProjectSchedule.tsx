@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Flag,
 import type { ApiMilestone, ApiProject } from "../../lib/api";
 import { useDialogs } from "../../lib/useDialogs";
 import {
-  DAY, DEFAULT_MILESTONES, UNIT_LABEL, effectiveEndDate, fmtDate, humanGap, newMilestoneId, parseDate, planSchedule, toIso,
+  DAY, DEFAULT_MILESTONES, MILESTONE_SEG, effectiveEndDate, fmtDate, humanGap, milestoneFocus, milestoneLength, newMilestoneId, parseDate, planSchedule, toIso,
   type MilestoneState,
 } from "../../lib/projectSchedule";
 
@@ -18,12 +18,7 @@ import {
  * and the progress counts from the confirmed milestones. Collapsed to one line; click to open.
  */
 
-const SEG: Record<MilestoneState, string> = {
-  done: "bg-emerald-500",
-  overdue: "bg-amber-400 animate-pulse",
-  current: "bg-primary/40",
-  upcoming: "bg-slate-200",
-};
+const SEG = MILESTONE_SEG;
 const DOT: Record<MilestoneState, string> = {
   done: "bg-emerald-500 text-white",
   overdue: "bg-amber-400 text-white",
@@ -31,7 +26,7 @@ const DOT: Record<MilestoneState, string> = {
   upcoming: "bg-slate-100 text-slate-500",
 };
 
-const fmtLen = (m: Pick<ApiMilestone, "duration" | "unit">) => `${m.duration} ${m.duration === 1 ? UNIT_LABEL[m.unit].replace(/s$/, "") : UNIT_LABEL[m.unit]}`;
+const fmtLen = milestoneLength;
 
 export default function ProjectSchedule({ project, canEdit, onSave, userName = "", className = "" }: {
   project: ApiProject;
@@ -82,6 +77,7 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
   };
 
   const overdue = plan.overdue[0];
+  const focus = milestoneFocus(plan);
 
   return (
     <div ref={root} className={`relative bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>
@@ -122,6 +118,21 @@ export default function ProjectSchedule({ project, canEdit, onSave, userName = "
               </button>
             )}
           </>
+        )}
+
+        {/* Milestones at a glance, without opening the list: where the project is now. */}
+        {hasMs && !overdue && (focus.current || focus.next || focus.done === focus.total) && (
+          <button onClick={() => setOpen(true)} className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold shrink-0 max-w-[16rem] hover:bg-primary/15" title="Show the milestones">
+            <Flag size={10} className="shrink-0" />
+            <span className="truncate">{focus.current ? `Now: ${focus.current.name}` : focus.next ? `Next: ${focus.next.name}` : "All milestones finished"}</span>
+          </button>
+        )}
+        {hasMs && <span className="hidden lg:inline text-[10px] font-bold text-slate-400 shrink-0" title="Milestones confirmed finished">{focus.done}/{focus.total} done</span>}
+        {/* No milestones yet: the set-up is right on the bar, not hidden in the dropdown. */}
+        {!hasMs && canEdit && (
+          <button onClick={() => setSetup(true)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:text-primary hover:border-primary shrink-0" title="Set up the project milestones: the bar then follows them">
+            <ListChecks size={12} /> <span className="hidden md:inline">Set up milestones</span>
+          </button>
         )}
 
         {/* The reminder: a milestone whose date came without a confirmation. */}
