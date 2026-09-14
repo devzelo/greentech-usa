@@ -7,6 +7,7 @@ import SubResume from "../models/SubResume";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { brandedSection } from "../lib/docxBrand";
 
 // The proposal as a Word file, in step with the PDF: the section layout of either volume (numbering,
 // lettered appendices, subsections), the key staff table, past performance, the Compliance Matrix and
@@ -379,8 +380,8 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
       if (files.length) body.push(p(`Attached in the PDF, as uploaded: ${files.join(", ")}.`, { italic: true, size: 19, color: "64748B" }));
     }
 
-    // US Letter, 8.5" x 11" (in twips), like every document the platform prints.
-    return Packer.toBuffer(new DocxDocument({ sections: [{ properties: { page: { size: { width: 12240, height: 15840 } } }, children: body }] }));
+    // US Letter with the letterhead header and a page-numbered footer, like every document we print.
+    return Packer.toBuffer(new DocxDocument({ sections: [brandedSection(body, `${COMPANY_NAME}  ·  ${kind === "financial" ? "Financial" : "Technical"} Proposal`)] }));
   }
 }
 

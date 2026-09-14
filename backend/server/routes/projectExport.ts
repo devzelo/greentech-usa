@@ -14,6 +14,7 @@ import User from "../models/User";
 import { sectionToTabId } from "../lib/access";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from "docx";
+import { brandedSection } from "../lib/docxBrand";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -24,8 +25,8 @@ async function addDocx(archive: import("archiver").Archiver, name: string, text:
   const paragraphs = text.split(/\r?\n/).map((line) =>
     new Paragraph({ children: line ? [new TextRun({ text: line, font: "Calibri", size: 22 })] : [] })
   );
-  // US Letter, 8.5" x 11" (in twips), like every document the platform prints.
-  const buf = await Packer.toBuffer(new DocxDocument({ sections: [{ properties: { page: { size: { width: 12240, height: 15840 } } }, children: paragraphs }] }));
+  // US Letter with the letterhead header and a page-numbered footer, like every document we print.
+  const buf = await Packer.toBuffer(new DocxDocument({ sections: [brandedSection(paragraphs, `GreenTech USA LLC  ·  ${name.replace(/\.docx$/i, "").split("/").pop()}`)] }));
   archive.append(buf, { name });
 }
 
