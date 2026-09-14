@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, withFileToken, type ApiProject, type ApiCompany } from "../../lib/api";
 import ClientPicker from "./ClientPicker";
 import CompanyPicker from "./CompanyPicker";
+import YesNo from "./YesNo";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
 import CategoryMultiSelect from "./CategoryMultiSelect";
@@ -733,15 +734,13 @@ export default function NewProjectForm() {
 
         {/* ── Joint Venture ── */}
         <div className="border-t border-slate-100 pt-6 space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-lg font-display font-bold text-slate-900">Joint Venture</h3>
-              <p className="text-xs text-slate-400 mt-1">Is this a GreenTech project, or a joint venture with a partner company?</p>
+              <YesNo label="Joint venture" value={jv.enabled} onChange={(v) => updateJv("enabled", v)}
+                yesTitle="A joint venture with a partner company" noTitle="A GreenTech-only project" />
             </div>
-            <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer ${jv.enabled ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-600"}`}>
-              <input type="checkbox" checked={jv.enabled} onChange={(e) => updateJv("enabled", e.target.checked)} />
-              {jv.enabled ? "Joint Venture" : "GreenTech only"}
-            </label>
+            <p className="text-xs text-slate-400 mt-1">Is this a joint venture with a partner company? No means a GreenTech-only project.</p>
           </div>
           {jv.enabled && (
             <>
@@ -1381,7 +1380,7 @@ export default function NewProjectForm() {
                   { label: "Project Value", value: projectValue || "—" },
                   { label: "Nature", value: selectedNature.length ? selectedNature.join(", ") : "Not selected" },
                   { label: "Client", value: clientName || "—" },
-                  { label: "Joint Venture", value: jv.enabled ? (jv.partnerName ? `Yes — ${jv.partnerName}` : "Yes") : "No (GreenTech only)" },
+                  { label: "Joint Venture", value: jv.enabled ? (jv.partnerName ? `Yes, with ${jv.partnerName}` : "Yes") : "No (GreenTech only)" },
                   { label: "Start Date", value: startDate || "—" },
                   { label: "Team", value: assignedEmployees.length ? `${assignedEmployees.length} assigned` : "None" },
                   { label: "Website Preview", value: isPublished ? "Enabled" : "Disabled" },

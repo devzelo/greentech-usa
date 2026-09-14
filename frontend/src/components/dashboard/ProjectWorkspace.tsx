@@ -85,6 +85,7 @@ import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
 import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor, type ApiCompany } from "../../lib/api";
 import CompanyPicker from "./CompanyPicker";
+import YesNo from "./YesNo";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
@@ -418,15 +419,13 @@ export default function ProjectWorkspace() {
   // §M — Joint Venture editor, reused in Project Identity and the Partners tab.
   const renderJVSection = (disabled: boolean) => (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
+      <div>
+        <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-lg font-display font-bold text-slate-900">Joint Venture</h3>
-          <p className="text-xs text-slate-400 mt-1">Is this a GreenTech project, or a joint venture with a partner company?</p>
+          <YesNo label="Joint venture" value={jvInfo.enabled} disabled={disabled} onChange={(v) => updateJv("enabled", v)}
+            yesTitle="A joint venture with a partner company" noTitle="A GreenTech-only project" />
         </div>
-        <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer ${jvInfo.enabled ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-600"} ${disabled ? "opacity-60 pointer-events-none" : ""}`}>
-          <input type="checkbox" checked={jvInfo.enabled} disabled={disabled} onChange={(e) => updateJv("enabled", e.target.checked)} />
-          {jvInfo.enabled ? "Joint Venture" : "GreenTech only"}
-        </label>
+        <p className="text-xs text-slate-400 mt-1">Is this a joint venture with a partner company? No means a GreenTech-only project.</p>
       </div>
       {jvInfo.enabled && (
         <>
