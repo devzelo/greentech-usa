@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { FIGURE_MASK, setFiguresShown, useFiguresShown } from "../../lib/figuresPrivacy";
+import { FIGURE_MASK, setFiguresShown, useFigureOnScreen, useFiguresOnScreen, useFiguresShown } from "../../lib/figuresPrivacy";
 
 // Privacy mode for financial figures (lib/figuresPrivacy): hidden by default, shown on demand.
 
 /** A financial amount: shown as it is, or as "••••••" while figures are hidden. */
 export function Fig({ children }: { children: ReactNode }) {
   const shown = useFiguresShown();
+  useFigureOnScreen();   // tells the top-bar switch there are numbers on this screen
   if (shown) return <>{children}</>;
   return (
     <span className="tracking-[0.15em]" title="Financial numbers are hidden. Use Show numbers in the top bar." aria-label="Hidden amount">
@@ -17,10 +18,12 @@ export function Fig({ children }: { children: ReactNode }) {
 
 /**
  * The Show / Hide financial numbers switch. "bar" is the eye button in the dashboard's top bar,
- * always in reach; "inline" is the labelled switch placed beside a block of figures.
+ * shown only while the screen has financial numbers on it; "inline" is the labelled switch placed
+ * beside a block of figures.
  */
 export function FiguresToggle({ variant = "bar" }: { variant?: "bar" | "inline" }) {
   const shown = useFiguresShown();
+  const onScreen = useFiguresOnScreen();
   const flip = () => setFiguresShown(!shown);
   const hint = shown
     ? "Financial numbers are visible. They hide again on their own after 10 minutes, or on reload."
@@ -38,6 +41,7 @@ export function FiguresToggle({ variant = "bar" }: { variant?: "bar" | "inline" 
       </button>
     );
   }
+  if (!onScreen) return null;   // nothing on this screen to show or hide
   return (
     <button type="button" onClick={flip} title={hint} aria-pressed={shown}
       className={`inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-colors ${shown ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "text-slate-400 hover:text-slate-900 hover:bg-slate-100"}`}>
