@@ -78,7 +78,7 @@ const embeddable = (name: string) => /\.(pdf|png|jpe?g)$/i.test(name || "");
 
 function Sheet({ ag, children }: { ag: ApiAgreement; children?: ReactNode }) {
   return (
-    <Page size="A4" style={s.page} wrap>
+    <Page size="LETTER" style={s.page} wrap>
       <LetterheadHeader />
       {/* Working copies are never mistaken for issued ones. */}
       {ag.status === "Draft" && <View fixed style={s.watermarkWrap}><Text style={s.watermark}>DRAFT</Text></View>}

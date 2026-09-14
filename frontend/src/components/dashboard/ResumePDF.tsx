@@ -209,7 +209,7 @@ export function ResumeBlock({ resume, person, assignment }: { resume: ApiResume;
 export default function ResumePDF({ resume, person }: { resume: ApiResume; person: ResumePerson; logoUrl?: string }) {
   return (
     <Document title={`${person.name || "Resume"} - Resume`} author="GreenTech USA LLC">
-      <Page size="A4" style={styles.page} wrap>
+      <Page size="LETTER" style={styles.page} wrap>
         <LetterheadHeader />
         <ResumeBlock resume={resume} person={person} />
         <LetterheadFooter note={`Resume · ${person.name || ""}`} />

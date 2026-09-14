@@ -11,7 +11,7 @@ import { payApplication } from "./payApplication";
 // total is set. Mirrors the PO/RFQ document styling.
 const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
-const PAGE_W = 595.28, PAGE_H = 841.89, M = 48;
+const PAGE_W = 612, PAGE_H = 792, M = 48;   // US Letter, 8.5" x 11"
 const { brand: GREEN, ink: INK, muted: MUTED, line: LINE } = PDF_COLORS;   // CR-P (41) — one palette
 
 const lineTotal = (inv: ApiInvoice) => (inv.lineItems || []).reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);

@@ -7,7 +7,7 @@ import { tableCalc, adjustmentLabel } from "../../lib/pricing";
 import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout, requirementStatus, REQUIREMENT_STATUSES } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
-  BRAND, COMPANY, A4, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
+  BRAND, COMPANY, PAGE, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
   LetterheadHeader, LetterheadFooter, SectionHeading, Subhead, Eyebrow, GradBar,
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
@@ -188,7 +188,7 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
   const renderImg = (el: HTMLElement) => {
     const src = el.getAttribute("src");
     if (!src) return;
-    const w = Math.min(parseInt(el.getAttribute("width") || "", 10) || 300, A4.w - 2 * LETTERHEAD_PAGE.paddingHorizontal);
+    const w = Math.min(parseInt(el.getAttribute("width") || "", 10) || 300, PAGE.w - 2 * LETTERHEAD_PAGE.paddingHorizontal);
     blocks.push(<Image key={`${keyBase}-img-${k++}`} src={abs(src)} style={[styles.rtImg, { width: w }]} />);
   };
   const renderTable = (tbl: HTMLElement) => {
@@ -269,7 +269,7 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
  */
 function Sheet({ lh, label, note, children }: { lh: LhConfig; label: string; note: string; children?: ReactNode; key?: string }) {
   return (
-    <Page size="A4" style={lh.mode === "brand" ? styles.page : styles.pagePlain} wrap>
+    <Page size="LETTER" style={lh.mode === "brand" ? styles.page : styles.pagePlain} wrap>
       {lh.mode === "brand" && <LetterheadHeader />}
       {lh.mode === "custom" && (
         <View style={styles.customHeader} fixed>
@@ -404,8 +404,8 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
   const images = (backCover.images || []).slice(0, 4);
   const contact = ([["WEB", backCover.website], ["EMAIL", backCover.email], ["PHONE", backCover.phone], ["ADDRESS", backCover.address]] as Array<[string, string]>).filter(([, v]) => !!v?.trim());
   return (
-    <Page size="A4" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter", padding: 56, justifyContent: "space-between" }}>
-      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={A4.w} h={8} r={0} id="backTop" /></View>
+    <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter", padding: 56, justifyContent: "space-between" }}>
+      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="backTop" /></View>
       <Image src={abs(LOGO_MINT)} style={{ width: 30 * (1588 / 295), height: 30 }} />
       <View>
         {!!backCover.tagline && <Text style={{ fontFamily: "Outfit", fontSize: 26, fontWeight: 700, color: BRAND.white, lineHeight: 1.15, marginBottom: 16 }}>{backCover.tagline}</Text>}
@@ -416,12 +416,12 @@ function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
         )}
         {images.length > 0 && (
           <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={{ width: (A4.w - 112 - 18) / 4, height: 80, objectFit: "cover", borderRadius: 6, marginRight: i < images.length - 1 ? 6 : 0 }} />)}
+            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={{ width: (PAGE.w - 112 - 18) / 4, height: 80, objectFit: "cover", borderRadius: 6, marginRight: i < images.length - 1 ? 6 : 0 }} />)}
           </View>
         )}
       </View>
       <View>
-        <GradBar w={A4.w - 112} h={3} id="backRule" />
+        <GradBar w={PAGE.w - 112} h={3} id="backRule" />
         <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
           {contact.map(([l, v]) => (
             <View key={l} style={{ width: "50%", marginBottom: 10, paddingRight: 12 }}>
@@ -1012,7 +1012,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       ));
       return;
     }
-    if (g.t === "blank") { page(<Page size="A4" style={styles.page} />); return; }
+    if (g.t === "blank") { page(<Page size="LETTER" style={styles.page} />); return; }
     if (g.t === "divider") {
       // As on the client's samples: document, "Section A:", title, reference, then who and which RFP.
       const lbl = labelById.get(g.m.id);

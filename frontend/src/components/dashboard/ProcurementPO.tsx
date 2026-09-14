@@ -291,7 +291,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     const rows = pos.map((po) => `<tr><td>${esc(po.poNo)}</td><td>${esc(poRef(po) || "—")}</td><td>${esc(po.vendorName || vendorName(po.vendorId))}</td><td>${esc(po.status)}</td><td>${esc(po.invoiceNo || "")}</td><td style="text-align:right">${money(n(po.total))}</td></tr>`).join("");
     const proj = projectInfo ? `${esc(projectInfo.name || "")}${projectInfo.number ? ` · No ${esc(projectInfo.number)}` : ""}${projectInfo.location ? ` · ${esc(projectInfo.location)}` : ""}` : "";
     const html = `<!doctype html><html><head><title>Purchase Orders Summary</title>
-      <style>@page{size:landscape;margin:12mm}body{font-family:Arial,sans-serif;padding:8px;color:#0f172a}h1{font-size:18px;margin:0}p{color:#64748b;font-size:12px;margin:2px 0 12px}
+      <style>@page{size:letter landscape;margin:12mm}body{font-family:Arial,sans-serif;padding:8px;color:#0f172a}h1{font-size:18px;margin:0}p{color:#64748b;font-size:12px;margin:2px 0 12px}
       table{width:100%;border-collapse:collapse;font-size:12px}th{background:#0f172a;color:#fff;text-align:left;padding:6px}td{border-bottom:1px solid #e7ebf0;padding:6px}
       tfoot td{font-weight:bold;border-top:2px solid #0f172a}</style></head>
       <body><h1>Purchase Orders Summary</h1><p>${proj}${proj ? " · " : ""}${pos.length} purchase order(s) · ${new Date().toLocaleDateString()}</p>

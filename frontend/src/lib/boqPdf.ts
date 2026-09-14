@@ -20,12 +20,12 @@ export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiP
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;   // CR-P (41) — one palette
   const M = 40;
-  const PW = 1190.55, PH = 841.89; // A3 landscape (CR-P-16 — fits all columns + full text)
+  const PW = 1224, PH = 792; // 11" x 17" landscape (client request): fits all columns + full text
 
   let page = doc.addPage([PW, PH]);
   let y = 0;
 
-  // A3-landscape column layout — the extra width goes mostly to Description and Spec (CR-P-15).
+  // 11x17-landscape column layout: the extra width goes mostly to Description and Spec (CR-P-15).
   const cols = [
     { label: "#", x: M, w: 26 },
     { label: "Description", x: M + 26, w: 336 },
@@ -79,7 +79,8 @@ export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiP
         // Truncate each cell to roughly its own column width so columns never collide.
         cells.forEach((t, ci) => page.drawText(String(t).slice(0, Math.max(4, Math.floor(cols[ci].w / 4.6))), { x: cols[ci].x + 3, y: y + 2, size: 8, font, color: INK }));
         y -= 15;
-        page.drawLine({ start: { x: M, y: y + 2 }, end: { x: PW - M, y: y + 2 }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
+        // The divider sits in the gap between rows, not on the next row's text line.
+        page.drawLine({ start: { x: M, y: y + 11 }, end: { x: PW - M, y: y + 11 }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
       });
       y -= 12;
     }

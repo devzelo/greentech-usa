@@ -20,7 +20,7 @@ export async function buildCloseoutPackage(rows: ApiTableRow[], projectName = ""
   const withFiles = rows.filter((r) => r.files && r.files.length);
 
   // ── Cover page ──
-  const cover = doc.addPage([595.28, 841.89]);
+  const cover = doc.addPage([612, 792]);
   const { width, height } = cover.getSize();
   cover.drawRectangle({ x: 0, y: height - 8, width, height: 8, color: GREEN });
   cover.drawText("PROJECT CLOSEOUT PACKAGE", { x: 56, y: height - 120, size: 12, font: bold, color: GREEN });
@@ -36,7 +36,7 @@ export async function buildCloseoutPackage(rows: ApiTableRow[], projectName = ""
   });
 
   const addDivider = (title: string, fileName: string) => {
-    const p = doc.addPage([595.28, 841.89]);
+    const p = doc.addPage([612, 792]);
     const { width: w, height: h } = p.getSize();
     p.drawRectangle({ x: 0, y: h / 2 - 2, width: w, height: 4, color: GREEN });
     const label = title.toUpperCase().slice(0, 48);
@@ -62,7 +62,7 @@ export async function buildCloseoutPackage(rows: ApiTableRow[], projectName = ""
           included++;
         } else if (["png", "jpg", "jpeg"].includes(ext)) {
           const img = ext === "png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-          const page = doc.addPage([595.28, 841.89]);
+          const page = doc.addPage([612, 792]);
           const m = 48;
           const scale = Math.min((page.getWidth() - m * 2) / img.width, (page.getHeight() - m * 2) / img.height, 1);
           const w = img.width * scale, h = img.height * scale;

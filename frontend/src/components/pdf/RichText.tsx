@@ -1,7 +1,7 @@
 import { Text, View, Image } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
 import { withFileToken } from "../../lib/api";
-import { A4, BRAND, GUTTER, abs } from "./brand";
+import { PAGE, BRAND, GUTTER, abs } from "./brand";
 
 /**
  * HTML from the platform's rich-text editor as react-pdf, in the brand kit's type.
@@ -12,7 +12,7 @@ import { A4, BRAND, GUTTER, abs } from "./brand";
  * its line breaks. DOMParser is available in the browser, where these PDFs are generated.
  */
 
-const CONTENT_W = A4.w - 2 * GUTTER;
+const CONTENT_W = PAGE.w - 2 * GUTTER;
 const HEAD_BG = "#ECFDF5";   // the brand tint on table header rows, as in the editor
 
 type Fmt = { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; bg?: string };

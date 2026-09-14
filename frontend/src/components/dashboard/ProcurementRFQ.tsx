@@ -126,11 +126,11 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       const font = await merged.embedFont(StandardFonts.Helvetica);
       const bold = await merged.embedFont(StandardFonts.HelveticaBold);
       const INK = rgb(0.06, 0.09, 0.16), MUTED = rgb(0.39, 0.45, 0.55), GREEN = rgb(0.06, 0.72, 0.51);
-      // A labelled A4 divider page announcing the item / document that follows.
+      // A labelled divider page announcing the item / document that follows.
       const divider = (title: string, subtitle: string) => {
-        const p = merged.addPage([1190.55, 841.89]); // CR-PR-01 — A3 landscape to match the RFQ base
+        const p = merged.addPage([612, 792]); // US Letter, to match the RFQ base
         p.drawRectangle({ x: 0, y: p.getHeight() - 8, width: p.getWidth(), height: 8, color: GREEN });
-        p.drawText(title.slice(0, 70), { x: 48, y: p.getHeight() - 120, size: 20, font: bold, color: INK });
+        p.drawText(title.slice(0, 44), { x: 48, y: p.getHeight() - 120, size: 20, font: bold, color: INK });
         if (subtitle) p.drawText(subtitle.slice(0, 90), { x: 48, y: p.getHeight() - 148, size: 11, font, color: MUTED });
       };
       // Fetch a file and append its pages (PDF) or a full-page image (png/jpg). Best-effort.
@@ -145,7 +145,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
             (await merged.copyPages(src, src.getPageIndices())).forEach((p) => merged.addPage(p));
           } else if (["png", "jpg", "jpeg"].includes(ext)) {
             const img = ext === "png" ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
-            const page = merged.addPage([1190.55, 841.89]); // CR-PR-01 — A3 landscape to match the RFQ base
+            const page = merged.addPage([612, 792]); // US Letter, to match the RFQ base
             const m = 48, scale = Math.min((page.getWidth() - m * 2) / img.width, (page.getHeight() - m * 2) / img.height, 1);
             page.drawImage(img, { x: (page.getWidth() - img.width * scale) / 2, y: (page.getHeight() - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
           }

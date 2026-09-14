@@ -25,9 +25,8 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const skipped: string[] = [];
-  // CR-P-16 — A3 landscape (11"x17") for the generated pages so all content/columns are visible.
-  // A3-landscape height equals A4-portrait height (841.89), so the vertical layout is unchanged.
-  const PW = 1190.55, PH = 841.89;
+  // 11" x 17" landscape for the generated pages (client request), so all content is visible.
+  const PW = 1224, PH = 792;
 
   // ── Title page ──
   const title = doc.addPage([PW, PH]);

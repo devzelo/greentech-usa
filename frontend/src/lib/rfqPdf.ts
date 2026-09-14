@@ -1,9 +1,9 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { PDF_COLORS } from "./docStyle";
 import type { ApiRfq, ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { GREENTECH } from "./poPdf";
-import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
+import { drawWrapped, fitOneLine, wrapText, wrappedHeight } from "./pdfText";
 
 // Generate a branded RFQ PDF to send to a vendor: GreenTech header, send-to block, and a
 // line-item table with an EMPTY unit-price/amount column for the vendor to fill in, plus
@@ -13,13 +13,17 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const page = doc.addPage([1190.55, 841.89]); // CR-PR-01 — A3 landscape so all columns + full text fit
-  const { width, height } = page.getSize();
+  // US Letter, 8.5" x 11" (client request). Long descriptions and specs wrap onto more lines and
+  // the table continues onto more pages, so nothing is cut off.
+  const width = 612, height = 792;
+  let page: PDFPage = doc.addPage([width, height]);
   const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;   // CR-P (41) — one palette
   const M = 48;
+  const W = width - M * 2;
   let y = height - 56;
+  const band = () => page.drawRectangle({ x: 0, y: height - 8, width, height: 8, color: GREEN });
 
-  page.drawRectangle({ x: 0, y: height - 8, width, height: 8, color: GREEN });
+  band();
   page.drawText("GreenTech USA", { x: M, y, size: 18, font: bold, color: INK });
   page.drawText("REQUEST FOR QUOTATION", { x: width - M - bold.widthOfTextAtSize("REQUEST FOR QUOTATION", 11), y: y + 2, size: 11, font: bold, color: GREEN });
   y -= 18;
@@ -28,13 +32,13 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const refLine = /^\s*rfq\b/i.test(ref) ? ref : `RFQ Number: ${ref}`;
   page.drawText(refLine, { x: width - M - bold.widthOfTextAtSize(refLine, 10), y, size: 10, font: bold, color: INK });
   y -= 22;
-  y = drawProjectInfo(page, font, projectInfo, M, y, width - M * 2); // H1 (no client — H2)
+  y = drawProjectInfo(page, font, projectInfo, M, y, W); // H1 (no client — H2)
   y -= 8;
 
   // Three-column party header (same as the PO document): GreenTech | vendor | delivery details.
   {
     const gap = 16;
-    const colW = (width - M * 2 - gap * 2) / 3;
+    const colW = (W - gap * 2) / 3;
     // Each line is wrapped by MEASURE (not pdf-lib's maxWidth, whose 24pt default line height
     // would overlap the line beneath) so the returned cursor is always accurate.
     const drawCol = (x: number, heading: string, lines: string[]): number => {
@@ -53,37 +57,50 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
     const dEnd = drawCol(M + (colW + gap) * 2, "DELIVERY", [rfq.deliveryMethod || "Delivery", rfq.shipToLocation || ""]);
     y = Math.min(gtEnd, vEnd, dEnd) - 12;
   }
-  page.drawText(rfq.title || "Items requested for quotation", { x: M, y, size: 12, font: bold, color: INK }); y -= 22;
+  y = drawWrapped(page, bold, rfq.title || "Items requested for quotation", { x: M, y, size: 12, maxW: W, lineHeight: 15, color: INK, maxLines: 2 }) - 7;
 
-  // Table header — this RFQ is a DESCRIPTION of the items we want quoted. No prices/totals appear
-  // here; the vendor returns their own quotation separately.
-  // CR-PR-01 — A3-landscape column layout: the extra width goes to Description & Spec (full text).
+  // Table — this RFQ is a DESCRIPTION of the items we want quoted. No prices/totals appear here;
+  // the vendor returns their own quotation separately. Description, Brand and Spec wrap.
+  const fixed = { no: 20, brand: 74, qty: 34, unit: 34, need: 58 };
+  const rest = W - fixed.no - fixed.brand - fixed.qty - fixed.unit - fixed.need;
+  const descW = Math.round(rest * 0.55);
+  let cx = M;
+  const col = (label: string, w: number, wrap = false) => { const c = { label, x: cx, w, wrap }; cx += w; return c; };
   const cols = [
-    { label: "#", x: M, max: 4 },
-    { label: "Description", x: M + 22, max: 90 },
-    { label: "Brand", x: M + 422, max: 32 },
-    { label: "Qty", x: M + 572, max: 8 },
-    { label: "Unit", x: M + 617, max: 8 },
-    { label: "Spec", x: M + 662, max: 64 },
-    { label: "Need by", x: M + 962, max: 14 },
+    col("#", fixed.no), col("Description", descW, true), col("Brand", fixed.brand, true), col("Qty", fixed.qty),
+    col("Unit", fixed.unit), col("Spec", rest - descW, true), col("Need by", fixed.need),
   ];
+  const SIZE = 8, LH = 10, MAX_LINES = 8;
   const drawRowLine = (yy: number) => page.drawLine({ start: { x: M, y: yy }, end: { x: width - M, y: yy }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
-  page.drawRectangle({ x: M, y: y - 4, width: width - M * 2, height: 18, color: INK });
-  cols.forEach((c) => page.drawText(c.label, { x: c.x + 3, y: y + 1, size: 8, font: bold, color: rgb(1, 1, 1) }));
-  y -= 18;
+  const drawTableHead = () => {
+    page.drawRectangle({ x: M, y: y - 4, width: W, height: 18, color: INK });
+    cols.forEach((c) => page.drawText(c.label, { x: c.x + 3, y: y + 1, size: 8, font: bold, color: rgb(1, 1, 1) }));
+    y -= 18;
+  };
+  const newPage = () => { page = doc.addPage([width, height]); band(); y = height - 56; };
+  drawTableHead();
 
   rfq.lineItems.forEach((li, i) => {
-    if (y < 120) return; // single-page v1
     const cells = [String(i + 1), li.description || "", li.manufacturer || "", li.qty || "", li.unit || "", li.spec || "", li.needOnSiteDate || ""];
-    cells.forEach((t, ci) => page.drawText(String(t).slice(0, cols[ci].max), { x: cols[ci].x + 3, y: y + 2, size: 8, font, color: INK }));
-    y -= 16; drawRowLine(y + 2);
+    const lines = cells.map((t, ci) => (cols[ci].wrap ? Math.min(MAX_LINES, Math.max(1, wrapText(font, String(t), SIZE, cols[ci].w - 6).length)) : 1));
+    const rowH = Math.max(16, Math.max(...lines) * LH + 6);
+    if (y - rowH < 60) { newPage(); drawTableHead(); }   // continue the table on a new page
+    cells.forEach((t, ci) => {
+      const c = cols[ci];
+      if (c.wrap) drawWrapped(page, font, String(t), { x: c.x + 3, y: y + 2, size: SIZE, maxW: c.w - 6, lineHeight: LH, color: INK, maxLines: MAX_LINES });
+      else page.drawText(fitOneLine(font, String(t), SIZE, c.w - 6), { x: c.x + 3, y: y + 2, size: SIZE, font, color: INK });
+    });
+    y -= rowH; drawRowLine(y + 12);   // in the gap between this row's last line and the next row's text
   });
 
   y -= 20;
-  if (rfq.notes) {
+  const notes = (rfq.notes || "").slice(0, 400);
+  const tailH = (notes ? 13 + wrappedHeight(font, notes, 9, W, 12) + 10 : 0) + 20;
+  if (y - tailH < 50) newPage();
+  if (notes) {
     page.drawText("Notes:", { x: M, y, size: 9, font: bold, color: INK }); y -= 13;
     // Wrapped by measure so the closing sentence below can never be overprinted.
-    y = drawWrapped(page, font, rfq.notes.slice(0, 400), { x: M, y, size: 9, maxW: width - M * 2, lineHeight: 12, color: INK }) - 10;
+    y = drawWrapped(page, font, notes, { x: M, y, size: 9, maxW: W, lineHeight: 12, color: INK }) - 10;
   }
   page.drawText("Kindly provide your quotation and delivery lead time for the items listed above.", { x: M, y, size: 8, font, color: MUTED });
 

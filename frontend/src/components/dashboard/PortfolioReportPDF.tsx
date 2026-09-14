@@ -132,7 +132,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
 
   return (
     <Document title={docTitle} author="GreenTech USA LLC">
-      <Page size="A4" style={s.page} wrap>
+      <Page size="LETTER" style={s.page} wrap>
         <LetterheadHeader />
 
         {/* Title, as on the Quick Report */}

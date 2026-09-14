@@ -379,7 +379,8 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
       if (files.length) body.push(p(`Attached in the PDF, as uploaded: ${files.join(", ")}.`, { italic: true, size: 19, color: "64748B" }));
     }
 
-    return Packer.toBuffer(new DocxDocument({ sections: [{ children: body }] }));
+    // US Letter, 8.5" x 11" (in twips), like every document the platform prints.
+    return Packer.toBuffer(new DocxDocument({ sections: [{ properties: { page: { size: { width: 12240, height: 15840 } } }, children: body }] }));
   }
 }
 

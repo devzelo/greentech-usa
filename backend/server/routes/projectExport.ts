@@ -24,7 +24,8 @@ async function addDocx(archive: import("archiver").Archiver, name: string, text:
   const paragraphs = text.split(/\r?\n/).map((line) =>
     new Paragraph({ children: line ? [new TextRun({ text: line, font: "Calibri", size: 22 })] : [] })
   );
-  const buf = await Packer.toBuffer(new DocxDocument({ sections: [{ children: paragraphs }] }));
+  // US Letter, 8.5" x 11" (in twips), like every document the platform prints.
+  const buf = await Packer.toBuffer(new DocxDocument({ sections: [{ properties: { page: { size: { width: 12240, height: 15840 } } }, children: paragraphs }] }));
   archive.append(buf, { name });
 }
 

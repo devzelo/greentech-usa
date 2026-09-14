@@ -167,7 +167,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
 
   return (
     <Document title={`${project.name} - Project Report`} author="GreenTech USA LLC">
-      <Page size="A4" style={s.page} wrap>
+      <Page size="LETTER" style={s.page} wrap>
         <LetterheadHeader />
 
         {/* Title */}

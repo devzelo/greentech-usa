@@ -2,12 +2,12 @@ import { PDFDocument, PDFFont, PDFImage, StandardFonts, rgb, type PDFPage } from
 import { PDF_COLORS } from "./docStyle";
 import { attachmentUrl, type ApiProcurementPO, type ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
-import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
+import { drawWrapped, fitOneLine, wrapText, wrappedHeight } from "./pdfText";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
-const PAGE_W = 1190.55, PAGE_H = 841.89, M = 48; // CR-PR-01 — A3 landscape (all columns + full text fit)
+const PAGE_W = 612, PAGE_H = 792, M = 48; // US Letter, 8.5" x 11" (client request); descriptions wrap to keep the full text
 // CR-P (41) — the one GreenTech palette (lib/docStyle), shared by every generated document.
 const { brand: GREEN, ink: INK, muted: MUTED } = PDF_COLORS;
 
@@ -134,17 +134,20 @@ async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: A
   y = Math.min(vEnd, shipEnd) - 10;
 
   // 3) Item table.
-  // CR-PR-01 — A3-landscape columns: the extra width goes to Description (full text).
+  // Description takes the width left over and wraps onto more lines, so the full text still prints.
+  let cx = M;
+  const col = (label: string, w: number, right = false) => { const c = { label, x: cx, w, right }; cx += w; return c; };
+  const fixedW = 22 + 40 + 40 + 76 + 84;
   const cols = [
-    { label: "#", x: M, w: 22 }, { label: "Description", x: M + 22, w: 560 }, { label: "Qty", x: M + 582, w: 48 },
-    { label: "Unit", x: M + 632, w: 48 }, { label: "Unit Price", x: M + 700, w: 110 }, { label: "Amount", x: M + 830, w: 120 },
+    col("#", 22), col("Description", PAGE_W - M * 2 - fixedW), col("Qty", 40), col("Unit", 40),
+    col("Unit Price", 76, true), col("Amount", 84, true),
   ];
   // The signature & stamp block always occupies y ≈ 232 downward on whichever page it lands on,
   // so nothing above it may cross that line. Long orders continue onto extra pages instead of
   // being silently truncated.
   const drawTableHead = () => {
     page.drawRectangle({ x: M, y: y - 4, width: PAGE_W - M * 2, height: 18, color: INK });
-    cols.forEach((c) => page.drawText(c.label, { x: c.x + 3, y: y + 1, size: 8, font: bold, color: rgb(1, 1, 1) }));
+    cols.forEach((c) => page.drawText(c.label, { x: c.right ? c.x + c.w - 3 - bold.widthOfTextAtSize(c.label, 8) : c.x + 3, y: y + 1, size: 8, font: bold, color: rgb(1, 1, 1) }));
     y -= 18;
   };
   const nextPage = () => {
@@ -154,12 +157,22 @@ async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: A
   };
   drawTableHead();
   let subtotal = 0;
+  const DESC_LINES = 6;
   po.lineItems.forEach((li, i) => {
-    if (y < 70) { nextPage(); drawTableHead(); }   // continue the table on a new page
+    const desc = li.description || "";
+    const lines = Math.min(DESC_LINES, Math.max(1, wrapText(font, desc, 8, cols[1].w - 6).length));
+    const rowH = Math.max(16, lines * 10 + 6);
+    if (y - rowH < 60) { nextPage(); drawTableHead(); }   // continue the table on a new page
     const amt = n(li.qty) * n(li.unitPrice); subtotal += amt;
-    const cells = [String(i + 1), li.description || "", li.qty || "", li.unit || "", li.unitPrice ? money(n(li.unitPrice)) : "", money(amt)];
-    cells.forEach((t, ci) => page.drawText(fitOneLine(font, String(t), 8, cols[ci].w - 6), { x: cols[ci].x + 3, y: y + 2, size: 8, font, color: INK }));
-    y -= 16; page.drawLine({ start: { x: M, y: y + 2 }, end: { x: PAGE_W - M, y: y + 2 }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
+    const cells = [String(i + 1), desc, li.qty || "", li.unit || "", li.unitPrice ? money(n(li.unitPrice)) : "", money(amt)];
+    cells.forEach((t, ci) => {
+      const c = cols[ci];
+      if (ci === 1) { drawWrapped(page, font, desc, { x: c.x + 3, y: y + 2, size: 8, maxW: c.w - 6, lineHeight: 10, color: INK, maxLines: DESC_LINES }); return; }
+      const s = fitOneLine(font, String(t), 8, c.w - 6);
+      page.drawText(s, { x: c.right ? c.x + c.w - 3 - font.widthOfTextAtSize(s, 8) : c.x + 3, y: y + 2, size: 8, font, color: INK });
+    });
+    // The divider sits in the gap between this row's last line and the next row's text.
+    y -= rowH; page.drawLine({ start: { x: M, y: y + 12 }, end: { x: PAGE_W - M, y: y + 12 }, thickness: 0.5, color: rgb(0.9, 0.92, 0.95) });
   });
 
   // Reserve the room the totals + notes + signature block genuinely need; break the page if short.
@@ -170,7 +183,7 @@ async function drawPoPage1(doc: PDFDocument, font: PDFFont, bold: PDFFont, po: A
   if (y - 10 - totalsRows * 16 - notesH < SIG_TOP) nextPage();
 
   y -= 10;
-  // CR-PR-01 — totals right-anchored to the page so they stay on the right at A3 width.
+  // Totals right-anchored to the page so they line up with the Amount column.
   const rowR = (label: string, value: string, b = false) => {
     page.drawText(label, { x: PAGE_W - M - 250, y, size: b ? 10 : 9, font: b ? bold : font, color: b ? INK : MUTED });
     const v = fitOneLine(font, value, b ? 10 : 9, 120);
@@ -206,7 +219,7 @@ async function drawSignatureStamp(doc: PDFDocument, page: PDFPage, font: PDFFont
     if (stamp) drawFitted(page, stamp, x + colW - 62, sigTop + 4, 56, 56);
     // Keep every detail line clear of the stamp box, which starts at x + colW - 62.
     const textW = colW - 70;
-    page.drawText(fitOneLine(bold, party.name || "—", 10, textW), { x, y, size: 10, font: bold, color: INK }); y -= 12;
+    page.drawText(fitOneLine(bold, party.name || "-", 10, textW), { x, y, size: 10, font: bold, color: INK }); y -= 12;
     if (party.title) { page.drawText(fitOneLine(font, party.title, 8, textW), { x, y, size: 8, font, color: MUTED }); y -= 11; }
     if (party.email) { page.drawText(fitOneLine(font, party.email, 8, textW), { x, y, size: 8, font, color: INK }); y -= 11; }
     if (party.phone) { page.drawText(fitOneLine(font, party.phone, 8, textW), { x, y, size: 8, font, color: INK }); y -= 11; }
@@ -214,12 +227,12 @@ async function drawSignatureStamp(doc: PDFDocument, page: PDFPage, font: PDFFont
   };
 
   // Ensure there's room; the section lives near the bottom of page 1 (y ~= 210 downward).
-  await drawSide(M, "Authorized by — GreenTech USA", {
+  await drawSide(M, "Authorized by: GreenTech USA", {
     name: po.signerName || "", title: po.signerTitle, email: po.signerEmail || GREENTECH.email, phone: po.signerPhone || GREENTECH.phone,
     address: GREENTECH.address, signatureUrl: po.signatureUrl, stampUrl: po.stampUrl,
   });
   if (partner) {
-    await drawSide(rx, `Authorized by — ${partner.name || "Partner"}`, {
+    await drawSide(rx, `Authorized by: ${partner.name || "Partner"}`, {
       name: po.partnerSignerName || "", email: po.partnerSignerEmail || partner.email, phone: po.partnerSignerPhone || partner.phone,
       address: partner.address, signatureUrl: po.partnerSignatureUrl, stampUrl: po.partnerStampUrl,
     });
@@ -232,7 +245,8 @@ async function appendAttachment(doc: PDFDocument, font: PDFFont, bold: PDFFont, 
   d.drawRectangle({ x: 0, y: PAGE_H / 2 - 2, width: PAGE_W, height: 4, color: GREEN });
   const lab = label.toUpperCase();
   d.drawText(lab, { x: (PAGE_W - bold.widthOfTextAtSize(lab, 24)) / 2, y: PAGE_H / 2 + 20, size: 24, font: bold, color: INK });
-  d.drawText(att.name, { x: (PAGE_W - font.widthOfTextAtSize(att.name, 10)) / 2, y: PAGE_H / 2 - 28, size: 10, font, color: MUTED });
+  const nm = fitOneLine(font, att.name, 10, PAGE_W - M * 2);
+  d.drawText(nm, { x: (PAGE_W - font.widthOfTextAtSize(nm, 10)) / 2, y: PAGE_H / 2 - 28, size: 10, font, color: MUTED });
   const ext = (att.fileType || att.name.split(".").pop() || "").toLowerCase();
   try {
     const res = await fetch(attachmentUrl(att.filePath));

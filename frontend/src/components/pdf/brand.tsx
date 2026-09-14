@@ -38,7 +38,9 @@ export const COMPANY = {
   uei: "FYR1QQSL3SM7",
 } as const;
 
-export const A4 = { w: 595.28, h: 841.89 } as const;
+// The page every branded document prints on: US Letter, 8.5" x 11" (client request, 2026-09-14).
+// Only the BOQ, the procurement master log and submittal packages use 11" x 17" landscape.
+export const PAGE = { w: 612, h: 792 } as const;
 
 // Where root-relative assets are served from. In the browser that is the page's own origin; a
 // renderer outside the browser (server-side or a preview script) sets it with setAssetOrigin().
@@ -49,16 +51,16 @@ export function setAssetOrigin(origin: string) { assetOrigin = origin.replace(/\
 export const abs = (url?: string) =>
   !url ? "" : /^(https?:|data:|blob:)/.test(url) ? url : `${assetOrigin || (typeof window !== "undefined" ? window.location.origin : "")}${url}`;
 
-// The letterhead art is 3264 px wide; at A4 width its height follows from the ratio.
+// The letterhead art is 3264 px wide; at the page width its height follows from the ratio.
 export const LETTERHEAD = {
-  header: { src: "/brand/letterhead-header.png", h: (A4.w * 220) / 3264 },   // ~40 pt dark band
-  footer: { src: "/brand/letterhead-footer.png", h: (A4.w * 64) / 3264 },    // ~12 pt, line at the bottom
+  header: { src: "/brand/letterhead-header.png", h: (PAGE.w * 220) / 3264 },   // ~40 pt dark band
+  footer: { src: "/brand/letterhead-footer.png", h: (PAGE.w * 64) / 3264 },    // ~12 pt, line at the bottom
 };
 export const LOGO_MINT = "/brand/gt-logo-mint.png";   // trimmed horizontal lockup, for dark grounds
 export const COVER_FALLBACK = "/brand/cover-default.jpg";
 
 /** Text gutter: lines up with the left edge of the logo in the header band (x = 386 of 3264 px). */
-export const GUTTER = Math.round((A4.w * 386) / 3264);
+export const GUTTER = Math.round((PAGE.w * 386) / 3264);
 
 /** Page padding for a letterhead page: clear of the band on top and the footer row below. */
 export const LETTERHEAD_PAGE = {
@@ -87,8 +89,8 @@ export function registerBrandFonts() {
 // instead (the submitter on the cover, the EOI's firm name).
 export function LetterheadHeader() {
   return (
-    <View fixed style={{ position: "absolute", top: 0, left: 0, width: A4.w, height: LETTERHEAD.header.h }}>
-      <Image src={abs(LETTERHEAD.header.src)} style={{ width: A4.w, height: LETTERHEAD.header.h }} />
+    <View fixed style={{ position: "absolute", top: 0, left: 0, width: PAGE.w, height: LETTERHEAD.header.h }}>
+      <Image src={abs(LETTERHEAD.header.src)} style={{ width: PAGE.w, height: LETTERHEAD.header.h }} />
     </View>
   );
 }
@@ -106,7 +108,7 @@ export function LetterheadFooter({ note, line = true }: { note?: string; line?: 
           {note}
         </Text>
       )}
-      {line && <Image fixed src={abs(LETTERHEAD.footer.src)} style={{ position: "absolute", left: 0, bottom: 0, width: A4.w, height: LETTERHEAD.footer.h }} />}
+      {line && <Image fixed src={abs(LETTERHEAD.footer.src)} style={{ position: "absolute", left: 0, bottom: 0, width: PAGE.w, height: LETTERHEAD.footer.h }} />}
     </>
   );
 }

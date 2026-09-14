@@ -70,7 +70,7 @@ const hasContent = (html: string) =>
 
 function Sheet({ r, children }: { r: ApiProjectRequest; children?: ReactNode }) {
   return (
-    <Page size="A4" style={s.page} wrap>
+    <Page size="LETTER" style={s.page} wrap>
       <LetterheadHeader />
       {children}
       <LetterheadFooter note={footNote(r)} />

@@ -1,5 +1,5 @@
 import { Page, View, Text, Image, Svg, Defs, LinearGradient, Stop, Rect, Circle } from "@react-pdf/renderer";
-import { BRAND, COMPANY, A4, abs, LOGO_MINT, GradBar, Eyebrow } from "./brand";
+import { BRAND, COMPANY, PAGE, abs, LOGO_MINT, GradBar, Eyebrow } from "./brand";
 
 /**
  * Proposal cover pages, ported from the brand kit: the three styles of generateCoverPage.tsx, with
@@ -110,10 +110,10 @@ function Hero({ d }: { d: CoverData }) {
   // The photo band gives way as the fields grow, so a full cover still fits one page.
   const H = d.fields.length > 9 ? 290 : d.fields.length > 6 ? 330 : 380;
   return (
-    <Page size="A4" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter" }}>
+    <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter" }}>
       <View style={{ height: H, position: "relative" }}>
-        <Mosaic images={d.images} w={A4.w} h={H} />
-        <Scrim w={A4.w} h={H} />
+        <Mosaic images={d.images} w={PAGE.w} h={H} />
+        <Scrim w={PAGE.w} h={H} />
         <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
           <Logo h={30} />
         </View>
@@ -129,7 +129,7 @@ function Hero({ d }: { d: CoverData }) {
         </View>
 
         <View>
-          <GradBar w={A4.w - 104} h={3} id="heroRule" />
+          <GradBar w={PAGE.w - 104} h={3} id="heroRule" />
           <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
             {d.fields.map((f) => (
               <View key={f.label} style={{ width: "33.3%", paddingRight: 12, marginBottom: 11 }}>
@@ -175,8 +175,8 @@ function ContactStrip({ w }: { w: number }) {
 // ── 2 · Light formal ─────────────────────────────────────────────────────────
 function Formal({ d }: { d: CoverData }) {
   return (
-    <Page size="A4" style={{ backgroundColor: BRAND.white, fontFamily: "Inter" }}>
-      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={A4.w} h={8} r={0} id="formalTop" /></View>
+    <Page size="LETTER" style={{ backgroundColor: BRAND.white, fontFamily: "Inter" }}>
+      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="formalTop" /></View>
       <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <LogoChip h={22} />
@@ -202,7 +202,7 @@ function Formal({ d }: { d: CoverData }) {
           </View>
         </View>
 
-        <ContactStrip w={A4.w - 112} />
+        <ContactStrip w={PAGE.w - 112} />
         <Text style={{ fontSize: 7, color: BRAND.s400, marginTop: 10, textAlign: "center" }}>{d.notice || CONFIDENTIAL}</Text>
       </View>
     </Page>
@@ -213,18 +213,18 @@ function Formal({ d }: { d: CoverData }) {
 function Panel({ d }: { d: CoverData }) {
   const PWL = 232;
   return (
-    <Page size="A4" style={{ flexDirection: "row", fontFamily: "Inter" }}>
+    <Page size="LETTER" style={{ flexDirection: "row", fontFamily: "Inter" }}>
       <View style={{ width: PWL, position: "relative" }}>
-        <Svg width={PWL} height={A4.h} style={{ position: "absolute", top: 0, left: 0 }}>
+        <Svg width={PWL} height={PAGE.h} style={{ position: "absolute", top: 0, left: 0 }}>
           <Defs>
             <LinearGradient id="panelBg" x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={BRAND.emerald} />
               <Stop offset="1" stopColor={BRAND.blue} />
             </LinearGradient>
           </Defs>
-          <Rect x={0} y={0} width={PWL} height={A4.h} fill="url(#panelBg)" />
+          <Rect x={0} y={0} width={PWL} height={PAGE.h} fill="url(#panelBg)" />
           <Circle cx={PWL - 10} cy={140} r={120} stroke="#FFFFFF" strokeWidth={1} fill="none" opacity={0.14} />
-          <Circle cx={20} cy={A4.h - 90} r={110} stroke="#FFFFFF" strokeWidth={1} fill="none" opacity={0.14} />
+          <Circle cx={20} cy={PAGE.h - 90} r={110} stroke="#FFFFFF" strokeWidth={1} fill="none" opacity={0.14} />
         </Svg>
         <View style={{ flex: 1, padding: 32, justifyContent: "space-between" }}>
           <View>

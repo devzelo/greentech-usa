@@ -153,7 +153,7 @@ export async function assembleProposalParts(
     }
     const img = s.ext === "png" ? await merged.embedPng(s.bytes) : await merged.embedJpg(s.bytes);
     asIs.add(merged.getPageCount());
-    const page = merged.addPage([595.28, 841.89]); // A4 points
+    const page = merged.addPage([612, 792]); // US Letter points
     const { width, height } = page.getSize();
     const m = 48;
     const scale = Math.min((width - m * 2) / img.width, (height - m * 2) / img.height, 1);

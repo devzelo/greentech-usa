@@ -45,7 +45,7 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
   ] as Array<[string, string]>).filter(([, v]) => !!v?.trim());
   return (
     <Document title={`Expression of Interest - ${r.projectTitle || projectName}`} author={r.firmName}>
-      <Page size="A4" style={s.page} wrap>
+      <Page size="LETTER" style={s.page} wrap>
         <LetterheadHeader />
         <View style={s.head}>
           <Text style={s.title}>Expression of Interest (EOI)</Text>

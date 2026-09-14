@@ -10,8 +10,10 @@ export function downloadHtmlAsWord(title: string, bodyHtml: string, filename: st
   h1{font-size:20pt;margin:0 0 4pt;} h2{font-size:14pt;margin:12pt 0 4pt;} h3{font-size:12pt;margin:10pt 0 3pt;}
   table{border-collapse:collapse;width:100%;margin:8pt 0;} td,th{border:1px solid #999;padding:4pt 8pt;font-size:10pt;vertical-align:top;}
   th{background:#f1f5f9;text-align:left;} .muted{color:#666;} .right{text-align:right;} img{max-width:100%;}
+  @page WordSection1{size:8.5in 11.0in;margin:1.0in 1.0in 1.0in 1.0in;mso-page-orientation:portrait;}
+  div.WordSection1{page:WordSection1;}
 </style></head>
-<body>${bodyHtml}</body></html>`;
+<body><div class="WordSection1">${bodyHtml}</div></body></html>`;
   const blob = new Blob(["﻿", doc], { type: "application/msword" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
