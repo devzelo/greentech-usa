@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink, Building2 } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
   addShipmentRow, renameShipmentRow, updateShipmentRow, deleteShipmentRow, uploadShipmentFile, deleteShipmentFile,
@@ -539,13 +539,18 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                 <p className="text-[10px] text-slate-400">The <strong>Track live</strong> link is auto-generated from the carrier + tracking/container # for major lines (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, ONE, UPS, FedEx, DHL, USPS…). Paste a link above only to override. Fully automated status auto-fetch requires a paid carrier-tracking API.</p>
               </div>
 
-              {/* CR-PR-09 — goods in the shipment + shipping agency / forwarder contact. */}
+              {/* CR-PR-09 — goods in the shipment. */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Package size={11} /> Items in this shipment</p>
                   <button onClick={() => setDraft({ ...draft, goods: [...draft.goods, { description: "", qty: "", unit: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add item</button>
                 </div>
                 {draft.goods.length === 0 && <p className="text-[11px] text-slate-400 italic">No items listed.</p>}
+                {draft.goods.length > 0 && (
+                  <div className="grid grid-cols-6 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <span className="col-span-4">Description</span><span>Qty</span><span>Unit</span>
+                  </div>
+                )}
                 {draft.goods.map((g, i) => (
                   <div key={i} className="grid grid-cols-6 gap-2 items-center">
                     <input className={`${inp} col-span-4`} placeholder="Description" value={g.description} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} />
@@ -553,11 +558,21 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <div className="flex items-center gap-1"><input className={inp} placeholder="Unit" value={g.unit} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)) })} /><button onClick={() => setDraft({ ...draft, goods: draft.goods.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button></div>
                   </div>
                 ))}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                  <input className={inp} placeholder="Shipping agency" value={draft.agencyName} onChange={(e) => setDraft({ ...draft, agencyName: e.target.value })} />
-                  <input className={inp} placeholder="Agency contact" value={draft.agencyContact} onChange={(e) => setDraft({ ...draft, agencyContact: e.target.value })} />
-                  <input className={inp} placeholder="Agency phone" value={draft.agencyPhone} onChange={(e) => setDraft({ ...draft, agencyPhone: e.target.value })} />
-                  <input className={inp} placeholder="Agency email" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} />
+              </div>
+
+              {/* CR-PR-09 — the shipping agency / forwarder, its own section with the titles above
+                  the fields (a placeholder title disappeared as soon as something was typed). */}
+              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={11} /> Shipping agency</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agency name
+                    <input className={`${inp} mt-1`} placeholder="e.g. DHL Global Forwarding" value={draft.agencyName} onChange={(e) => setDraft({ ...draft, agencyName: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact person
+                    <input className={`${inp} mt-1`} placeholder="e.g. John Mensah" value={draft.agencyContact} onChange={(e) => setDraft({ ...draft, agencyContact: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone
+                    <input type="tel" className={`${inp} mt-1`} placeholder="e.g. +233 20 000 0000" value={draft.agencyPhone} onChange={(e) => setDraft({ ...draft, agencyPhone: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
+                    <input type="email" className={`${inp} mt-1`} placeholder="e.g. ops@agency.com" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} /></label>
                 </div>
               </div>
 
