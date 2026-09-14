@@ -491,26 +491,26 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       {/* Create / edit shipment popup — the whole shipment record is managed here (CRUD). */}
       {popup && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl my-10" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div className="flex items-center gap-2"><Ship size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">{popup.mode === "create" ? "New shipment" : `Edit ${draft.name || "shipment"}`}</p></div>
               <button onClick={() => setPopup(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shipment name
                   <input className={`${inp} mt-1`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Shipment 1" /></label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project
                   <input className={`${inp} mt-1 opacity-70`} value={projectInfo?.name || ""} disabled title="Filled automatically from the project information" /></label>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">From — origin
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">From (origin)
                   <input className={`${inp} mt-1`} value={draft.fromLocation} onChange={(e) => setDraft({ ...draft, fromLocation: e.target.value })} placeholder="e.g. Shanghai Port, China" /></label>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To — destination
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To (destination)
                   <input className={`${inp} mt-1`} value={draft.toLocation} onChange={(e) => setDraft({ ...draft, toLocation: e.target.value })} placeholder={projectInfo?.location ? `e.g. ${projectInfo.location}` : "e.g. project site"} /></label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status
                   <select className={`${inp} mt-1 font-bold`} value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as ShipmentStatus })}>
                     {STATUSES.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
                   </select></label>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Deadline — expected receipt
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Deadline (expected receipt)
                   <input type="date" className={`${inp} mt-1`} value={draft.deadline} onChange={(e) => setDraft({ ...draft, deadline: e.target.value })} /></label>
               </div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description
@@ -519,7 +519,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               {/* CR-PR-08/09 — tracking header + container details (entered/pasted manually). */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Ship size={11} /> Tracking &amp; container</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
                     <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier
@@ -532,7 +532,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <input className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. 40' HC" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container size
                     <input className={`${inp} mt-1`} value={draft.containerSize} onChange={(e) => setDraft({ ...draft, containerSize: e.target.value })} placeholder="e.g. 40 ft" /></label>
-                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional — auto-derived)</span>
+                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional, auto-derived)</span>
                     <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="Leave blank to auto-link from carrier + number" /></label>
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
@@ -593,12 +593,12 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               {/* Link purchase orders — the shipment's status will drive these POs' items on the Master Log */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Link2 size={11} /> Linked purchase orders <span className="font-medium normal-case text-slate-400">— their items follow this shipment's status on the Master Log; shown on the Packing List row</span></p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Link2 size={11} /> Linked purchase orders <span className="font-medium normal-case text-slate-400">: their items follow this shipment's status on the Master Log and show on the Packing List row</span></p>
                   <button onClick={() => setPoPickerOpen((v) => !v)} className="text-[10px] font-bold text-primary hover:underline shrink-0">{poPickerOpen ? "Done" : "+ Add PO"}</button>
                 </div>
                 {/* Cost of goods is computed live from the selected POs' invoice amounts. */}
                 <div className="flex items-center justify-between gap-2 bg-white rounded-lg border border-slate-100 px-3 py-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cost of goods <span className="normal-case font-medium">— from the linked POs' invoice amounts</span></span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cost of goods <span className="normal-case font-medium">(from the linked POs' invoice amounts)</span></span>
                   <span className="text-sm font-display font-bold text-indigo-600">{money(goodsCost(draft.poIds, pos))}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -616,7 +616,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                       <p className="text-[11px] text-slate-400 italic px-1 py-2">
                         {poAccessDenied
                           ? "You don't have access to this project's Purchase Orders, so they can't be listed here. Ask the project owner for Purchase Orders access, or upload PO documents manually to the rows below."
-                          : "No purchase orders in this project yet — create them in the Purchase Orders tab, or upload PO documents manually to the rows below."}
+                          : "No purchase orders in this project yet. Create them in the Purchase Orders tab, or upload PO documents manually to the rows below."}
                       </p>
                     ) : pos.map((po) => (
                       <label key={po._id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs">
