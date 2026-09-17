@@ -3360,10 +3360,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // Any edit on the Proposals tab (which persists only on "Save Workspace") marks the workspace dirty.
   useEffect(() => {
     if (activeTab !== "proposals" || !canEdit) return;
-    const mark = () => setDirty(true);
+    // Flag it *after* the event, never inside it: setting state from a capture-phase listener
+    // re-renders before React has handled the field's own onChange, and that keystroke is lost.
+    let queued = 0;
+    const mark = () => { if (!queued) queued = window.setTimeout(() => { queued = 0; setDirty(true); }, 0); };
     window.addEventListener("input", mark, true);
     window.addEventListener("change", mark, true);
-    return () => { window.removeEventListener("input", mark, true); window.removeEventListener("change", mark, true); };
+    return () => {
+      if (queued) window.clearTimeout(queued);
+      window.removeEventListener("input", mark, true);
+      window.removeEventListener("change", mark, true);
+    };
   }, [activeTab, canEdit]);
 
   if (loading) {
