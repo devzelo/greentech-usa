@@ -1227,6 +1227,16 @@ async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): P
   return res.json() as Promise<T>;
 }
 
+// ── Quick Toolbox — exchange rates and the user's saved tool files ──────────
+export interface ApiRates { base: string; date: string; rates: Record<string, number>; source: string }
+export async function fetchExchangeRates(base = "USD"): Promise<ApiRates> { return request(`/toolbox/rates?base=${encodeURIComponent(base)}`); }
+export async function fetchToolboxFiles(): Promise<UserFile[]> { return request(`/toolbox/files`); }
+export async function saveToolboxFile(file: File): Promise<UserFile> {
+  const fd = new FormData(); fd.append("file", file);
+  return postMultipart<UserFile>(`/api/toolbox/files`, fd);
+}
+export async function deleteToolboxFile(fid: string): Promise<void> { await request(`/toolbox/files/${fid}`, { method: "DELETE" }); }
+
 // Archived versions are left out unless `includeArchived` (CR-P (86)).
 export async function fetchSavedDocuments(projectId: string, kind: SavedDocKind, refId = '', includeArchived = false) {
   return request<ApiSavedDocument[]>(`/projects/${projectId}/saved-documents?kind=${encodeURIComponent(kind)}&refId=${encodeURIComponent(refId)}${includeArchived ? '&includeArchived=1' : ''}`);
