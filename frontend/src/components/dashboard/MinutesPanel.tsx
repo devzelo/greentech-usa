@@ -77,7 +77,11 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
       // "On save it records the date, project and attendees automatically": the project's people
       // are on it from the start, and anyone can be unticked.
       attendees: people.map<MinuteAttendee>((p) => ({ userId: p.id, name: p.name, role: p.role || "", company: p.company || "", present: true })),
-      items: [{ id: uid(), title: isProgress ? "Work completed this period" : "Agenda item 1", notes: "", actions: [] }],
+      // A report opens with the parts every progress report has; a meeting with one empty item.
+      items: (isProgress
+        ? ["Work completed this period", "Work planned for the next period", "Progress against the schedule", "Issues, risks and delays", "Health, safety and environment"]
+        : ["Agenda item 1"]
+      ).map((title) => ({ id: uid(), title, notes: "", actions: [] })),
       summary: "",
       status: "draft",
     };

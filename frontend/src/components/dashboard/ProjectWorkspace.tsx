@@ -5268,6 +5268,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onMention={notifyMinuteMentions}
                   />
                 ) : null,
+                // CR 209 - the same, for progress reports.
+                "pm-progress-reports": id && project ? (
+                  <MinutesPanel
+                    projectId={id}
+                    section="pm-progress-reports"
+                    projectName={project.name}
+                    projectNo={project.projectId}
+                    kind="progress"
+                    canEdit={canEdit}
+                    people={projectPeople}
+                    onMention={notifyMinuteMentions}
+                  />
+                ) : null,
               }}
               defaults={[
                 { id: "pm-schedules", label: "Schedules", section: "pm-schedules" },
