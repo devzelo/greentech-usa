@@ -91,6 +91,7 @@ import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
 import { projectTimeZone } from "../../lib/countryTimeZone";
 import LocalClock from "./LocalClock";
+import Toolbox from "./Toolbox";
 import CountrySelect from "./CountrySelect";
 import ScrollableTabs from "./ScrollableTabs";
 import FinanceStrip from "./FinanceStrip";
@@ -3656,6 +3657,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
             {/* Row 2 — Project actions */}
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <Toolbox />
               {canManage && (
                 <button
                   onClick={handleExport}
