@@ -246,7 +246,9 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     try { await deleteProjectRequest(projectId, r._id); setRows((p) => p.filter((x) => x._id !== r._id)); }
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
-  const openPreview = (r: ApiProjectRequest) => setPreview({ title: `${r.number} · ${r.title || r.type}`, fileName: `${r.number}.pdf`, build: () => buildRequestPdf(r, projectInfo, clientName) });
+  // CR 212 - "Change Order Proposal", not just "COP"; a custom request uses the name it was given.
+  const fullType = (r: ApiProjectRequest) => (r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type);
+  const openPreview = (r: ApiProjectRequest) => setPreview({ title: `${r.number} · ${fullType(r)}${r.title ? ` · ${r.title}` : ""}`, fileName: `${r.number}.pdf`, build: () => buildRequestPdf(r, projectInfo, clientName) });
   // CR 210 - see the document before it is saved, exactly as it will print.
   const previewDraft = () => {
     const code = draft.type.match(/\(([^)]+)\)/)?.[1] || "REQ";
@@ -345,10 +347,12 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-10" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
                             <div className="min-w-0">
-                              <p className="text-sm font-bold text-slate-900 truncate">Manage · {r.number}{r.title ? ` · ${r.title}` : ""}</p>
+                              {/* CR 212 - the full name of the type leads ("COP-001 · Change Order Proposal"),
+                                  with the subject under it, so a COP or an EOT is never just a code. */}
+                              <p className="text-sm font-bold text-slate-900 truncate">{r.number} · {fullType(r)}</p>
+                              {!!r.title && <p className="truncate text-[11px] font-bold text-slate-500">{r.title}</p>}
                               {/* CR 210 - what kind of request this is, and which list it belongs to. */}
                               <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">{r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type}</span>
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{category === "client-comms" ? "Client communications" : "Contract administration"}</span>
                                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_CLS[r.status]}`}>{r.status}</span>
                                 <span>Changes save as you type.</span>
