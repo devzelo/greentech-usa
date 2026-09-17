@@ -1,6 +1,6 @@
 import { useState } from "react";
 import HelpTip, { HelpPanel, HelpRow } from "./HelpTip";
-import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, History } from "lucide-react";
+import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, CornerDownRight, History } from "lucide-react";
 import type { ProposalPageType, ProposalSectionMeta, TechnicalProposalContent } from "../../lib/api";
 import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
 import { PAGE_TYPES, isOriginalPageType } from "../../lib/proposalLibrary";
@@ -15,7 +15,7 @@ const KIND_BADGE: Record<string, string> = {
 };
 
 export default function ProposalSectionManager({
-  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, userName,
+  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, onGoTo, userName,
   numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
   appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical",
 }: {
@@ -37,6 +37,8 @@ export default function ProposalSectionManager({
   onToggleCollapsed?: () => void;
   users?: Array<{ id: string; name: string }>;   // CR-B-19a — colleagues to tag on a section
   onAssign?: (index: number, userId: string, name: string) => void;
+  /** CR 199 - open this section's editor further down the page. */
+  onGoTo?: (meta: ProposalSectionMeta) => void;
   userName?: string;                              // CR-B-17 — actor recorded in section history
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,10 +78,11 @@ export default function ProposalSectionManager({
           )}
           <div>
             <h4 className="flex items-center gap-1.5 font-bold text-slate-800 text-sm">
-              Sections
-              <HelpTip title="Sections">
-                Every part the document prints, in order. Add one from the library, rename it, and set what
-                kind of page it is. The proposal, its contents page and the divider pages all follow this list.
+              Sections - Table of Contents
+              <HelpTip title="Sections - Table of Contents">
+                Every part the document prints, in order: this is the document's table of contents. Add one
+                from the library, rename it, and set what kind of page it is. Click a title to jump to that
+                section's editor below.
               </HelpTip>
             </h4>
             <p className="text-[10px] text-slate-400 mt-0.5">Add from the library, rename anything, set each section's page type. Drag the handle to reorder; the document follows this order.</p>
@@ -132,6 +135,7 @@ export default function ProposalSectionManager({
 
       <HelpPanel title="What the buttons on each section do">
         <HelpRow icon={<GripVertical size={12} />} label="Handle">Drag a section up or down. The document prints in this order.</HelpRow>
+        <HelpRow icon={<CornerDownRight size={12} />} label="Go to section">Jumps to that section's editor below (or Ctrl+click its title).</HelpRow>
         <HelpRow label="Page type">Designed = our letterhead. Government form and External = the file you upload prints exactly as it is (a price form, a CPARS, an insurance certificate).</HelpRow>
         <HelpRow label="RFP ref.">The solicitation paragraph this section answers, e.g. L.5.5.3.1. It prints in the contents page.</HelpRow>
         <HelpRow label="Status and person">Where the section stands (draft, in review, done) and who is looking after it.</HelpRow>
@@ -171,12 +175,26 @@ export default function ProposalSectionManager({
               <button disabled={!canEdit || locked || i === 0} onClick={() => move(i, -1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={12} /></button>
               <button disabled={!canEdit || locked || i === layout.length - 1} onClick={() => move(i, 1)} className="p-0.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={12} /></button>
             </div>
+            {/* CR 199 - the title edits in place; the arrow jumps to this section's editor below. */}
             <input
               value={m.title}
               onChange={(e) => patch(i, { title: e.target.value })}
+              onClick={(e) => { if ((e.ctrlKey || e.metaKey) && onGoTo) { e.preventDefault(); onGoTo(m); } }}
               disabled={!canEdit || locked}
+              title={onGoTo ? "Ctrl+click (Cmd+click) to jump to this section below" : undefined}
               className="flex-grow min-w-[8rem] bg-transparent text-xs font-bold text-slate-700 outline-none border-b border-transparent focus:border-primary/30 py-1"
             />
+            {onGoTo && (
+              <button
+                type="button"
+                onClick={() => onGoTo(m)}
+                title="Go to this section below"
+                aria-label={`Go to ${m.title}`}
+                className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-slate-100"
+              >
+                <CornerDownRight size={13} />
+              </button>
+            )}
             {/* CR-P (95) - the RFP paragraph this section answers, printed in the table of contents. */}
             {m.kind !== "blank" && (
               <input

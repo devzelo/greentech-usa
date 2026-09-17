@@ -3044,6 +3044,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     </div>
   );
   // The editor for a custom (library or free) section, in either proposal volume (step 7).
+  // CR 199 - jump from the contents list to a section's editor and flash it, so it is obvious where it went.
+  const goToSection = (m: ProposalSectionMeta) => {
+    const el = document.getElementById(`sec-${m.id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("ring-2", "ring-primary/60", "rounded-[2rem]");
+    setTimeout(() => el.classList.remove("ring-2", "ring-primary/60", "rounded-[2rem]"), 1600);
+  };
+
   const customEditorFor = (m: ProposalSectionMeta, vol: Vol) => {
     const s = sectionsOfVol(vol).find((x) => x.id === m.refId);
     if (!s) return null;
@@ -4601,6 +4610,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
                   {/* Section manager — Add section lives here; the reorder list is collapsed by default */}
                   <ProposalSectionManager
+                    onGoTo={goToSection}
                     layout={techLayout}
                     onLayoutChange={setLayout}
                     onAdd={(title, opts) => addLayoutSection(title, "", opts)}
@@ -4625,7 +4635,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
                   {/* Section editors in document order, each with on-box reorder arrows */}
                   {techLayout.map((m, i) => (
-                    <div key={m.id} className={m.hidden ? "opacity-50" : ""}>
+                    <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
                       <div className="flex items-center gap-2 mb-1 px-1">
                         {canEdit && (
                           <div className="flex items-center">
@@ -4879,6 +4889,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </div>
 
                   <ProposalSectionManager
+                    onGoTo={goToSection}
                     volume="financial"
                     layout={finLayout}
                     onLayoutChange={(n) => setLayout(n, "financial")}
@@ -4903,7 +4914,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onSave={(name, ids) => saveGroupTemplate("financial", name, ids)} onInsert={(t) => insertGroupTemplate("financial", t)} onDelete={deleteGroupTemplate} />
 
                   {finLayout.map((m, i) => (
-                    <div key={m.id} className={m.hidden ? "opacity-50" : ""}>
+                    <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
                       <div className="flex items-center gap-2 mb-1 px-1">
                         {canEdit && (
                           <div className="flex items-center">
