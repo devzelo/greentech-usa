@@ -6,14 +6,25 @@ import type { SavedDocStatus } from "../../lib/api";
 // CR-P (88) - "Upload existing proposal" for projects that are already awarded: a proposal produced
 // outside the platform, filed into the same revision table with its own title, revision number,
 // date and description, so it sits in the history (with the same row actions) like a built one.
+// CR 193: the title writes itself ("Technical Proposal - Revision 2") until someone types their own,
+// and the window can file the upload as Technical, Financial or Combined (both volumes in one file).
 
 export interface UploadMeta { title: string; revision: number; docDate: string; note: string; status: SavedDocStatus }
+export type ProposalStream = "technical" | "financial" | "combined";
+
+const STREAM_TITLE: Record<ProposalStream, string> = {
+  technical: "Technical Proposal",
+  financial: "Financial Proposal",
+  combined: "Technical + Financial Proposal",
+};
 
 interface Props {
-  streamTitle: string;                                    // e.g. "Technical Proposal"
+  stream: ProposalStream;
+  /** The volumes this person may upload to (Financial is left out when it is locked for them). */
+  streams: ProposalStream[];
   statuses: Record<string, { label: string }>;
-  fetchNextVersion: () => Promise<number>;                // suggests the next free revision
-  onUpload: (file: File, meta: UploadMeta) => Promise<void>;   // throws with a message on failure
+  fetchNextVersion: (stream: ProposalStream) => Promise<number>;   // suggests the next free revision
+  onUpload: (stream: ProposalStream, file: File, meta: UploadMeta) => Promise<void>;   // throws with a message on failure
   onClose: () => void;
 }
 
@@ -22,9 +33,14 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export default function UploadExistingProposal({ streamTitle, statuses, fetchNextVersion, onUpload, onClose }: Props) {
+export const autoRevisionTitle = (stream: ProposalStream, rev: number) => `${STREAM_TITLE[stream]} - Revision ${rev}`;
+
+export default function UploadExistingProposal({ stream: initialStream, streams, statuses, fetchNextVersion, onUpload, onClose }: Props) {
+  const [stream, setStream] = useState<ProposalStream>(initialStream);
+  const streamTitle = STREAM_TITLE[stream];
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+  const [titleEdited, setTitleEdited] = useState(false);
   const [revision, setRevision] = useState("0");
   const [docDate, setDocDate] = useState(today());
   const [note, setNote] = useState("");
@@ -34,9 +50,9 @@ export default function UploadExistingProposal({ streamTitle, statuses, fetchNex
 
   // Suggest the next free number; they can type the one the document was actually issued under.
   useEffect(() => {
-    fetchNextVersion().then((v) => setRevision(String(Math.max(0, v - 1)))).catch(() => {});
+    fetchNextVersion(stream).then((v) => setRevision(String(Math.max(0, v - 1)))).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stream]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -46,11 +62,12 @@ export default function UploadExistingProposal({ streamTitle, statuses, fetchNex
 
   const revNum = Number(revision);
   const revOk = revision.trim() !== "" && Number.isInteger(revNum) && revNum >= 0 && revNum <= 999;
+  // The automatic title follows the type and revision until it is edited by hand.
+  const shownTitle = titleEdited ? title : revOk ? autoRevisionTitle(stream, revNum) : "";
 
   const pick = (f: File | undefined) => {
     if (!f) return;
     setFile(f);
-    if (!title.trim()) setTitle(f.name.replace(/\.[^.]+$/, ""));
     setError("");
   };
 
@@ -59,7 +76,7 @@ export default function UploadExistingProposal({ streamTitle, statuses, fetchNex
     setBusy(true);
     setError("");
     try {
-      await onUpload(file, { title: title.trim(), revision: revNum, docDate, note: note.trim(), status });
+      await onUpload(stream, file, { title: shownTitle.trim() || autoRevisionTitle(stream, revNum), revision: revNum, docDate, note: note.trim(), status });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
@@ -92,9 +109,30 @@ export default function UploadExistingProposal({ streamTitle, statuses, fetchNex
             <input type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
           </label>
 
+          {streams.length > 1 && (
+            <div className="space-y-1.5">
+              <span className={lbl}>Type</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {streams.map((st) => (
+                  <button key={st} type="button" onClick={() => setStream(st)} aria-pressed={stream === st}
+                    className={`rounded-xl border px-2 py-2 text-[11px] font-bold transition-colors ${stream === st ? "border-primary bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>
+                    {st === "technical" ? "Technical" : st === "financial" ? "Financial" : "Combined (both)"}
+                  </button>
+                ))}
+              </div>
+              {stream === "combined" && <p className="text-[10px] text-slate-400">One file with the technical and financial proposals together. It is filed in the Combined Proposal table.</p>}
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <label htmlFor="up-title" className={lbl}>Title</label>
-            <input id="up-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Technical Proposal as submitted" className={inp} />
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="up-title" className={lbl}>Title</label>
+              {titleEdited
+                ? <button type="button" onClick={() => { setTitleEdited(false); setTitle(""); }} className="text-[10px] font-bold text-primary hover:underline">Use automatic title</button>
+                : <span className="text-[10px] text-slate-400">Automatic, follows the revision</span>}
+            </div>
+            <input id="up-title" value={shownTitle} onChange={(e) => { setTitleEdited(true); setTitle(e.target.value); }} placeholder={autoRevisionTitle(stream, 0)} className={inp} />
+            {file && <p className="text-[10px] text-slate-400 truncate">File: {file.name}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

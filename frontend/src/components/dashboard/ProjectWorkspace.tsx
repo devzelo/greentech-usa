@@ -69,7 +69,7 @@ import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
 import RevisionManage from "./RevisionManage";
-import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposal";
+import UploadExistingProposal, { autoRevisionTitle, type UploadMeta, type ProposalStream } from "./UploadExistingProposal";
 import { useDialogs } from "../../lib/useDialogs";
 import TimelineBar from "./timeline/TimelineBar";
 import TimelineTab from "./timeline/TimelineTab";
@@ -742,7 +742,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       id,
       {
         kind: "proposal", refId: which,
-        title: meta.title || file.name.replace(/\.[^.]+$/, ""),
+        title: meta.title || autoRevisionTitle(which, meta.revision),
         note: meta.note || "Uploaded, produced outside the platform",
         status: meta.status, version: meta.revision + 1, docDate: meta.docDate,
       },
@@ -4113,6 +4113,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         <div className="flex gap-2 flex-wrap">
                           <button onClick={() => setUploadFor("technical")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Technical</button>
                           {!(financialLocked && !isOwner) && <button onClick={() => setUploadFor("financial")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Financial</button>}
+                          {/* CR 193: technical and financial in one file. */}
+                          {!(financialLocked && !isOwner) && <button onClick={() => setUploadFor("combined")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Combined</button>}
                         </div>
                       </div>
                       <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
@@ -4343,10 +4345,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         )}
                         {uploadFor === p.which && (
                           <UploadExistingProposal
-                            streamTitle={p.title}
+                            stream={p.which}
+                            streams={(financialLocked && !isOwner ? ["technical"] : ["technical", "financial", "combined"]) as ProposalStream[]}
                             statuses={PROP_DOC_STATUS}
-                            fetchNextVersion={() => fetchNextSavedVersion(id, "proposal", p.which)}
-                            onUpload={(file, meta) => uploadExistingProposal(p.which, file, meta)}
+                            fetchNextVersion={(st) => fetchNextSavedVersion(id, "proposal", st)}
+                            onUpload={(st, file, meta) => uploadExistingProposal(st, file, meta)}
                             onClose={() => setUploadFor(null)}
                           />
                         )}
