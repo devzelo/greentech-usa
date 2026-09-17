@@ -251,7 +251,7 @@ _technical/           — raw machine-readable data (JSON), for backup / re-impo
       kv("Project Name", project.name),
       kv("Project ID", project.projectId),
       kv("Status", project.status),
-      kv("Category", project.category),
+      kv("Categories", (project.categories?.length ? project.categories : [project.category]).filter(Boolean).join(", ")),
       kv("Location", project.location),
       kv("Owner", project.owner),
       kv("Published", project.published ? "Yes" : "No"),
@@ -266,13 +266,15 @@ _technical/           — raw machine-readable data (JSON), for backup / re-impo
     ].join("\n") + "\n";
     await addDocx(archive, "Project Summary.docx", summary);
 
-    // ── 01 · Project Nature ──────────────────────────────────────────────────
+    // ── 01 · About (CR 184: categories and description; Project Nature is part of Categories) ──
     {
-      const f = folderFor("Project Nature", "nature");
+      const f = folderFor("About", "nature");
+      const cats = (project.categories?.length ? project.categories : [project.category]).filter(Boolean);
       const pn = project.projectNature || { selected: [], custom: [] };
-      const sel = pn.selected?.length ? pn.selected.map((s) => `  - ${s}`).join("\n") : "  (none)";
-      const cus = pn.custom?.length ? pn.custom.map((s) => `  - ${s}`).join("\n") : "  (none)";
-      await addDocx(archive, `${f}/Project Nature.docx`, `PROJECT NATURE\n==============\n\nSelected types:\n${sel}\n\nCustom entries:\n${cus}\n`);
+      const older = [...(pn.selected || [])].filter((x) => !cats.includes(x));
+      const lines = cats.length ? cats.map((s) => `  - ${s}`).join("\n") : "  (none)";
+      const other = older.length ? `\nOther types:\n${older.map((s) => `  - ${s}`).join("\n")}\n` : "";
+      await addDocx(archive, `${f}/About.docx`, `ABOUT THIS PROJECT\n==================\n\nCategories:\n${lines}\n${other}\nDescription:\n${project.description || "(none)"}\n`);
       addTabDocs(f, "nature");
     }
 
@@ -299,7 +301,7 @@ _technical/           — raw machine-readable data (JSON), for backup / re-impo
         kv("Project Name", project.name),
         kv("Project ID", project.projectId),
         kv("Status", project.status),
-        kv("Category", project.category),
+        kv("Categories", (project.categories?.length ? project.categories : [project.category]).filter(Boolean).join(", ")),
         kv("Location", project.location),
         kv("Owner", project.owner),
         kv("Fiscal", project.fiscal),

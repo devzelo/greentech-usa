@@ -156,6 +156,16 @@ async function runBootstrapTasks() {
   } catch (err) {
     console.error("Subcontractor role migration failed:", err);
   }
+  // CR 184: Project Nature folded into Categories (one field). Idempotent.
+  try {
+    const { foldNatureIntoCategories, normalizeCategoryAliases } = await import("./lib/natureToCategories");
+    const n = await foldNatureIntoCategories();
+    if (n) console.log(`🔁 Moved Project Nature into Categories on ${n} project(s).`);
+    const a = await normalizeCategoryAliases();
+    if (a) console.log(`🔁 Standardised category names on ${a} project(s).`);
+  } catch (err) {
+    console.error("Project Nature migration failed:", err);
+  }
   // Backfill: ensure every Employee-directory entry has an employee login account, so all
   // employees appear in admin User Management with their original empIds. Idempotent.
   try {
