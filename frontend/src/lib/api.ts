@@ -1227,6 +1227,14 @@ async function postMultipart<T = ApiSavedDocument>(url: string, fd: FormData): P
   return res.json() as Promise<T>;
 }
 
+// ── CR 183 — custom project categories (shared list) ─────────────────────────
+export interface ApiProjectCategory { _id: string; name: string; createdByName?: string }
+export async function fetchProjectCategories(): Promise<ApiProjectCategory[]> { return request(`/project-categories`); }
+export async function createProjectCategory(name: string): Promise<ApiProjectCategory> {
+  return request(`/project-categories`, { method: "POST", body: JSON.stringify({ name }) });
+}
+export async function deleteProjectCategory(id: string): Promise<void> { await request(`/project-categories/${id}`, { method: "DELETE" }); }
+
 // ── Quick Toolbox — exchange rates and the user's saved tool files ──────────
 export interface ApiRates { base: string; date: string; rates: Record<string, number>; source: string }
 export async function fetchExchangeRates(base = "USD"): Promise<ApiRates> { return request(`/toolbox/rates?base=${encodeURIComponent(base)}`); }

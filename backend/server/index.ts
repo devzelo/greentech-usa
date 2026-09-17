@@ -55,6 +55,7 @@ import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import stickyNoteRoutes from "./routes/stickyNotes";
 import toolboxRoutes from "./routes/toolbox";
+import projectCategoryRoutes from "./routes/projectCategories";
 import myProfileRoutes from "./routes/myProfile";
 import draftRoutes from "./routes/drafts";
 import binRoutes from "./routes/bin";
@@ -121,6 +122,7 @@ app.use("/api/announcements", announcementRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/sticky-notes", stickyNoteRoutes);
+app.use("/api/project-categories", projectCategoryRoutes); // CR 183 custom categories
 app.use("/api/toolbox", toolboxRoutes);                   // Quick Toolbox (rates, saved files)
 app.use("/api/my-board", myBoardRoutes);
 app.use("/api/me", myProfileRoutes);                     // CR-P (16) — self profile preview
