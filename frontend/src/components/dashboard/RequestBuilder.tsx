@@ -94,6 +94,8 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
 
   const [showArchived, setShowArchived] = useState(false);
+  const [justAdded, setJustAdded] = useState("");     // CR 210 - the row just saved, highlighted
+  const [titleError, setTitleError] = useState(false); // CR 210 - the subject is required
   const load = async () => {
     setLoading(true);
     try { setRows(await fetchProjectRequests(projectId, category, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
@@ -107,7 +109,15 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   const patch = (r: ApiProjectRequest) => setRows((p) => p.map((x) => (x._id === r._id ? r : x)));
 
   const create = async (send = false) => {
-    if (!draft.title.trim() && draft.type !== "Custom Request") { toast("Give the request a subject.", "error"); return; }
+    // CR 210 - "the RFI did not appear in the table": it was refused for a missing subject and the
+    // toast was easy to miss. The field now says so, and stays said until it is filled.
+    if (!draft.title.trim() && draft.type !== "Custom Request") {
+      setTitleError(true);
+      toast("Give the request a subject before saving.", "error");
+      document.getElementById("request-subject")?.focus();
+      return;
+    }
+    setTitleError(false);
     setSaving(true);
     try {
       let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body), to: draftTo });
@@ -115,7 +125,10 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
       if (send) r = await updateProjectRequest(projectId, r._id, { status: "Sent" });
       setRows((p) => [r, ...p]); setCreating(false); setOpenId(r._id);
       setDraft(blankDraft); setDraftTo(blankTo());
-      toast(send ? "Request saved & sent." : "Saved as draft.", "success");
+      // CR 210 - show where it landed in the table, so nobody wonders whether it saved.
+      setJustAdded(r._id);
+      setTimeout(() => setJustAdded((id) => (id === r._id ? "" : id)), 6000);
+      toast(send ? `${r.number} saved & sent. It is at the top of the table.` : `${r.number} saved as a draft. It is at the top of the table.`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create.", "error"); }
     finally { setSaving(false); }
   };
@@ -223,6 +236,18 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
   const openPreview = (r: ApiProjectRequest) => setPreview({ title: `${r.number} · ${r.title || r.type}`, fileName: `${r.number}.pdf`, build: () => buildRequestPdf(r, projectInfo, clientName) });
+  // CR 210 - see the document before it is saved, exactly as it will print.
+  const previewDraft = () => {
+    const code = draft.type.match(/\(([^)]+)\)/)?.[1] || "REQ";
+    const asRequest = {
+      _id: "draft", projectId, category, type: draft.type, typeCode: code, customTitle: draft.customTitle,
+      number: `${code}-draft`, seq: 0, title: draft.title, date: draft.date, description: draft.description,
+      status: "Draft", signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl,
+      stampUrl: draft.stampUrl, contextLines: draft.contextLines, sections: draft.sections, to: draftTo,
+      responses: [], files: [], archived: false, addedByName: "", createdAt: "", updatedAt: "",
+    } as unknown as ApiProjectRequest;
+    setPreview({ title: `Preview · ${draft.title || draft.type}`, fileName: `${code}-draft.pdf`, build: () => buildRequestPdf(asRequest, projectInfo, clientName) });
+  };
   const download = async (r: ApiProjectRequest) => { try { downloadBlob(await buildRequestPdf(r, projectInfo, clientName), `${r.number}.pdf`); } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); } };
 
   const addResponse = async () => {
@@ -262,7 +287,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 const isOpen = openId === r._id;
                 return (
                   <Fragment key={r._id}>
-                    <tr className="hover:bg-slate-50/40 align-top">
+                    <tr className={`align-top ${justAdded === r._id ? "bg-emerald-50/70 ring-1 ring-emerald-200" : "hover:bg-slate-50/40"}`}>
                       <td className="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">{r.number}</td>
                       <td className="px-3 py-2.5 text-slate-500">{r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type}</td>
                       <td className="px-3 py-2.5 text-slate-600 font-medium">{r.to?.name || clientName || <span className="text-slate-300">—</span>}</td>
@@ -302,7 +327,13 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                           <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
                             <div className="min-w-0">
                               <p className="text-sm font-bold text-slate-900 truncate">Manage · {r.number}{r.title ? ` · ${r.title}` : ""}</p>
-                              <p className="text-[11px] text-slate-400">Changes save as you type. The client's responses are at the bottom.</p>
+                              {/* CR 210 - what kind of request this is, and which list it belongs to. */}
+                              <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">{r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type}</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{category === "client-comms" ? "Client communications" : "Contract administration"}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_CLS[r.status]}`}>{r.status}</span>
+                                <span>Changes save as you type.</span>
+                              </p>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <SaveStatus state={saveStatus.state} savedAt={saveStatus.savedAt} />
@@ -567,8 +598,17 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 hint="Usually the client; an RFI can also go to a partner or a subcontractor."
               />
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject
-                  <input className={`${inp} mt-1`} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="e.g. Clarify pipe spec on drawing A-12" /></label>
+                <label className={`text-[10px] font-bold uppercase tracking-widest ${titleError ? "text-rose-600" : "text-slate-400"}`}>Subject
+                  <input
+                    id="request-subject"
+                    className={`${inp} mt-1 ${titleError ? "border-rose-300 ring-2 ring-rose-100" : ""}`}
+                    value={draft.title}
+                    onChange={(e) => { setDraft({ ...draft, title: e.target.value }); if (e.target.value.trim()) setTitleError(false); }}
+                    placeholder="e.g. Clarify pipe spec on drawing A-12"
+                    aria-invalid={titleError}
+                  />
+                  {titleError && <span className="mt-1 block normal-case text-[10px] font-bold text-rose-600">A request needs a subject before it can be saved.</span>}
+                </label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date
                   <input type="date" className={`${inp} mt-1`} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
               </div>
@@ -619,7 +659,11 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 )}
               </div>
               <p className="text-[11px] text-slate-400">The number is assigned automatically (e.g. RFI-001). Saved as a <strong>Draft</strong> — upload your drafted document, add the client's responses, and the client-signature block is a placeholder on the generated PDF.</p>
-              <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                {/* CR 210 - preview the document before saving it. */}
+                <button onClick={previewDraft} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:text-primary">
+                  <Eye size={13} /> Preview
+                </button>
                 {/* CR-B-14a — standard actions with confirmations. Send stays a separate row action (CR-P-11). */}
                 <BuilderActions
                   confirm={confirm}
