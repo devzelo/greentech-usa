@@ -32,6 +32,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
+import HelpTip from "./HelpTip";
 import ExportMenu from "./ExportMenu";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
@@ -3066,6 +3067,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             become one, so the standard wording is written once and reused. */}
         {canEdit && !original && (
           <div className="flex flex-wrap items-center gap-2 pb-1">
+            {/* CR 198 - what "insert from template" actually does. */}
+            <HelpTip title="Insert from template">
+              Fills this section with the wording from a saved section template, replacing what is here now.
+              "Save as template" next to it keeps this section's text for reuse on other projects.
+            </HelpTip>
             <select
               value=""
               onChange={(e) => { const t = sectionTemplates.find((x) => x._id === e.target.value); if (t) void applySectionTemplate(s.id, t, vol); }}
@@ -4390,21 +4396,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {/* Inner sub-tabs for each document: Cover Page / Builder */}
               {(proposalSub === "technical" || proposalSub === "financial") && (
                 <div className="flex items-center gap-2">
+                  {/* CR 198 - each tab says what it is for. */}
                   {([
-                    { k: "cover" as const, label: "Cover Page" },
-                    { k: "letter" as const, label: "Transmittal Letter" },
-                    { k: "builder" as const, label: "Builder" },
-                    { k: "attachments" as const, label: "Attachments" },
-                    { k: "versions" as const, label: "Saved Versions" },
+                    { k: "cover" as const, label: "Cover Page", hint: "The front page: its style, the titles, the solicitation and client details, and the photos." },
+                    { k: "letter" as const, label: "Transmittal Letter", hint: "The covering letter to the client, printed with the cover (page 1 or 2), signed by whoever you pick." },
+                    { k: "builder" as const, label: "Builder", hint: "The body of the proposal: its sections, their content and their order." },
+                    { k: "attachments" as const, label: "Attachments", hint: "Files that print at the end, or inside a section set to Government form or External." },
+                    { k: "versions" as const, label: "Saved Versions", hint: "Every revision filed so far, including the ones marked Final. Older revisions stay for the record." },
                   ]).map((t) => (
                     <button
                       key={t.k}
                       onClick={() => setProposalDocTab(t.k)}
-                      className={`px-4 py-1.5 rounded-lg font-bold text-[11px] transition-all ${
+                      className={`px-4 py-1.5 rounded-lg font-bold text-[11px] transition-all inline-flex items-center gap-1.5 ${
                         proposalDocTab === t.k ? "bg-slate-900 text-white shadow" : "bg-white border border-slate-100 text-slate-500 hover:text-slate-900"
                       }`}
                     >
                       {t.label}
+                      <HelpTip title={t.label} className={proposalDocTab === t.k ? "!text-white/70" : ""}>{t.hint}</HelpTip>
                     </button>
                   ))}
                 </div>

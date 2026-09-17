@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2, Loader2, Layers } from "lucide-react";
+import HelpTip from "./HelpTip";
 import type { ApiProposalTemplate, ProposalSectionMeta } from "../../lib/api";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
@@ -39,6 +40,11 @@ export default function SectionGroupTemplates({ layout, templates, canEdit, onSa
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 px-6 py-3.5 text-left">
         <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />} <Layers size={14} className="text-slate-400" /> Section-group templates
+          <HelpTip title="Section-group templates">
+            A saved set of sections you use often (for example Quality Control, Safety and Schedule).
+            Tick the sections, name the set, and insert the whole set into another proposal later,
+            with their text, subsections and company documents.
+          </HelpTip>
         </span>
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{templates.length} saved</span>
       </button>

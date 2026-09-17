@@ -1,4 +1,5 @@
 import { useState } from "react";
+import HelpTip, { HelpPanel, HelpRow } from "./HelpTip";
 import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, History } from "lucide-react";
 import type { ProposalPageType, ProposalSectionMeta, TechnicalProposalContent } from "../../lib/api";
 import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
@@ -74,7 +75,13 @@ export default function ProposalSectionManager({
             </button>
           )}
           <div>
-            <h4 className="font-bold text-slate-800 text-sm">Sections</h4>
+            <h4 className="flex items-center gap-1.5 font-bold text-slate-800 text-sm">
+              Sections
+              <HelpTip title="Sections">
+                Every part the document prints, in order. Add one from the library, rename it, and set what
+                kind of page it is. The proposal, its contents page and the divider pages all follow this list.
+              </HelpTip>
+            </h4>
             <p className="text-[10px] text-slate-400 mt-0.5">Add from the library, rename anything, set each section's page type. Drag the handle to reorder; the document follows this order.</p>
           </div>
         </div>
@@ -82,6 +89,11 @@ export default function ProposalSectionManager({
             and what a top-level section is called (Tab A, Factor 2, Volume I). */}
         {onNumberingChange && (
           <div className="flex items-center gap-2 ml-auto mr-2 flex-wrap justify-end">
+            <HelpTip title="Numbering" className="mr-0.5">
+              How the sections are numbered in the document and its contents page: 1, 2, 3, or A, B, C, or off
+              (titles only). Next to it: what a top-level section is called (Section, Tab, Factor, Volume, Part)
+              and how the appendices are numbered.
+            </HelpTip>
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="Section numbering">
               {([["numbers", "1, 2, 3"], ["letters", "A, B, C"], ["none", "Off"]] as const).map(([v, l]) => (
                 <button key={v} type="button" role="radio" aria-checked={numbering === v} disabled={!canEdit} onClick={() => onNumberingChange(v)}
@@ -117,6 +129,18 @@ export default function ProposalSectionManager({
           />
         )}
       </div>
+
+      <HelpPanel title="What the buttons on each section do">
+        <HelpRow icon={<GripVertical size={12} />} label="Handle">Drag a section up or down. The document prints in this order.</HelpRow>
+        <HelpRow label="Page type">Designed = our letterhead. Government form and External = the file you upload prints exactly as it is (a price form, a CPARS, an insurance certificate).</HelpRow>
+        <HelpRow label="RFP ref.">The solicitation paragraph this section answers, e.g. L.5.5.3.1. It prints in the contents page.</HelpRow>
+        <HelpRow label="Status and person">Where the section stands (draft, in review, done) and who is looking after it.</HelpRow>
+        <HelpRow icon={<History size={12} />} label="History">Every status change and note on this section, with who and when.</HelpRow>
+        <HelpRow icon={<Lock size={12} />} label="Lock">Keeps a finished section from being edited, moved or deleted by mistake.</HelpRow>
+        <HelpRow icon={<SeparatorHorizontal size={12} />} label="Divider page">Prints a separator page with the section title before it.</HelpRow>
+        <HelpRow icon={<Eye size={12} />} label="Show / hide">Hidden sections stay here but are left out of the document.</HelpRow>
+        <HelpRow icon={<Copy size={12} />} label="Duplicate">Copies the section with its content, e.g. for a second past-performance sheet.</HelpRow>
+      </HelpPanel>
 
       {!collapsed && (
       <div className="space-y-1.5">
