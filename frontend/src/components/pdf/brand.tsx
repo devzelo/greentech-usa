@@ -108,13 +108,25 @@ export function Eyebrow({ children, color = BRAND.emerald }: { children: ReactNo
 
 /** "01.  SECTION TITLE" with an emerald rule, the body heading from the proposal template. The
  *  label is printed as given: "01.", "A." or "APPENDIX 1:". */
-export function SectionHeading({ label, title }: { label?: string; title: string }) {
+export function SectionHeading({ label, title, center }: { label?: string; title: string; center?: boolean }) {
   return (
-    <View minPresenceAhead={60} style={{ flexDirection: "row", alignItems: "baseline", borderBottom: `1.4 solid ${BRAND.emerald}`, paddingBottom: 4, marginTop: 16, marginBottom: 10 }}>
+    <View
+      minPresenceAhead={60}
+      style={{
+        flexDirection: "row",
+        alignItems: "baseline",
+        justifyContent: center ? "center" : "flex-start",
+        borderBottom: `1.4 solid ${BRAND.emerald}`,
+        paddingBottom: 4,
+        marginTop: center ? 2 : 16,
+        marginBottom: center ? 8 : 10,
+      }}
+    >
       {!!label && (
         <Text style={{ fontFamily: "Inter", fontSize: 11.5, fontWeight: 700, color: BRAND.emerald, marginRight: 8 }}>{label}</Text>
       )}
-      <Text style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.4, flex: 1 }}>{title.toUpperCase()}</Text>
+      {/* CR 205 - centred when a run of pages shares one title (the key personnel appendix). */}
+      <Text style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.4, ...(center ? {} : { flex: 1 }) }}>{title.toUpperCase()}</Text>
     </View>
   );
 }

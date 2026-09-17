@@ -104,6 +104,8 @@ const styles = StyleSheet.create({
   tRow: { flexDirection: "row", borderBottom: `0.6 solid ${BRAND.border}` },
   tRowAlt: { backgroundColor: BRAND.mist },
   td: { fontSize: 8.5, padding: 6, color: BRAND.slate },
+  // CR 205 - the key personnel pages run to narrower side margins so each box fits on one page.
+  pageNarrow: { paddingHorizontal: 52 },
   staffBand: { backgroundColor: "#ECFDF5", paddingVertical: 3, paddingHorizontal: 6, borderBottom: `0.6 solid ${BRAND.border}` },
   staffBandText: { fontSize: 7, fontWeight: 700, color: "#047857", letterSpacing: 0.8 },
 
@@ -267,9 +269,9 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
  * below, a custom logo row, or bare. The footer note carries the document and project; the page
  * number is stamped afterwards across the whole assembled file.
  */
-function Sheet({ lh, label, note, children }: { lh: LhConfig; label: string; note: string; children?: ReactNode; key?: string }) {
+function Sheet({ lh, label, note, narrow, children }: { lh: LhConfig; label: string; note: string; narrow?: boolean; children?: ReactNode; key?: string }) {
   return (
-    <Page size="LETTER" style={lh.mode === "brand" ? styles.page : styles.pagePlain} wrap>
+    <Page size="LETTER" style={[lh.mode === "brand" ? styles.page : styles.pagePlain, narrow ? styles.pageNarrow : {}]} wrap>
       {lh.mode === "brand" && <LetterheadHeader />}
       {lh.mode === "custom" && (
         <View style={styles.customHeader} fixed>
@@ -707,6 +709,14 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const nonKeyStaff = staff.filter(({ e }) => e.keyStaff === false);
   const built = content.printResumes === false ? [] : [...keyStaff, ...nonKeyStaff].flatMap(({ e, r }) => (r ? [{ e, r }] : []));
 
+  // CR 205 - that person's row in the key personnel table, printed at the top of their own box.
+  const personRow = (e: typeof staff[number]["e"], r: typeof staff[number]["r"]) => ({
+    position: e.role || r?.data.resume.title || "",
+    firm: e.firm || r?.firm || COMPANY.name,
+    nationality: e.nationality || r?.data.resume.citizenship || "",
+    years: e.years || r?.data.resume.yearsOfExperience || "",
+  });
+
   // Does a section have any content to render?
   const sectionFor = (refId?: string) => content.sections.find((s) => s.id === refId);
   // CR 202 - a government form, an external document or a custom attachment all print as uploaded.
@@ -880,14 +890,19 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       const bands = nonKeyStaff.length > 0;
       return (
         <View key={m.id}>
-          {heading}
-          <View style={styles.tHead} wrap={false}>
-            {cols.map(([l, w]) => <Text key={l} style={[styles.th, { width: w }]}>{l}</Text>)}
+          {/* CR 205 - a team that fits on a page never breaks: the whole table moves to the next
+              page rather than stranding a band and one row on its own. A long team still wraps, with
+              the title, column heads and first people kept together. */}
+          <View wrap={keyStaff.length + nonKeyStaff.length > 12} minPresenceAhead={60}>
+            {heading}
+            <View style={styles.tHead}>
+              {cols.map(([l, w]) => <Text key={l} style={[styles.th, { width: w }]}>{l}</Text>)}
+            </View>
+            {bands && keyStaff.length > 0 && band("KEY STAFF")}
+            {keyStaff.map(row)}
+            {bands && band("NON-KEY STAFF")}
+            {nonKeyStaff.map(row)}
           </View>
-          {bands && keyStaff.length > 0 && band("KEY STAFF")}
-          {keyStaff.map(row)}
-          {bands && band("NON-KEY STAFF")}
-          {nonKeyStaff.map(row)}
           {built.length > 0 && <Text style={[styles.cardMeta, { marginTop: 6 }]}>Resumes of the proposed personnel: {resumesWhere}.</Text>}
         </View>
       );
@@ -1009,9 +1024,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     if (g.t === "resumes") {
       // One resume per page run; field 3 is the role in THIS proposal.
       built.forEach(({ e, r }, i) => page(
-        <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
-          {i === 0 && g.headed && <>{mark(g.m.id)}<SectionHeading label={labelById.get(g.m.id)?.heading || undefined} title={g.m.title} /></>}
-          <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} />
+        <Sheet lh={hConf(g.lh)} label={LABEL} note={note} narrow>
+          {i === 0 && g.headed && <>{mark(g.m.id)}<SectionHeading label={labelById.get(g.m.id)?.heading || undefined} title={g.m.title} center /></>}
+          <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} boxed row={personRow(e, r)} />
         </Sheet>,
       ));
       return;
@@ -1048,10 +1063,11 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // No Resumes section in the layout: the resumes close the appendices, one per page run.
   if (trailingResumes) built.forEach(({ e, r }, i) => page(
-    <Sheet lh={lh} label="Key Personnel Resumes" note={footNote("Key Personnel Resumes", project)}>
+    <Sheet lh={lh} label="Key Personnel Resumes" note={footNote("Key Personnel Resumes", project)} narrow>
       {i === 0 && mark("resumes")}
-      {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Key Personnel Resumes" />}
-      <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} />
+      {/* CR 205 - the appendix title prints once, centred; every page after it is just the person. */}
+      {i === 0 && <SectionHeading label={`APPENDIX ${resumeAppx}:`} title="Key Personnel Resumes" center />}
+      <ResumeBlock resume={r.data.resume} person={r.data.user} assignment={e.role} boxed row={personRow(e, r)} />
     </Sheet>,
   ));
 

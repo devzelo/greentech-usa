@@ -50,6 +50,17 @@ const styles = StyleSheet.create({
   bullet: { fontSize: 8.3, color: BRAND.s700, lineHeight: 1.35, paddingLeft: 7 },
 
   extra: { fontSize: 8.3, color: BRAND.s700, lineHeight: 1.45, marginBottom: 2 },
+
+  // CR 205 - in a proposal, everything about one person sits in a single box, so the table row and
+  // the resume read as one thing instead of scattered blocks.
+  box: { border: `0.8 solid ${BRAND.border}`, borderRadius: 3, padding: 7, paddingTop: 0 },
+  boxHead: { flexDirection: "row", alignItems: "flex-end", backgroundColor: BRAND.slate, marginHorizontal: -7, paddingHorizontal: 7, paddingVertical: 4 },
+  boxName: { fontFamily: "Outfit", fontSize: 10.5, fontWeight: 700, color: BRAND.white, lineHeight: 1.25, flex: 1 },
+  boxCell: { marginLeft: 10 },
+  boxCellLabel: { fontSize: 5.8, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.7, lineHeight: 1.3 },
+  boxCellValue: { fontSize: 8, fontWeight: 700, color: BRAND.white, lineHeight: 1.3 },
+  boxGrid: { borderTop: 0, borderLeft: `0.8 solid ${BRAND.border}`, marginTop: 7, marginBottom: 7 },
+  fieldTight: { paddingVertical: 3, paddingHorizontal: 5 },
 });
 
 export interface ResumePerson {
@@ -62,9 +73,9 @@ export interface ResumePerson {
 const span = (start: string, end: string) => [start, end].filter(Boolean).join(" – ");
 const val = (s?: string) => (s && s.trim()) || "";
 
-function Field({ n, label, children }: { n: number; label: string; children: ReactNode }) {
+function Field({ n, label, children, tight }: { n: number; label: string; children: ReactNode; tight?: boolean }) {
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, tight ? styles.fieldTight : {}]}>
       <Text style={styles.fieldLabel}>{n}. {label.toUpperCase()}</Text>
       {children}
     </View>
@@ -100,7 +111,22 @@ function ProjectCell({ p }: { p: ResumeProject }) {
  * The body of one resume (no Document/Page), used by the standalone resume PDF and on the
  * proposal's team-resume pages. `assignment` overrides field 3 with the role in this proposal.
  */
-export function ResumeBlock({ resume, person, assignment }: { resume: ApiResume; person: ResumePerson; assignment?: string }) {
+export interface PersonRow {
+  position?: string;
+  firm?: string;
+  nationality?: string;
+  years?: string;
+}
+
+export function ResumeBlock({ resume, person, assignment, boxed, row }: {
+  resume: ApiResume;
+  person: ResumePerson;
+  assignment?: string;
+  /** CR 205 - in a proposal: one bordered box per person, no repeated document title. */
+  boxed?: boolean;
+  /** CR 205 - that person's line from the key personnel table, printed at the top of their box. */
+  row?: PersonRow;
+}) {
   const photo = resume.showPhoto === false ? "" : (resume.photoUrl || person.avatarUrl || "");
   const education = resume.education
     .map((e) => [[e.degree, e.field].filter(Boolean).join(" "), e.school, e.end || e.start].filter(Boolean).join(", "))
@@ -115,27 +141,49 @@ export function ResumeBlock({ resume, person, assignment }: { resume: ApiResume;
   ];
   const custom = resume.customSections.filter((s) => val(s.heading) || val(s.body));
 
-  return (
-    <View>
-      <Text style={styles.docTitle}>KEY PERSONNEL – RESUME DATA</Text>
+  // CR 205 - the header strip carries that person's row from the key personnel table.
+  const rowCells = ([
+    ["CONTRACTOR", val(row?.firm)],
+    ["NATIONALITY", val(row?.nationality) || citizen],
+    ["EXPERIENCE", val(row?.years) || val(resume.yearsOfExperience)],
+  ] as Array<[string, string]>).filter(([, v]) => !!v);
 
-      <View style={styles.grid}>
+  return (
+    <View style={boxed ? styles.box : {}}>
+      {boxed ? (
+        <View style={styles.boxHead} wrap={false}>
+          <Text style={styles.boxName}>
+            {person.name || "-"}
+            {(val(row?.position) || val(assignment) || val(resume.title)) ? `  ·  ${val(row?.position) || val(assignment) || val(resume.title)}` : ""}
+          </Text>
+          {rowCells.map(([l, v]) => (
+            <View key={l} style={styles.boxCell}>
+              <Text style={styles.boxCellLabel}>{l}</Text>
+              <Text style={styles.boxCellValue}>{v}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.docTitle}>KEY PERSONNEL – RESUME DATA</Text>
+      )}
+
+      <View style={[styles.grid, boxed ? styles.boxGrid : {}]}>
         <View style={styles.gridRow}>
-          <Field n={1} label="Name">
+          <Field n={1} label="Name" tight={boxed}>
             <View style={styles.nameRow}>
               {!!photo && <Image src={withFileToken(photo)} style={styles.photo} />}
               <Text style={styles.fieldValue}>{person.name || "-"}</Text>
             </View>
           </Field>
-          <Field n={2} label="Title"><Text style={styles.fieldValue}>{val(resume.title) || "-"}</Text></Field>
+          <Field n={2} label="Title" tight={boxed}><Text style={styles.fieldValue}>{val(resume.title) || "-"}</Text></Field>
         </View>
         <View style={styles.gridRow}>
-          <Field n={3} label="Assignment on this project"><Text style={styles.fieldValue}>{val(assignment) || val(resume.assignmentOnProject) || "-"}</Text></Field>
-          <Field n={4} label="Years of experience"><Text style={styles.fieldValue}>{val(resume.yearsOfExperience) || "-"}</Text></Field>
+          <Field n={3} label="Assignment on this project" tight={boxed}><Text style={styles.fieldValue}>{val(assignment) || val(resume.assignmentOnProject) || "-"}</Text></Field>
+          <Field n={4} label="Years of experience" tight={boxed}><Text style={styles.fieldValue}>{val(resume.yearsOfExperience) || "-"}</Text></Field>
         </View>
         <View style={styles.gridRow}>
-          <Field n={5} label="Education (degree, year)">{education.length ? education.map((e, i) => <Text key={i} style={styles.fieldText}>{e}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
-          <Field n={6} label="Remark">{remark.length ? remark.map((r, i) => <Text key={i} style={styles.fieldText}>{r}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
+          <Field n={5} label="Education (degree, year)" tight={boxed}>{education.length ? education.map((e, i) => <Text key={i} style={styles.fieldText}>{e}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
+          <Field n={6} label="Remark" tight={boxed}>{remark.length ? remark.map((r, i) => <Text key={i} style={styles.fieldText}>{r}</Text>) : <Text style={styles.fieldText}>-</Text>}</Field>
         </View>
       </View>
 
