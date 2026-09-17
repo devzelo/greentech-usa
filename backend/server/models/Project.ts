@@ -18,6 +18,7 @@ export interface IProject extends Document {
   location: string;
   // Structured project site address; `location` mirrors it as a short "City, Country" string.
   siteAddress: {
+    full: string;       // CR 186: the whole address pasted as written (any country's format)
     line1: string;
     city: string;
     state: string;
@@ -170,13 +171,14 @@ const ProjectSchema = new Schema<IProject>(
     location: { type: String, default: "" },
     siteAddress: {
       type: {
+        full: { type: String, default: "" },
         line1: { type: String, default: "" },
         city: { type: String, default: "" },
         state: { type: String, default: "" },
         postalCode: { type: String, default: "" },
         country: { type: String, default: "" },
       },
-      default: () => ({ line1: "", city: "", state: "", postalCode: "", country: "" }),
+      default: () => ({ full: "", line1: "", city: "", state: "", postalCode: "", country: "" }),
     },
     description: { type: String, default: "" },
     reportNotes: { type: String, default: "" }, // rich-text HTML narrative shown in the project report PDF
