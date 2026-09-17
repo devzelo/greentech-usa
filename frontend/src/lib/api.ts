@@ -573,6 +573,35 @@ export async function deleteProposalTemplate(id: string): Promise<{ message: str
   return request(`/proposal-templates/${id}`, { method: 'DELETE' });
 }
 
+// CR 200 - the second source for "Insert from template": the written proposal of another project.
+export interface ProposalSourceProject {
+  projectId: string;
+  name: string;
+  status: string;
+  updatedAt?: string;
+  technicalSections: number;
+  financialSections: number;
+  words: number;
+}
+export interface ProposalSourceVolume {
+  layout: ProposalSectionMeta[];
+  sections: Array<{ id: string; heading: string; body: string; subsections: ProposalSubsection[] }>;
+}
+export interface ProposalSourceContent {
+  projectId: string;
+  name: string;
+  technical: ProposalSourceVolume;
+  financial: ProposalSourceVolume;
+}
+/** Projects whose proposal has text worth copying, newest first. */
+export async function fetchProposalSourceProjects(): Promise<ProposalSourceProject[]> {
+  return request('/projects/proposal-sources');
+}
+/** One project's proposal sections and their order. */
+export async function fetchProposalSourceSections(projectId: string): Promise<ProposalSourceContent> {
+  return request(`/projects/${projectId}/proposal-sections`);
+}
+
 /** Upload an image used by a proposal (cover image or signature). Owner/assigned-employee only. Returns its URL. */
 export async function uploadProposalAsset(projectId: string, file: File): Promise<{ url: string }> {
   const fd = new FormData();

@@ -220,6 +220,61 @@ router.get("/guests-directory", async (req: AuthedRequest, res: Response, next: 
   }
 });
 
+// CR 200 — "Insert from template" reads the written proposal of any other project, section by
+// section. Both routes are staff-only: a subcontractor or guest never sees another project's text.
+type VolContent = { sections?: Array<Record<string, unknown>>; layout?: unknown[] };
+const sectionWords = (v?: VolContent) =>
+  (v?.sections || []).reduce((n, s) => n + String((s as { body?: string }).body || "").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length, 0);
+
+// GET /api/projects/proposal-sources — which projects have proposal text worth copying.
+// (Before "/:id" so it isn't read as a project id.)
+router.get("/proposal-sources", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
+    // Someone else's draft is private; everything else staff can already see in All Projects.
+    const rows = await Project.find({ $or: [{ status: { $ne: "Draft" } }, { ownerId: req.user!.userId }] })
+      .select("projectId name status proposalContent updatedAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+    const out = rows
+      .map((p) => {
+        const pc = (p.proposalContent || {}) as { technical?: VolContent; financial?: VolContent };
+        return {
+          projectId: p.projectId,
+          name: p.name,
+          status: p.status,
+          updatedAt: (p as unknown as { updatedAt?: Date }).updatedAt,
+          technicalSections: (pc.technical?.sections || []).length,
+          financialSections: (pc.financial?.sections || []).length,
+          words: sectionWords(pc.technical) + sectionWords(pc.financial),
+        };
+      })
+      .filter((p) => p.words > 0);   // a proposal with no text yet is nothing to copy
+    res.json(out);
+  } catch (err) { next(err); }
+});
+
+// GET /api/projects/:id/proposal-sections — that project's sections and their order, so the
+// builder can list them by title and copy one in.
+router.get("/:id/proposal-sections", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
+    const p = await Project.findOne({ projectId: req.params.id }).select("projectId name status ownerId proposalContent").lean();
+    if (!p) return res.status(404).json({ error: "Project not found" });
+    if (p.status === "Draft" && String(p.ownerId || "") !== req.user!.userId)
+      return res.status(403).json({ error: "That project is still a draft." });
+    const pc = (p.proposalContent || {}) as { technical?: VolContent; financial?: VolContent };
+    const pick = (v?: VolContent) => ({
+      layout: v?.layout || [],
+      sections: (v?.sections || []).map((s) => {
+        const sec = s as { id?: string; heading?: string; body?: string; subsections?: unknown[] };
+        return { id: sec.id || "", heading: sec.heading || "", body: sec.body || "", subsections: sec.subsections || [] };
+      }),
+    });
+    res.json({ projectId: p.projectId, name: p.name, technical: pick(pc.technical), financial: pick(pc.financial) });
+  } catch (err) { next(err); }
+});
+
 // GET /api/projects/:id
 router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {

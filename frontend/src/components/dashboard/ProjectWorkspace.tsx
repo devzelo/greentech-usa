@@ -9,7 +9,7 @@ import {
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
-  GanttChartSquare, FileDown, Printer, CheckCircle2,
+  GanttChartSquare, FileDown, Printer, CheckCircle2, Library,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -65,6 +65,7 @@ import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
+import InsertSectionTemplate, { type InsertPayload } from "./InsertSectionTemplate";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType } from "../../lib/proposalLibrary";
 import ProposalSectionManager from "./ProposalSectionManager";
@@ -886,16 +887,28 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     } catch { /* the picker just stays empty */ }
   };
   useEffect(() => { void loadSectionTemplates(); }, []);
-  const applySectionTemplate = async (sectionId: string, t: ApiProposalTemplate, vol: Vol = "technical") => {
-    const body = String((t.content as { body?: unknown } | undefined)?.body || "");
-    if (!body) { toast("That template has no content.", "info"); return; }
-    if (!(await brandedConfirm({
-      title: `Insert "${t.name}"?`,
-      message: "This replaces whatever is currently written in this section. Anything already there is lost.",
-      confirmLabel: "Insert template",
+  // CR 200 - "Insert from template" from either source: another project's proposal, or the library.
+  const [insertTarget, setInsertTarget] = useState<{ sectionId: string; metaId: string; vol: Vol; title: string } | null>(null);
+  const insertSectionTemplate = async (p: InsertPayload) => {
+    const t = insertTarget;
+    if (!t) return;
+    const current = sectionsOfVol(t.vol).find((x) => x.id === t.sectionId);
+    const hasText = !!String(current?.body || "").replace(/<[^>]*>/g, "").trim();
+    if (hasText && !(await brandedConfirm({
+      title: "Replace what is written here?",
+      message: `"${t.title || "This section"}" already has content. Inserting ${p.from} replaces it.`,
+      confirmLabel: "Replace it",
+      danger: true,
     }))) return;
-    updateSectionRow(sectionId, "body", body, vol);
-    toast("Template inserted.", "success");
+    updateSectionRow(t.sectionId, "body", p.body, t.vol);
+    if (p.copySubs && p.subsections.length) setSubsections(t.sectionId, p.subsections, t.vol);
+    if (p.copyTitle && p.title) {
+      updateSectionRow(t.sectionId, "heading", p.title, t.vol);
+      setLayout(layoutOfVol(t.vol).map((m) => (m.id === t.metaId ? { ...m, title: p.title } : m)), t.vol);
+    }
+    setDirty(true);
+    setInsertTarget(null);
+    toast(`Inserted from ${p.from}. Edit the names and numbers for this project.`, "success");
   };
   const saveSectionAsTemplate = async (sec: { title?: string; body?: string }) => {
     if (!String(sec.body || "").trim()) { toast("Write something in the section first.", "info"); return; }
@@ -3080,19 +3093,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           <div className="flex flex-wrap items-center gap-2 pb-1">
             {/* CR 198 - what "insert from template" actually does. */}
             <HelpTip title="Insert from template">
-              Fills this section with the wording from a saved section template, replacing what is here now.
-              "Save as template" next to it keeps this section's text for reuse on other projects.
+              Fills this section from one of two sources: any other project's proposal, section by section,
+              or your own saved template library. Either way it replaces what is written here now, and you
+              then edit the names and numbers. "Save as template" keeps this section's text for reuse.
             </HelpTip>
-            <select
-              value=""
-              onChange={(e) => { const t = sectionTemplates.find((x) => x._id === e.target.value); if (t) void applySectionTemplate(s.id, t, vol); }}
-              className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600"
-              title="Replace this section's content with a saved template"
+            {/* CR 200 - the two sources live behind one button. */}
+            <button
+              onClick={() => setInsertTarget({ sectionId: s.id, metaId: m.id, vol, title: m.title || s.heading || "" })}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100"
+              title="Insert this section from another project's proposal or from a saved template"
             >
-              <option value="">Insert from template…</option>
-              {sectionTemplates.length === 0 && <option value="" disabled>No section templates saved yet</option>}
-              {sectionTemplates.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
-            </select>
+              <Library size={11} /> Insert from template
+            </button>
             <button
               onClick={() => void saveSectionAsTemplate(s)}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"
@@ -7828,6 +7840,29 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
           build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />).toBlob()}
           onClose={() => setShowReport(false)}
+        />
+      )}
+
+      {/* CR 200 - insert a section from another project's proposal or from the saved library. */}
+      {insertTarget && (
+        <InsertSectionTemplate
+          sectionTitle={insertTarget.title}
+          currentProjectId={id || ""}
+          templates={sectionTemplates}
+          onInsert={(p) => void insertSectionTemplate(p)}
+          onSaveTemplate={async (name, body) => {
+            try {
+              await saveProposalTemplate({ name, description: "Section template", content: { section: true, body } as never });
+              await loadSectionTemplates();
+              toast("Section template saved. It is available on every project.", "success");
+            } catch (err) { toast(err instanceof Error ? err.message : "Could not save the template.", "error"); }
+          }}
+          onDeleteTemplate={async (t) => {
+            if (!(await brandedConfirm({ title: `Delete "${t.name}"?`, message: "The template is removed for everyone. Sections already using it keep their text.", confirmLabel: "Delete template", danger: true }))) return;
+            try { await deleteProposalTemplate(t._id); await loadSectionTemplates(); toast("Template deleted.", "success"); }
+            catch (err) { toast(err instanceof Error ? err.message : "Could not delete the template.", "error"); }
+          }}
+          onClose={() => setInsertTarget(null)}
         />
       )}
     </div>
