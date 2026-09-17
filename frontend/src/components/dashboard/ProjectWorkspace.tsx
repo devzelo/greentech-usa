@@ -1235,11 +1235,31 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const newMeta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title: `${meta.title} (copy)`, hidden: meta.hidden, pageType: meta.pageType, appendix: meta.appendix, divider: meta.divider, libraryKey: meta.libraryKey, guide: meta.guide, rfpRef: meta.rfpRef };
       return { sections: [...b.sections, section], layout: [...b.layout.slice(0, at + 1), newMeta, ...b.layout.slice(at + 1)] };
     });
-  const removeLayoutSection = (meta: ProposalSectionMeta, vol: Vol = "technical") =>
+  // CR 204 - deleting a section or an appendix asks first, and says what goes with it.
+  const removeLayoutSection = async (meta: ProposalSectionMeta, vol: Vol = "technical") => {
+    const sec = sectionsOfVol(vol).find((s) => s.id === meta.refId);
+    const words = String(sec?.body || "").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+    const holds = [
+      words ? `${words} word${words === 1 ? "" : "s"} of text` : "",
+      sec?.subsections?.length ? `${sec.subsections.length} subsection${sec.subsections.length === 1 ? "" : "s"}` : "",
+      sec?.attachments?.length ? `${sec.attachments.length} attached file${sec.attachments.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean);
+    const what = meta.appendix ? "appendix" : meta.kind === "blank" ? "blank page" : "section";
+    if (!(await brandedConfirm({
+      title: `Delete "${meta.title}"?`,
+      message: holds.length
+        ? `This ${what} holds ${holds.join(", ")}. Deleting it takes all of that out of the document, and it cannot be undone.`
+        : `This ${what} is empty. It is taken out of the document.`,
+      confirmLabel: `Delete ${what}`,
+      danger: true,
+    }))) return;
     editVol(vol, (b) => ({
       sections: b.sections.filter((s) => s.id !== meta.refId),
       layout: b.layout.filter((m) => m.id !== meta.id),
     }));
+    setDirty(true);
+    toast(`"${meta.title}" deleted.`, "success");
+  };
   const addBlankPage = (vol: Vol = "technical") =>
     editVol(vol, (b) => ({
       layout: [...b.layout, { id: `blank-${uid()}`, kind: "blank" as const, title: "Blank page", hidden: false, letterhead: "none" as const }],
@@ -4716,7 +4736,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onAdd={(title, opts) => addLayoutSection(title, "", opts)}
                     onAddBlank={addBlankPage}
                     onDuplicate={duplicateLayoutSection}
-                    onRemove={removeLayoutSection}
+                    onRemove={(m) => void removeLayoutSection(m)}
                     canEdit={canEdit}
                     collapsed={!showSectionList}
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
@@ -5002,7 +5022,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onAdd={(title, opts) => addLayoutSection(title, "", opts, "financial")}
                     onAddBlank={() => addBlankPage("financial")}
                     onDuplicate={(m) => duplicateLayoutSection(m, "financial")}
-                    onRemove={(m) => removeLayoutSection(m, "financial")}
+                    onRemove={(m) => void removeLayoutSection(m, "financial")}
                     canEdit={canEdit}
                     collapsed={!showSectionList}
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
