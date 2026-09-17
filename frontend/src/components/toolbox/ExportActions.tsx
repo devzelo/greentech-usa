@@ -112,6 +112,7 @@ export const ATTACH_SECTIONS: Array<{ key: string; label: string; group: string 
   { key: "project-info-change-orders", label: "Change Orders", group: "Project Info" },
   { key: "project-info-award", label: "Award Documents", group: "Project Info" },
   { key: "project-info-postaward", label: "Post Award Documents", group: "Project Info" },
+  { key: "project-info-cpars", label: "CPARS Evaluations", group: "Project Info" },
   { key: "pm-schedules", label: "Schedules", group: "Project Management" },
   { key: "pm-meeting-minutes", label: "Meeting Minutes", group: "Project Management" },
   { key: "pm-progress-reports", label: "Progress Reports", group: "Project Management" },

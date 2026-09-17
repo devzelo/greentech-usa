@@ -89,6 +89,7 @@ const SECTION_TITLES: Record<string, string> = {
   "project-info-other": "Other Project Docs",
   "project-info-award": "Award Documents",
   "project-info-postaward": "Post Award Documents",   // CR-P (119)
+  "project-info-cpars": "CPARS Evaluations",          // CR 185
   "proposals-technical": "Technical Proposal",
   "proposals-financial": "Financial Proposal",
   "pm-schedules": "Schedules",

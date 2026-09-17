@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { FileText, Award, FileCheck2, FolderOpen, ChevronRight, Plus, Pencil, Trash2 } from "lucide-react";
+import { FileText, Award, FileCheck2, FolderOpen, ChevronRight, Plus, Pencil, Trash2, Star } from "lucide-react";
 import DocSection from "./DocSection";
 import RequestBuilder from "./RequestBuilder";
 import StructuredTable from "./StructuredTable";
@@ -15,7 +15,8 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 
 // CR-P (119) — "can you add one more default tab here in all the projects? Call it Post Award
 // Docs." What arrives WITH the award and what is produced AFTER it are different piles.
-type TopTab = "rfp" | "award" | "postaward" | "ntp";
+// CR 185 — CPARS: the client's performance evaluation after the project, reused in proposals.
+type TopTab = "rfp" | "award" | "postaward" | "ntp" | "cpars";
 const SUBTAB_KEY = "project-info-subtabs";
 
 type SubTab = { k: string; label: string; section: string; hint: string; special?: "amendments" | "communications" };
@@ -32,6 +33,7 @@ const BUILTINS: Record<TopTab, SubTab[]> = {
   award: [{ k: "default", label: "Award Documents", section: "project-info-award", hint: "Award documents received from the client (award letter, contract, etc.)." }],
   postaward: [{ k: "default", label: "Post Award Documents", section: "project-info-postaward", hint: "Documents produced after the award: bonds, insurance certificates, submittal registers, kick-off paperwork." }],
   ntp: [{ k: "default", label: "Notices to Proceed", section: "project-info-ntp", hint: "Notices to Proceed (NTPs) issued for this project." }],
+  cpars: [{ k: "default", label: "CPARS Evaluations", section: "project-info-cpars", hint: "CPARS: the client's performance evaluation after the project. Upload it and add a short description (rating, period, evaluator); proposals can cite it as past performance." }],
 };
 
 export default function ProjectInfoTab({ projectId, canEdit, projectInfo, clientName, header }: { projectId: string; canEdit: boolean; isOwner?: boolean; projectInfo?: ProjectPdfInfo; clientName?: string;
@@ -78,7 +80,7 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
 
   const topBtn = (k: TopTab, label: string, Icon: typeof FileText) => (
     // "NTPs" must keep its casing (the uppercase transform would turn it into "NTPS").
-    <button onClick={() => switchTop(k)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold ${k === "ntp" ? "normal-case" : "uppercase"} tracking-widest transition-all ${top === k ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
+    <button onClick={() => switchTop(k)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold ${k === "ntp" || k === "cpars" ? "normal-case" : "uppercase"} tracking-widest transition-all ${top === k ? "bg-slate-900 text-white shadow" : "text-slate-400 hover:text-slate-900"}`}>
       <Icon size={14} /> {label}
     </button>
   );
@@ -94,6 +96,7 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
           {topBtn("award", "Award Docs", Award)}
           {topBtn("postaward", "Post Award Docs", FolderOpen)}
           {topBtn("ntp", "NTPs", FileCheck2)}
+          {topBtn("cpars", "CPARS", Star)}
         </div>
       </div>
 
