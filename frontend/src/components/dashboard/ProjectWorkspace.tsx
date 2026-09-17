@@ -9,6 +9,7 @@ import {
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
+  GanttChartSquare,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -33,7 +34,7 @@ import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
-import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, projectCategories, CONTRACT_TYPES, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
+import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, type ApiExtension, projectCategories, CONTRACT_TYPES, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
 import RichTextEditor from "./RichTextEditor";
 import * as XLSX from "xlsx";
 import DocSection from "./DocSection";
@@ -70,8 +71,8 @@ import RevisionCompare, { isComparable } from "./RevisionCompare";
 import RevisionManage from "./RevisionManage";
 import UploadExistingProposal, { type UploadMeta } from "./UploadExistingProposal";
 import { useDialogs } from "../../lib/useDialogs";
-import ContractTimeline from "./ContractTimeline";
-import ProjectSchedule from "./ProjectSchedule";
+import TimelineBar from "./timeline/TimelineBar";
+import TimelineTab from "./timeline/TimelineTab";
 import ClientInfoCard from "./ClientInfoCard";
 import DocTabs from "./DocTabs";
 import ExpenseLog from "./ExpenseLog";
@@ -299,6 +300,8 @@ export default function ProjectWorkspace() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState("client");
+  // CR 191 — "Edit timeline" on the header card opens Project Management > Timeline / Milestones.
+  const [pmFocus, setPmFocus] = useState<{ id: string; n: number } | undefined>(undefined);
   type FieldType = "text" | "textarea" | "number" | "date" | "url" | "email" | "select" | "checkbox" | "file";
   type CustomField = { fieldId: string; label: string; type: FieldType; options?: string[]; value?: string };
   type CustomTab = { id: string; label: string; icon: typeof Plus; color?: string; parentId?: string; notes?: string; fields?: CustomField[] };
@@ -2921,6 +2924,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-PR-13 / CR 184 — "About": what the project is, first thing on Project Info. Categories
   // (formerly also "Project Nature") as tags, then the description. Saves straight to the
   // project, the same fields Edit Identity uses.
+  const openTimeline = () => {
+    setActiveTab("pm");
+    setPmFocus({ id: "timeline", n: Date.now() });
+    setTimeout(() => document.getElementById("ws-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+  // CR-P (126) — extensions of time. The whole schedule goes back, so the phases and any draft are kept.
+  const saveExtensions = async (next: ApiExtension[], message: string) => {
+    if (!id || !project) return;
+    try {
+      const u = await updateProject(id, { schedule: { ...(project.schedule || { milestones: [] }), milestones: project.schedule?.milestones || [], extensions: next } });
+      setProject(u); toast(message, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the extension.", "error"); throw e; }
+  };
+
   const aboutCard = project && (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -3555,37 +3572,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 )}
               </div>
 
-              {/* CR-P (120)-(125) — the progress bar from the My Projects cards, inside the project
-                  too, with the percentage editable here by whoever runs the project; with milestones
-                  set up it becomes the schedule and the progress counts from the confirmed ones. */}
-              <ProjectSchedule
-                project={project}
-                canEdit={canManage}
-                userName={currentUser?.name || ""}
-                className="mt-3 max-w-3xl"
-                onSave={async (patch, message) => {
-                  if (!id) return;
-                  try { const u = await updateProject(id, patch); setProject(u); if (message) toast(message, "success"); }
-                  catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); throw e; }
-                }}
-              />
-
-              {/* CR-PR-14 — time left between the project's start and end dates (not the contract date,
-                  which can differ from when work actually starts). Collapsed to one line; click to expand. */}
-              <ContractTimeline
-                startDate={project.startDate || project.contractDate}
-                endDate={project.endDate}
-                extensions={project.schedule?.extensions}
-                canEdit={canManage}
-                userName={currentUser?.name || ""}
-                onSaveExtensions={async (next, message) => {
-                  if (!id) return;
-                  // The whole schedule goes back, so the milestones are kept.
-                  try { const u = await updateProject(id, { schedule: { milestones: project.schedule?.milestones || [], extensions: next } }); setProject(u); toast(message, "success"); }
-                  catch (e) { toast(e instanceof Error ? e.message : "Could not save the extension.", "error"); throw e; }
-                }}
-                className="mt-3 max-w-3xl"
-              />
               </>)}
             </div>
           </div>
@@ -3707,6 +3693,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             )}
           </div>
         </div>
+        {/* CR 192 — contract time and work complete in one card, the phases as dots; the full
+            timeline is in Project Management > Timeline / Milestones. */}
+        {!isGuest && (
+          <TimelineBar
+            project={project}
+            canEdit={canManage}
+            userName={currentUser?.name || ""}
+            className="mt-4"
+            onOpenTimeline={openTimeline}
+            onSaveExtensions={saveExtensions}
+            onSaveProgress={async (v) => {
+              if (!id) return;
+              try { const u = await updateProject(id, { progress: v }); setProject(u); toast(`Work complete set to ${v}%.`, "success"); }
+              catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); throw e; }
+            }}
+          />
+        )}
         {/* CR-P-15 — five-number financial overview of this project */}
         {canSeeFigures && !isGuest && (
           <div className="mt-4 pt-4 border-t border-slate-100">
@@ -3716,6 +3719,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       </div>
 
       {/* ── Tab Bar (top-level) — scrollable with arrows (CR-P-29) ── */}
+      <div id="ws-tabs" className="scroll-mt-24" />
       <ScrollableTabs className="bg-white border border-slate-100 rounded-2xl sm:rounded-[1.5rem] shadow-sm">
         <div className="flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-max">
           {topLevelTabs.map((tab) => {
@@ -4999,7 +5003,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               canEdit={canEdit}
               canManageTabs={canManage}
               canPublish={isOwner}
-              lead={{ id: "board", label: "Task Board", content: <ProjectBoard projectId={id} canEdit={canEdit} /> }}
+              focus={pmFocus}
+              lead={[
+                { id: "board", label: "Task Board", content: <ProjectBoard projectId={id} canEdit={canEdit} /> },
+                // CR 188-192 — the project timeline, right after the board.
+                {
+                  id: "timeline", label: "Timeline / Milestones", icon: <GanttChartSquare size={16} />,
+                  content: project ? (
+                    <TimelineTab
+                      project={project}
+                      canEdit={canEdit}
+                      userName={currentUser?.name || ""}
+                      onSaveExtensions={saveExtensions}
+                      onScheduleSaved={(schedule, progress) => setProject((p) => (p ? { ...p, schedule, progress: schedule.milestones.length ? progress : p.progress } : p))}
+                    />
+                  ) : null,
+                },
+              ]}
               defaults={[
                 { id: "pm-schedules", label: "Schedules", section: "pm-schedules" },
                 { id: "pm-meeting-minutes", label: "Meeting Minutes", section: "pm-meeting-minutes" },

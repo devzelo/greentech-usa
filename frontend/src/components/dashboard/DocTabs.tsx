@@ -25,7 +25,9 @@ export type DocTabDef = {
 
 type Tab = DocTabDef & { custom?: ApiTableRow; override?: ApiTableRow };
 
-export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, canEdit, canManageTabs, canPublish, lead }: {
+type LeadTab = { id: string; label: string; content: ReactNode; icon?: ReactNode };
+
+export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, canEdit, canManageTabs, canPublish, lead, focus }: {
   projectId: string;
   tableKey: string;
   sectionPrefix: string;
@@ -33,11 +35,16 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
   canEdit: boolean;
   canManageTabs: boolean;
   canPublish?: boolean;
-  lead?: { id: string; label: string; content: ReactNode };
+  /** Tabs with their own content shown before the document tabs (the task board, the timeline). */
+  lead?: LeadTab | LeadTab[];
+  /** Open this tab (a new `n` opens it again). */
+  focus?: { id: string; n: number };
 }) {
+  const leads: LeadTab[] = lead ? (Array.isArray(lead) ? lead : [lead]) : [];
   const { prompt, confirm, dialogs } = useDialogs();
   const [rows, setRows] = useState<ApiTableRow[]>([]);
-  const [active, setActive] = useState(lead?.id || defaults[0]?.id || "");
+  const [active, setActive] = useState(focus?.id || leads[0]?.id || defaults[0]?.id || "");
+  useEffect(() => { if (focus?.id) setActive(focus.id); }, [focus?.id, focus?.n]);
   const [withFiles, setWithFiles] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
@@ -73,11 +80,13 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
   }, [defaults, rows, withFiles, sectionPrefix]);
 
   const current = tabs.find((t) => t.id === active);
-  const onLead = !!lead && active === lead.id;
+  const activeLead = leads.find((l) => l.id === active);
+  const onLead = !!activeLead;
   // The open tab was deleted: fall back to the first one.
+  const firstId = leads[0]?.id || tabs[0]?.id;
   useEffect(() => {
-    if (!onLead && !current && (lead || tabs.length)) setActive(lead?.id || tabs[0].id);
-  }, [onLead, current, lead, tabs]);
+    if (!onLead && !current && firstId) setActive(firstId);
+  }, [onLead, current, firstId]);
 
   const upsertOverride = async (id: string, patch: Record<string, string>) => {
     const o = overrideOf(id);
@@ -117,14 +126,15 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-1.5">
-        {lead && (
+        {leads.map((l, i) => (
           <button
-            onClick={() => setActive(lead.id)}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold border transition-all mr-1 ${onLead ? "bg-emerald-500 border-emerald-500 text-white shadow" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"}`}
+            key={l.id}
+            onClick={() => setActive(l.id)}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold border transition-all ${i === leads.length - 1 ? "mr-1" : ""} ${active === l.id ? "bg-emerald-500 border-emerald-500 text-white shadow" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"}`}
           >
-            <KanbanSquare size={16} /> {lead.label}
+            {l.icon ?? <KanbanSquare size={16} />} {l.label}
           </button>
-        )}
+        ))}
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setActive(t.id)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${active === t.id ? "bg-slate-900 text-white shadow" : "bg-white border border-slate-100 text-slate-500 hover:text-slate-900"}`}>
             <FolderOpen size={12} /> {t.label}
@@ -157,7 +167,7 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
         </div>
       )}
 
-      {onLead ? lead!.content : current ? (
+      {activeLead ? activeLead.content : current ? (
         <DocSection key={current.section} projectId={projectId} section={current.section} title={current.label} canEdit={canEdit} canPublish={canPublish} />
       ) : (
         <p className="text-sm text-slate-400 text-center py-8">No tabs yet.{canManageTabs ? " Use Add tab to create one." : ""}</p>
