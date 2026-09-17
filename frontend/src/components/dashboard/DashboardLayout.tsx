@@ -32,6 +32,7 @@ import GlobalEscClose from "./GlobalEscClose";
 import Toaster from "./Toaster";
 import NotificationBell from "./NotificationBell";
 import { FiguresToggle } from "./FiguresPrivacy";
+import Toolbox from "../toolbox/Toolbox";
 import NewRecordMenu from "./NewRecordMenu";
 import PoweredByProjnell from "../PoweredByProjnell";
 
@@ -420,6 +421,9 @@ export default function DashboardLayout() {
             <FiguresToggle />
 
             <GlobalSearch />
+
+            {/* Quick Toolbox: calculators, converters, snip, draw, PDF / image tools, notes, timer. */}
+            <Toolbox />
 
             <NotificationBell />
 
