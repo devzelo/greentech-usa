@@ -1,5 +1,17 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+// CR 188-192: one phase / milestone on the project timeline. Dates are yyyy-mm-dd. Phases are not
+// chained: each has its own planned and actual dates, and the first planned dates are kept as the
+// baseline. `duration` / `unit` / `doneAt` are the older chained schedule (read for migration).
+export interface MilestoneRecord {
+  id: string; key: string; name: string; description: string;
+  plannedStart: string; plannedEnd: string; baselineStart: string; baselineEnd: string;
+  actualStart: string; actualEnd: string;
+  durationValue: number; durationUnit: "days" | "weeks" | "months";
+  status: string; percent: number; responsible: string[]; notes: string;
+  duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string;
+}
+
 export interface IProject extends Document {
   projectId: string;
   name: string;
@@ -90,7 +102,9 @@ export interface IProject extends Document {
   // CR-P (121)-(125) — the project's milestones, run one after another from the start date. Each
   // has a duration; the project manager confirms it finished (doneAt), which counts toward progress.
   schedule: {
-    milestones: Array<{ id: string; name: string; duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string }>;
+    milestones: MilestoneRecord[];
+    // Timeline work saved as a draft (not live) until the PM saves it.
+    draft: { milestones: MilestoneRecord[]; savedAt: string; savedBy: string } | null;
     // CR-P (126) — approved extensions of time. The latest endDate is the project's deadline now;
     // the project's own endDate stays the original one.
     extensions: Array<{ id: string; endDate: string; reason: string; addedAt: string; addedBy: string }>;
@@ -150,6 +164,30 @@ export interface IProject extends Document {
   // because the exact fields track the client's proposal templates.
   proposalContent: Record<string, unknown>;
 }
+
+const MilestoneSchema = new Schema({
+  id: { type: String, default: "" },
+  key: { type: String, default: "" },           // master-list key, "custom" for a manual phase
+  name: { type: String, default: "" },
+  description: { type: String, default: "" },
+  plannedStart: { type: String, default: "" },
+  plannedEnd: { type: String, default: "" },
+  baselineStart: { type: String, default: "" },
+  baselineEnd: { type: String, default: "" },
+  actualStart: { type: String, default: "" },
+  actualEnd: { type: String, default: "" },
+  durationValue: { type: Number, default: 0, min: 0 },
+  durationUnit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
+  status: { type: String, default: "not_started" },
+  percent: { type: Number, default: 0, min: 0, max: 100 },
+  responsible: { type: [String], default: [] },
+  notes: { type: String, default: "" },
+  // Older chained schedule
+  duration: { type: Number, default: 0, min: 0 },
+  unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
+  doneAt: { type: String, default: "" },
+  doneBy: { type: String, default: "" },
+}, { _id: false });
 
 const ProjectSchema = new Schema<IProject>(
   {
@@ -240,17 +278,10 @@ const ProjectSchema = new Schema<IProject>(
       ],
     },
     schedule: {
-      milestones: {
-        type: [{
-          id: { type: String, default: "" },
-          name: { type: String, default: "" },
-          duration: { type: Number, default: 0, min: 0 },
-          unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
-          doneAt: { type: String, default: "" },
-          doneBy: { type: String, default: "" },
-          _id: false,
-        }],
-        default: [],
+      milestones: { type: [MilestoneSchema], default: [] },
+      draft: {
+        type: new Schema({ milestones: { type: [MilestoneSchema], default: [] }, savedAt: { type: String, default: "" }, savedBy: { type: String, default: "" } }, { _id: false }),
+        default: null,
       },
       extensions: {
         type: [{

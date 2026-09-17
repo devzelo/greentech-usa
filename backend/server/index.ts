@@ -55,6 +55,7 @@ import presenceRoutes from "./routes/presence";
 import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import stickyNoteRoutes from "./routes/stickyNotes";
 import toolboxRoutes from "./routes/toolbox";
+import scheduleRoutes from "./routes/schedule";
 import projectCategoryRoutes from "./routes/projectCategories";
 import myProfileRoutes from "./routes/myProfile";
 import draftRoutes from "./routes/drafts";
@@ -87,6 +88,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/projects/:id/expenses", expenseRoutes);
 app.use("/api/projects/:id/board", boardRoutes);
+app.use("/api/projects/:id/schedule", scheduleRoutes);       // CR 188-192 timeline versions / draft
 app.use("/api/projects/:id/sub-invoices", subInvoiceRoutes);
 app.use("/api/projects/:id/purchase-orders", purchaseOrderRoutes);
 app.use("/api/projects/:id/invoices", invoiceRoutes);
@@ -165,6 +167,14 @@ async function runBootstrapTasks() {
     if (a) console.log(`🔁 Standardised category names on ${a} project(s).`);
   } catch (err) {
     console.error("Project Nature migration failed:", err);
+  }
+  // CR 188: chained milestones become dated timeline phases. Idempotent.
+  try {
+    const { datedMilestones } = await import("./lib/timelineMigration");
+    const n = await datedMilestones();
+    if (n) console.log(`🔁 Dated the milestones of ${n} project(s) for the timeline.`);
+  } catch (err) {
+    console.error("Timeline migration failed:", err);
   }
   // Backfill: ensure every Employee-directory entry has an employee login account, so all
   // employees appear in admin User Management with their original empIds. Idempotent.
