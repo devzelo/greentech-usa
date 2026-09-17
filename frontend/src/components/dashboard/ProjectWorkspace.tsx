@@ -65,6 +65,7 @@ import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
+import AvailableAttachments from "./AvailableAttachments";
 import InsertSectionTemplate, { type InsertPayload } from "./InsertSectionTemplate";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType, PAGE_TYPES } from "../../lib/proposalLibrary";
@@ -1259,6 +1260,21 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }));
     setDirty(true);
     toast(`"${meta.title}" deleted.`, "success");
+  };
+  // CR 206 - include a company document: a new appendix carrying that file, printed as uploaded.
+  const includeCompanyDoc = (doc: ProposalDoc, vol: Vol = "technical") => {
+    editVol(vol, (b) => {
+      const newId = uid();
+      return {
+        sections: [...b.sections, { id: newId, heading: doc.tabLabel || doc.name, body: "", attachments: [docAttachment(doc)] }],
+        layout: [...b.layout, {
+          id: `m-${newId}`, kind: "custom" as const, refId: newId, title: doc.tabLabel || doc.name,
+          hidden: false, appendix: true, pageType: "external" as const, divider: true, libraryKey: doc.libraryKey,
+        }],
+      };
+    });
+    setDirty(true);
+    toast(`"${doc.name}" added as an appendix. It prints exactly as uploaded.`, "success");
   };
   const addBlankPage = (vol: Vol = "technical") =>
     editVol(vol, (b) => ({
@@ -4548,6 +4564,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {/* Proposal attachments, merged into the PDF (Download + attachments, Mark as Final). They
                   used to sit under the overview table; they belong with the document they go into. */}
               {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "attachments" && (
+                <div className="space-y-6">
+                {/* CR 206 - what the platform already holds for this proposal, pick what goes in. */}
+                <AvailableAttachments
+                  volume={proposalSub}
+                  employees={technical.employees || []}
+                  resumes={teamResumes}
+                  printResumes={technical.printResumes !== false}
+                  onPrintResumes={(on) => { setTech("printResumes", on); setDirty(true); }}
+                  companyDocs={companyDocs}
+                  attachedIds={new Set(sectionsOfVol(proposalSub).flatMap((sec) => (sec.attachments || []).map((a) => a.companyFileId || "")).filter(Boolean))}
+                  onAddDoc={(d) => includeCompanyDoc(d, proposalSub)}
+                  canEdit={canEdit}
+                />
                 <DocSection
                   projectId={id}
                   section={proposalSub === "technical" ? "proposals-technical" : "proposals-financial"}
@@ -4555,6 +4584,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   canEdit={canEdit}
                   canPublish={isOwner}
                 />
+                </div>
               )}
 
               {/* TECHNICAL / FINANCIAL — Saved Versions (each document keeps its own history) */}
