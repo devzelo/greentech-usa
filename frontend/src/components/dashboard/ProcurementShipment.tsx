@@ -93,14 +93,14 @@ type ShipDraft = {
   trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
   containerType: string; containerSize: string; openBed: boolean;
   goods: Array<{ description: string; qty: string; unit: string }>;
-  agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string;
+  agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
 };
 const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
   containerType: "", containerSize: "", openBed: false,
-  goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "",
+  goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
 
 // Days-until-ETA countdown for the tracking header (CR-PR-08).
@@ -123,7 +123,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<string | null>(null);
   const [editRowVal, setEditRowVal] = useState("");
-  const [justAdded, setJustAdded] = useState("");   // CR 218 - the line just created
+  const [justAdded, setJustAdded] = useState("");
+  const [listPopup, setListPopup] = useState<null | "items" | "pos">(null);   // CR 220 - items / POs pop-up   // CR 218 - the line just created
   // Creation / edit popup — everything about the shipment is editable here (CRUD).
   const [popup, setPopup] = useState<{ mode: "create" | "edit"; sid?: string } | null>(null);
   const [draft, setDraft] = useState<ShipDraft>(BLANK_DRAFT);
@@ -187,7 +188,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
       trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
       containerType: s.containerType || "", containerSize: s.containerSize || "", openBed: !!s.openBed,
-      goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "",
+      goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
     setPopup({ mode: "edit", sid: s._id });
   };
@@ -202,6 +203,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
       containerType: draft.containerType, containerSize: draft.containerSize, openBed: draft.openBed,
       goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
+      agencyWebsite: draft.agencyWebsite, agencyCountry: draft.agencyCountry,
     };
     try {
       if (popup.mode === "create") {
@@ -342,9 +344,13 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               {/* Shipment info card — everything from the creation popup, at a glance */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <h4 className="text-base font-bold text-slate-800 truncate">{active.name}</h4>
-                    {projectInfo?.name && <span className="text-[11px] text-slate-400 font-medium truncate">· {projectInfo.name}</span>}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h4 className="text-base font-bold text-slate-800 truncate">{active.name}</h4>
+                      {projectInfo?.name && <span className="text-[11px] text-slate-400 font-medium truncate">· {projectInfo.name}</span>}
+                    </div>
+                    {/* CR 220 - what this shipment is, right under its name. */}
+                    {!!active.description && <p className="mt-0.5 max-w-[46rem] truncate text-[11px] text-slate-500" title={active.description}>{active.description}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     {canEdit ? (
@@ -392,32 +398,45 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                         <span className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-primary transition-all" style={{ left: `${pct}%` }}><Ship size={16} /></span>
                       </div>
                       <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mt-1"><span className="truncate max-w-[35%]">{active.fromLocation || "Origin"}</span><span className="text-primary truncate max-w-[30%]">{active.currentLocation || STATUS_META[active.status || "Preparing"].label}</span><span className="truncate max-w-[35%] text-right">{active.toLocation || "Destination"}</span></div>
+                      {/* CR 220 - the deadline sits under from / to, once, with the items and POs as links. */}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 pt-1.5 text-[11px]">
+                        <span className="inline-flex items-center gap-1.5"><CalendarClock size={12} className="shrink-0 text-slate-400" />
+                          <span className="font-bold text-slate-400">Deadline:</span>
+                          <span className={`font-bold ${active.deadline && active.deadline < new Date().toISOString().slice(0, 10) && active.status !== "Delivered" ? "text-red-600" : "text-slate-700"}`}>{active.deadline || "—"}</span>
+                        </span>
+                        <button onClick={() => setListPopup("items")} className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline">
+                          <Package size={12} /> See items ({active.goods?.length || 0})
+                        </button>
+                        <button onClick={() => setListPopup("pos")} className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline">
+                          <Link2 size={12} /> POs ({(active.poIds || []).length})
+                        </button>
+                      </div>
                     </div>
                   );
                 })()}
 
-                {/* CR-PR-09 — items in the shipment + shipping agency. */}
-                {((active.goods?.length || 0) > 0 || active.agencyName) && (
-                  <div className="rounded-2xl border border-slate-100 p-3 space-y-2">
-                    {(active.goods?.length || 0) > 0 && (
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Items ({active.goods!.length})</p>
-                        <div className="space-y-0.5">{active.goods!.map((g, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 text-[11px]"><span className="text-slate-700 font-medium truncate">{g.description || "—"}</span><span className="text-slate-400 whitespace-nowrap">{[g.qty, g.unit].filter(Boolean).join(" ")}</span></div>
-                        ))}</div>
+                {/* CR 220 - the shipping agency is who you call: its own block, not a footnote. */}
+                {(active.agencyName || active.agencyContact || active.agencyEmail || active.agencyPhone) && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                    <p className="mb-2 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-amber-800"><Building2 size={11} className="text-amber-600" /> Shipping agency</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] sm:grid-cols-4">
+                      <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Company</p><p className="truncate font-bold text-slate-800" title={active.agencyName}>{active.agencyName || "—"}</p></div>
+                      <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Website</p>
+                        {active.agencyWebsite
+                          ? <a href={/^https?:/i.test(active.agencyWebsite) ? active.agencyWebsite : `https://${active.agencyWebsite}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-primary hover:underline"><ExternalLink size={10} /> {active.agencyWebsite}</a>
+                          : <span className="font-bold text-slate-800">—</span>}
                       </div>
-                    )}
-                    {active.agencyName && <p className="text-[11px] text-slate-500"><span className="font-bold text-slate-400">Shipping agency:</span> {[active.agencyName, active.agencyContact, active.agencyPhone, active.agencyEmail].filter(Boolean).join(" · ")}</p>}
+                      <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Point of contact</p>
+                        <p className="truncate font-bold text-slate-800">{active.agencyContact || "—"}</p>
+                        {(active.agencyPhone || active.agencyEmail) && <p className="truncate text-[10px] text-slate-500">{[active.agencyPhone, active.agencyEmail].filter(Boolean).join(" · ")}</p>}
+                      </div>
+                      <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Country</p><p className="truncate font-bold text-slate-800">{active.agencyCountry || "—"}</p></div>
+                    </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 text-[11px]">
-                  <div className="flex items-start gap-1.5"><MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">From:</span> <span className="font-bold text-slate-700">{active.fromLocation || "—"}</span></span></div>
-                  <div className="flex items-start gap-1.5"><MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">To:</span> <span className="font-bold text-slate-700">{active.toLocation || "—"}</span></span></div>
-                  <div className="flex items-start gap-1.5"><CalendarClock size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">Deadline:</span> <span className={`font-bold ${active.deadline && active.deadline < new Date().toISOString().slice(0, 10) && active.status !== "Delivered" ? "text-red-600" : "text-slate-700"}`}>{active.deadline || "—"}</span></span></div>
-                  <div className="flex items-start gap-1.5"><Package size={12} className="text-slate-400 mt-0.5 shrink-0" /><span><span className="text-slate-400 font-bold">POs:</span> {(active.poIds || []).length === 0 ? <span className="font-bold text-slate-700">—</span> : (active.poIds || []).map((pid) => <button key={pid} onClick={() => viewPO(pid)} title={`Open the ${poNo(pid)} document`} className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 font-bold text-slate-600 hover:border-primary hover:text-primary transition-colors"><Eye size={10} /> {poNo(pid)}</button>)}</span></div>
-                </div>
-                {active.description && <p className="text-[11px] text-slate-500 leading-relaxed"><span className="font-bold text-slate-400">Description:</span> {active.description}</p>}
+                {/* CR 220 - from / to, the deadline, the items and the POs live on the route strip
+                    above and the description under the title: nothing is said twice. */}
 
                 {/* Two headline numbers side by side: total shipment cost, and cost of goods
                     (pulled from the linked POs' invoice amounts). */}
@@ -515,6 +534,51 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
 
       {/* Create / edit shipment popup — the whole shipment record is managed here (CRUD). */}
+      {/* CR 220 - the items and the POs open as a list instead of filling the card. */}
+      {listPopup && active && (
+        <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setListPopup(null)}>
+          <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="text-sm font-bold text-slate-900">
+                {listPopup === "items" ? `Items in ${active.name}` : `Purchase orders on ${active.name}`}
+                <span className="ml-2 text-[11px] font-bold text-slate-400">{listPopup === "items" ? (active.goods?.length || 0) : (active.poIds || []).length}</span>
+              </p>
+              <button onClick={() => setListPopup(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-5">
+              {listPopup === "items" ? (
+                (active.goods?.length || 0) === 0
+                  ? <p className="py-6 text-center text-sm italic text-slate-400">No items listed on this shipment.</p>
+                  : (
+                    <table className="w-full text-left text-xs">
+                      <thead><tr className="border-b border-slate-100 text-[10px] uppercase tracking-widest text-slate-400"><th className="py-2">Description</th><th className="w-16 py-2">Qty</th><th className="w-20 py-2">Unit</th></tr></thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {active.goods!.map((g, i) => (
+                          <tr key={i}><td className="py-2 font-medium text-slate-700">{g.description || "—"}</td><td className="py-2 text-slate-500">{g.qty || "—"}</td><td className="py-2 text-slate-500">{g.unit || "—"}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+              ) : (
+                (active.poIds || []).length === 0
+                  ? <p className="py-6 text-center text-sm italic text-slate-400">No purchase orders linked to this shipment.</p>
+                  : (
+                    <div className="space-y-1.5">
+                      {(active.poIds || []).map((pid) => (
+                        <button key={pid} onClick={() => { setListPopup(null); viewPO(pid); }} className="flex w-full items-center gap-2 rounded-xl border border-transparent p-2.5 text-left hover:border-slate-100 hover:bg-slate-50">
+                          <Eye size={14} className="shrink-0 text-primary" />
+                          <span className="min-w-0 flex-grow truncate text-sm font-bold text-slate-700">{poNo(pid)}</span>
+                          <span className="text-[10px] font-bold text-slate-400">Open the document</span>
+                        </button>
+                      ))}
+                    </div>
+                  )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {popup && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-10" onClick={(e) => e.stopPropagation()}>
@@ -599,6 +663,10 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <input type="tel" className={`${inp} mt-1`} placeholder="e.g. +233 20 000 0000" value={draft.agencyPhone} onChange={(e) => setDraft({ ...draft, agencyPhone: e.target.value })} /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
                     <input type="email" className={`${inp} mt-1`} placeholder="e.g. ops@agency.com" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Website
+                    <input className={`${inp} mt-1`} placeholder="e.g. dhl.com" value={draft.agencyWebsite} onChange={(e) => setDraft({ ...draft, agencyWebsite: e.target.value })} /></label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Country
+                    <input className={`${inp} mt-1`} placeholder="e.g. Ghana" value={draft.agencyCountry} onChange={(e) => setDraft({ ...draft, agencyCountry: e.target.value })} /></label>
                 </div>
               </FormSection>
 

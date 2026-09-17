@@ -89,7 +89,7 @@ const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadl
   "costFreight", "costCustoms", "costDemurrage", "costOther",
   // Tracking header + container details + agency (CR-PR-08/09).
   "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
-  "agencyName", "agencyContact", "agencyPhone", "agencyEmail"] as const;
+  "agencyName", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;
 
 const cleanGoods = (v: unknown) => Array.isArray(v)
   ? v.map((g) => ({ description: String((g as { description?: unknown })?.description ?? "").slice(0, 300), qty: String((g as { qty?: unknown })?.qty ?? "").slice(0, 40), unit: String((g as { unit?: unknown })?.unit ?? "").slice(0, 40) })).filter((g) => g.description || g.qty).slice(0, 200)

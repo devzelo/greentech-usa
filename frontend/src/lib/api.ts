@@ -2129,13 +2129,15 @@ export interface ApiShipment {
   containerType?: string; containerSize?: string; openBed?: boolean;
   goods?: Array<{ description: string; qty: string; unit: string }>;
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
+  /** CR 220 - shown prominently on the shipment card. */
+  agencyWebsite?: string; agencyCountry?: string;
   rows: ApiShipmentRow[];
 }
 export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
   "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
-  "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail">>;
+  "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }

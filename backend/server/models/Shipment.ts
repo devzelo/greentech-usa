@@ -36,6 +36,9 @@ export interface IShipment extends Document {
   agencyContact: string;
   agencyPhone: string;
   agencyEmail: string;
+  // CR 220 - the agency block is what people call: its site and country matter too.
+  agencyWebsite: string;
+  agencyCountry: string;
   poIds: string[];        // linked ProcurementPO ids — their items sync with this shipment's status
   // Shipment cost breakdown — summed into the total shown on the shipment tab.
   costFreight: string;
@@ -71,6 +74,8 @@ const ShipmentSchema = new Schema<IShipment>(
     agencyContact: { type: String, default: "" },
     agencyPhone: { type: String, default: "" },
     agencyEmail: { type: String, default: "" },
+    agencyWebsite: { type: String, default: "" },
+    agencyCountry: { type: String, default: "" },
     poIds: { type: [String], default: [] },
     costFreight: { type: String, default: "" },
     costCustoms: { type: String, default: "" },
