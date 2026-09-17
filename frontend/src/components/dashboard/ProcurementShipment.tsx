@@ -123,6 +123,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<string | null>(null);
   const [editRowVal, setEditRowVal] = useState("");
+  const [justAdded, setJustAdded] = useState("");   // CR 218 - the line just created
   // Creation / edit popup — everything about the shipment is editable here (CRUD).
   const [popup, setPopup] = useState<{ mode: "create" | "edit"; sid?: string } | null>(null);
   const [draft, setDraft] = useState<ShipDraft>(BLANK_DRAFT);
@@ -206,6 +207,10 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       if (popup.mode === "create") {
         const s = await createShipment(projectId, body);
         setShipments((p) => [...p, s]); setActiveId(s._id);
+        // CR 218 - "the line did not appear": say it saved, and show which line is the new one.
+        setJustAdded(s._id);
+        setTimeout(() => setJustAdded((id) => (id === s._id ? "" : id)), 6000);
+        toast(`${s.name} added. It is the last line above, and it is open below.`, "success");
       } else if (popup.sid) {
         patch(await updateShipment(projectId, popup.sid, body));
         toast("Shipment updated. Linked Master Log items follow the shipment status automatically.", "success");
@@ -302,14 +307,34 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
             );
           })()}
 
-          {/* Shipment sub-tabs */}
-          <div className="flex items-center gap-1 flex-wrap bg-slate-50 border border-slate-100 rounded-2xl p-2">
-            {shipments.map((s) => (
-              <button key={s._id} onClick={() => setActiveId(s._id)} className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg font-bold text-[11px] transition-all ${activeId === s._id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:bg-white/60"}`}>
-                <Ship size={12} /> {s.name}
-                <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${STATUS_META[s.status || "Preparing"].cls}`}>{STATUS_META[s.status || "Preparing"].label}</span>
-              </button>
-            ))}
+          {/* CR 218 - the shipment line carries what people look for: where it is now, when it is
+              expected, and the deadline right next to the status. */}
+          <div className="flex flex-wrap items-stretch gap-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-2">
+            {shipments.map((s) => {
+              const on = activeId === s._id;
+              const eta = etaCountdown(s.etaDate);
+              return (
+                <button
+                  key={s._id}
+                  onClick={() => setActiveId(s._id)}
+                  className={`min-w-[13rem] rounded-xl px-3 py-2 text-left transition-all ${on ? "bg-white text-slate-900 shadow-sm ring-1 ring-primary/20" : "text-slate-500 hover:bg-white/70"} ${justAdded === s._id ? "ring-2 ring-emerald-300" : ""}`}
+                >
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Ship size={12} className="shrink-0" />
+                    <span className="text-[11px] font-bold">{s.name}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${STATUS_META[s.status || "Preparing"].cls}`}>{STATUS_META[s.status || "Preparing"].label}</span>
+                    {!!s.deadline && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500" title="Deadline (expected receipt)">Due {s.deadline}</span>}
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
+                    <span className="inline-flex items-center gap-1"><MapPin size={9} className="shrink-0" />{s.currentLocation || s.fromLocation || "Location not set"}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarClock size={9} className="shrink-0" />
+                      {s.etaDate ? <>{s.etaDate}{eta ? <span className="text-primary"> ({eta})</span> : null}</> : "Arrival not set"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {active && (
