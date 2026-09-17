@@ -66,13 +66,13 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
   const undated = plan.milestones.filter((m) => !m.start).length;
 
   const extensions = (
-    <div ref={extRef} className={`relative min-w-0 ${variant === "time" ? "text-right" : ""}`}>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Extended deadline" : "Contract deadline"}</p>
-      <button type="button" onClick={() => setExtOpen((v) => !v)} title="Extensions of time" className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-xs" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`}>
+    <div ref={extRef} className={`relative min-w-0 ${variant === "time" ? "shrink-0" : ""}`}>
+      {variant !== "time" && <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Extended deadline" : "Contract deadline"}</p>}
+      <button type="button" onClick={() => setExtOpen((v) => !v)} className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-[11px]" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`} title={variant === "time" ? `${extended ? "Extended deadline" : "Contract deadline"}. Click for extensions of time.` : "Extensions of time"}>
         {deadline ? fmtDay(deadline) : "Not set"}
         {extended && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">Extended</span>}
       </button>
-      {extended && origEnd && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
+      {extended && origEnd && variant !== "time" && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
       {extOpen && (
         <div className="absolute right-0 top-full z-[70] mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-slate-100 bg-white p-4 shadow-2xl">
           <ExtensionsPanel endDate={project.endDate} extensions={project.schedule?.extensions} canEdit={canEdit} onSave={onSaveExtensions} userName={userName} />
@@ -88,29 +88,23 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
     const span2 = cs && dl ? Math.max(DAY, dl.getTime() - cs.getTime()) : 0;
     const p2 = (d: Date) => (cs && span2 ? Math.max(0, Math.min(100, ((d.getTime() - cs.getTime()) / span2) * 100)) : 0);
     const nowPct = cs && dl ? p2(today) : null;
+    // One thin line: start, the elapsed bar with Today (and any extension), the deadline, time left.
     return (
-      <div className={`w-full rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-sm sm:w-[30rem] ${className}`}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract time
-          </span>
-          <span className={`text-xs font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
-            {deadline ? (overdue ? remaining : `${remaining} remaining`) : "No deadline set"}
-            {deadline && <span className="ml-1 font-semibold text-slate-400">({remainingDays} day{remainingDays === 1 ? "" : "s"})</span>}
-          </span>
-        </div>
-        <div className="relative my-1.5 h-2 rounded-full bg-slate-100">
-          {cs && dl && extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${p2(origEnd)}%`, right: 0 }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(dl)}`} />}
+      <div className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-100 bg-white px-3 py-1.5 shadow-sm lg:w-[44rem] ${className}`}>
+        <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract
+        </span>
+        <span className="shrink-0 text-[11px] font-bold text-slate-700" title="Contract start">{cs ? fmtDay(cs) : "No start"}</span>
+        <div className="relative h-1.5 min-w-[8rem] flex-1 rounded-full bg-slate-100" title={elapsedPct !== null ? `${Math.round(elapsedPct)}% of contract time elapsed` : "Contract time"}>
+          {cs && dl && extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-200" style={{ left: `${p2(origEnd)}%`, right: 0 }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(dl)}`} />}
           {cs && dl && <div className={`absolute inset-y-0 left-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${p2(today > dl ? dl : today)}%` }} />}
-          {nowPct !== null && today <= (dl as Date) && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${nowPct}%` }} title="Today" />}
+          {nowPct !== null && today <= (dl as Date) && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${nowPct}%` }} title={`Today, ${fmtDay(today)}`} />}
         </div>
-        <div className="flex items-end justify-between gap-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Contract start</p>
-            <p className="text-xs font-bold text-slate-900">{cs ? fmtDay(cs) : "Not set"}{elapsedPct !== null && <span className="ml-1.5 font-semibold text-emerald-600">{Math.round(elapsedPct)}% elapsed</span>}</p>
-          </div>
-          {extensions}
-        </div>
+        {extensions}
+        <span className={`shrink-0 text-[11px] font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
+          {deadline ? (overdue ? remaining : `${remaining} left`) : "No deadline"}
+          {deadline && <span className="ml-1 font-semibold text-slate-400">({remainingDays}d{elapsedPct !== null ? `, ${Math.round(elapsedPct)}% elapsed` : ""})</span>}
+        </span>
       </div>
     );
   }
