@@ -2,7 +2,7 @@ import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/render
 import type { ReactNode } from "react";
 import type { ApiProject } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
-import { effectiveEndDate, fmtDate, milestoneLength, parseDate, planSchedule } from "../../lib/projectSchedule";
+import { effectiveEndDate, fmtDate, milestoneLength, parseDate, phasePercent, planSchedule } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
 
 registerBrandFonts();
@@ -153,8 +153,8 @@ export default function ProjectReportPDF({ project, financials }: Props) {
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
   const assigned = project.assignedEmployees || [];
-  // With milestones set up, the progress counts from the confirmed ones (as in the project).
-  const plan = planSchedule(project.schedule?.milestones || [], project.startDate || project.contractDate || "");
+  // With a timeline set up, the progress comes from the phases' % complete (as in the project).
+  const plan = planSchedule(project.schedule?.milestones || [], project.startDate || project.contractDate || "", new Date(), effectiveEndDate(project));
   const progress = plan.milestones.length ? plan.progress : Math.max(0, Math.min(100, project.progress ?? 0));
   const income = financials?.income ?? 0;
   const expenses = financials?.expenses ?? 0;
@@ -201,7 +201,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         {/* CR-P (120)-(125) — the milestones behind the progress. */}
         {plan.milestones.length > 0 && (
           <View>
-            <SectionHeading title="Milestones" />
+            <SectionHeading title="Timeline: phases & milestones" />
             <View style={s.tHead} wrap={false} minPresenceAhead={24}>
               <Text style={[s.th, { width: 24 }]}>#</Text>
               <Text style={[s.th, { flex: 2.2 }]}>MILESTONE</Text>
@@ -210,11 +210,12 @@ export default function ProjectReportPDF({ project, financials }: Props) {
               <Text style={[s.th, { flex: 1.5 }]}>STATUS</Text>
             </View>
             {plan.milestones.map((m, i) => {
-              const done = parseDate(m.doneAt);
-              const [label, color] = m.state === "done" ? [`Finished${done ? ` ${fmtDate(done)}` : ""}`, BRAND.emerald]
-                : m.state === "overdue" ? ["Due, not confirmed", "#B45309"]
-                : m.state === "current" ? ["In progress", "#1D4ED8"]
-                : ["Upcoming", BRAND.s500];
+              const done = parseDate(m.actualEnd || m.doneAt);
+              const pct = phasePercent(m);
+              const [label, color] = m.state === "done" ? [`Completed${done ? ` ${fmtDate(done)}` : ""}`, BRAND.emerald]
+                : m.state === "overdue" ? [`Past planned end (${pct}%)`, "#B45309"]
+                : m.state === "current" ? [`In progress (${pct}%)`, "#1D4ED8"]
+                : ["Not started", BRAND.s500];
               return (
                 <View key={m.id || i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
                   <Text style={[s.td, { width: 24 }]}>{i + 1}</Text>

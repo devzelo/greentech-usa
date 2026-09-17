@@ -187,7 +187,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[] };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: { milestones: ApiMilestone[]; savedAt: string; savedBy: string } | null };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -972,13 +972,49 @@ export async function createProject(body: Partial<ApiProject>): Promise<ApiProje
 }
 
 /** A project milestone: a duration after the one before it; doneAt is set when the PM confirms it. */
+export type MilestoneStatus = "not_started" | "in_progress" | "completed" | "on_hold" | "delayed" | "cancelled";
+
+/** CR 188-192 - one phase / milestone on the project timeline (dates are yyyy-mm-dd, "" when unset). */
 export interface ApiMilestone {
   id: string;
+  key?: string;            // master-list key, "custom" for a manual phase
   name: string;
-  duration: number;
-  unit: "days" | "weeks" | "months";
-  doneAt: string;   // yyyy-mm-dd, "" while not confirmed
-  doneBy: string;
+  description?: string;
+  plannedStart?: string;
+  plannedEnd?: string;
+  baselineStart?: string;  // the first planned dates, kept when plans change
+  baselineEnd?: string;
+  actualStart?: string;
+  actualEnd?: string;
+  durationValue?: number;  // how the PM entered the length, when by duration
+  durationUnit?: "days" | "weeks" | "months";
+  status?: MilestoneStatus;
+  percent?: number;
+  responsible?: string[];
+  notes?: string;
+  // The older chained schedule (read only).
+  duration?: number;
+  unit?: "days" | "weeks" | "months";
+  doneAt?: string;
+  doneBy?: string;
+}
+
+export interface ApiScheduleRevision {
+  _id: string; projectId: string; version: number; milestones: ApiMilestone[]; progress: number;
+  note: string; savedBy: string; createdAt: string;
+}
+type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress: number };
+export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = ""): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
+  return request(`/projects/${projectId}/schedule/save`, { method: "POST", body: JSON.stringify({ milestones, note }) });
+}
+export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[]): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/draft`, { method: "PUT", body: JSON.stringify({ milestones }) });
+}
+export async function discardTimelineDraft(projectId: string): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/draft`, { method: "DELETE" });
+}
+export async function fetchTimelineRevisions(projectId: string): Promise<ApiScheduleRevision[]> {
+  return request(`/projects/${projectId}/schedule/revisions`);
 }
 
 /** CR-P (126) - an approved extension of time: the new deadline, and why. */
