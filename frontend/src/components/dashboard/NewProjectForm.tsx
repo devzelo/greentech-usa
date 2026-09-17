@@ -450,7 +450,7 @@ export default function NewProjectForm() {
       </div>
 
       {/* ── Identity Card ── */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 space-y-6">
+      <div className="bg-primary/[0.03] rounded-[2.5rem] border border-l-4 border-slate-200 border-l-primary shadow-sm p-8 space-y-6">
         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Project Identity</h2>
 
         {/* Image picker */}
@@ -877,7 +877,7 @@ export default function NewProjectForm() {
                 { title: "Change Orders", docs: [] },
                 { title: "Other Project Docs", docs: [] },
               ].map((section) => (
-                <div key={section.title} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <div key={section.title} className="bg-blue-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-blue-400 shadow-sm">
                   <SectionHeader title={section.title} />
                   <div className="space-y-3">
                     {section.docs.map((d: { name: string; type: string; size: string; date: string }) => <DocRow key={d.name} name={d.name} type={d.type} size={d.size} date={d.date} />)}
@@ -895,7 +895,7 @@ export default function NewProjectForm() {
                 { title: "Technical Proposal", status: "Draft", statusColor: "bg-amber-50 text-amber-600" },
                 { title: "Financial Proposal", status: "Draft", statusColor: "bg-amber-50 text-amber-600" },
               ].map((p) => (
-                <div key={p.title} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+                <div key={p.title} className="bg-emerald-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-emerald-400 shadow-sm space-y-5">
                   <div className="flex items-center justify-between">
                     <h4 className="font-display font-bold text-slate-900 text-lg">{p.title}</h4>
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.statusColor}`}>{p.status}</span>
@@ -922,7 +922,7 @@ export default function NewProjectForm() {
           {activeTab === "pm" && (
             <div className="space-y-6">
               {/* Timeline */}
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+              <div className="bg-amber-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-amber-400 shadow-sm space-y-6">
                 <h3 className="text-xl font-display font-bold text-slate-900">Project Timeline</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -974,7 +974,7 @@ export default function NewProjectForm() {
                 { title: "Site Data", label: "Upload Site Data" },
                 { title: "Closeout Documents", label: "Upload Closeout Documents" },
               ].map((section) => (
-                <div key={section.title} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <div key={section.title} className="bg-violet-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-violet-400 shadow-sm">
                   <SectionHeader title={section.title} />
                   <UploadZone label={section.label} />
                 </div>
@@ -991,7 +991,7 @@ export default function NewProjectForm() {
                 { title: "Lab Test Results" },
                 { title: "Bill of Quantities (BOQ)" },
               ].map((section) => (
-                <div key={section.title} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <div key={section.title} className="bg-slate-50 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-slate-400 shadow-sm">
                   <SectionHeader title={section.title} />
                   <UploadZone label={`Upload ${section.title}`} />
                 </div>
@@ -1003,7 +1003,7 @@ export default function NewProjectForm() {
           {activeTab === "subs" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Employee Assignment */}
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+              <div className="bg-rose-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-rose-400 shadow-sm space-y-6">
                 <div>
                   <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Assign Employees</h3>
                   <p className="text-xs font-medium text-slate-400">Toggle employees to assign or remove them from this project.</p>
@@ -1051,7 +1051,7 @@ export default function NewProjectForm() {
               </div>
 
               {/* Subcontractors */}
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+              <div className="bg-blue-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-blue-400 shadow-sm space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-display font-bold text-slate-900 mb-1">Subcontractors</h3>
@@ -1086,7 +1086,7 @@ export default function NewProjectForm() {
                 "Insurance Certificates",
                 "Tax Documents",
               ].map((title) => (
-                <div key={title} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <div key={title} className="bg-emerald-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-emerald-400 shadow-sm">
                   <SectionHeader title={title} />
                   <UploadZone label={`Upload ${title}`} />
                 </div>
@@ -1096,7 +1096,7 @@ export default function NewProjectForm() {
 
           {/* EXPENSES */}
           {activeTab === "expenses" && (
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="bg-amber-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-amber-400 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-display font-bold text-slate-900">Expense Log</h3>
                 <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all">
@@ -1115,7 +1115,7 @@ export default function NewProjectForm() {
           {/* PURCHASE ORDERS */}
           {activeTab === "po" && (
             <div className="space-y-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-violet-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-violet-400 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3>
                   <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all">
@@ -1129,7 +1129,7 @@ export default function NewProjectForm() {
                   addLabel="Add purchase order"
                 />
               </div>
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-slate-400 shadow-sm">
                 <SectionHeader title="PO Documents" />
                 <UploadZone label="Upload signed PO documents" />
               </div>
@@ -1139,7 +1139,7 @@ export default function NewProjectForm() {
           {/* INVOICE SENT */}
           {activeTab === "invoice-sent" && (
             <div className="space-y-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-rose-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-rose-400 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-display font-bold text-slate-900">Invoices Sent</h3>
                   <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all">
@@ -1153,7 +1153,7 @@ export default function NewProjectForm() {
                   addLabel="Add invoice"
                 />
               </div>
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-blue-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-blue-400 shadow-sm">
                 <SectionHeader title="Invoice Documents" />
                 <UploadZone label="Upload invoice PDFs" />
               </div>
@@ -1163,7 +1163,7 @@ export default function NewProjectForm() {
           {/* INVOICE RECEIVED */}
           {activeTab === "invoice-received" && (
             <div className="space-y-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-emerald-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-emerald-400 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-display font-bold text-slate-900">Bills Received</h3>
                   <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all">
@@ -1177,7 +1177,7 @@ export default function NewProjectForm() {
                   addLabel="Add bill"
                 />
               </div>
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="bg-amber-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-amber-400 shadow-sm">
                 <SectionHeader title="Bill Documents" />
                 <UploadZone label="Upload received invoices / bills" />
               </div>
@@ -1194,7 +1194,7 @@ export default function NewProjectForm() {
                 "Vendor List",
                 "Submittal Register",
               ].map((sectionTitle) => (
-                <div key={sectionTitle} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <div key={sectionTitle} className="bg-violet-50/40 p-8 rounded-[2.5rem] border border-l-4 border-slate-200 border-l-violet-400 shadow-sm">
                   <SectionHeader title={sectionTitle} />
                   <UploadZone label={`Upload ${sectionTitle}`} />
                 </div>

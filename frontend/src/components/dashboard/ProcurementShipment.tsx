@@ -11,6 +11,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import FormSection from "./FormSection";
 
 // The demurrage row is special: pinned to the top of the list and rendered dulled/grey. The
 // shipping contract row is mandatory too (kept just under it) but renders normally.
@@ -517,8 +518,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                 <textarea rows={2} className={`${inp} mt-1 resize-y`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What's in this shipment…" /></label>
 
               {/* CR-PR-08/09 — tracking header + container details (entered/pasted manually). */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Ship size={11} /> Tracking &amp; container</p>
+              {/* CR 217 - each part of the form is its own section, with its own colour. */}
+              <FormSection tone="blue" icon={<Ship size={11} />} title="Tracking & container">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
                     <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
@@ -537,14 +538,15 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
                 <p className="text-[10px] text-slate-400">The <strong>Track live</strong> link is auto-generated from the carrier + tracking/container # for major lines (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, ONE, UPS, FedEx, DHL, USPS…). Paste a link above only to override. Fully automated status auto-fetch requires a paid carrier-tracking API.</p>
-              </div>
+              </FormSection>
 
               {/* CR-PR-09 — goods in the shipment. */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Package size={11} /> Items in this shipment</p>
-                  <button onClick={() => setDraft({ ...draft, goods: [...draft.goods, { description: "", qty: "", unit: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add item</button>
-                </div>
+              <FormSection
+                tone="emerald"
+                icon={<Package size={11} />}
+                title="Items in this shipment"
+                right={<button onClick={() => setDraft({ ...draft, goods: [...draft.goods, { description: "", qty: "", unit: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add item</button>}
+              >
                 {draft.goods.length === 0 && <p className="text-[11px] text-slate-400 italic">No items listed.</p>}
                 {draft.goods.length > 0 && (
                   <div className="grid grid-cols-6 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -558,12 +560,11 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <div className="flex items-center gap-1"><input className={inp} placeholder="Unit" value={g.unit} onChange={(e) => setDraft({ ...draft, goods: draft.goods.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)) })} /><button onClick={() => setDraft({ ...draft, goods: draft.goods.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button></div>
                   </div>
                 ))}
-              </div>
+              </FormSection>
 
               {/* CR-PR-09 — the shipping agency / forwarder, its own section with the titles above
                   the fields (a placeholder title disappeared as soon as something was typed). */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={11} /> Shipping agency</p>
+              <FormSection tone="amber" icon={<Building2 size={11} />} title="Shipping agency">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agency name
                     <input className={`${inp} mt-1`} placeholder="e.g. DHL Global Forwarding" value={draft.agencyName} onChange={(e) => setDraft({ ...draft, agencyName: e.target.value })} /></label>
@@ -574,28 +575,31 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
                     <input type="email" className={`${inp} mt-1`} placeholder="e.g. ops@agency.com" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} /></label>
                 </div>
-              </div>
+              </FormSection>
 
               {/* Shipment costs — summed into the total shown on the shipment tab. */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><DollarSign size={11} /> Shipment costs</p>
-                  <span className="text-[11px] font-bold text-primary">Total: {money(shipmentTotal(draft))}</span>
-                </div>
+              <FormSection
+                tone="violet"
+                icon={<DollarSign size={11} />}
+                title="Shipment costs"
+                right={<span className="text-[11px] font-bold text-primary">Total: {money(shipmentTotal(draft))}</span>}
+              >
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {COST_FIELDS.map(([f, label]) => (
                     <label key={f} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}
                       <input className={`${inp} mt-1`} value={draft[f]} onChange={(e) => setDraft({ ...draft, [f]: e.target.value })} placeholder="0.00" /></label>
                   ))}
                 </div>
-              </div>
+              </FormSection>
 
               {/* Link purchase orders — the shipment's status will drive these POs' items on the Master Log */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Link2 size={11} /> Linked purchase orders <span className="font-medium normal-case text-slate-400">: their items follow this shipment's status on the Master Log and show on the Packing List row</span></p>
-                  <button onClick={() => setPoPickerOpen((v) => !v)} className="text-[10px] font-bold text-primary hover:underline shrink-0">{poPickerOpen ? "Done" : "+ Add PO"}</button>
-                </div>
+              <FormSection
+                tone="slate"
+                icon={<Link2 size={11} />}
+                title="Linked purchase orders"
+                hint="Their items follow this shipment's status on the Master Log and show on the Packing List row."
+                right={<button onClick={() => setPoPickerOpen((v) => !v)} className="text-[10px] font-bold text-primary hover:underline shrink-0">{poPickerOpen ? "Done" : "+ Add PO"}</button>}
+              >
                 {/* Cost of goods is computed live from the selected POs' invoice amounts. */}
                 <div className="flex items-center justify-between gap-2 bg-white rounded-lg border border-slate-100 px-3 py-1.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cost of goods <span className="normal-case font-medium">(from the linked POs' invoice amounts)</span></span>
@@ -627,7 +631,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     ))}
                   </div>
                 )}
-              </div>
+              </FormSection>
 
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setPopup(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
