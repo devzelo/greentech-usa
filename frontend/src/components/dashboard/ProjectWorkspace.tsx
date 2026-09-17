@@ -1180,10 +1180,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-B-19a — colleagues that can be tagged on a proposal section (notified via a reminder).
   const [projUsers, setProjUsers] = useState<AdminUser[]>([]);
   useEffect(() => { fetchUsers().then(setProjUsers).catch(() => {}); }, []);
-  const assignLayoutSection = (index: number, userId: string, name: string, vol: Vol = "technical") => {
+  // CR 201 - whoever is mentioned in a section's note ("@Sarah please work on this part") is told,
+  // with the note itself, as soon as the note is finished.
+  const notifyMentions = (index: number, people: Array<{ id: string; name: string }>, note: string, vol: Vol = "technical") => {
     const secTitle = layoutOfVol(vol)[index]?.title || "Section";
-    createReminder({ userId, title: `Review proposal section "${secTitle}"`, notes: "You were assigned to edit / review / verify this section.", dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), link: id ? `/dashboard/projects/${id}` : "/dashboard", projectId: id || undefined, projectName: project?.name || "Proposal" })
-      .then(() => toast(`${name} was notified.`, "success")).catch(() => {});
+    const volLabel = vol === "financial" ? "Financial" : "Technical";
+    Promise.all(people.map((u) => createReminder({
+      userId: u.id,
+      title: `Mentioned in "${secTitle}" (${volLabel} Proposal)`,
+      notes: note,
+      dueAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+      link: id ? `/dashboard/projects/${id}` : "/dashboard",
+      projectId: id || undefined,
+      projectName: project?.name || "Proposal",
+    })))
+      .then(() => toast(`${people.map((u) => u.name).join(", ")} ${people.length > 1 ? "were" : "was"} notified.`, "success"))
+      .catch(() => toast("Could not notify everyone mentioned.", "error"));
   };
   // Reorder a section by index against the *resolved* layout (used by the on-box arrows).
   const moveProposalSection = (index: number, dir: -1 | 1, vol: Vol = "technical") => {
@@ -4696,7 +4708,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     collapsed={!showSectionList}
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
                     users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
-                    onAssign={assignLayoutSection}
+                    onMention={(i, people, note) => notifyMentions(i, people, note)}
                     userName={getAuthUser()?.name}
                     numbering={technical.numbering || "numbers"}
                     onNumberingChange={(n) => setTech("numbering", n)}
@@ -4982,7 +4994,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     collapsed={!showSectionList}
                     onToggleCollapsed={() => setShowSectionList((v) => !v)}
                     users={projUsers.map((u) => ({ id: u.id, name: u.name }))}
-                    onAssign={(i, u, n) => assignLayoutSection(i, u, n, "financial")}
+                    onMention={(i, people, note) => notifyMentions(i, people, note, "financial")}
                     userName={getAuthUser()?.name}
                     numbering={financial.numbering || "letters"}
                     onNumberingChange={(n) => setFin("numbering", n)}

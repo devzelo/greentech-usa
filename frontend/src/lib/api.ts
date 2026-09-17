@@ -278,7 +278,8 @@ export interface ProposalSectionMeta {
   status?: string;                        // CR-B-15 — per-section status (colour-coded)
   locked?: boolean;                       // CR-B-17 — locked sections aren't reordered/edited
   notes?: string;                         // CR-B-17 — internal notes (not printed)
-  assignedTo?: string;                    // CR-B-19a — colleague tagged to review this section
+  assignedTo?: string;                    // CR-B-19a — colleague tagged to review this section (replaced by mentions)
+  mentioned?: string[];                   // CR 201 — people named in the note, already notified
   history?: Array<{ at: string; by: string; text: string }>; // CR-B-17 — per-section change log
 }
 

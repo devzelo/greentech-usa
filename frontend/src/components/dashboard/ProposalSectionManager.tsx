@@ -1,21 +1,18 @@
 import { useState } from "react";
 import HelpTip, { HelpPanel, HelpRow } from "./HelpTip";
-import { ArrowUp, ArrowDown, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, CornerDownRight, History } from "lucide-react";
+import { ArrowUp, ArrowDown, AtSign, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, CornerDownRight, History } from "lucide-react";
 import type { ProposalPageType, ProposalSectionMeta, TechnicalProposalContent } from "../../lib/api";
 import { SECTION_STATUS_OPTS } from "../../lib/sectionStatus";
 import { PAGE_TYPES, isOriginalPageType } from "../../lib/proposalLibrary";
 import SectionLibraryPicker, { type SectionAddOpts } from "./SectionLibraryPicker";
+import MentionInput, { findMentions, type MentionUser } from "./MentionInput";
 
 type Numbering = NonNullable<TechnicalProposalContent["numbering"]>;
 type LevelName = NonNullable<TechnicalProposalContent["levelName"]>;
 const LEVEL_NAMES: LevelName[] = ["Section", "Tab", "Factor", "Volume", "Part"];
 
-const KIND_BADGE: Record<string, string> = {
-  description: "Built-in", personnel: "Built-in", pastPerformance: "Built-in", timeline: "Built-in", pricing: "Built-in", custom: "Custom", blank: "Blank",
-};
-
 export default function ProposalSectionManager({
-  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onAssign, onGoTo, userName,
+  layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onMention, onGoTo, userName,
   numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
   appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical",
 }: {
@@ -35,8 +32,9 @@ export default function ProposalSectionManager({
   canEdit: boolean;
   collapsed?: boolean;          // when true the reorder list is hidden (the header + Add stay visible)
   onToggleCollapsed?: () => void;
-  users?: Array<{ id: string; name: string }>;   // CR-B-19a — colleagues to tag on a section
-  onAssign?: (index: number, userId: string, name: string) => void;
+  users?: MentionUser[];                          // CR 201 - colleagues who can be mentioned in a note
+  /** CR 201 - people newly mentioned in a section's note, to notify. */
+  onMention?: (index: number, people: MentionUser[], note: string) => void;
   /** CR 199 - open this section's editor further down the page. */
   onGoTo?: (meta: ProposalSectionMeta) => void;
   userName?: string;                              // CR-B-17 — actor recorded in section history
@@ -138,7 +136,8 @@ export default function ProposalSectionManager({
         <HelpRow icon={<CornerDownRight size={12} />} label="Go to section">Jumps to that section's editor below (or Ctrl+click its title).</HelpRow>
         <HelpRow label="Page type">Designed = our letterhead. Government form and External = the file you upload prints exactly as it is (a price form, a CPARS, an insurance certificate).</HelpRow>
         <HelpRow label="RFP ref.">The solicitation paragraph this section answers, e.g. L.5.5.3.1. It prints in the contents page.</HelpRow>
-        <HelpRow label="Status and person">Where the section stands (draft, in review, done) and who is looking after it.</HelpRow>
+        <HelpRow label="Status">Where the section stands: draft, in review, done.</HelpRow>
+        <HelpRow icon={<AtSign size={12} />} label="Note and @mentions">The note is internal and never printed. Type @ in it to name colleagues ("@Sarah please work on this part"); they are notified with the note when you finish it.</HelpRow>
         <HelpRow icon={<History size={12} />} label="History">Every status change and note on this section, with who and when.</HelpRow>
         <HelpRow icon={<Lock size={12} />} label="Lock">Keeps a finished section from being edited, moved or deleted by mistake.</HelpRow>
         <HelpRow icon={<SeparatorHorizontal size={12} />} label="Divider page">Prints a separator page with the section title before it.</HelpRow>
@@ -226,14 +225,13 @@ export default function ProposalSectionManager({
                 {SECTION_STATUS_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
             )}
-            {/* CR-B-19a — tag a colleague to review this section. */}
-            {canEdit && users && users.length > 0 && (
-              <select value={m.assignedTo || ""} disabled={locked} onChange={(e) => { const u = users.find((x) => x.id === e.target.value); patch(i, { assignedTo: u?.name || "" }); if (u && onAssign) onAssign(i, u.id, u.name); }} className="text-[10px] font-bold rounded-lg px-2 py-1 border border-slate-200 text-slate-600 bg-white cursor-pointer disabled:opacity-60" title="Tag a colleague to review this section">
-                <option value="">{m.assignedTo ? `👤 ${m.assignedTo}` : "Tag…"}</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+            {/* CR 201 - whoever is mentioned in the note below is the person tagged; the old
+                separate "Tag…" dropdown is gone. Who is on it still shows here. */}
+            {(m.mentioned?.length || m.assignedTo) && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary" title="Mentioned in this section's note">
+                <AtSign size={10} /> {(m.mentioned?.length ? m.mentioned : [m.assignedTo || ""]).filter(Boolean).join(", ")}
+              </span>
             )}
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 ${m.kind === "custom" ? "bg-indigo-50 text-indigo-500" : "bg-slate-100 text-slate-400"}`}>{KIND_BADGE[m.kind] || m.kind}</span>
             {canEdit && (
               <div className="flex items-center gap-0.5 shrink-0">
                 {/* CR-B-17 — View History for this section. */}
@@ -258,7 +256,25 @@ export default function ProposalSectionManager({
             )}
           </div>
           {canEdit && !m.hidden && (
-            <input value={m.notes || ""} onChange={(e) => patch(i, { notes: e.target.value })} disabled={locked} placeholder="+ Internal notes for this section (not printed)" className="w-full bg-transparent text-[11px] text-slate-500 outline-none border-t border-slate-50 px-3 py-1.5 disabled:opacity-60" />
+            /* CR 201 - the note is also how you tag people: "@Sarah please work on this part". */
+            <MentionInput
+              value={m.notes || ""}
+              users={users || []}
+              notified={m.mentioned || []}
+              disabled={locked}
+              placeholder="+ Internal note (not printed). Type @ to ask a colleague."
+              onChange={(next) => patch(i, { notes: next })}
+              onCommit={(text) => {
+                const named = findMentions(text, users || []);
+                const fresh = named.filter((u) => !(m.mentioned || []).includes(u.name));
+                if (!fresh.length) return;
+                patch(i, {
+                  mentioned: named.map((u) => u.name),
+                  history: [...(m.history || []), { at: new Date().toISOString(), by: userName || "Someone", text: `Mentioned ${fresh.map((u) => u.name).join(", ")}` }],
+                });
+                onMention?.(i, fresh, text);
+              }}
+            />
           )}
           {/* CR-B-17 — per-section change history. */}
           {histOpen === i && (
