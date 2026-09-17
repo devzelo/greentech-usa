@@ -119,9 +119,6 @@ const EMPLOYEE_POOL = [
   { id: "EMP-010", name: "Rachel Kim" },
 ];
 
-const PROJECT_NATURE_TYPES = [
-  "IDIQ", "Preventive Maintenance (PM)", "WWTP", "WTP", "HVAC", "Laboratory Service",
-];
 
 
 const approvalBadgeClass = (s?: string) =>
@@ -241,7 +238,7 @@ function AccessToggleRow({ label, sublabel, on, busy, indent, onToggle }: {
 
 
 // ── Default tabs ───────────────────────────────────────────────────────────
-// CR-PR-13 — Project Nature is no longer its own tab; it sits at the top of Project Info.
+// CR-PR-13 / CR 184 — Project Nature is no longer its own tab; it is part of Categories, shown in the About box at the top of Project Info.
 const DEFAULT_TABS = [
   { id: "client", label: "Client Info", icon: Building2 },
   { id: "project-info", label: "Project Info", icon: FileText },
@@ -390,14 +387,12 @@ export default function ProjectWorkspace() {
   const [empPerms, setEmpPerms] = useState<Record<string, "none" | "view" | "edit">>({});
   const [accessBusy, setAccessBusy] = useState<string | null>(null);
 
-  // Project Nature
-  const [selectedNature, setSelectedNature] = useState<string[]>([]);
-  const [customNatureInput, setCustomNatureInput] = useState("");
-  const [customNatureTypes, setCustomNatureTypes] = useState<string[]>([]);
-  // CR-P (129) — the Project Info box is locked until Edit; Save asks first and locks it again.
-  const [natureEditing, setNatureEditing] = useState(false);
-  const [natureSaving, setNatureSaving] = useState(false);
-  const natureBefore = useRef<{ selected: string[]; custom: string[] } | null>(null);
+  // CR 184 — the About box (categories + description) at the top of Project Info. It edits the
+  // same fields as Edit Identity, so the two always agree. Locked until Edit (CR-P (129)).
+  const [aboutEditing, setAboutEditing] = useState(false);
+  const [aboutSaving, setAboutSaving] = useState(false);
+  const [aboutCats, setAboutCats] = useState<string[]>([]);
+  const [aboutDesc, setAboutDesc] = useState("");
 
   // Client info (editable form on the Client Info tab)
   type ClientInfo = { name: string; reference: string; contactName: string; email: string; phone: string; country: string; address: string; notes: string; companyId: string };
@@ -2587,8 +2582,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         setProject(proj);
         setIsPublished(proj.published);
         setFinancialLocked(!!proj.financialProposalLocked);
-        setSelectedNature(proj.projectNature?.selected ?? []);
-        setCustomNatureTypes(proj.projectNature?.custom ?? []);
         setAssignedEmployees(proj.assignedEmployees ?? []);
         setCustomTabs((proj.customTabs ?? []).map((t) => ({
           id: t.tabId,
@@ -2893,12 +2886,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (newTabs[0]) setActiveTab(newTabs[0].id);
   };
 
-  const addCustomNature = () => {
-    if (!customNatureInput.trim()) return;
-    setCustomNatureTypes((prev) => [...prev, customNatureInput.trim()]);
-    setCustomNatureInput("");
-  };
-
   const currentUser = getAuthUser();
   const myEmpId = (currentUser as { empId?: string } | null)?.empId || "";
   const isOwner = !!(project && currentUser && (project as ApiProject & { ownerId?: string }).ownerId === currentUser.id);
@@ -2932,22 +2919,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const canEdit = isOwner || isAssigned || guestCanEditActive;  // edit content of the ACTIVE tab
   const canEditIdentity = isOwner;              // can edit project identity / A&S
 
-  // CR-PR-13 — Project Nature used to be a whole tab for one line of chips. It now rides at
-  // the top of Project Info, above that tab's own bars. State and saving are unchanged: it
-  // still persists through Save Workspace as project.projectNature.
-  const projectNatureCard = (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+  // CR-PR-13 / CR 184 — "About": what the project is, first thing on Project Info. Categories
+  // (formerly also "Project Nature") as tags, then the description. Saves straight to the
+  // project, the same fields Edit Identity uses.
+  const aboutCard = project && (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <Wrench size={13} className="text-slate-400 shrink-0" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Project Nature</span>
-          <span className="text-[11px] text-slate-400 font-medium">— one or more types that apply to this engagement</span>
+          <Info size={14} className="text-primary shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">About this project</span>
         </div>
-        {!canEditIdentity ? (
-          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 shrink-0">View only</span>
-        ) : !natureEditing ? (
+        {!canEditIdentity ? null : !aboutEditing ? (
           <button
-            onClick={() => { natureBefore.current = { selected: selectedNature, custom: customNatureTypes }; setNatureEditing(true); }}
+            onClick={() => { setAboutCats(projectCategories(project)); setAboutDesc(project.description || ""); setAboutEditing(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors shrink-0"
           >
             <Edit2 size={12} /> Edit
@@ -2955,11 +2939,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         ) : (
           <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={() => {
-                if (natureBefore.current) { setSelectedNature(natureBefore.current.selected); setCustomNatureTypes(natureBefore.current.custom); }
-                setCustomNatureInput(""); setNatureEditing(false);
-              }}
-              disabled={natureSaving}
+              onClick={() => setAboutEditing(false)}
+              disabled={aboutSaving}
               className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50"
             >
               Cancel
@@ -2968,58 +2949,58 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               onClick={async () => {
                 if (!id) return;
                 if (!(await brandedConfirm({ title: "Save project info?", message: "Are you sure you want to save these changes? The box locks again after saving.", confirmLabel: "Save", danger: false }))) return;
-                setNatureSaving(true);
+                setAboutSaving(true);
                 try {
-                  const u = await updateProject(id, { projectNature: { selected: selectedNature, custom: customNatureTypes } });
-                  setProject(u); setCustomNatureInput(""); setNatureEditing(false);
+                  const u = await updateProject(id, { categories: aboutCats, category: aboutCats[0] || "", description: aboutDesc.trim() });
+                  setProject(u); setAboutEditing(false);
                   toast("Project info saved.", "success");
                 } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); }
-                finally { setNatureSaving(false); }
+                finally { setAboutSaving(false); }
               }}
-              disabled={natureSaving}
+              disabled={aboutSaving}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-white text-[11px] font-bold hover:bg-primary/90 disabled:opacity-50"
             >
-              {natureSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+              {aboutSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
             </button>
           </div>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
-        {/* Locked: only the chosen types show, as plain tags. Editing: every type, to tick or untick. */}
-        {(natureEditing ? [...PROJECT_NATURE_TYPES, ...customNatureTypes] : selectedNature).map((type) => (
-          <button
-            key={type}
-            disabled={!natureEditing}
-            onClick={() => {
-              if (!natureEditing) return;
-              setSelectedNature((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]));
-            }}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:cursor-default ${
-              selectedNature.includes(type)
-                ? "border-primary bg-primary/5 text-primary"
-                : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
-            }`}
-          >
-            {selectedNature.includes(type) && <Check size={12} />}
-            {type}
-          </button>
-        ))}
-        {!natureEditing && selectedNature.length === 0 && (
-          <span className="text-[11px] text-slate-400 italic">None chosen yet.{canEditIdentity ? " Click Edit to choose." : ""}</span>
-        )}
-      </div>
-      {canEditIdentity && natureEditing && (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={customNatureInput}
-            onChange={(e) => setCustomNatureInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addCustomNature()}
-            placeholder="Add a custom type…"
-            className="flex-grow bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10"
-          />
-          <button onClick={addCustomNature} className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-primary transition-colors">Add</button>
+      {aboutEditing ? (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Categories</p>
+            <CategoryMultiSelect value={aboutCats} onChange={setAboutCats} />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</p>
+            <textarea
+              value={aboutDesc}
+              onChange={(e) => setAboutDesc(e.target.value)}
+              rows={5}
+              placeholder="What is this project about? Scope, the services we provide, key facts."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y"
+            />
+          </div>
         </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {projectCategories(project).map((c) => (
+              <span key={c} className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border border-primary/30 bg-primary/5 text-primary">{c}</span>
+            ))}
+            {projectCategories(project).length === 0 && (
+              <span className="text-[11px] text-slate-400 italic">No categories yet.{canEditIdentity ? " Click Edit to choose." : ""}</span>
+            )}
+          </div>
+          {project.description ? (
+            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{project.description}</p>
+          ) : (
+            <p className="text-sm text-slate-400 italic">
+              No description yet.{canEditIdentity ? " Click Edit to describe the scope and the services we provide." : ""}
+              {" "}An AI summary from the solicitation documents will fill this in a later phase.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -3218,8 +3199,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       if (canEditIdentity) {
         payload.published = isPublished;
         payload.financialProposalLocked = financialLocked;
-        // Project Nature is saved by its own box (Edit → Save, with the confirmation; CR-P (129)),
-        // never by Save Workspace or the autosave.
+        // Categories and description are saved by the About box or Edit Identity, never by
+        // Save Workspace or the autosave (CR 184).
         payload.assignedEmployees = assignedEmployees;
         payload.tabAccess = tabAccess;
         payload.clientInfo = clientInfo;
@@ -3972,7 +3953,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
           {/* PROJECT INFO */}
           {activeTab === "project-info" && id && (
-            <ProjectInfoTab projectId={id} canEdit={canEdit} isOwner={isOwner} projectInfo={projectPdfInfo(project)} clientName={project?.clientInfo?.name} header={projectNatureCard} />
+            <ProjectInfoTab projectId={id} canEdit={canEdit} isOwner={isOwner} projectInfo={projectPdfInfo(project)} clientName={project?.clientInfo?.name} header={aboutCard} />
           )}
 
           {/* PROPOSALS */}
@@ -6774,7 +6755,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Categories (Services)</label>
                   <CategoryMultiSelect value={identityForm.categories} onChange={(v) => setIdentityForm({ ...identityForm, categories: v })} disabled={!isOwner} />
-                  <p className="text-[10px] text-slate-400">Pick every service this project covers. Proposals find past performance by these and by Project Nature.</p>
+                  <p className="text-[10px] text-slate-400">Pick every service this project covers. Proposals find past performance by these. The same list shows in About on Project Info.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Type</label>

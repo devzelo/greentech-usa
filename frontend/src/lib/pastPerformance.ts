@@ -23,9 +23,9 @@ export function sheetLabel(builtin: boolean, libraryKey?: string): string {
 const DONE = new Set(["Completed", "Closed", "Warranty"]);
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-/** Everything a project can be found by: its service categories and its Project Nature types. */
+/** Everything a project can be found by: its categories (which now include the former Project Nature, CR 184). */
 export function projectTags(p: ApiProject): string[] {
-  return [...new Set([...projectCategories(p), ...(p.projectNature?.selected || []), ...(p.projectNature?.custom || [])].filter(Boolean))];
+  return [...new Set([...projectCategories(p), ...(p.projectNature?.selected || [])].filter(Boolean))];
 }
 
 /** A project's photos, cover image first. */

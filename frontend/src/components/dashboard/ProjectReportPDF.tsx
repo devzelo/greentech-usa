@@ -156,7 +156,6 @@ export default function ProjectReportPDF({ project, financials }: Props) {
   // With milestones set up, the progress counts from the confirmed ones (as in the project).
   const plan = planSchedule(project.schedule?.milestones || [], project.startDate || project.contractDate || "");
   const progress = plan.milestones.length ? plan.progress : Math.max(0, Math.min(100, project.progress ?? 0));
-  const nature = [...(project.projectNature?.selected || []), ...(project.projectNature?.custom || [])].join(", ");
   const income = financials?.income ?? 0;
   const expenses = financials?.expenses ?? 0;
   const profit = income - expenses;
@@ -272,7 +271,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
             <SectionHeading title="Fiscal & Compliance" />
             {kv("FUNDING", project.fiscal)}
             {kv("COMPLIANCE", project.compliance)}
-            {kv("NATURE", nature)}
+            {kv("CATEGORIES", projectCategories(project).join(", "))}
             {kv("DISCIPLINES", project.disciplines?.join(", "))}
             {kv("CONTRACT NO.", project.contractNo)}
             {kv("CONTRACT TYPE", project.contractType)}

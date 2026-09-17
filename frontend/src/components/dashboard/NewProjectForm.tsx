@@ -17,7 +17,7 @@ import {
   Upload, Download, Eye, FileText, FileImage, FileCode,
   Plus, X, MoreHorizontal, Search,
   Check, Users, Building2, FileSpreadsheet,
-  Receipt, ShoppingCart, Truck, Scale, Wrench, Calendar,
+  Receipt, ShoppingCart, Truck, Scale, Calendar,
   DollarSign, ChevronRight, AlertCircle, Globe
 } from "lucide-react";
 
@@ -36,12 +36,8 @@ const EMPLOYEE_POOL = [
   { id: "EMP-010", name: "Rachel Kim" },
 ];
 
-const PROJECT_NATURE_TYPES = [
-  "IDIQ", "Preventive Maintenance (PM)", "WWTP", "WTP", "HVAC", "Laboratory Service",
-];
 
 const TABS = [
-  { id: "nature", label: "Project Nature", icon: Wrench },
   { id: "client", label: "Client Info", icon: Building2 },
   { id: "project-info", label: "Project Info", icon: FileText },
   { id: "proposals", label: "Proposals", icon: FileSpreadsheet },
@@ -166,7 +162,7 @@ type Phase = { name: string; start: string; end: string };
 export default function NewProjectForm() {
   useMeta({ title: "Register New Project", description: "Start a new project — set identity, client info, timeline, and team." });
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("nature");
+  const [activeTab, setActiveTab] = useState("client");
   const [customTabs, setCustomTabs] = useState<{ id: string; label: string; icon: typeof Plus }[]>([]);
   const [showAddTab, setShowAddTab] = useState(false);
   const [newTabName, setNewTabName] = useState("");
@@ -261,9 +257,6 @@ export default function NewProjectForm() {
     (kind === "stamps" ? setJvStamps : setJvSignatures)((p) => p.filter((_, j) => j !== i));
 
   // Project Nature
-  const [selectedNature, setSelectedNature] = useState<string[]>([]);
-  const [customNatureInput, setCustomNatureInput] = useState("");
-  const [customNatureTypes, setCustomNatureTypes] = useState<string[]>([]);
 
   // Client Info
   const [clientName, setClientName] = useState("");
@@ -310,15 +303,6 @@ export default function NewProjectForm() {
       ? Math.max(0, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 30)))
       : null;
 
-  const toggleNature = (type: string) =>
-    setSelectedNature((prev) => prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]);
-
-  const addCustomNature = () => {
-    if (!customNatureInput.trim()) return;
-    setCustomNatureTypes((p) => [...p, customNatureInput.trim()]);
-    setCustomNatureInput("");
-  };
-
   const addPhase = () => setPhases((p) => [...p, { name: "", start: "", end: "" }]);
   const removePhase = (i: number) => setPhases((p) => p.filter((_, idx) => idx !== i));
   const updatePhase = (i: number, field: keyof Phase, val: string) =>
@@ -338,7 +322,7 @@ export default function NewProjectForm() {
 
   const handleRemoveCustomTab = (tabId: string) => {
     setCustomTabs((prev) => prev.filter((t) => t.id !== tabId));
-    if (activeTab === tabId) setActiveTab("nature");
+    if (activeTab === tabId) setActiveTab("client");
   };
 
   const filteredEmployees = EMPLOYEE_POOL.filter(
@@ -375,7 +359,6 @@ export default function NewProjectForm() {
         fiscal,
         compliance,
         disciplines: disciplinesInput.split(",").map((d) => d.trim()).filter(Boolean),
-        projectNature: { selected: selectedNature, custom: customNatureTypes },
         clientInfo: {
           name: clientName, reference: clientRef, contactName: clientContact,
           email: clientEmail, phone: clientPhone, country: clientCountry,
@@ -894,46 +877,6 @@ export default function NewProjectForm() {
           className="min-h-[400px]"
         >
 
-          {/* PROJECT NATURE */}
-          {activeTab === "nature" && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-10">
-              <div>
-                <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Project Nature</h3>
-                <p className="text-slate-400 text-sm font-medium">Select one or more types that describe this project's scope.</p>
-              </div>
-              <div className="flex flex-wrap gap-4">
-                {[...PROJECT_NATURE_TYPES, ...customNatureTypes].map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => toggleNature(type)}
-                    className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all border-2 ${
-                      selectedNature.includes(type)
-                        ? "border-primary bg-primary/5 text-primary shadow-lg shadow-primary/10"
-                        : "border-slate-100 bg-slate-50 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    {selectedNature.includes(type) && <Check size={15} />}
-                    {type}
-                  </button>
-                ))}
-              </div>
-              <div className="border-t border-slate-50 pt-8">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Add Custom Type</p>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={customNatureInput}
-                    onChange={(e) => setCustomNatureInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addCustomNature()}
-                    placeholder="Type new project category..."
-                    className="flex-grow bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-                  />
-                  <button onClick={addCustomNature} className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-bold text-sm hover:bg-primary transition-all active:scale-95">Add</button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* CLIENT INFO */}
           {activeTab === "client" && (
             <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
@@ -1378,7 +1321,6 @@ export default function NewProjectForm() {
                   { label: "Status", value: status },
                   { label: "Location", value: shortLocation(siteAddr) || "—" },
                   { label: "Project Value", value: projectValue || "—" },
-                  { label: "Nature", value: selectedNature.length ? selectedNature.join(", ") : "Not selected" },
                   { label: "Client", value: clientName || "—" },
                   { label: "Joint Venture", value: jv.enabled ? (jv.partnerName ? `Yes, with ${jv.partnerName}` : "Yes") : "No (GreenTech only)" },
                   { label: "Start Date", value: startDate || "—" },

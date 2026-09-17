@@ -20,7 +20,8 @@ function load(force = false) {
   return loading;
 }
 
-export const DEFAULT_CATEGORIES = SERVICE_CATEGORIES;
+// CR 184: Project Nature is now part of Categories. IDIQ was only a Project Nature type.
+export const DEFAULT_CATEGORIES = [...SERVICE_CATEGORIES, "IDIQ"];
 
 export function useCategoryOptions(): { defaults: string[]; custom: ApiProjectCategory[] } {
   useEffect(() => { void load(); }, []);
