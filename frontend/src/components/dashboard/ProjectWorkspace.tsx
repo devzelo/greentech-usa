@@ -616,7 +616,8 @@ export default function ProjectWorkspace() {
 // "is it sent, draft, completed, submitted, all those status items", plus the outcome.
 const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-slate-100 text-slate-500" },
-  final: { label: "Final", cls: "bg-indigo-50 text-indigo-600" },
+  // CR 203 - Final is the one status that must be unmistakable: solid green, not a pale tint.
+  final: { label: "Final", cls: "bg-emerald-500 text-white" },
   completed: { label: "Completed", cls: "bg-teal-50 text-teal-700" },
   sent: { label: "Sent", cls: "bg-blue-50 text-blue-600" },
   submitted: { label: "Submitted", cls: "bg-amber-50 text-amber-700" },
@@ -4264,15 +4265,27 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     );
                     const docs = propDocs[p.which] || [];          // newest first (server sorts by version desc)
                     const latest = docs[0];
+                    // CR 203 - is this stream marked Final, and as which revision? The volume's own
+                    // mark comes first; a revision filed as Final counts too (e.g. an uploaded one).
+                    const volFinal = p.which !== "combined" ? finalOf(p.which) : undefined;
+                    const finalRev = volFinal ? volFinal.revision
+                      : latest?.status === "final" ? Math.max(0, (latest.version || 1) - 1)
+                      : null;
                     const older = docs.slice(1);
                     const expanded = !!openRevs[p.which];
                     // CR-P (84) - "always start from revision zero": the first saved copy is Rev 0.
                     const revNo = (d: ApiSavedDocument) => Math.max(0, (d.version || 1) - 1);
                     return (
-                      <div key={p.which} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b border-slate-100">
+                      <div key={p.which} className={`bg-white rounded-[2rem] border shadow-sm overflow-hidden ${finalRev !== null ? "border-emerald-200" : "border-slate-100"}`}>
+                        <div className={`flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b ${finalRev !== null ? "border-emerald-100 bg-emerald-50/60" : "border-slate-100"}`}>
                           <h4 className="font-display font-bold text-slate-900 text-base flex items-center gap-2">
                             {p.title}
+                            {/* CR 203 - "it must clearly say Final and turn fully green". */}
+                            {finalRev !== null && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white" title={volFinal ? `Marked Final as Rev ${volFinal.revision}${volFinal.by ? ` by ${volFinal.by}` : ""}` : "The latest revision is filed as Final"}>
+                                <CheckCircle2 size={11} /> Final · Rev {finalRev}
+                              </span>
+                            )}
                             {p.which === "financial" && financialLocked && <Lock size={13} className="text-amber-500" />}
                             {/* Item 91 - the cover's draft / complete status, at a glance. */}
                             {p.which !== "combined" && (() => {
@@ -4334,7 +4347,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   </tr>
                                 )}
                                 {[latest, ...(expanded ? older : [])].filter(Boolean).map((d, i) => (
-                                  <tr key={d._id} className={i > 0 ? "bg-slate-50/20 hover:bg-slate-50/40" : "hover:bg-slate-50/40"}>
+                                  <tr key={d._id} className={d.status === "final" ? "bg-emerald-50/70 hover:bg-emerald-50" : i > 0 ? "bg-slate-50/20 hover:bg-slate-50/40" : "hover:bg-slate-50/40"}>
                                     <td className="px-4 py-2.5 text-[11px] font-bold text-slate-400 tabular-nums align-top">{i + 1}</td>
                                     <td className="px-3 py-2.5 align-top whitespace-nowrap">
                                       <span className={i === 0 ? "text-xs font-bold text-slate-800" : "text-xs font-bold text-slate-500"}>Rev {revNo(d)}</span>
