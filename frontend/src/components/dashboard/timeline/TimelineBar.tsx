@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CalendarDays, Check, Clock, Flag, GanttChart, Loader2, Pencil, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarDays, Check, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
 import type { ApiExtension, ApiProject } from "../../../lib/api";
 import {
-  DAY, daysBetween, effectiveEndDate, fmtDay, fmtShort, humanGap, isMilestonePoint, milestoneFocus, parseDate, phaseColor, planSchedule,
+  DAY, MILESTONE_STATE_LABEL, daysBetween, effectiveEndDate, fmtDay, fmtShort, humanGap, isMilestonePoint, milestoneFocus, parseDate, phaseColor, phasePercent, planSchedule,
   type PlannedMilestone,
 } from "../../../lib/projectSchedule";
 import ExtensionsPanel from "./ExtensionsPanel";
@@ -115,16 +115,64 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
     );
   }
 
-  if (variant === "progress" ? !hasMs : !contractStart && !deadline && !hasMs) {
+  if (variant === "progress") {
+    // One thin strip on every tab: the numbers, where the project is, and each phase on a slim bar
+    // (hover a phase for its name and dates). The detail is in Timeline / Milestones.
+    const stateColor = (m: PlannedMilestone) => m.state === "done" ? "#10b981" : m.state === "overdue" ? "#f59e0b" : m.state === "current" ? "#3b82f6" : "#cbd5e1";
+    const tip = (m: PlannedMilestone) => `${m.name}\n${fmtDay(m.start)}${m.end && m.end.getTime() !== m.start?.getTime() ? ` to ${fmtDay(m.end)}` : ""}\n${MILESTONE_STATE_LABEL[m.state]}, ${phasePercent(m)}% complete`;
+    return (
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-sm ${className}`}>
+        <div className="flex shrink-0 items-center gap-2">
+          <Gauge size={14} className={workPct >= 100 ? "text-emerald-500" : "text-blue-500"} />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Progress</span>
+          {hasMs || !(canEdit && onSaveProgress) ? (
+            <span className={`text-sm font-bold tabular-nums ${workPct >= 100 ? "text-emerald-600" : "text-blue-600"}`}>{workPct}%</span>
+          ) : (
+            <InlinePercent pct={workPct} onSave={onSaveProgress} />
+          )}
+          {hasMs && <span className="text-[11px] font-semibold text-slate-400">{focus.done}/{focus.total} phases</span>}
+        </div>
+
+        <div className="relative h-4 min-w-[10rem] flex-1">
+          <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-slate-100" />
+          {hasMs ? dots.map((m) => {
+            const point = !m.end || m.end.getTime() === m.start!.getTime();
+            return point ? (
+              <span key={m.id} className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px] ring-2 ring-white" style={{ left: `${pos(m.start!)}%`, background: stateColor(m) }} title={tip(m)} />
+            ) : (
+              <span key={m.id} className={`absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full ${m.state === "overdue" ? "animate-pulse" : ""}`} style={{ left: `${pos(m.start!)}%`, width: `max(4px, ${pos(m.end!) - pos(m.start!)}%)`, background: stateColor(m) }} title={tip(m)} />
+            );
+          }) : (
+            <span className={`absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full ${workPct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${workPct}%` }} />
+          )}
+          {hasMs && dots.map((m) => (
+            <span key={`s-${m.id}`} className="absolute top-1/2 h-2 w-0.5 -translate-y-1/2 bg-white/80" style={{ left: `${pos(m.start!)}%` }} />
+          ))}
+          {hasMs && todayPct !== null && <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 rounded bg-blue-700" style={{ left: `${todayPct}%` }} title={`Today, ${fmtDay(today)}`} />}
+        </div>
+
+        <div className="flex min-w-0 shrink items-center gap-3 text-[11px] text-slate-500">
+          {focus.overdue.length > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1 font-bold text-amber-600" title={focus.overdue.map((m) => m.name).join(", ")}><AlertTriangle size={11} /> {focus.overdue.length} late</span>
+          )}
+          {focus.current && <span className="truncate" title={focus.current.name}>Now: <b className="text-slate-700">{focus.current.name}</b></span>}
+          {!focus.current && focus.next && <span className="truncate" title={focus.next.name}>Next: <b className="text-slate-700">{focus.next.name}</b></span>}
+          {hasMs && undated > 0 && <span className="shrink-0">{undated} undated</span>}
+          {!hasMs && <span className="shrink-0">No timeline yet</span>}
+          {onOpenTimeline && (
+            <button type="button" onClick={onOpenTimeline} className="inline-flex shrink-0 items-center gap-1 font-bold text-slate-600 hover:text-primary" title="Open Timeline / Milestones">
+              <GanttChart size={13} /> {hasMs ? "Details" : canEdit ? "Set up timeline" : "Timeline"}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!contractStart && !deadline && !hasMs) {
     return (
       <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 ${className}`}>
-        {variant === "progress" ? (
-          canEdit && onSaveProgress
-            ? <WorkComplete pct={workPct} hasMs={false} canEdit onSave={onSaveProgress} detail="No timeline yet: set by hand" />
-            : <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No timeline yet. Progress: <b className="text-blue-600">{workPct}%</b></p>
-        ) : (
-          <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No contract dates or timeline yet.</p>
-        )}
+        <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No contract dates or timeline yet.</p>
         {onOpenTimeline && <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><GanttChart size={13} /> Set up the timeline</button>}
       </div>
     );
@@ -132,21 +180,6 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 
   return (
     <div className={`rounded-2xl border border-slate-100 bg-white shadow-sm ${className}`}>
-      {variant === "progress" ? (
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3">
-          <WorkComplete pct={workPct} hasMs canEdit={false} detail={`${focus.done} of ${focus.total} phases complete`} />
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-            {focus.overdue.length > 0 && <span className="inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
-            {focus.current && <span>Now: <b className="text-slate-700">{focus.current.name}</b></span>}
-            {focus.next && <span>Next: <b className="text-slate-700">{focus.next.name}</b>{focus.next.start ? ` (${fmtDay(focus.next.start)})` : ""}</span>}
-          </p>
-          {onOpenTimeline && (
-            <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
-              <GanttChart size={13} /> {canEdit ? "Edit timeline" : "Open timeline"}
-            </button>
-          )}
-        </div>
-      ) : (
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
@@ -170,7 +203,6 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           {extensions}
         </div>
       </div>
-      )}
 
       {/* The track */}
       <div className="px-4 pt-3">
@@ -182,21 +214,18 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           )}
         </div>
         <div className="relative h-2.5 rounded-full bg-slate-100">
-          {variant === "progress" && dots.map((m) => (
-            <span key={m.id} className={`absolute inset-y-0 rounded-full opacity-90 ${m.state === "overdue" ? "animate-pulse" : ""}`} style={{ left: `${pos(m.start!)}%`, width: `max(4px, ${pos(m.end || m.start!) - pos(m.start!)}%)`, background: m.state === "done" ? "#10b981" : m.state === "overdue" ? "#f59e0b" : m.state === "current" ? "#3b82f6" : "#cbd5e1" }} title={`${m.name}: ${fmtDay(m.start)}${m.end ? ` to ${fmtDay(m.end)}` : ""}`} />
-          ))}
-          {variant === "full" && contractStart && deadline && (
+          {contractStart && deadline && (
             <>
               {extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${pos(origEnd)}%`, right: `${100 - pos(deadline)}%` }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(deadline)}`} />}
               <div className={`absolute inset-y-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ left: `${pos(contractStart)}%`, width: `${Math.max(0, pos(today > deadline ? deadline : today) - pos(contractStart))}%` }} />
             </>
           )}
           {/* Phase start markers, by date */}
-          {variant === "full" && dots.map((m) => (
+          {dots.map((m) => (
             <span key={m.id} className="absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded bg-white/90 ring-1" style={{ left: `${pos(m.start!)}%`, ["--tw-ring-color" as string]: phaseColor(m) }} title={`${m.name}: ${fmtDay(m.start)}`} />
           ))}
           {todayPct !== null && <span className="absolute -top-1.5 -bottom-1.5 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${todayPct}%` }} />}
-          {variant === "full" && elapsedPct !== null && (
+          {elapsedPct !== null && (
             <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-bold text-emerald-700 shadow-sm" style={{ left: `${Math.max(6, Math.min(94, pos(contractStart!) + (pos(today > deadline! ? deadline! : today) - pos(contractStart!)) / 2))}%` }}>
               {Math.round(elapsedPct)}% elapsed
             </span>
@@ -217,12 +246,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
         )}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2">
           <p className="text-[10px] text-slate-400">
-            {variant === "full" && focus.overdue.length > 0 && <span className="mr-2 inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
-            {variant === "full" && <span className="mr-2 font-bold text-blue-600">Work complete {workPct}%{hasMs ? ` (${focus.done} of ${focus.total} phases)` : ""}</span>}
+            {focus.overdue.length > 0 && <span className="mr-2 inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
+            <span className="mr-2 font-bold text-blue-600">Work complete {workPct}%{hasMs ? ` (${focus.done} of ${focus.total} phases)` : ""}</span>
             {undated > 0 && `${undated} phase${undated === 1 ? "" : "s"} without dates. `}
-            {variant === "full" ? "Time elapsed is calendar time; work complete comes from the phases." : "Bar: green complete, blue in progress, amber past its planned end, grey not started."}
+            Time elapsed is calendar time; work complete comes from the phases.
           </p>
-          {variant === "full" && onOpenTimeline && (
+          {onOpenTimeline && (
             <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
               <GanttChart size={13} /> {canEdit ? "Edit timeline" : "Open timeline"}
             </button>
@@ -256,33 +285,23 @@ function Dot({ m, first, last }: { m: PlannedMilestone; first: boolean; last: bo
   );
 }
 
-function WorkComplete({ pct, hasMs, canEdit, onSave, detail }: { pct: number; hasMs: boolean; canEdit: boolean; onSave?: (v: number) => Promise<void>; detail: string }) {
+function InlinePercent({ pct, onSave }: { pct: number; onSave: (v: number) => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(pct));
   const [busy, setBusy] = useState(false);
-  const r = 16, c = 2 * Math.PI * r;
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600">
+        {pct}%
+        <button type="button" onClick={() => { setVal(String(pct)); setEditing(true); }} className="rounded p-0.5 text-slate-400 hover:text-primary" title="Change progress"><Pencil size={11} /></button>
+      </span>
+    );
+  }
   return (
-    <div className="flex items-center gap-2" title={hasMs ? "Work complete, from the phases' % complete" : "Work complete"}>
-      <svg width="40" height="40" viewBox="0 0 40 40" className="shrink-0 -rotate-90">
-        <circle cx="20" cy="20" r={r} fill="none" stroke="#e2e8f0" strokeWidth="4" />
-        <circle cx="20" cy="20" r={r} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} />
-      </svg>
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work complete</p>
-        {editing ? (
-          <form className="flex items-center gap-1" onSubmit={async (e) => { e.preventDefault(); const v = Math.max(0, Math.min(100, Math.round(Number(val)))); if (!onSave || !isFinite(v)) return; setBusy(true); try { await onSave(v); setEditing(false); } finally { setBusy(false); } }}>
-            <input autoFocus type="number" min={0} max={100} value={val} onChange={(e) => setVal(e.target.value)} className="w-14 rounded-md border border-slate-200 px-1.5 py-0.5 text-sm font-bold" />
-            <button type="submit" disabled={busy} className="rounded p-0.5 text-emerald-600 hover:bg-emerald-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}</button>
-            <button type="button" onClick={() => setEditing(false)} className="rounded p-0.5 text-slate-400 hover:bg-slate-100"><X size={13} /></button>
-          </form>
-        ) : (
-          <p className="flex items-center gap-1 text-base font-bold text-blue-600">
-            {pct}%
-            {canEdit && <button type="button" onClick={() => { setVal(String(pct)); setEditing(true); }} className="rounded p-0.5 text-slate-400 hover:text-primary" title="Change"><Pencil size={11} /></button>}
-          </p>
-        )}
-        <p className="text-[10px] text-slate-400">{detail}</p>
-      </div>
-    </div>
+    <form className="flex items-center gap-1" onSubmit={async (e) => { e.preventDefault(); const v = Math.max(0, Math.min(100, Math.round(Number(val)))); if (!isFinite(v)) return; setBusy(true); try { await onSave(v); setEditing(false); } catch { /* shown by the caller */ } finally { setBusy(false); } }}>
+      <input autoFocus type="number" min={0} max={100} value={val} onChange={(e) => setVal(e.target.value)} className="w-14 rounded-md border border-slate-200 px-1.5 py-0.5 text-xs font-bold" />
+      <button type="submit" disabled={busy} className="rounded p-0.5 text-emerald-600 hover:bg-emerald-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}</button>
+      <button type="button" onClick={() => setEditing(false)} className="rounded p-0.5 text-slate-400 hover:bg-slate-100"><X size={13} /></button>
+    </form>
   );
 }
