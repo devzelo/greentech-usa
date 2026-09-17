@@ -9,7 +9,7 @@ import {
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
-  GanttChartSquare,
+  GanttChartSquare, FileDown, Printer,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -32,6 +32,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import BuilderActions from "./BuilderActions";
+import ExportMenu from "./ExportMenu";
 import { usePresence, useBuilderPresence } from "../../lib/usePresence";
 import { proposalParts, type ProposalTeamResume } from "./ProposalPDF";
 import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, type ApiSubResume, type ApiExtension, projectCategories, CONTRACT_TYPES, uploadExpenseAttachment, deleteExpenseAttachment, attachmentUrl, uploadProcurementAttachment, deleteProcurementAttachment, type ApiExpense } from "../../lib/api";
@@ -1027,6 +1028,27 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (tb.title || "Table").slice(0, 31).replace(/[\\/?*[\]]/g, ""));
     XLSX.writeFile(wb, `${(project?.name || "pricing").replace(/\s+/g, "_")}_${(tb.title || "table").replace(/\s+/g, "_")}.xlsx`);
+  };
+
+  // CR 197 - every price table in one workbook (a sheet each, with its total), for Export > Excel.
+  const exportAllTablesExcel = () => {
+    const tables = resolveFinancialTables(financial);
+    if (!tables.length) { toast("There are no price tables to export.", "error"); return; }
+    const wb = XLSX.utils.book_new();
+    const used = new Set<string>();
+    tables.forEach((tb, i) => {
+      const calc = tableCalc(tb);
+      const data = tb.rows.map((r) => (r.type === "group"
+        ? [r.label || "", ...tb.columns.slice(1).map(() => "")]
+        : tb.columns.map((c) => (c.kind === "amount" && calc.isComputed(r) ? calc.amountOf(r) : r.cells[c.id] ?? ""))));
+      const pad = tb.columns.slice(2).map(() => "");
+      const ws = XLSX.utils.aoa_to_sheet([tb.columns.map((c) => c.label), ...data, [], ["Total", "", ...pad.slice(0, -1), calc.grand]]);
+      let name = (tb.title || `Table ${i + 1}`).slice(0, 28).replace(/[\\/?*[\]:]/g, "") || `Table ${i + 1}`;
+      while (used.has(name)) name = `${name.slice(0, 25)} ${i + 1}`;
+      used.add(name);
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    });
+    XLSX.writeFile(wb, `${(project?.name || "project").replace(/[^a-z0-9._-]+/gi, "_")}_Financial_Proposal_Pricing.xlsx`);
   };
 
   // Import an Excel/CSV file as a NEW table (columns from the header row).
@@ -3979,32 +4001,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 >
                   <Eye size={13} /> Preview
                 </button>
-                <button
-                  onClick={() => downloadProposal(which, false)}
-                  disabled={proposalDownloading === `${which}-false`}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors disabled:opacity-50"
-                >
-                  <Download size={13} /> {proposalDownloading === `${which}-false` ? "Preparing…" : "Download PDF"}
-                </button>
-                <button
-                  onClick={() => downloadProposal(which, true)}
-                  disabled={proposalDownloading === `${which}-true`}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors disabled:opacity-50"
-                  title="Merge this proposal's uploaded attachments into one PDF"
-                >
-                  <Download size={13} /> {proposalDownloading === `${which}-true` ? "Merging…" : "Download + attachments"}
-                </button>
-                <button
-                  onClick={() => downloadProposalWord(which)}
-                  disabled={proposalDownloading === `${which}-docx`}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors disabled:opacity-50"
-                  title="Export as an editable Word document"
-                >
-                  <FileText size={13} /> {proposalDownloading === `${which}-docx` ? "Preparing…" : "Word (.docx)"}
-                </button>
-                {/* CR-B-14a — the rest of the standard action set for the Proposal builder.
-                    (Preview/PDF/Word are the buttons above; Save/Duplicate/Print/Mark-complete/
-                    Discard/Reset come from the shared bar, with confirmations.) */}
+                {/* CR 197 - one Export button: PDF (with or without the attachments), Word, Excel, Print. */}
+                <ExportMenu
+                  options={[
+                    { key: "pdf-full", label: "PDF with attachments", hint: "The whole proposal, uploaded files merged in (what goes to the client)", icon: <FileDown size={14} />, busy: proposalDownloading === `${which}-true`, onSelect: () => downloadProposal(which, true) },
+                    { key: "pdf", label: "PDF", hint: "The generated pages only", icon: <FileDown size={14} />, busy: proposalDownloading === `${which}-false`, onSelect: () => downloadProposal(which, false) },
+                    { key: "word", label: "Word (.docx)", hint: "An editable copy", icon: <FileText size={14} />, busy: proposalDownloading === `${which}-docx`, onSelect: () => downloadProposalWord(which) },
+                    ...(which === "financial" ? [{ key: "excel", label: "Excel (.xlsx)", hint: "The price tables, one sheet each with totals", icon: <FileSpreadsheet size={14} />, onSelect: exportAllTablesExcel }] : []),
+                    { key: "print", label: "Print", hint: "Opens the preview; print from its toolbar", icon: <Printer size={14} />, onSelect: () => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); } },
+                  ]}
+                />
+                {/* CR-B-14a - the rest of the standard action set for the Proposal builder
+                    (Save / Duplicate / Mark as Final / Discard / Reset, with confirmations). */}
                 {canEdit && (
                   <BuilderActions
                     confirm={dlgConfirm}
@@ -4012,7 +4020,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     dirty={dirty}
                     onSave={() => handleSave()}
                     onDuplicate={() => saveRevision(false)}
-                    onPrint={() => { if (dirty) void handleSave(true); setProposalPreview(which); }}
                     markCompleteLabel="Mark as Final"
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
                     /* CR-P (109) — "are you sure you want to save it as final? You cannot change it later." The
