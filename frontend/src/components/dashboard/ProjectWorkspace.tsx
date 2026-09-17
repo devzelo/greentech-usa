@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Globe, Clock, ExternalLink, MapPin,
@@ -66,6 +66,7 @@ import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
 import AvailableAttachments from "./AvailableAttachments";
+import MinutesPanel from "./MinutesPanel";
 import InsertSectionTemplate, { type InsertPayload } from "./InsertSectionTemplate";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
 import { isOriginalPageType, PAGE_TYPES } from "../../lib/proposalLibrary";
@@ -1182,6 +1183,46 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-B-19a — colleagues that can be tagged on a proposal section (notified via a reminder).
   const [projUsers, setProjUsers] = useState<AdminUser[]>([]);
   useEffect(() => { fetchUsers().then(setProjUsers).catch(() => {}); }, []);
+  // CR 208/209 - everyone on this project: the default attendees of a meeting, and who can be named.
+  const projectPeople = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ id?: string; name: string; role?: string; company?: string }> = [];
+    const push = (p: { id?: string; name: string; role?: string; company?: string }) => {
+      const key = (p.name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(p);
+    };
+    // The people actually on this project: the owner, the assigned employees, the JV partner and
+    // the subcontractor contacts. Not the whole staff list.
+    if (project?.owner) push({ name: project.owner, role: "Project owner", company: "GreenTech USA" });
+    assignedEmployees.forEach((empId) => {
+      const e = employeePool.find((x) => x.empId === empId);
+      if (e) push({ id: e.id, name: e.name, role: e.jobTitle || "", company: "GreenTech USA" });
+    });
+    if (jvInfo.enabled && jvInfo.partnerName) push({ name: jvInfo.contactName || jvInfo.partnerName, role: "JV partner", company: jvInfo.partnerName });
+    (project?.subcontractors || []).forEach((sc) => push({ name: sc.contactName || sc.name, role: "Subcontractor", company: sc.name }));
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.owner, project?.subcontractors, assignedEmployees, employeePool, jvInfo.enabled, jvInfo.partnerName, jvInfo.contactName]);
+
+  const notifyMinuteMentions = (named: Array<{ id: string; name: string }>, context: string, note: string) => {
+    // Only someone with an account can be told; a subcontractor contact is just a name on the page.
+    const people = named.filter((u) => /^[0-9a-f]{24}$/i.test(u.id));
+    if (!people.length) return;
+    Promise.all(people.map((u) => createReminder({
+      userId: u.id,
+      title: `Mentioned in "${context}"`,
+      notes: note,
+      dueAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+      link: id ? `/dashboard/projects/${id}` : "/dashboard",
+      projectId: id || undefined,
+      projectName: project?.name || "Project",
+    })))
+      .then(() => toast(`${people.map((u) => u.name).join(", ")} ${people.length > 1 ? "were" : "was"} notified.`, "success"))
+      .catch(() => toast("Could not notify everyone mentioned.", "error"));
+  };
+
   // CR 201 - whoever is mentioned in a section's note ("@Sarah please work on this part") is told,
   // with the note itself, as soon as the note is finished.
   const notifyMentions = (index: number, people: Array<{ id: string; name: string }>, note: string, vol: Vol = "technical") => {
@@ -5213,6 +5254,21 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   ) : null,
                 },
               ]}
+              // CR 208 - minutes written in the platform sit above the uploads in that tab.
+              above={{
+                "pm-meeting-minutes": id && project ? (
+                  <MinutesPanel
+                    projectId={id}
+                    section="pm-meeting-minutes"
+                    projectName={project.name}
+                    projectNo={project.projectId}
+                    kind="meeting"
+                    canEdit={canEdit}
+                    people={projectPeople}
+                    onMention={notifyMinuteMentions}
+                  />
+                ) : null,
+              }}
               defaults={[
                 { id: "pm-schedules", label: "Schedules", section: "pm-schedules" },
                 { id: "pm-meeting-minutes", label: "Meeting Minutes", section: "pm-meeting-minutes" },

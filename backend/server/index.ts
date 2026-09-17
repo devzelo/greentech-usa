@@ -44,6 +44,7 @@ import shipmentRoutes from "./routes/shipments";
 import projectRequestRoutes from "./routes/projectRequests";
 import technicalDocRoutes from "./routes/technicalDocs";
 import projectTableRoutes from "./routes/projectTables";
+import meetingMinuteRoutes from "./routes/meetingMinutes";   // CR 208/209
 import Agreement from "./models/Agreement";
 import { nextSequence } from "./models/Counter";
 import { userAgreementRouter, projectAgreementRouter, generalAgreementRouter, agreementTemplateRouter, expireOverdueAgreements } from "./routes/agreements";
@@ -89,6 +90,7 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/projects/:id/expenses", expenseRoutes);
 app.use("/api/projects/:id/board", boardRoutes);
 app.use("/api/projects/:id/schedule", scheduleRoutes);       // CR 188-192 timeline versions / draft
+app.use("/api/projects/:id/minutes", meetingMinuteRoutes);   // CR 208/209 minutes and progress reports
 app.use("/api/projects/:id/sub-invoices", subInvoiceRoutes);
 app.use("/api/projects/:id/purchase-orders", purchaseOrderRoutes);
 app.use("/api/projects/:id/invoices", invoiceRoutes);

@@ -575,6 +575,45 @@ export async function deleteProposalTemplate(id: string): Promise<{ message: str
   return request(`/proposal-templates/${id}`, { method: 'DELETE' });
 }
 
+// ── Meeting minutes and progress reports written in the platform (CR 208 / 209) ──────────────
+export interface MinuteAction { id: string; text: string; ownerUserId?: string; ownerName?: string; due?: string; done?: boolean }
+export interface MinuteItem { id: string; title: string; notes: string; actions: MinuteAction[] }
+export interface MinuteAttendee { userId?: string; name: string; role?: string; company?: string; present?: boolean }
+export interface ApiMinute {
+  _id: string;
+  projectId: string;
+  kind: "meeting" | "progress";
+  title: string;
+  date: string;
+  time?: string;
+  location?: string;
+  period?: string;
+  attendees: MinuteAttendee[];
+  items: MinuteItem[];
+  summary: string;
+  mentioned: string[];
+  status: "draft" | "final";
+  archived: boolean;
+  createdById?: string;
+  createdByName: string;
+  updatedByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export type MinuteKind = "meeting" | "progress";
+export async function fetchMinutes(projectId: string, kind: MinuteKind, archived = false): Promise<ApiMinute[]> {
+  return request(`/projects/${projectId}/minutes?kind=${kind}${archived ? "&archived=1" : ""}`);
+}
+export async function createMinute(projectId: string, body: Partial<ApiMinute> & { kind: MinuteKind }): Promise<ApiMinute> {
+  return request(`/projects/${projectId}/minutes`, { method: 'POST', body: JSON.stringify(body) });
+}
+export async function updateMinute(projectId: string, id: string, body: Partial<ApiMinute>): Promise<ApiMinute> {
+  return request(`/projects/${projectId}/minutes/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+export async function deleteMinute(projectId: string, id: string): Promise<{ message: string }> {
+  return request(`/projects/${projectId}/minutes/${id}`, { method: 'DELETE' });
+}
+
 // CR 200 - the second source for "Insert from template": the written proposal of another project.
 export interface ProposalSourceProject {
   projectId: string;

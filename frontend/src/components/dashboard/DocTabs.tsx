@@ -27,7 +27,7 @@ type Tab = DocTabDef & { custom?: ApiTableRow; override?: ApiTableRow };
 
 type LeadTab = { id: string; label: string; content: ReactNode; icon?: ReactNode };
 
-export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, canEdit, canManageTabs, canPublish, lead, focus }: {
+export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, canEdit, canManageTabs, canPublish, lead, focus, above }: {
   projectId: string;
   tableKey: string;
   sectionPrefix: string;
@@ -39,6 +39,8 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
   lead?: LeadTab | LeadTab[];
   /** Open this tab (a new `n` opens it again). */
   focus?: { id: string; n: number };
+  /** CR 208/209 - content shown above a tab's uploads, keyed by tab id (minutes, reports). */
+  above?: Record<string, ReactNode>;
 }) {
   const leads: LeadTab[] = lead ? (Array.isArray(lead) ? lead : [lead]) : [];
   const { prompt, confirm, dialogs } = useDialogs();
@@ -168,7 +170,10 @@ export default function DocTabs({ projectId, tableKey, sectionPrefix, defaults, 
       )}
 
       {activeLead ? activeLead.content : current ? (
-        <DocSection key={current.section} projectId={projectId} section={current.section} title={current.label} canEdit={canEdit} canPublish={canPublish} />
+        <div className="space-y-6">
+          {above?.[current.id]}
+          <DocSection key={current.section} projectId={projectId} section={current.section} title={current.label} canEdit={canEdit} canPublish={canPublish} />
+        </div>
       ) : (
         <p className="text-sm text-slate-400 text-center py-8">No tabs yet.{canManageTabs ? " Use Add tab to create one." : ""}</p>
       )}
