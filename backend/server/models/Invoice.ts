@@ -38,7 +38,11 @@ export interface IInvoice extends Document {
   companyId: string;       // link to a Companies Directory record, when chosen there
   lineItems: Array<{ description: string; qty: string; unitPrice: string }>; // manual line-item builder
   bank: { name: string; accountName: string; accountNumber: string; iban: string; swift: string; routing: string };
-  terms: string;           // T&C printed on the invoice
+  // CR 215 - what the invoice is for, written like an agreement's description section.
+  descriptionBody: string;
+  terms: string;           // T&C printed on the invoice: written, or a file chosen from the standards
+  termsMode: "text" | "file";
+  termsFile: { name: string; filePath: string; fileType: string } | null;
   sections: Array<{ title: string; body: string }>; // extra named sections (CR-I-04)
   rfqId: string;           // link to an RFQ (received invoice, CR-I-08)
   isTemplate: boolean;     // saved as a reusable template (CR-I-07)
@@ -87,7 +91,10 @@ const InvoiceSchema = new Schema<IInvoice>(
       name: { type: String, default: "" }, accountName: { type: String, default: "" }, accountNumber: { type: String, default: "" },
       iban: { type: String, default: "" }, swift: { type: String, default: "" }, routing: { type: String, default: "" },
     },
+    descriptionBody: { type: String, default: "" },
     terms: { type: String, default: "" },
+    termsMode: { type: String, enum: ["text", "file"], default: "text" },
+    termsFile: { type: { name: String, filePath: String, fileType: String }, default: null },
     sections: { type: [{ title: { type: String, default: "" }, body: { type: String, default: "" } }], default: [] },
     rfqId: { type: String, default: "" },
     isTemplate: { type: Boolean, default: false },

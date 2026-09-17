@@ -22,7 +22,7 @@ const subs = (arr: unknown): any => arr as any;
 
 const INVOICE_FIELDS = ["type", "number", "party", "amount", "date", "status", "description", "poId", "subId",
   // Invoice builder (CR-I-03/04/07).
-  "receiverKind", "companyId", "lineItems", "bank", "terms", "sections", "rfqId", "isTemplate", "signerName", "signerTitle", "signatureUrl", "contractTotal",
+  "receiverKind", "companyId", "lineItems", "bank", "descriptionBody", "terms", "termsMode", "termsFile", "sections", "rfqId", "isTemplate", "signerName", "signerTitle", "signatureUrl", "contractTotal",
   "contractRef",   // CR-P (168) — the contract this invoice bills against
 ] as const;
 

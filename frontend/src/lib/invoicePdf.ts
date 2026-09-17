@@ -16,6 +16,15 @@ const n = (s?: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) |
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
 const X = GUTTER, W = LETTER.w - GUTTER * 2;
 
+// CR 215 - the Description and written terms are rich text; print them as plain lines.
+const htmlLines = (html: string): string[] => (html || "")
+  .replace(/<li[^>]*>/gi, "\n• ")
+  .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "\n")
+  .replace(/<br\s*\/?>/gi, "\n")
+  .replace(/<[^>]*>/g, "")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .split(/\n+/).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+
 const lineTotal = (inv: ApiInvoice) => (inv.lineItems || []).reduce((s, it) => s + n(it.qty) * n(it.unitPrice), 0);
 const invoiceAmount = (inv: ApiInvoice) => ((inv.lineItems || []).length ? lineTotal(inv) : n(inv.amount));
 
@@ -108,7 +117,30 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
     f = flowText(f, body, { x: X, w: W, font: b.regular, size: 9, lineHeight: 12.5, color: C.s700, newPage });
     f.y -= 10;
   };
-  if (inv.terms) block("Terms & conditions", inv.terms);
+  // CR 215 - what the invoice is for, in its own section like an agreement's.
+  if (htmlLines(inv.descriptionBody || "").length) {
+    ensure(60);
+    f.y = sectionHeading(f.page, b, "Description", X, f.y, W);
+    for (const line of htmlLines(inv.descriptionBody || "")) {
+      f = flowText(f, line, { x: X, w: W, font: b.regular, size: 9, lineHeight: 12.5, color: C.s700, newPage });
+    }
+    f.y -= 10;
+  }
+  // CR 215 - terms written here, or the standard document, which follows the invoice as it is.
+  if (inv.termsMode === "file" && inv.termsFile?.name) {
+    ensure(50);
+    f.y = sectionHeading(f.page, b, "Terms & conditions", X, f.y, W);
+    f = flowText(f, `Our standard terms and conditions apply: ${inv.termsFile.name}, attached to this invoice.`,
+      { x: X, w: W, font: b.regular, size: 9, lineHeight: 12.5, color: C.s700, newPage });
+    f.y -= 10;
+  } else if (htmlLines(inv.terms || "").length) {
+    ensure(60);
+    f.y = sectionHeading(f.page, b, "Terms & conditions", X, f.y, W);
+    for (const line of htmlLines(inv.terms || "")) {
+      f = flowText(f, line, { x: X, w: W, font: b.regular, size: 9, lineHeight: 12.5, color: C.s700, newPage });
+    }
+    f.y -= 10;
+  }
   for (const s of inv.sections || []) if (s.title || s.body) block(s.title || "Notes", s.body || "");
 
   // Signature.
@@ -125,7 +157,7 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   }
 
   // CR 214 - the uploaded invoice itself, exactly as it was given to us, before the payment page.
-  const copied = new Set<number>();
+  const copied = new Set<number>();          // pages taken from another document: never stamped
   if (uploaded) {
     for (const file of files) {
       try {
@@ -144,6 +176,18 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
         }
       } catch { /* a file that cannot be read is named on page 1; the rest of the document still prints */ }
     }
+  }
+
+  // CR 215 - the standard terms document itself, printed after the invoice exactly as it is.
+  if (inv.termsMode === "file" && inv.termsFile?.filePath) {
+    try {
+      const bytes = await fetch(attachmentUrl(inv.termsFile.filePath)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))));
+      if (/pdf/i.test(inv.termsFile.fileType || inv.termsFile.name)) {
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+        const pages = await doc.copyPages(src, src.getPageIndices());
+        for (const pg of pages) { doc.addPage(pg); copied.add(doc.getPageCount() - 1); }
+      }
+    } catch { /* named on the invoice either way */ }
   }
 
   // Page 2 — Payment Application. CR-P (167)/(168) — against one contract (the project's contract,

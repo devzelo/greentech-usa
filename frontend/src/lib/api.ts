@@ -1504,7 +1504,10 @@ export interface ApiInvoice {
   poId: string; subId: string;
   // Invoice builder (CR-I-03/04/07).
   receiverKind?: string; companyId?: string; lineItems?: InvoiceLineItem[]; bank?: InvoiceBank;
-  terms?: string; sections?: Array<{ title: string; body: string }>; rfqId?: string; isTemplate?: boolean;
+  /** CR 215 - what the invoice is for (rich text), and the terms: written or a standard file. */
+  descriptionBody?: string;
+  terms?: string; termsMode?: "text" | "file"; termsFile?: { name: string; filePath: string; fileType: string } | null;
+  sections?: Array<{ title: string; body: string }>; rfqId?: string; isTemplate?: boolean;
   signerName?: string; signerTitle?: string; signatureUrl?: string; contractTotal?: string;
   /** CR-P (168) - the contract billed against: "project" | "agreement" | "manual" (| "" none). */
   contractRef?: { source: string; agreementId: string; label: string };
@@ -1521,7 +1524,7 @@ export async function fetchInvoices(projectId: string, type?: 'sent' | 'received
   return request<ApiInvoice[]>(`/projects/${projectId}/invoices${qs}`);
 }
 
-export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'poId' | 'subId' | 'receiverKind' | 'companyId' | 'lineItems' | 'bank' | 'terms' | 'sections' | 'rfqId' | 'isTemplate' | 'signerName' | 'signerTitle' | 'signatureUrl' | 'contractTotal' | 'contractRef'>>;
+export type InvoiceInput = Partial<Pick<ApiInvoice, 'type' | 'number' | 'party' | 'amount' | 'date' | 'status' | 'description' | 'descriptionBody' | 'poId' | 'subId' | 'receiverKind' | 'companyId' | 'lineItems' | 'bank' | 'terms' | 'termsMode' | 'termsFile' | 'sections' | 'rfqId' | 'isTemplate' | 'signerName' | 'signerTitle' | 'signatureUrl' | 'contractTotal' | 'contractRef'>>;
 export async function addInvoice(projectId: string, body: InvoiceInput): Promise<ApiInvoice> {
   return request(`/projects/${projectId}/invoices`, { method: 'POST', body: JSON.stringify(body) });
 }

@@ -7,6 +7,7 @@ import {
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
   invoicePaid, invoiceRemaining, fetchCompanies, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
   fetchCompanyBanks, createCompanyBank, updateCompanyBank, deleteCompanyBank, getAuthUser, fetchProjectAgreements,
+  fetchTermsFiles, fetchNdaFiles, type CompanyFile,
   type ApiAgreement,
   type ApiInvoice, type ApiProcurementPO, type ApiVendor, type ApiCompany, type InvoiceLineItem, type InvoiceBank, type InvoiceInput, type ApiSignatory, type ApiRfq, type ApiCompanyBank,
 } from "../../lib/api";
@@ -16,6 +17,7 @@ const bankOf = (b: ApiCompanyBank): InvoiceBank => ({ name: b.name, accountName:
 const sameBank = (a: InvoiceBank, b: InvoiceBank) => a.name.trim() === b.name.trim() && a.accountNumber.trim() === b.accountNumber.trim() && a.iban.trim() === b.iban.trim();
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
+import RichTextEditor from "./RichTextEditor";
 import { useTableSort, SortTh } from "../../lib/useTableSort";
 import { payApplication } from "../../lib/payApplication";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
@@ -58,7 +60,9 @@ const BLANK_BANK: InvoiceBank = { name: "", accountName: "", accountNumber: "", 
 type BuilderDraft = {
   receiverKind: string; party: string; companyId: string; date: string; description: string;
   mode: "build" | "upload";
-  lineItems: InvoiceLineItem[]; bank: InvoiceBank; terms: string;
+  lineItems: InvoiceLineItem[]; bank: InvoiceBank;
+  // CR 215 - what the invoice is for, and terms written here or taken from the standard documents.
+  descriptionBody: string; terms: string; termsMode: "text" | "file"; termsFile: { name: string; filePath: string; fileType: string } | null;
   sections: Array<{ title: string; body: string }>; rfqId: string;
   signerName: string; signerTitle: string; signatureUrl: string; contractTotal: string;
   contractRef: { source: string; agreementId: string; label: string };   // CR-P (168)
@@ -80,6 +84,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 }) {
   const isSent = kind === "sent";
   const [rows, setRows] = useState<ApiInvoice[]>([]);
+  // CR 215 - the company's standard terms and NDA documents, for the terms section.
+  const [termsFiles, setTermsFiles] = useState<CompanyFile[]>([]);
+  const [termsPicker, setTermsPicker] = useState(false);
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +159,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       const row = await addInvoice(projectId, {
         type: kind, party: t.party, receiverKind: t.receiverKind, companyId: t.companyId, description: t.description,
         amount: t.amount, date: new Date().toISOString().slice(0, 10), status: isSent ? "Draft" : "Unpaid",
-        lineItems: t.lineItems, bank: t.bank, terms: t.terms, sections: t.sections, signerName: t.signerName,
+        lineItems: t.lineItems, bank: t.bank, descriptionBody: t.descriptionBody, terms: t.terms, termsMode: t.termsMode, termsFile: t.termsFile, sections: t.sections, signerName: t.signerName,
         signerTitle: t.signerTitle, signatureUrl: t.signatureUrl, contractTotal: t.contractTotal, isTemplate: false,
       });
       setRows((p) => [...p, row]); setNewOpen(false); openBuilder(row); toast(`New invoice #${row.number} from template.`, "success");
@@ -170,7 +177,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       mode: fresh ? (isSent ? "build" : "upload") : (inv.lineItems && inv.lineItems.length) || !(inv.attachments?.length) ? "build" : "upload",
       lineItems: inv.lineItems?.length ? inv.lineItems : [{ description: "", qty: "1", unitPrice: "" }],
       amount: inv.amount || "",
-      bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK }, terms: inv.terms || "",
+      bank: inv.bank ? { ...inv.bank } : { ...BLANK_BANK },
+      descriptionBody: inv.descriptionBody || "", terms: inv.terms || "",
+      termsMode: inv.termsMode || "text", termsFile: inv.termsFile || null,
       sections: inv.sections ? inv.sections.map((s) => ({ ...s })) : [], rfqId: inv.rfqId || "",
       signerName: inv.signerName || "", signerTitle: inv.signerTitle || "", signatureUrl: inv.signatureUrl || "",
       // CR-P (168) — an invoice to the project's client bills the project's contract by default.
@@ -189,7 +198,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       receiverKind: d.receiverKind, party: d.party.trim(), companyId: d.companyId,
       date: d.date, description: d.description,
       lineItems: d.mode === "build" ? d.lineItems : [],
-      bank: d.bank, terms: d.terms, sections: d.sections, rfqId: d.rfqId,
+      bank: d.bank, descriptionBody: d.descriptionBody, terms: d.terms, termsMode: d.termsMode, termsFile: d.termsFile, sections: d.sections, rfqId: d.rfqId,
       signerName: d.signerName, signerTitle: d.signerTitle, signatureUrl: d.signatureUrl,
       contractTotal: d.contractRef.source ? d.contractTotal : "", contractRef: d.contractRef,
     };
@@ -245,7 +254,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       const row = await addInvoice(projectId, {
         type: kind, party: inv.party, receiverKind: inv.receiverKind, companyId: inv.companyId,
         description: inv.description, amount: inv.amount, date: new Date().toISOString().slice(0, 10),
-        status: isSent ? "Draft" : "Unpaid", lineItems: inv.lineItems, bank: inv.bank, terms: inv.terms,
+        status: isSent ? "Draft" : "Unpaid", lineItems: inv.lineItems, bank: inv.bank, descriptionBody: inv.descriptionBody, terms: inv.terms, termsMode: inv.termsMode, termsFile: inv.termsFile,
         signerName: inv.signerName, signerTitle: inv.signerTitle, signatureUrl: inv.signatureUrl, contractTotal: inv.contractTotal,
       });
       setRows((p) => [...p, row]); openBuilder(row); toast(`Duplicated as #${row.number}.`, "success");
@@ -625,6 +634,38 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       </div>
 
       {dialogs}
+      {/* CR 215 - choose the terms from the company's standard documents (terms and NDA library). */}
+      {termsPicker && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setTermsPicker(false)}>
+          <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="text-sm font-bold text-slate-900">Choose a standard document</p>
+              <button onClick={() => setTermsPicker(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              {termsFiles.length === 0 ? (
+                <p className="py-6 text-center text-sm italic text-slate-400">No standard documents yet. An admin uploads them in <span className="font-bold">Documents → Company Documents → Terms &amp; Conditions</span> or <span className="font-bold">NDA Files</span>.</p>
+              ) : (
+                <div className="max-h-72 space-y-1.5 overflow-y-auto">
+                  {termsFiles.map((f) => (
+                    <button
+                      key={f._id}
+                      onClick={() => { setB({ termsFile: { name: f.name, filePath: f.filePath, fileType: f.fileType }, termsMode: "file" }); setTermsPicker(false); }}
+                      className="flex w-full items-center gap-2 rounded-xl border border-transparent p-2.5 text-left hover:border-slate-100 hover:bg-slate-50"
+                    >
+                      <FileText size={14} className="shrink-0 text-primary" />
+                      <span className="min-w-0 flex-grow truncate text-sm font-bold text-slate-700">{f.name}</span>
+                      <span className="text-[10px] font-bold text-slate-400">{f.size}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
 
       {/* CR-I-03/04/07 — the full invoice builder */}
@@ -801,8 +842,44 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     </select></label>
                 )}
 
-                {/* T&C + signature (CR-I-04) */}
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Terms &amp; conditions<textarea rows={2} className={`${finp} mt-1 resize-y`} value={bDraft.terms} onChange={(e) => setB({ terms: e.target.value })} placeholder="Payment due within 30 days…" /></label>
+                {/* CR 215 - Description, like an agreement's: what this invoice is for, written properly. */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</p>
+                  <RichTextEditor value={bDraft.descriptionBody} onChange={(html) => setB({ descriptionBody: html })} minHeight={100} placeholder="What this invoice is for: the work done, the period it covers, what it refers to…" />
+                </div>
+
+                {/* CR 215 - terms written here, or the company's standard terms document. */}
+                <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Terms &amp; conditions</p>
+                    <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 text-[10px] font-bold">
+                      {(["text", "file"] as const).map((m) => (
+                        <button key={m} type="button" onClick={() => setB({ termsMode: m })} className={`px-3 py-1 ${bDraft.termsMode === m ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                          {m === "text" ? "Write here" : "Standard document"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {bDraft.termsMode === "text" ? (
+                    <RichTextEditor value={bDraft.terms} onChange={(html) => setB({ terms: html })} minHeight={90} placeholder="Payment due within 30 days…" />
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {bDraft.termsFile?.name ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700">
+                          <FileText size={11} /> {bDraft.termsFile.name}
+                          <button type="button" onClick={() => setB({ termsFile: null })} className="ml-1 text-slate-300 hover:text-red-500"><X size={11} /></button>
+                        </span>
+                      ) : <span className="text-[11px] italic text-slate-400">No standard terms chosen. They print after the invoice, as uploaded.</span>}
+                      <button
+                        type="button"
+                        onClick={() => { setTermsPicker(true); if (!termsFiles.length) Promise.all([fetchTermsFiles().catch(() => []), fetchNdaFiles().catch(() => [])]).then(([t, n]) => setTermsFiles([...t, ...n])); }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-primary"
+                      >
+                        <Plus size={11} /> {bDraft.termsFile ? "Change" : "Choose from standard documents"}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signatory
                     <select className={`${finp} mt-1`} value={signatories.find((s) => s.name === bDraft.signerName && s.signatureUrl === bDraft.signatureUrl)?.id || ""} onChange={(e) => { const s = signatories.find((x) => x.id === e.target.value); if (s) setB({ signerName: s.name, signerTitle: s.title || "", signatureUrl: s.signatureUrl || "" }); }}>
