@@ -16,6 +16,7 @@ const bankOf = (b: ApiCompanyBank): InvoiceBank => ({ name: b.name, accountName:
 const sameBank = (a: InvoiceBank, b: InvoiceBank) => a.name.trim() === b.name.trim() && a.accountNumber.trim() === b.accountNumber.trim() && a.iban.trim() === b.iban.trim();
 import { buildPoPackage } from "../../lib/poPdf";
 import { buildInvoicePdf } from "../../lib/invoicePdf";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 import { payApplication } from "../../lib/payApplication";
 import { downloadHtmlAsWord, htmlTable, escapeHtml } from "../../lib/wordExport";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
@@ -131,6 +132,17 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // Distinct saved banks from prior invoices (CR-I-04 bank dropdown) + templates (CR-I-07).
   const savedBanks = (() => { const seen = new Set<string>(); const out: InvoiceBank[] = []; for (const r of rows) { const b = r.bank; if (b?.name && !seen.has(b.name)) { seen.add(b.name); out.push(b); } } return out; })();
   const templates = rows.filter((r) => r.isTemplate);
+  // CR 211 - the ledger sorts by any column.
+  const sort = useTableSort<ApiInvoice>(rows, {
+    number: (r) => r.number,
+    party: (r) => r.party,
+    description: (r) => r.description,
+    total: (r) => Number(String(r.amount).replace(/[^0-9.-]/g, "")) || 0,
+    paid: (r) => invoicePaid(r),
+    left: (r) => invoiceRemaining(r),
+    date: (r) => r.date,
+    status: (r) => r.status,
+  });
   const saveAsTemplate = async (inv: ApiInvoice) => {
     try { const srv = await updateInvoice(projectId, inv._id, { isTemplate: !inv.isTemplate }); patch(srv); toast(srv.isTemplate ? "Saved as a reusable template." : "Removed from templates.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Failed.", "error"); }
@@ -452,15 +464,22 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       <div className="overflow-x-auto border border-slate-100 rounded-2xl">
         <table className="w-full min-w-[1000px] text-xs">
           <thead>
+            {/* CR 211 - sort by any column. */}
             <tr className="bg-slate-50 border-b border-slate-100">
-              {[numLabel, partyLabel, "Description", "Total", isSent ? "Received" : "Paid", leftLabel, dateLabel, "Status", ""].map((h) => (
-                <th key={h} className="text-left px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>
-              ))}
+              <SortTh sort={sort} col="number">{numLabel}</SortTh>
+              <SortTh sort={sort} col="party">{partyLabel}</SortTh>
+              <SortTh sort={sort} col="description">Description</SortTh>
+              <SortTh sort={sort} col="total">Total</SortTh>
+              <SortTh sort={sort} col="paid">{isSent ? "Received" : "Paid"}</SortTh>
+              <SortTh sort={sort} col="left">{leftLabel}</SortTh>
+              <SortTh sort={sort} col="date">{dateLabel}</SortTh>
+              <SortTh sort={sort} col="status">Status</SortTh>
+              <SortTh sort={sort}>{""}</SortTh>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {rows.length === 0 && <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400 italic">No invoices yet.</td></tr>}
-            {rows.map((row) => {
+            {sort.rows.map((row) => {
               const isOpen = openId === row._id;
               const rPaid = invoicePaid(row), rLeft = invoiceRemaining(row);
               const po = pos.find((p) => p._id === row.poId);

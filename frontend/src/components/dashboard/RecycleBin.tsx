@@ -11,6 +11,7 @@ import {
 import { toast } from "../../lib/toast";
 import { useMeta } from "../../hooks/useMeta";
 import { useDialogs } from "../../lib/useDialogs";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 
 const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: string }> = {
   project: { label: "Project", icon: Briefcase, cls: "bg-blue-50 text-blue-600" },
@@ -100,6 +101,13 @@ export default function RecycleBin() {
   useEffect(() => { void load(); }, []);
 
   const items = tab === "archive" ? archive : recycle;
+  // CR 211 - sort by any column.
+  const sort = useTableSort<ApiBinItem>(items, {
+    item: (it) => it.name,
+    category: (it) => metaFor(it.kind).label,
+    origin: (it) => it.origin || "",
+    when: (it) => it.deletedAt || it.updatedAt || "",
+  });
 
   // CR-P (73) — "Agreement restored. It should take us, it should give us like a link." A restore
   // that only says "done" leaves you hunting for where the thing went, so the toast carries an
@@ -176,16 +184,17 @@ export default function RecycleBin() {
           <table className="w-full min-w-[820px] text-left">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-10">#</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Item</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Original location</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tab === "recycle" ? "Deleted" : "Last change"}</th>
-                <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                {/* CR 211 - every column sorts. */}
+                <SortTh sort={sort} className="w-10">#</SortTh>
+                <SortTh sort={sort} col="item">Item</SortTh>
+                <SortTh sort={sort} col="category">Category</SortTh>
+                <SortTh sort={sort} col="origin">Original location</SortTh>
+                <SortTh sort={sort} col="when">{tab === "recycle" ? "Deleted" : "Last change"}</SortTh>
+                <SortTh sort={sort} align="right">Actions</SortTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {items.map((it, i) => {
+              {sort.rows.map((it, i) => {
                 const m = metaFor(it.kind);
                 return (
                   <tr key={`${it.kind}-${it.id}`} className="hover:bg-slate-50/40">

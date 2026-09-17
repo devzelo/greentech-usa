@@ -13,6 +13,7 @@ import {
 } from "../../lib/api";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import RequestBuilder from "./RequestBuilder";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 import CloseoutDocsTab from "./CloseoutDocsTab";
 import ShareMenu from "./ShareMenu";
 import DocumentViewer from "./DocumentViewer";
@@ -94,6 +95,16 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
     };
     return { drawing: build("drawing"), other: build("other") };
   }, [rows]);
+
+  // CR 211 - the submittals tables sort by any column (the revisions under a row stay with it).
+  type DocGroup = { key: string; current: ApiTechnicalDoc; older: ApiTechnicalDoc[] };
+  const sort = useTableSort<DocGroup>([], {
+    no: (g) => g.current.order,
+    title: (g) => g.current.title || g.current.submittalStage || "",
+    rev: (g) => g.current.revNo,
+    status: (g) => g.current.status,
+    remarks: (g) => g.current.remarks || "",
+  });
 
   const addRow = async (kind: "drawing" | "other") => {
     setBusy(true);
@@ -177,19 +188,19 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
                   <th className="py-3 px-2 w-6"></th>
-                  <th className="py-3 px-3 w-8">#</th>
-                  <th className="py-3 px-3 min-w-[150px]">Submittal</th>
-                  <th className="py-3 px-3 w-16 whitespace-nowrap">Rev</th>
+                  <SortTh sort={sort} col="no" className="w-8">#</SortTh>
+                  <SortTh sort={sort} col="title" className="min-w-[150px]">Submittal</SortTh>
+                  <SortTh sort={sort} col="rev" className="w-16">Rev</SortTh>
                   {DRAWING_CATEGORIES.map((c) => <th key={c.key} className="py-3 px-3 text-center min-w-[80px]">{c.label}</th>)}
-                  <th className="py-3 px-3 min-w-[130px]">Status</th>
-                  <th className="py-3 px-3 min-w-[120px]">Remarks</th>
+                  <SortTh sort={sort} col="status" className="min-w-[130px]">Status</SortTh>
+                  <SortTh sort={sort} col="remarks" className="min-w-[120px]">Remarks</SortTh>
                   <th className="py-3 px-3 text-center w-20">Client</th>
                   <th className="py-3 px-3 text-right min-w-[130px]">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.drawing.length === 0 && <tr><td colSpan={12} className="text-center text-slate-300 py-10">No submittals yet.</td></tr>}
-                {groups.drawing.map((g, i) => {
+                {sort.apply(groups.drawing).map((g, i) => {
                   const rowsToShow = expanded.has(g.key) ? [g.current, ...g.older] : [g.current];
                   return rowsToShow.map((row, ri) => {
                     const isCurrent = row._id === g.current._id;
@@ -246,17 +257,17 @@ export default function TechnicalDocsTab({ projectId, canEdit, isOwner, projectI
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
                   <th className="py-3 px-2 w-6"></th>
-                  <th className="py-3 px-3 w-8">#</th>
-                  <th className="py-3 px-3 w-16">Rev</th>
-                  <th className="py-3 px-3 min-w-[220px]">Description</th>
+                  <SortTh sort={sort} col="no" className="w-8">#</SortTh>
+                  <SortTh sort={sort} col="rev" className="w-16">Rev</SortTh>
+                  <SortTh sort={sort} col="title" className="min-w-[220px]">Description</SortTh>
                   <th className="py-3 px-3 text-center min-w-[90px]">Documents</th>
-                  <th className="py-3 px-3 min-w-[150px]">Remarks</th>
+                  <SortTh sort={sort} col="remarks" className="min-w-[150px]">Remarks</SortTh>
                   <th className="py-3 px-3 text-right w-28">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.other.length === 0 && <tr><td colSpan={7} className="text-center text-slate-300 py-10">No documents yet.</td></tr>}
-                {groups.other.map((g, i) => {
+                {sort.apply(groups.other).map((g, i) => {
                   const rowsToShow = expanded.has(g.key) ? [g.current, ...g.older] : [g.current];
                   return rowsToShow.map((row) => {
                     const isCurrent = row._id === g.current._id;

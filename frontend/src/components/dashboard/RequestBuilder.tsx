@@ -58,6 +58,7 @@ import PresenceBar from "./PresenceBar";
 import BuilderActions from "./BuilderActions";
 import { useSectionPresence } from "../../lib/usePresence";
 import PdfPreviewModal from "./PdfPreviewModal";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 
 // A request/notice builder — the same engine for the Contract Administration tab (full type
 // catalogue) and Client Communications (letters/RFIs). Each request auto-numbers per type
@@ -107,6 +108,16 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
   };
   const patch = (r: ApiProjectRequest) => setRows((p) => p.map((x) => (x._id === r._id ? r : x)));
+  // CR 211 - the requests table sorts by any column.
+  const sort = useTableSort<ApiProjectRequest>(rows, {
+    no: (r) => r.number,
+    type: (r) => (r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type),
+    to: (r) => r.to?.name || clientName || "",
+    subject: (r) => r.title,
+    date: (r) => r.date,
+    responses: (r) => r.responses.length,
+    status: (r) => r.status,
+  });
 
   const create = async (send = false) => {
     // CR 210 - "the RFI did not appear in the table": it was refused for a missing subject and the
@@ -278,12 +289,20 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
         <div className="overflow-x-auto border border-slate-100 rounded-2xl">
           <table className="w-full min-w-[760px] text-xs">
             <thead>
+              {/* CR 211 - every column sorts: click to sort, again to reverse, again for the original order. */}
               <tr className="bg-slate-50 border-b border-slate-100">
-                {["No.", "Type", "To", "Subject", "Date", "Responses", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}
+                <SortTh sort={sort} col="no">No.</SortTh>
+                <SortTh sort={sort} col="type">Type</SortTh>
+                <SortTh sort={sort} col="to">To</SortTh>
+                <SortTh sort={sort} col="subject">Subject</SortTh>
+                <SortTh sort={sort} col="date">Date</SortTh>
+                <SortTh sort={sort} col="responses">Responses</SortTh>
+                <SortTh sort={sort} col="status">Status</SortTh>
+                <SortTh sort={sort}>{""}</SortTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map((r) => {
+              {sort.rows.map((r) => {
                 const isOpen = openId === r._id;
                 return (
                   <Fragment key={r._id}>

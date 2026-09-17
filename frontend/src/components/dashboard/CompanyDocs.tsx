@@ -75,6 +75,7 @@ import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
 import { PromptDialog, ConfirmDialog } from "./Dialogs";
 import { toast } from "../../lib/toast";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 
 export default function CompanyDocs({ kind = "company", banner }: { kind?: "company" | "classified"; banner?: ReactNode } = {}) {
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
@@ -82,6 +83,14 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
   const [activeMain, setActiveMain] = useState<string>("");
   const [activeSub, setActiveSub] = useState<string>("");
   const [files, setFiles] = useState<CompanyFile[]>([]);
+  // CR 211 - the documents table sorts by any column.
+  const sort = useTableSort<CompanyFile>(files, {
+    name: (f) => f.name,
+    description: (f) => f.description,
+    type: (f) => f.libraryKey || f.fileType,
+    addedBy: (f) => f.uploadedByName,
+    date: (f) => f.createdAt,
+  });
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");   // CR-P-07 — default to the list preview
   const [showArchived, setShowArchived] = useState(false); // CR-P-39
@@ -342,17 +351,18 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-50">
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">#</th>
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</th>
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Type &amp; expiry</th>
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Added by</th>
-                  <th className="text-left px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</th>
-                  <th className="text-right px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                  {/* CR 211 - every column sorts. */}
+                  <SortTh sort={sort} className="w-12">#</SortTh>
+                  <SortTh sort={sort} col="name">Name</SortTh>
+                  <SortTh sort={sort} col="description">Description</SortTh>
+                  <SortTh sort={sort} col="type">Type &amp; expiry</SortTh>
+                  <SortTh sort={sort} col="addedBy">Added by</SortTh>
+                  <SortTh sort={sort} col="date">Date</SortTh>
+                  <SortTh sort={sort} align="right">Actions</SortTh>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {files.map((f, i) => (
+                {sort.rows.map((f, i) => (
                   <tr key={f._id} className="group hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="px-6 py-4">

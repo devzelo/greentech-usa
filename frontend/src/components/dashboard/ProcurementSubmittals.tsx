@@ -20,6 +20,7 @@ import SaveStatus, { useSaveStatus } from "./SaveStatus";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
+import { useTableSort, SortTh } from "../../lib/useTableSort";
 
 const DISPO: { k: SubmittalDisposition; label: string; cls: string }[] = [
   { k: "Pending", label: "Pending", cls: "bg-amber-50 text-amber-600" },
@@ -584,6 +585,24 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
 
   // D1 — one table row per submittal (summary). Expand = read-only preview; Actions button = modal.
   const SUB_COLS = ["#", "RV", "Product", "Brand", "Model", "Spec", "Status", "Actions"];
+  // CR 211 - the submittals table sorts by any column, inside each section.
+  const subSort = useTableSort<ApiSubmittal>([], {
+    no: (sub) => itemNo[sub.itemId] ?? 0,
+    rv: (sub) => sub.revisions.length,
+    product: (sub) => sub.productName || sub.title || "",
+    brand: (sub) => sub.manufacturer || "",
+    model: (sub) => sub.modelNo || "",
+    spec: (sub) => sub.specSection || "",
+    status: (sub) => { const c = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1]; return c?.disposition || ""; },
+  });
+  const subHead = () => (
+    <tr className="border-b border-slate-100">
+      {SUB_COLS.map((h, i) => {
+        const col = ["no", "rv", "product", "brand", "model", "spec", "status", ""][i];
+        return <Fragment key={h}><SortTh sort={subSort} col={col} className="px-3 py-2">{h}</SortTh></Fragment>;
+      })}
+    </tr>
+  );
   const renderSubRow = (sub: ApiSubmittal, num: number | null) => {
     const isOpen = openId === sub._id;
     const current = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1];
@@ -774,8 +793,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-xs">
-                  <thead><tr className="border-b border-slate-100">{SUB_COLS.map((h, i) => <th key={i} className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}</tr></thead>
-                  <tbody className="divide-y divide-slate-50">{g.subs.map((sub) => renderSubRow(sub, itemNo[sub.itemId] ?? null))}</tbody>
+                  <thead>{subHead()}</thead>
+                  <tbody className="divide-y divide-slate-50">{subSort.apply(g.subs).map((sub) => renderSubRow(sub, itemNo[sub.itemId] ?? null))}</tbody>
                 </table>
               </div>
             </div>
@@ -788,8 +807,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-xs">
-                  <thead><tr className="border-b border-slate-100">{SUB_COLS.map((h, i) => <th key={i} className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">{h}</th>)}</tr></thead>
-                  <tbody className="divide-y divide-slate-50">{unlinked.map((sub) => renderSubRow(sub, null))}</tbody>
+                  <thead>{subHead()}</thead>
+                  <tbody className="divide-y divide-slate-50">{subSort.apply(unlinked).map((sub) => renderSubRow(sub, null))}</tbody>
                 </table>
               </div>
             </div>
