@@ -89,6 +89,19 @@ export const COUNTRIES: Country[] = (() => {
     .sort((a, b) => a.name.localeCompare(b.name));
 })();
 
+// Short forms used by the Natural Earth map outlines (world-atlas) that our alias list lacks.
+const MAP_NAME_TO_ISO: Record<string, string> = {
+  "dem. rep. congo": "CD", "dominican rep.": "DO", "s. sudan": "SS", "central african rep.": "CF",
+  "eq. guinea": "GQ", "guinea-bissau": "GW", "bosnia and herz.": "BA", "macedonia": "MK", "palestine": "PS",
+  "timor-leste": "TL", "puerto rico": "PR", "w. sahara": "EH", "solomon is.": "SB", "vanuatu": "VU",
+};
+
+/** ISO-2 code for an exact country name (no substring matching). "" if unrecognised. */
+export function isoForCountryName(name?: string): string {
+  const key = String(name || "").trim().toLowerCase();
+  return NAME_TO_ISO[key] || MAP_NAME_TO_ISO[key] || "";
+}
+
 /** Flag emoji for a specific country name (e.g. "Ghana" → 🇬🇭). "" if unrecognised. */
 export function flagForCountry(country?: string): string {
   const key = String(country || "").trim().toLowerCase();

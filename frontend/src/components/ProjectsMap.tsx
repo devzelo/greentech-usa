@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin } from "lucide-react";
+import type { FeatureCollection, Geometry } from "geojson";
 import { fetchPublicProjects, ApiPublicProject } from "../lib/api";
-import { isoForLocation, flagForCountry } from "../lib/countryFlag";
+import { isoForLocation, isoForCountryName, flagForCountry } from "../lib/countryFlag";
 import { COUNTRY_COORDS } from "../lib/countryCoords";
 
 // Homepage "where we work" map — pins every published project by its country (centroid), grouped
@@ -29,6 +30,24 @@ const pinIcon = (count: number) =>
     iconAnchor: [11, 28],
     popupAnchor: [0, -26],
   });
+
+type CountryShapes = FeatureCollection<Geometry, { name: string; iso: string }>;
+
+// Country outlines (Natural Earth 1:110m), loaded on demand so they stay out of the main bundle.
+// Countries too small for this scale (Singapore, Bahrain...) simply keep their pin.
+async function loadCountryShapes(): Promise<CountryShapes> {
+  const [{ feature }, atlas] = await Promise.all([
+    import("topojson-client"),
+    import("world-atlas/countries-110m.json"),
+  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const topo = (atlas as any).default ?? atlas;
+  const fc = feature(topo, topo.objects.countries) as unknown as FeatureCollection<Geometry, { name: string }>;
+  return {
+    type: "FeatureCollection",
+    features: fc.features.map((f) => ({ ...f, properties: { name: f.properties.name, iso: isoForCountryName(f.properties.name) } })),
+  };
+}
 
 // Frame the map to the pins once they load.
 function FitToPins({ points }: { points: [number, number][] }) {
@@ -65,6 +84,16 @@ export default function ProjectsMap() {
     }
     return Array.from(m.values());
   }, [projects]);
+
+  // CR 178: shade every country that has a published project.
+  const [shapes, setShapes] = useState<CountryShapes | null>(null);
+  useEffect(() => { loadCountryShapes().then(setShapes).catch(() => setShapes(null)); }, []);
+  const activeShapes = useMemo<CountryShapes | null>(() => {
+    if (!shapes) return null;
+    const active = new Set(groups.map((g) => g.iso));
+    return { type: "FeatureCollection", features: shapes.features.filter((f) => active.has(f.properties.iso)) };
+  }, [shapes, groups]);
+  const shapesKey = activeShapes?.features.map((f) => f.properties.iso).sort().join(",") || "";
 
   const points = useMemo(() => groups.map((g) => g.coords), [groups]);
   const countries = groups.length;
@@ -104,6 +133,14 @@ export default function ProjectsMap() {
               maxNativeZoom={16}
               maxZoom={19}
             />
+            {activeShapes && activeShapes.features.length > 0 && (
+              <GeoJSON
+                key={shapesKey}
+                data={activeShapes}
+                interactive={false}
+                style={() => ({ color: "#059669", weight: 1.2, fillColor: "#10B981", fillOpacity: 0.35 })}
+              />
+            )}
             <FitToPins points={points} />
             {groups.map((g) => (
               <Marker key={g.iso} position={g.coords} icon={pinIcon(g.projects.length)}>
