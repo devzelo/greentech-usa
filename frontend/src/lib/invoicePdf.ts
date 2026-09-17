@@ -1,5 +1,5 @@
 import { PDFDocument, type Color } from "pdf-lib";
-import { type ApiInvoice } from "./api";
+import { attachmentUrl, invoicePaid, type ApiInvoice } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { drawWrapped, fitOneLine } from "./pdfText";
 import { embedImage, drawFitted, GREENTECH } from "./poPdf";
@@ -29,6 +29,9 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   let f = newPage();
   const ensure = (h: number) => { if (f.y - h < BOTTOM) f = newPage(); };
   const total = invoiceAmount(inv);
+  // CR 214 - an invoice produced outside the platform and uploaded: the file is the invoice.
+  const files = (inv.attachments || []).filter((a) => /pdf|png|jpe?g/i.test(a.fileType || a.name || ""));
+  const uploaded = !(inv.lineItems || []).length && files.length > 0;
 
   // Title block, project line, parties.
   let y = titleBlock(f.page, b, {
@@ -47,24 +50,41 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
   if (inv.description) y = drawWrapped(f.page, b.regular, inv.description, { x: X, y, size: 9, maxW: W, lineHeight: 12.5, color: C.s500, maxLines: 3 }) - 6;
   f.y = y;
 
+  // CR 214 - an uploaded invoice has no line items of ours, so a one-row "Amount" table is noise.
+  // The cover carries the parties and the money; the file itself follows on the next page.
+  if (uploaded) {
+    ensure(80);
+    const cw0 = (W - 16) / 3;
+    const paid0 = invoicePaid(inv);
+    ([["Invoice total", money(total)], ["Paid to date", money(paid0)], ["Remaining", money(Math.max(0, total - paid0)), C.emerald]] as Array<[string, string, Color?]>)
+      .forEach(([k, v, tone], i) => kpiCard(f.page, b, X + i * (cw0 + 8), f.y, cw0, 46, k, v, tone));
+    f.y -= 46 + 14;
+    f.y = sectionHeading(f.page, b, "The invoice as received", X, f.y, W);
+    f = flowText(f, `${files.map((a) => a.name).join(", ")} follows on the next page${files.length > 1 ? "s" : ""}, exactly as it was sent to us.`,
+      { x: X, w: W, font: b.regular, size: 9, lineHeight: 12.5, color: C.s700, newPage });
+    f.y -= 8;
+  }
+
   // Line items. CR-I-04 — remarks print under the description. CR-P (161) — one date, at the top.
   const items = (inv.lineItems || []).length ? inv.lineItems! : [{ description: inv.description || "Amount", qty: "1", unitPrice: String(n(inv.amount)) }];
   const cols: TableCol[] = [
     { label: "Description", w: W - 50 - 92 - 96, wrap: true }, { label: "Qty", w: 50, align: "right" },
     { label: "Unit price", w: 92, align: "right" }, { label: "Total", w: 96, align: "right" },
   ];
-  f = drawTable(b, f, X, cols, items.map((it) => {
-    const remarks = (it as typeof it & { remarks?: string }).remarks;
-    return { cells: [`${it.description || ""}${remarks ? `\n${remarks}` : ""}`, String(it.qty || ""), money(n(it.unitPrice)), money(n(it.qty) * n(it.unitPrice))] };
-  }), { newPage, size: 8.5 });
+  if (!uploaded) {
+    f = drawTable(b, f, X, cols, items.map((it) => {
+      const remarks = (it as typeof it & { remarks?: string }).remarks;
+      return { cells: [`${it.description || ""}${remarks ? `\n${remarks}` : ""}`, String(it.qty || ""), money(n(it.unitPrice)), money(n(it.qty) * n(it.unitPrice))] };
+    }), { newPage, size: 8.5 });
 
-  // Total.
-  ensure(40);
-  f.y -= 20;
-  f.page.drawText("TOTAL", { x: X + W - 96 - 92 + 6, y: f.y, size: 9.5, font: b.bold, color: C.slate });
-  const tv = money(total);
-  f.page.drawText(tv, { x: X + W - 6 - b.display.widthOfTextAtSize(tv, 15), y: f.y - 1, size: 15, font: b.display, color: C.emerald });
-  f.y -= 30;
+    // Total.
+    ensure(40);
+    f.y -= 20;
+    f.page.drawText("TOTAL", { x: X + W - 96 - 92 + 6, y: f.y, size: 9.5, font: b.bold, color: C.slate });
+    const tv = money(total);
+    f.page.drawText(tv, { x: X + W - 6 - b.display.widthOfTextAtSize(tv, 15), y: f.y - 1, size: 15, font: b.display, color: C.emerald });
+    f.y -= 30;
+  }
 
   // Bank information, as a grid of label / value.
   const bank = inv.bank;
@@ -104,6 +124,28 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
     if (inv.signerTitle) f.page.drawText(inv.signerTitle, { x: X, y: f.y - 26, size: 8.5, font: b.regular, color: C.s500 });
   }
 
+  // CR 214 - the uploaded invoice itself, exactly as it was given to us, before the payment page.
+  const copied = new Set<number>();
+  if (uploaded) {
+    for (const file of files) {
+      try {
+        const bytes = await fetch(attachmentUrl(file.filePath)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))));
+        if (/pdf/i.test(file.fileType || file.name)) {
+          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+          const pages = await doc.copyPages(src, src.getPageIndices());
+          for (const pg of pages) { doc.addPage(pg); copied.add(doc.getPageCount() - 1); }
+        } else {
+          const img = /png/i.test(file.fileType || file.name) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+          const page = doc.addPage([LETTER.w, LETTER.h]);
+          const m = 36, maxW = LETTER.w - m * 2, maxH = LETTER.h - m * 2;
+          const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+          page.drawImage(img, { x: (LETTER.w - img.width * scale) / 2, y: (LETTER.h - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+          copied.add(doc.getPageCount() - 1);
+        }
+      } catch { /* a file that cannot be read is named on page 1; the rest of the document still prints */ }
+    }
+  }
+
   // Page 2 — Payment Application. CR-P (167)/(168) — against one contract (the project's contract,
   // an agreement, or a value typed in), with the history of every invoice on it. (An invoice set to
   // "No payment application" has no contract value, so it has no page 2.)
@@ -137,7 +179,32 @@ export async function buildInvoicePdf(inv: ApiInvoice, opts?: { projectInfo?: Pr
     })), { newPage });
   }
 
-  stampPageNumbers(doc, b);
+  // CR 214 - with no contract to bill against there is no payment application, but an uploaded
+  // invoice still ends on the money: charged, paid, remaining.
+  if (uploaded && !(contract > 0)) {
+    f = newPage();
+    const paid = invoicePaid(inv);
+    let y3 = titleBlock(f.page, b, {
+      x: X, y: f.y, w: W, eyebrow: "Payment", title: `${kind} #${inv.number || "-"}`,
+      meta: [["Project", opts?.projectInfo?.name || ""], ["Date", inv.date || "-"], [isSent ? "Client" : "Supplier", inv.party || "-"]],
+    });
+    const cw3 = (W - 16) / 3;
+    ([["Charged", money(total)], ["Paid to date", money(paid)], ["Remaining", money(Math.max(0, total - paid)), C.emerald]] as Array<[string, string, Color?]>)
+      .forEach(([k, v, tone], i) => kpiCard(f.page, b, X + i * (cw3 + 8), y3, cw3, 46, k, v, tone));
+    y3 -= 46 + 12;
+    if ((inv.payments || []).length) {
+      f.y = sectionHeading(f.page, b, "Payments", X, y3, W);
+      const pcols: TableCol[] = [
+        { label: "Date", w: W * 0.18 }, { label: "Method", w: W * 0.22 },
+        { label: "Reference", w: W * 0.36 }, { label: "Amount", w: W * 0.24, align: "right" },
+      ];
+      drawTable(b, f, X, pcols, (inv.payments || []).map((p) => ({
+        cells: [p.date || "-", p.method || "-", p.reference || "-", money(n(p.amount))],
+      })), { newPage });
+    }
+  }
+
+  stampPageNumbers(doc, b, copied);
   const bytes = await doc.save();
   return new Blob([bytes], { type: "application/pdf" });
 }
