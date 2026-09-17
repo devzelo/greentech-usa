@@ -12,8 +12,13 @@ import ExtensionsPanel from "./ExtensionsPanel";
  * elapsed (green) and a Today marker, the work complete (blue), and the phases from the timeline
  * as dots in date order. The full table lives in Project Management > Timeline / Milestones.
  */
-export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveExtensions, onSaveProgress, userName = "", className = "" }: {
+export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveExtensions, onSaveProgress, userName = "", className = "", variant = "full" }: {
   project: ApiProject;
+  /**
+   * "full": contract time and the phases (Timeline tab). On the project page the two are apart:
+   * "time" is the compact contract-time bar at the top right, "progress" the phases card below.
+   */
+  variant?: "full" | "time" | "progress";
   canEdit: boolean;
   onOpenTimeline?: () => void;
   onSaveExtensions?: (next: ApiExtension[], message: string) => Promise<void>;
@@ -60,10 +65,66 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
   const dots: PlannedMilestone[] = plan.milestones.filter((m) => m.start).sort((a, b) => a.start!.getTime() - b.start!.getTime());
   const undated = plan.milestones.filter((m) => !m.start).length;
 
-  if (!contractStart && !deadline && !hasMs) {
+  const extensions = (
+    <div ref={extRef} className={`relative min-w-0 ${variant === "time" ? "text-right" : ""}`}>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Extended deadline" : "Contract deadline"}</p>
+      <button type="button" onClick={() => setExtOpen((v) => !v)} title="Extensions of time" className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-xs" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`}>
+        {deadline ? fmtDay(deadline) : "Not set"}
+        {extended && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">Extended</span>}
+      </button>
+      {extended && origEnd && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
+      {extOpen && (
+        <div className="absolute right-0 top-full z-[70] mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-slate-100 bg-white p-4 shadow-2xl">
+          <ExtensionsPanel endDate={project.endDate} extensions={project.schedule?.extensions} canEdit={canEdit} onSave={onSaveExtensions} userName={userName} />
+        </div>
+      )}
+    </div>
+  );
+
+  if (variant === "time") {
+    if (!contractStart && !deadline) return null;
+    // Contract time on its own: start, the elapsed bar with Today, the deadline and the time left.
+    const cs = contractStart, dl = deadline;
+    const span2 = cs && dl ? Math.max(DAY, dl.getTime() - cs.getTime()) : 0;
+    const p2 = (d: Date) => (cs && span2 ? Math.max(0, Math.min(100, ((d.getTime() - cs.getTime()) / span2) * 100)) : 0);
+    const nowPct = cs && dl ? p2(today) : null;
+    return (
+      <div className={`w-full rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-sm sm:w-[30rem] ${className}`}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract time
+          </span>
+          <span className={`text-xs font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
+            {deadline ? (overdue ? remaining : `${remaining} remaining`) : "No deadline set"}
+            {deadline && <span className="ml-1 font-semibold text-slate-400">({remainingDays} day{remainingDays === 1 ? "" : "s"})</span>}
+          </span>
+        </div>
+        <div className="relative my-1.5 h-2 rounded-full bg-slate-100">
+          {cs && dl && extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${p2(origEnd)}%`, right: 0 }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(dl)}`} />}
+          {cs && dl && <div className={`absolute inset-y-0 left-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${p2(today > dl ? dl : today)}%` }} />}
+          {nowPct !== null && today <= (dl as Date) && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${nowPct}%` }} title="Today" />}
+        </div>
+        <div className="flex items-end justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Contract start</p>
+            <p className="text-xs font-bold text-slate-900">{cs ? fmtDay(cs) : "Not set"}{elapsedPct !== null && <span className="ml-1.5 font-semibold text-emerald-600">{Math.round(elapsedPct)}% elapsed</span>}</p>
+          </div>
+          {extensions}
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "progress" ? !hasMs : !contractStart && !deadline && !hasMs) {
     return (
       <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 ${className}`}>
-        <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No contract dates or timeline yet.</p>
+        {variant === "progress" ? (
+          canEdit && onSaveProgress
+            ? <WorkComplete pct={workPct} hasMs={false} canEdit onSave={onSaveProgress} detail="No timeline yet: set by hand" />
+            : <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No timeline yet. Progress: <b className="text-blue-600">{workPct}%</b></p>
+        ) : (
+          <p className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock size={14} className="text-slate-400" /> No contract dates or timeline yet.</p>
+        )}
         {onOpenTimeline && <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><GanttChart size={13} /> Set up the timeline</button>}
       </div>
     );
@@ -71,7 +132,21 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 
   return (
     <div className={`rounded-2xl border border-slate-100 bg-white shadow-sm ${className}`}>
-      {/* Contract start · time remaining · deadline · work complete */}
+      {variant === "progress" ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3">
+          <WorkComplete pct={workPct} hasMs canEdit={false} detail={`${focus.done} of ${focus.total} phases complete`} />
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            {focus.overdue.length > 0 && <span className="inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
+            {focus.current && <span>Now: <b className="text-slate-700">{focus.current.name}</b></span>}
+            {focus.next && <span>Next: <b className="text-slate-700">{focus.next.name}</b>{focus.next.start ? ` (${fmtDay(focus.next.start)})` : ""}</span>}
+          </p>
+          {onOpenTimeline && (
+            <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+              <GanttChart size={13} /> {canEdit ? "Edit timeline" : "Open timeline"}
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
@@ -90,24 +165,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
             </p>
           </div>
         </div>
-        <div ref={extRef} className="relative flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Extended deadline" : "Contract deadline"}</p>
-            <button type="button" onClick={() => setExtOpen((v) => !v)} title="Extensions of time" className={`flex items-center gap-1 truncate text-sm font-bold hover:underline ${extended ? "text-violet-700" : "text-slate-900"}`}>
-              {deadline ? fmtDay(deadline) : "Not set"}
-              {extended && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">Extended</span>}
-            </button>
-            {extended && origEnd && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
-          </div>
-          {extOpen && (
-            <div className="absolute right-0 top-full z-[70] mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-slate-100 bg-white p-4 shadow-2xl">
-              <ExtensionsPanel endDate={project.endDate} extensions={project.schedule?.extensions} canEdit={canEdit} onSave={onSaveExtensions} userName={userName} />
-            </div>
-          )}
+          {extensions}
         </div>
-        <WorkComplete pct={workPct} hasMs={hasMs} canEdit={canEdit && !hasMs && !!onSaveProgress} onSave={onSaveProgress} detail={hasMs ? `${focus.done} of ${focus.total} phases complete` : "Set by hand"} />
       </div>
+      )}
 
       {/* The track */}
       <div className="px-4 pt-3">
@@ -119,18 +182,21 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           )}
         </div>
         <div className="relative h-2.5 rounded-full bg-slate-100">
-          {contractStart && deadline && (
+          {variant === "progress" && dots.map((m) => (
+            <span key={m.id} className={`absolute inset-y-0 rounded-full opacity-90 ${m.state === "overdue" ? "animate-pulse" : ""}`} style={{ left: `${pos(m.start!)}%`, width: `max(4px, ${pos(m.end || m.start!) - pos(m.start!)}%)`, background: m.state === "done" ? "#10b981" : m.state === "overdue" ? "#f59e0b" : m.state === "current" ? "#3b82f6" : "#cbd5e1" }} title={`${m.name}: ${fmtDay(m.start)}${m.end ? ` to ${fmtDay(m.end)}` : ""}`} />
+          ))}
+          {variant === "full" && contractStart && deadline && (
             <>
               {extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${pos(origEnd)}%`, right: `${100 - pos(deadline)}%` }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(deadline)}`} />}
               <div className={`absolute inset-y-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ left: `${pos(contractStart)}%`, width: `${Math.max(0, pos(today > deadline ? deadline : today) - pos(contractStart))}%` }} />
             </>
           )}
           {/* Phase start markers, by date */}
-          {dots.map((m) => (
+          {variant === "full" && dots.map((m) => (
             <span key={m.id} className="absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded bg-white/90 ring-1" style={{ left: `${pos(m.start!)}%`, ["--tw-ring-color" as string]: phaseColor(m) }} title={`${m.name}: ${fmtDay(m.start)}`} />
           ))}
           {todayPct !== null && <span className="absolute -top-1.5 -bottom-1.5 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${todayPct}%` }} />}
-          {elapsedPct !== null && (
+          {variant === "full" && elapsedPct !== null && (
             <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-bold text-emerald-700 shadow-sm" style={{ left: `${Math.max(6, Math.min(94, pos(contractStart!) + (pos(today > deadline! ? deadline! : today) - pos(contractStart!)) / 2))}%` }}>
               {Math.round(elapsedPct)}% elapsed
             </span>
@@ -151,11 +217,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
         )}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2">
           <p className="text-[10px] text-slate-400">
-            {focus.overdue.length > 0 && <span className="mr-2 inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
+            {variant === "full" && focus.overdue.length > 0 && <span className="mr-2 inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
+            {variant === "full" && <span className="mr-2 font-bold text-blue-600">Work complete {workPct}%{hasMs ? ` (${focus.done} of ${focus.total} phases)` : ""}</span>}
             {undated > 0 && `${undated} phase${undated === 1 ? "" : "s"} without dates. `}
-            Time elapsed is calendar time; work complete comes from the phases.
+            {variant === "full" ? "Time elapsed is calendar time; work complete comes from the phases." : "Bar: green complete, blue in progress, amber past its planned end, grey not started."}
           </p>
-          {onOpenTimeline && (
+          {variant === "full" && onOpenTimeline && (
             <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
               <GanttChart size={13} /> {canEdit ? "Edit timeline" : "Open timeline"}
             </button>

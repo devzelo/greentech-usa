@@ -3450,12 +3450,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {wsDialogs}
       {/* ── Header ── */}
       <div className="flex flex-col gap-5">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-slate-400 hover:text-slate-900 transition-colors font-bold text-xs uppercase tracking-widest w-fit"
-        >
-          <ArrowLeft size={16} /> Back to Projects
-        </button>
+        {/* CR 192: contract time sits on its own at the top right, level with Back to Projects. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-slate-400 hover:text-slate-900 transition-colors font-bold text-xs uppercase tracking-widest w-fit sm:mt-2.5"
+          >
+            <ArrowLeft size={16} /> Back to Projects
+          </button>
+          {!isGuest && (
+            <TimelineBar variant="time" project={project} canEdit={canManage} userName={currentUser?.name || ""} onSaveExtensions={saveExtensions} />
+          )}
+        </div>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="flex items-center gap-5">
@@ -3693,19 +3699,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             )}
           </div>
         </div>
-        {/* CR 192 — contract time and work complete in one card, the phases as dots; the full
-            timeline is in Project Management > Timeline / Milestones. */}
+        {/* CR 192: progress on the milestones (work complete, the phases by date), apart from contract
+            time; the full timeline is in Project Management > Timeline / Milestones. */}
         {!isGuest && (
           <TimelineBar
+            variant="progress"
             project={project}
             canEdit={canManage}
-            userName={currentUser?.name || ""}
             className="mt-4"
             onOpenTimeline={openTimeline}
-            onSaveExtensions={saveExtensions}
             onSaveProgress={async (v) => {
               if (!id) return;
-              try { const u = await updateProject(id, { progress: v }); setProject(u); toast(`Work complete set to ${v}%.`, "success"); }
+              try { const u = await updateProject(id, { progress: v }); setProject(u); toast(`Progress set to ${v}%.`, "success"); }
               catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); throw e; }
             }}
           />
