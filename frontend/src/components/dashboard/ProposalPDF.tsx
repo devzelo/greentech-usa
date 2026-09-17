@@ -339,7 +339,7 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     subtitle: c?.subtitle || "",
     fields,
     images: images.length ? images : [abs(COVER_FALLBACK)],
-    volume: (c?.volumeLabel || "").trim().toUpperCase() || undefined,
+    volume: (c?.volumeLabel || "").trim() || undefined,
     badge: (c?.revisionLabel || "").trim() || undefined,
     clientLogo: c?.clientLogoUrl ? abs(c.clientLogoUrl) : undefined,
     notice: c?.restrictionNotice === false ? "" : RESTRICTION_LEGEND,

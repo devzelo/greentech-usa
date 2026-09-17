@@ -27,6 +27,13 @@ export interface CoverData {
 
 const LOGO_ASPECT = 1588 / 295;   // the trimmed mint lockup
 
+// CR 194: the document type is the biggest line on the cover ("Technical Proposal", or the volume
+// label when one is set) and the project / proposal title comes second.
+const titleCase = (t: string) => t.toLowerCase().replace(/(^|\s)([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
+// A volume label shows as it was typed ("Vol. II: Technical Proposal").
+const headingOf = (d: CoverData) => (d.volume || "").trim() || titleCase(d.kind.trim());
+const eyebrowOf = (d: CoverData) => `Prepared by ${COMPANY.name} · ${d.year}`;
+
 function Logo({ h }: { h: number }) {
   return <Image src={abs(LOGO_MINT)} style={{ width: h * LOGO_ASPECT, height: h }} />;
 }
@@ -41,9 +48,9 @@ function LogoChip({ h = 22 }: { h?: number }) {
 }
 
 /** The client's seal or logo (e.g. the agency seal), on white opposite our logo. */
-function ClientMark({ src, h = 42 }: { src: string; h?: number }) {
+function ClientMark({ src, h = 28 }: { src: string; h?: number }) {
   return (
-    <View style={{ backgroundColor: BRAND.white, borderRadius: 8, padding: 5 }}>
+    <View style={{ backgroundColor: BRAND.white, borderRadius: 6, padding: 4 }}>
       <Image src={abs(src)} style={{ height: h, maxWidth: h * 2.6, objectFit: "contain" }} />
     </View>
   );
@@ -122,9 +129,10 @@ function Hero({ d }: { d: CoverData }) {
 
       <View style={{ paddingHorizontal: 52, flex: 1, justifyContent: "space-between", paddingTop: 16, paddingBottom: 34 }}>
         <View>
-          <Eyebrow>{d.volume || d.kind} · {d.year}</Eyebrow>
+          <Eyebrow>{eyebrowOf(d)}</Eyebrow>
           {!!d.badge && <Badge text={d.badge} color={BRAND.emerald} />}
-          <Text style={{ fontFamily: "Outfit", fontSize: 30, fontWeight: 700, color: BRAND.white, lineHeight: 1.12 }}>{d.title}</Text>
+          <Text style={{ fontFamily: "Outfit", fontSize: 36, fontWeight: 700, color: BRAND.white, lineHeight: 1.08 }}>{headingOf(d)}</Text>
+          <Text style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 600, color: BRAND.cyan, lineHeight: 1.25, marginTop: 8, maxWidth: 470 }}>{d.title}</Text>
           {!!d.subtitle && <Text style={{ fontSize: 11, color: BRAND.s300, marginTop: 12, lineHeight: 1.55, maxWidth: 440 }}>{d.subtitle}</Text>}
         </View>
 
@@ -181,13 +189,14 @@ function Formal({ d }: { d: CoverData }) {
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <LogoChip h={22} />
           <View style={{ flex: 1 }} />
-          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={40} />}
+          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={28} />}
         </View>
 
         <View style={{ flex: 1, justifyContent: "center", paddingVertical: 18 }}>
-          <Eyebrow>{d.volume || d.kind}</Eyebrow>
+          <Eyebrow>{eyebrowOf(d)}</Eyebrow>
           {!!d.badge && <Badge text={d.badge} color={BRAND.emerald} />}
-          <Text style={{ fontFamily: "Outfit", fontSize: 32, fontWeight: 700, color: BRAND.slate, lineHeight: 1.12, maxWidth: 470 }}>{d.title}</Text>
+          <Text style={{ fontFamily: "Outfit", fontSize: 38, fontWeight: 700, color: BRAND.slate, lineHeight: 1.08, maxWidth: 480 }}>{headingOf(d)}</Text>
+          <Text style={{ fontFamily: "Outfit", fontSize: 19, fontWeight: 600, color: BRAND.s600, lineHeight: 1.25, marginTop: 8, maxWidth: 470 }}>{d.title}</Text>
           {!!d.subtitle && <Text style={{ fontSize: 11, color: BRAND.s600, marginTop: 12, lineHeight: 1.6, maxWidth: 440 }}>{d.subtitle}</Text>}
           <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 22 }}>
             {d.fields.map((f) => (
@@ -231,9 +240,10 @@ function Panel({ d }: { d: CoverData }) {
             <LogoChip h={18} />
           </View>
           <View>
-            <Eyebrow color={BRAND.white}>{d.volume || d.kind}</Eyebrow>
+            <Eyebrow color={BRAND.white}>{d.year}</Eyebrow>
             {!!d.badge && <Badge text={d.badge} color={BRAND.white} />}
-            <Text style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700, color: BRAND.white, lineHeight: 1.14 }}>{d.title}</Text>
+            <Text style={{ fontFamily: "Outfit", fontSize: 29, fontWeight: 700, color: BRAND.white, lineHeight: 1.08 }}>{headingOf(d)}</Text>
+            <Text style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)", lineHeight: 1.25, marginTop: 8 }}>{d.title}</Text>
           </View>
           <Text style={{ fontSize: 7.5, color: "rgba(255,255,255,0.85)" }}>{COMPANY.website} · CAGE {COMPANY.cage}</Text>
         </View>
@@ -241,7 +251,7 @@ function Panel({ d }: { d: CoverData }) {
 
       <View style={{ flex: 1, padding: 36, justifyContent: "space-between" }}>
         <View>
-          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 10 }}><ClientMark src={d.clientLogo} h={38} /></View>}
+          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 10 }}><ClientMark src={d.clientLogo} h={26} /></View>}
           <View style={{ height: 140, borderRadius: 10, overflow: "hidden", border: `1 solid ${BRAND.border}` }}>
             {!!d.images[0] && <Image src={d.images[0]} style={{ width: "100%", height: 140, objectFit: "cover" }} />}
           </View>
