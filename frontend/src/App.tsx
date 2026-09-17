@@ -91,10 +91,10 @@ function HomePage() {
   return (
     <>
       <Hero />
+      <ProjectsMap />
       <About />
       <Services />
       <Projects />
-      <ProjectsMap />
       <Partners />
       <CompanyResources />
       <Community />
