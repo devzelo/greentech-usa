@@ -3252,6 +3252,26 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }
   };
 
+  // CR 179: the website toggle saves on its own, so the project goes live (or comes off) at once
+  // instead of waiting for Save Workspace.
+  const [publishing, setPublishing] = useState(false);
+  const togglePublished = async () => {
+    if (!id || publishing) return;
+    const next = !isPublished;
+    setIsPublished(next);
+    setPublishing(true);
+    try {
+      const u = await updateProject(id, { published: next });
+      setProject(u);
+      toast(next ? "Published. The project is now on the website." : "Removed from the website.", "success");
+    } catch (e) {
+      setIsPublished(!next);
+      toast(e instanceof Error ? e.message : "Could not update the website setting.", "error");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   // L1 — Client Information locks after saving; an Edit button re-enables it (prevents accidental edits).
   const [clientLocked, setClientLocked] = useState(true);
   // I5 — warn before leaving/reloading with unsaved workspace edits (proposal builder etc.).
@@ -3590,8 +3610,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap">Preview on website</span>
                   <button
                     type="button"
-                    onClick={() => setIsPublished((v) => !v)}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none flex-shrink-0 ${isPublished ? "bg-indigo-500" : "bg-slate-200"}`}
+                    role="switch"
+                    aria-checked={isPublished}
+                    disabled={publishing}
+                    onClick={togglePublished}
+                    title={isPublished ? "Live on the website. Click to remove it." : "Click to publish this project on the website."}
+                    className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none flex-shrink-0 disabled:opacity-60 ${isPublished ? "bg-indigo-500" : "bg-slate-200"}`}
                   >
                     <motion.span
                       layout
