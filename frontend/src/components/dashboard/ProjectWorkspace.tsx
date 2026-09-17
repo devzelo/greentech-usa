@@ -67,7 +67,7 @@ import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, ty
 import CompanyDocPicker from "./CompanyDocPicker";
 import InsertSectionTemplate, { type InsertPayload } from "./InsertSectionTemplate";
 import { expiryInfo, bestDocFor, docAttachment } from "../../lib/docExpiry";
-import { isOriginalPageType } from "../../lib/proposalLibrary";
+import { isOriginalPageType, PAGE_TYPES } from "../../lib/proposalLibrary";
 import ProposalSectionManager from "./ProposalSectionManager";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import RevisionCompare, { isComparable } from "./RevisionCompare";
@@ -3094,7 +3094,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         )}
         {original && (
           <div className="rounded-2xl border-2 border-dashed border-slate-200 p-4 space-y-1.5">
-            <p className="text-xs font-bold text-slate-700">{m.pageType === "government" ? "Government form" : "External document"}: inserted exactly as uploaded, never on our letterhead.</p>
+            <p className="text-xs font-bold text-slate-700">{PAGE_TYPES.find((p) => p.v === m.pageType)?.label || "External document"}: inserted exactly as uploaded, never on our letterhead.</p>
             <p className="text-[11px] text-slate-500">{m.divider ? "A GT/JV separator page prints before it." : "No separator page. Turn one on with the divider icon in Sections."} Upload PDFs or images below; save Word or Excel files as PDF first.</p>
             {(s.attachments || []).length === 0 && <p className="text-[11px] font-bold text-amber-600">Nothing uploaded yet: this section prints {m.divider ? "only its separator page" : "nothing"}.</p>}
           </div>

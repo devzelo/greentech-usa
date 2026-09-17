@@ -709,7 +709,8 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
 
   // Does a section have any content to render?
   const sectionFor = (refId?: string) => content.sections.find((s) => s.id === refId);
-  const isOriginal = (m: ProposalSectionMeta) => m.pageType === "government" || m.pageType === "external";
+  // CR 202 - a government form, an external document or a custom attachment all print as uploaded.
+  const isOriginal = (m: ProposalSectionMeta) => m.pageType === "government" || m.pageType === "external" || m.pageType === "custom";
   const resumeHost = built.length
     ? fullLayout.find((m) => !m.hidden && m.kind === "custom" && !isOriginal(m) && RESUME_SECTION_KEYS.has(m.libraryKey || "") && !!sectionFor(m.refId))
     : undefined;
@@ -724,8 +725,8 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       case "custom": {
         const s = sectionFor(m.refId);
         if (!s) return false;
-        // Government forms and external documents print only their upload (and separator page).
-        if (m.pageType === "government" || m.pageType === "external") return !!s.attachments?.length || !!m.divider;
+        // An inserted-as-uploaded section prints only its upload (and separator page).
+        if (isOriginal(m)) return !!s.attachments?.length || !!m.divider;
         return !!(s.heading || s.body || s.attachments?.length || s.subsections?.length || s.projects?.length);
       }
       case "blank": return true;
@@ -951,7 +952,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   };
   // Subsection rows under a section in the contents (designed sections only).
   const subRows = (m: ProposalSectionMeta, w: number) => {
-    if (m.kind !== "custom" || m.pageType === "government" || m.pageType === "external") return [];
+    if (m.kind !== "custom" || isOriginal(m)) return [];
     const base = labelById.get(m.id)?.sub || "";
     return printableSubs(sectionFor(m.refId)).map((ss, k) => (
       <View key={ss.id} style={[styles.tocRow, styles.tocSubRow]}>

@@ -255,7 +255,8 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
     const appxNumbering = (fin ? f.appendixNumbering || "letters" : t.appendixNumbering || "numbers");
     const requirements = pc.requirements || [];
     const secFor = (m: SecMeta) => sections.find((s) => s.id === m.refId);
-    const isOriginal = (m: SecMeta) => m.pageType === "government" || m.pageType === "external";
+    // CR 202 - a government form, an external document and a custom attachment all print as uploaded.
+    const isOriginal = (m: SecMeta) => m.pageType === "government" || m.pageType === "external" || m.pageType === "custom";
 
     const emps = fin ? [] : t.employees || [];
 

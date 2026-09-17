@@ -125,6 +125,9 @@ export const PAGE_TYPES: Array<{ v: ProposalPageType; label: string; short: stri
   { v: "designed", label: "GT/JV designed content", short: "Designed", hint: "Our pages: letterhead, header, footer, fonts, section title and page number." },
   { v: "government", label: "Government form", short: "Gov. form", hint: "An official Government form or provided template, inserted exactly as uploaded. Never redesigned or placed on our letterhead." },
   { v: "external", label: "External document", short: "External", hint: "A document from another organization (datasheet, insurance, licence, CPARS, letter, drawing), inserted as uploaded, optionally after a GT/JV separator page." },
+  // CR 202 - our own file that must print exactly as it is: a signed letter, a scan, a brochure,
+  // a drawing, a spreadsheet exported to PDF. Never redesigned onto the letterhead.
+  { v: "custom", label: "Custom attachment", short: "Custom", hint: "Any other file you want inserted exactly as it is (a signed letter, a scan, a brochure, a drawing), optionally after a GT/JV separator page." },
 ];
 
-export const isOriginalPageType = (t?: ProposalPageType) => t === "government" || t === "external";
+export const isOriginalPageType = (t?: ProposalPageType) => t === "government" || t === "external" || t === "custom";
