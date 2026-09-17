@@ -1845,7 +1845,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                             <input className={`${inp} col-span-2`} placeholder="Contact person" value={p.contactName} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, contactName: e.target.value }))} />
                             <input className={inp} placeholder="Email" value={p.email} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, email: e.target.value }))} />
                             <input className={inp} placeholder="Phone" value={p.phone} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, phone: e.target.value }))} />
-                            <input className={`${inp} col-span-2`} placeholder="Address" value={p.address} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, address: e.target.value }))} />
+                            <textarea rows={3} className={`${inp} col-span-2 resize-y`} placeholder="Address (paste it as written)" value={p.address} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, address: e.target.value }))} />
                           </div>
                         ) : (
                           <>

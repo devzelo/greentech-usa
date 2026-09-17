@@ -367,7 +367,7 @@ export default function UserManagement() {
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><MapPin size={13} /> Home address</label>
-                  <textarea rows={2} value={form.homeAddress} onChange={(e) => setForm({ ...form, homeAddress: e.target.value })} placeholder="Optional" className={field} />
+                  <textarea rows={4} value={form.homeAddress} onChange={(e) => setForm({ ...form, homeAddress: e.target.value })} placeholder="Optional" className={field} />
                 </div>
 
                 {/* CR-P-57 — admin can attach any document to the user. */}

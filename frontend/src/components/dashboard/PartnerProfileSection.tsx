@@ -134,7 +134,7 @@ export default function PartnerProfileSection() {
               <input className={`${inp} mt-1`} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
           </div>
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Address
-            <textarea rows={2} className={`${inp} mt-1 resize-y`} value={form.partnerAddress} onChange={(e) => setForm({ ...form, partnerAddress: e.target.value })} /></label>
+            <textarea rows={4} className={`${inp} mt-1 resize-y`} placeholder="Paste the full address exactly as written" value={form.partnerAddress} onChange={(e) => setForm({ ...form, partnerAddress: e.target.value })} /></label>
 
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Company logo</label>

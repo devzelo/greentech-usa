@@ -91,7 +91,7 @@ import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
 import { projectTimeZone } from "../../lib/countryTimeZone";
 import LocalClock from "./LocalClock";
-import CountrySelect from "./CountrySelect";
+import AddressBox from "./AddressBox";
 import ScrollableTabs from "./ScrollableTabs";
 import FinanceStrip from "./FinanceStrip";
 import { Fig } from "./FiguresPrivacy";
@@ -500,7 +500,7 @@ export default function ProjectWorkspace() {
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Address</label>
-            <textarea rows={2} value={jvInfo.partnerAddress} onChange={(e) => updateJv("partnerAddress", e.target.value)} disabled={disabled} placeholder="Full address…"
+            <textarea rows={4} value={jvInfo.partnerAddress} onChange={(e) => updateJv("partnerAddress", e.target.value)} disabled={disabled} placeholder="Paste the full address exactly as written"
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60" />
           </div>
           {/* Step 8 (items 114-118) - the JV as its own registered entity. Expressions of Interest
@@ -1459,8 +1459,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
     startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
   });
-  const setAddr = <K extends keyof SiteAddress>(k: K, v: SiteAddress[K]) =>
-    setIdentityForm((f) => ({ ...f, siteAddress: { ...f.siteAddress, [k]: v } }));
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
@@ -1493,6 +1491,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       contractType: project.contractType || "",
       cpars: project.cpars || "",
       siteAddress: {
+        full: project.siteAddress?.full || "",
         line1: project.siteAddress?.line1 || "",
         city: project.siteAddress?.city || "",
         state: project.siteAddress?.state || "",
@@ -6785,53 +6784,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </select>
                   <p className="text-[10px] text-slate-400">Printed on this project's past-performance data sheet.</p>
                 </div>
-                {/* Project site address — feeds RFQ/PO delivery and the "City, Country 🇬🇭" header. */}
+                {/* Project site address — feeds RFQ/PO delivery and the "City, Country 🇬🇭" header.
+                    CR 186: pasted as one block, with the parts beside it. */}
                 <div className="md:col-span-2">
-                  <CountrySelect label="Country" value={identityForm.siteAddress.country} onChange={(v) => setAddr("country", v)} disabled={!isOwner} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">State / Province</label>
-                  <input
-                    type="text"
-                    value={identityForm.siteAddress.state}
-                    onChange={(e) => setAddr("state", e.target.value)}
-                    placeholder="e.g. Greater Accra"
-                    disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">City</label>
-                  <input
-                    type="text"
-                    value={identityForm.siteAddress.city}
-                    onChange={(e) => setAddr("city", e.target.value)}
-                    placeholder="e.g. Accra"
-                    disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Exact Address</label>
-                  <input
-                    type="text"
-                    value={identityForm.siteAddress.line1}
-                    onChange={(e) => setAddr("line1", e.target.value)}
-                    placeholder="Street address"
-                    disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Postal / ZIP Code</label>
-                  <input
-                    type="text"
-                    value={identityForm.siteAddress.postalCode}
-                    onChange={(e) => setAddr("postalCode", e.target.value)}
-                    placeholder="e.g. 00233"
-                    disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
+                  <AddressBox label="Project site address" value={identityForm.siteAddress} onChange={(v) => setIdentityForm((f) => ({ ...f, siteAddress: v }))} disabled={!isOwner} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress (%)</label>

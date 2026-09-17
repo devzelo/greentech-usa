@@ -5,20 +5,16 @@ import { MapPin, X, Building2, Home, PencilLine, Check } from "lucide-react";
 export const OFFICE_ADDRESS = "GreenTech USA — Head Office, USA";
 
 type Kind = "site" | "office" | "custom";
-export interface CustomAddress { attention: string; street: string; city: string; state: string; postal: string; country: string }
-const EMPTY: CustomAddress = { attention: "", street: "", city: "", state: "", postal: "", country: "" };
 
-// Compose the structured pieces into the single ship-to string we store on the RFQ/PO.
-function composeCustom(c: CustomAddress): string {
-  const cityLine = [c.city, c.state, c.postal].filter(Boolean).join(", ");
-  return [c.attention, c.street, cityLine, c.country].filter(Boolean).join(", ");
-}
+// CR 186: a custom address is pasted as one block (any country's format); it is stored as one line.
+const composeCustom = (attention: string, text: string) =>
+  [attention, ...text.split(/\r?\n/)].map((l) => l.trim().replace(/,$/, "")).filter(Boolean).join(", ");
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
 // A detailed ship-to picker: a button that opens a modal where you choose the address TYPE
-// (Project site → from the project location · GreenTech office → predefined · Custom → typed in
-// with street / city / state / postal / country). Stores a single composed string via onChange.
+// (Project site → from the project location · GreenTech office → predefined · Custom → the whole
+// address pasted in one box). Stores a single composed string via onChange.
 export function AddressPicker({ value, projectSite, disabled, onChange }: {
   value: string; projectSite?: string; disabled?: boolean; onChange: (v: string) => void;
 }) {
@@ -52,11 +48,11 @@ function AddressModal({ projectSite, initial, onClose, onSave }: {
   // Guess the starting type from the current value so reopening feels natural.
   const initialKind: Kind = initial && initial === projectSite ? "site" : initial === OFFICE_ADDRESS ? "office" : initial ? "custom" : "site";
   const [kind, setKind] = useState<Kind>(initialKind);
-  // Seed the custom form's street with the existing free-text value when it isn't a preset.
-  const [custom, setCustom] = useState<CustomAddress>(initialKind === "custom" ? { ...EMPTY, street: initial } : EMPTY);
-  const set = (k: keyof CustomAddress, v: string) => setCustom((p) => ({ ...p, [k]: v }));
+  // Seed the custom box with the existing free-text value when it isn't a preset.
+  const [attention, setAttention] = useState("");
+  const [customText, setCustomText] = useState(initialKind === "custom" ? initial.split(/,\s*/).join("\n") : "");
 
-  const resolved = kind === "site" ? (projectSite || "") : kind === "office" ? OFFICE_ADDRESS : composeCustom(custom);
+  const resolved = kind === "site" ? (projectSite || "") : kind === "office" ? OFFICE_ADDRESS : composeCustom(attention, customText);
   const canSave = kind !== "site" ? !!resolved : !!projectSite;
 
   const OPTIONS: { k: Kind; label: string; hint: string; icon: typeof MapPin }[] = [
@@ -105,16 +101,14 @@ function AddressModal({ projectSite, initial, onClose, onSave }: {
           )}
           {kind === "custom" && (
             <div className="space-y-2">
-              <input className={inp} placeholder="Attention / recipient (optional)" value={custom.attention} onChange={(e) => set("attention", e.target.value)} />
-              <input className={inp} placeholder="Street address" value={custom.street} onChange={(e) => set("street", e.target.value)} />
-              <div className="grid grid-cols-2 gap-2">
-                <input className={inp} placeholder="City" value={custom.city} onChange={(e) => set("city", e.target.value)} />
-                <input className={inp} placeholder="State / Province" value={custom.state} onChange={(e) => set("state", e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input className={inp} placeholder="Postal / ZIP code" value={custom.postal} onChange={(e) => set("postal", e.target.value)} />
-                <input className={inp} placeholder="Country" value={custom.country} onChange={(e) => set("country", e.target.value)} />
-              </div>
+              <input className={inp} placeholder="Attention / recipient (optional)" value={attention} onChange={(e) => setAttention(e.target.value)} />
+              <textarea
+                className={`${inp} resize-y leading-relaxed`}
+                rows={5}
+                placeholder={"Paste the full address exactly as written, e.g.\nWarehouse 4, Tema Free Zone\nTema, Greater Accra Region\nGhana"}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+              />
             </div>
           )}
 

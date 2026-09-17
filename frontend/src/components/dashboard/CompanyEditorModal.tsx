@@ -116,7 +116,7 @@ export default function CompanyEditorModal({
             <div><label className={label}>Phone</label><input className={inp} value={draft.phone || ""} onChange={(e) => setDraft({ phone: e.target.value })} /></div>
             <div><label className={label}>Website</label><input className={inp} value={draft.website || ""} onChange={(e) => setDraft({ website: e.target.value })} /></div>
           </div>
-          <div><label className={label}>Address</label><textarea rows={2} className={inp} value={draft.address || ""} onChange={(e) => setDraft({ address: e.target.value })} /></div>
+          <div><label className={label}>Address</label><textarea rows={4} className={`${inp} resize-y`} placeholder="Paste the full address exactly as written" value={draft.address || ""} onChange={(e) => setDraft({ address: e.target.value })} /></div>
 
           {/* Contact persons */}
           <div className="bg-slate-50 rounded-2xl p-4 space-y-2">

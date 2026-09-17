@@ -10,7 +10,7 @@ import { toast } from "../../lib/toast";
 import CategoryMultiSelect from "./CategoryMultiSelect";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
-import CountrySelect from "./CountrySelect";
+import AddressBox from "./AddressBox";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import {
@@ -180,7 +180,6 @@ export default function NewProjectForm() {
   const [status, setStatus] = useState("Proposal");
   const [desc, setDesc] = useState("");
   const [siteAddr, setSiteAddr] = useState<SiteAddress>(EMPTY_SITE_ADDRESS);
-  const setAddr = <K extends keyof SiteAddress>(k: K, v: SiteAddress[K]) => setSiteAddr((p) => ({ ...p, [k]: v }));
   const [isPublished, setIsPublished] = useState(false);
   const [progress, setProgress] = useState(0);
   const [projectValue, setProjectValue] = useState("");
@@ -569,49 +568,10 @@ export default function NewProjectForm() {
             <CategoryMultiSelect value={categories} onChange={(v) => { setCategories(v); markTouched(); }} />
             <p className="text-[10px] text-slate-400">Pick every service this project covers.</p>
           </div>
-          {/* Project site address — structured so RFQ/PO delivery and the project header can reuse it. */}
+          {/* Project site address — feeds RFQ/PO delivery and the project header. CR 186: pasted as
+              one block, with the parts beside it. */}
           <div className="md:col-span-2">
-            <CountrySelect label="Country" value={siteAddr.country} onChange={(v) => setAddr("country", v)} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">State / Province</label>
-            <input
-              type="text"
-              value={siteAddr.state}
-              onChange={(e) => setAddr("state", e.target.value)}
-              placeholder="e.g. Greater Accra"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">City</label>
-            <input
-              type="text"
-              value={siteAddr.city}
-              onChange={(e) => setAddr("city", e.target.value)}
-              placeholder="e.g. Accra"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Exact Address</label>
-            <input
-              type="text"
-              value={siteAddr.line1}
-              onChange={(e) => setAddr("line1", e.target.value)}
-              placeholder="Street address"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Postal / ZIP Code</label>
-            <input
-              type="text"
-              value={siteAddr.postalCode}
-              onChange={(e) => setAddr("postalCode", e.target.value)}
-              placeholder="e.g. 00233"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-            />
+            <AddressBox label="Project site address" value={siteAddr} onChange={(v) => { setSiteAddr(v); markTouched(); }} />
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress (%)</label>
@@ -788,11 +748,11 @@ export default function NewProjectForm() {
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Address</label>
                 <textarea
-                  rows={2}
+                  rows={4}
                   value={jv.partnerAddress}
                   onChange={(e) => updateJv("partnerAddress", e.target.value)}
-                  placeholder="Full address…"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none"
+                  placeholder="Paste the full address exactly as written"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y"
                 />
               </div>
               {/* Partner stamps & signatures */}
@@ -898,7 +858,7 @@ export default function NewProjectForm() {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Address</label>
-                <textarea rows={3} value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Full mailing address..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none" />
+                <textarea rows={5} value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Paste the full address exactly as written" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>

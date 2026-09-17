@@ -73,7 +73,7 @@ export default function CompanyRegister() {
               <div><label className={label}>Email</label><input className={inp} value={data.email} onChange={(e) => set({ email: e.target.value })} /></div>
               <div><label className={label}>Phone</label><input className={inp} value={data.phone} onChange={(e) => set({ phone: e.target.value })} /></div>
               <div className="sm:col-span-2"><label className={label}>Website</label><input className={inp} value={data.website} onChange={(e) => set({ website: e.target.value })} /></div>
-              <div className="sm:col-span-2"><label className={label}>Address</label><textarea rows={2} className={inp} value={data.address} onChange={(e) => set({ address: e.target.value })} /></div>
+              <div className="sm:col-span-2"><label className={label}>Address</label><textarea rows={4} className={`${inp} resize-y`} placeholder="Paste the full address exactly as written" value={data.address} onChange={(e) => set({ address: e.target.value })} /></div>
             </div>
 
             <div className="bg-slate-50 rounded-2xl p-4 space-y-2">

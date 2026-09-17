@@ -146,7 +146,7 @@ export interface ApiProject {
   progress: number;
   location: string;
   // Structured project site address; `location` is kept as a short "City, Country" mirror.
-  siteAddress?: { line1: string; city: string; state: string; postalCode: string; country: string };
+  siteAddress?: { full?: string; line1: string; city: string; state: string; postalCode: string; country: string };
   category: string;
   categories?: string[];   // item 101 - several services; `category` mirrors the first (see projectCategories)
   contractType?: string;
