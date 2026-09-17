@@ -282,7 +282,11 @@ export interface ProposalSectionMeta {
   history?: Array<{ at: string; by: string; text: string }>; // CR-B-17 — per-section change log
 }
 
+/** CR 203 - a volume marked Final: which revision was filed, when and by whom. Cleared when a new revision starts. */
+export interface ProposalFinalMark { revision: number; at: string; by: string }
+
 export interface TechnicalProposalContent {
+  finalized?: ProposalFinalMark;
   coverTitle: string;
   coverSubtitle: string;
   refNo: string;
@@ -317,6 +321,7 @@ export interface FinancialTable {
 }
 
 export interface FinancialProposalContent {
+  finalized?: ProposalFinalMark;
   currency: string;
   notes: string; // HTML
   lineItems?: FinancialLineItem[]; // legacy single-table data (migrated into `tables`)

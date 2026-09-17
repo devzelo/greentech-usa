@@ -9,7 +9,7 @@ import {
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
-  GanttChartSquare, FileDown, Printer,
+  GanttChartSquare, FileDown, Printer, CheckCircle2,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -3054,6 +3054,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   const customEditorFor = (m: ProposalSectionMeta, vol: Vol) => {
+    // CR 203 - once its volume is marked Final, every box in this section is read-only.
+    const canEdit = volCanEdit(vol);
     const s = sectionsOfVol(vol).find((x) => x.id === m.refId);
     if (!s) return null;
     // Spec 4 - Government forms and external documents are inserted as uploaded: no text
@@ -3182,6 +3184,23 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // Load everything on mount
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
+  // CR 203 - a volume marked Final is locked: its status shows everywhere and editing needs a new revision.
+  const finalOf = (v: "technical" | "financial") => (v === "financial" ? financial.finalized : technical.finalized);
+  const openVolFinal = proposalSub === "technical" || proposalSub === "financial" ? finalOf(proposalSub) : undefined;
+  // Unlock a volume for more work: the filed Final revision stays in the table as the record.
+  const startNewRevision = async (which: "technical" | "financial") => {
+    const mark = finalOf(which);
+    if (!(await brandedConfirm({
+      title: "Start a new revision?",
+      message: `The ${which === "financial" ? "Financial" : "Technical"} Proposal is marked Final${mark ? ` (Rev ${mark.revision})` : ""}. That revision stays in the table as the record. This unlocks the builder so you can work on the next revision.`,
+      confirmLabel: "Start a new revision",
+    }))) return;
+    if (which === "financial") setFin("finalized", undefined); else setTech("finalized", undefined);
+    await handleSave(true, which === "financial" ? { financial: { ...financial, finalized: undefined } } : { technical: { ...technical, finalized: undefined } });
+    toast("Unlocked. Edit and mark the next revision Final when it is ready.", "success");
+  };
+  const proposalCanEdit = canEdit && !openVolFinal;
+  const volCanEdit = (v: Vol) => canEdit && !finalOf(v);
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
   const hasAnyProcPerm = PROC_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
@@ -3244,7 +3263,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-B-21 — branded confirm modal (was window.confirm). Render {wsDialogs} once near the root.
   const { confirm: brandedConfirm, dialogs: wsDialogs } = useDialogs();
   const dlgConfirm = (o: { title: string; message?: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean }) => brandedConfirm({ ...o, message: o.message || "" });
-  const handleSave = async (silent = false) => {
+  /** `override` writes a value that was just set in state, which this closure cannot see yet (CR 203). */
+  const handleSave = async (silent = false, override?: Partial<ProposalContent>) => {
     if (!id || !project || !canEdit) return;
     setSaving(true);
     try {
@@ -3275,7 +3295,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       }));
       payload.subcontractors = subcontractors;
       payload.proposals = proposals;
-      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, eoi, rfp } as ProposalContent;
+      payload.proposalContent = { cover, coverFinancial, coverLetter, coverLetterFinancial, backCover, letterhead, customLetterheadUrl, requirements, technical, financial, eoi, rfp, ...override } as ProposalContent;
       const updated = await wsSave.track(updateProject(id, payload));
       setProject(updated);
       setDirty(false); // I5 — workspace is now saved
@@ -4003,6 +4023,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
           {/* PROPOSALS */}
           {activeTab === "proposals" && id && project && (() => {
+            // While the open volume is marked Final nothing in it can be changed (CR 203).
+            const canEdit = proposalCanEdit;
             const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
             const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
             const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
@@ -4026,6 +4048,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     { key: "print", label: "Print", hint: "Opens the preview; print from its toolbar", icon: <Printer size={14} />, onSelect: () => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); } },
                   ]}
                 />
+                {/* CR 203 - a Final volume is locked; the only way on is a new revision. */}
+                {finalOf(which) && canManage && (
+                  <button
+                    onClick={() => void startNewRevision(which)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary transition-colors"
+                  >
+                    <RotateCcw size={13} /> Start a new revision
+                  </button>
+                )}
                 {/* CR-B-14a - the rest of the standard action set for the Proposal builder
                     (Save / Duplicate / Mark as Final / Discard / Reset, with confirmations). */}
                 {canEdit && (
@@ -4039,15 +4070,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
                     /* CR-P (109) — "are you sure you want to save it as final? You cannot change it later." The
                        frozen copy is what went out, so it is explicitly immutable. */
-                    markCompleteMessage={`This files a frozen copy as revision ${Math.max(0, nextFinalVer[which] - 1)} in the proposals table. That copy can never be changed. It is the record of what was produced. You can keep editing the live proposal afterwards and file another revision later.`}
+                    markCompleteMessage={`This files a frozen copy as revision ${Math.max(0, nextFinalVer[which] - 1)} in the proposals table. That copy can never be changed: it is the record of what was produced. The proposal is then marked Final and locked, and you start a new revision when you want to work on it again.`}
                     onMarkComplete={async () => {
                       if (!id) return;
                       try {
                         const blob = await buildProposalBlob(which, true);
                         const safe = `${project.name || "project"}_${which === "financial" ? "Financial" : "Technical"}_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
                         const doc = await saveDocumentVersion(id, { kind: "proposal", refId: which, title: revLabel.trim() || `${which === "financial" ? "Financial" : "Technical"} Proposal (Final)`, status: "final" }, blob, `${safe}.pdf`);
+                        // CR 203 - the volume itself now reads Final and is locked until a new revision is started.
+                        const mark = { revision: Math.max(0, doc.version - 1), at: new Date().toISOString(), by: currentUser?.name || "" };
+                        if (which === "financial") setFin("finalized", mark); else setTech("finalized", mark);
+                        // Save it straight away, so the status is still Final after a reload.
+                        await handleSave(true, which === "financial" ? { financial: { ...financial, finalized: mark } } : { technical: { ...technical, finalized: mark } });
                         // CR-P (84) - name it the way the table does: Rev 0, Rev 1, ...
-                        toast(`Marked as Final, filed as Rev ${Math.max(0, doc.version - 1)} in the proposals table.`, "success");
+                        toast(`Marked as Final (Rev ${mark.revision}). The proposal is locked; start a new revision to keep editing.`, "success");
                         await loadNextFinalVer();
                       } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); }
                     }}
@@ -4087,6 +4123,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   >
                     {t.k === "financial" && financialLocked && <Lock size={10} className="text-amber-500" />}
                     {t.label}
+                    {(t.k === "technical" || t.k === "financial") && finalOf(t.k) && (
+                      <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white" title={`Marked Final as Rev ${finalOf(t.k)!.revision}`}>Final</span>
+                    )}
                   </button>
                   );
                 })}
@@ -4598,10 +4637,27 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 return (
                 <div className="space-y-6">
                   <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <h3 className="text-xl font-display font-bold text-slate-900">Technical Proposal</h3>
+                    <h3 className="flex items-center gap-2 text-xl font-display font-bold text-slate-900">
+                      Technical Proposal
+                      {/* CR 203 - the volume's own status. */}
+                      {finalOf("technical")
+                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final · Rev {finalOf("technical")!.revision}</span>
+                        : <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">In progress</span>}
+                    </h3>
                     <ActionButtons which="technical" />
                   </div>
 
+                  {finalOf("technical") && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[11px] text-emerald-800">
+                      <span>
+                        <b>Marked Final as Rev {finalOf("technical")!.revision}</b>
+                        {finalOf("technical")!.by ? ` by ${finalOf("technical")!.by}` : ""}
+                        {finalOf("technical")!.at ? ` on ${new Date(finalOf("technical")!.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.
+                        {" "}That copy is filed in the proposals table and cannot change. This builder is locked.
+                      </span>
+                      {canManage && <button onClick={() => void startNewRevision("technical")} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-700">Start a new revision</button>}
+                    </div>
+                  )}
                   <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600 flex items-center justify-between gap-3 flex-wrap">
                     <span>Edit this document's cover page in the <strong>Cover Page</strong> sub-tab above. Reorder sections with the <strong>↑ ↓</strong> arrows on each box below; that is the order they print in.</span>
                     {/* Item 105 - the standard attachments list, in one click. */}
@@ -4867,7 +4923,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 return (
                 <div className="space-y-6">
                   <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <h3 className="text-xl font-display font-bold text-slate-900">Financial Proposal</h3>
+                    <h3 className="flex items-center gap-2 text-xl font-display font-bold text-slate-900">
+                      Financial Proposal
+                      {/* CR 203 - the volume's own status. */}
+                      {finalOf("financial")
+                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final · Rev {finalOf("financial")!.revision}</span>
+                        : <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">In progress</span>}
+                    </h3>
                     <ActionButtons which="financial" />
                   </div>
 
