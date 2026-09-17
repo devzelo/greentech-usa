@@ -965,8 +965,11 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const seq: SeqItem[] = [];
   const page = (el: ReactElement, numbers = false) => { seq.push({ page: el, numbers }); };
 
-  page(<ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />);
-  if (coverLetter?.enabled) page(<CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} />);
+  // CR 195 - the transmittal letter is page 2 after the cover, or page 1 when chosen.
+  const coverEl = <ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />;
+  const letterEl = coverLetter?.enabled ? <CoverLetterPage coverLetter={coverLetter} cover={cover} project={project} lh={lh} label={LABEL} note={note} /> : null;
+  if (letterEl && coverLetter?.position === "before-cover") { page(letterEl); page(coverEl); }
+  else { page(coverEl); if (letterEl) page(letterEl); }
 
   // Table of contents: main sections with their RFP reference, then the appendices.
   if (tocMain.length || tocAppx.length || trailingResumes) {
@@ -1064,6 +1067,20 @@ export function CoverOnlyDocument({ volume, cover, project }: { volume: "technic
   return asDocument(`${cover?.proposalTitle || project.name} - Cover`, [
     <ProposalCoverPage variant={cover?.coverStyle} data={coverData(kind, cover, project)} />,
   ]);
+}
+
+/** CR 195 - the opening pages (cover and transmittal letter, in the chosen order), for the letter's preview. */
+export function OpeningPagesDocument({ volume, cover, coverLetter, project, letterhead, customLetterheadUrl, logoUrl }: {
+  volume: "technical" | "financial"; cover?: ProposalCover; coverLetter: ProposalCoverLetter; project: ApiProject;
+  letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string;
+}) {
+  const fin = volume === "financial";
+  const LABEL = fin ? "Financial Proposal" : "Technical Proposal";
+  const note = footNote(LABEL, project);
+  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
+  const coverEl = <ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />;
+  const letterEl = <CoverLetterPage coverLetter={{ ...coverLetter, enabled: true }} cover={cover} project={project} lh={lh} label={LABEL} note={note} />;
+  return asDocument(`${cover?.proposalTitle || project.name} - Transmittal letter`, coverLetter.position === "before-cover" ? [letterEl, coverEl] : [coverEl, letterEl]);
 }
 
 /** The technical proposal as one react-pdf document. Uploaded section files are not in it; the

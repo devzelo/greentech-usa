@@ -4403,7 +4403,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </div>
               )}
 
-              {/* CR-P (93) - the transmittal letter, one per volume, printed right after the cover. */}
+              {/* CR-P (93) - the transmittal letter, one per volume, printed with the cover (CR 195: page 1 or 2). */}
               {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "letter" && (
                 <ProposalLetterBuilder
                   projectId={id}
@@ -4412,6 +4412,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   letter={proposalSub === "financial" ? coverLetterFinancial : coverLetter}
                   onChange={(l) => { (proposalSub === "financial" ? setCoverLetterFinancial : setCoverLetter)(l); setDirty(true); }}
                   canEdit={canEdit}
+                  volume={proposalSub}
+                  letterhead={letterhead}
+                  customLetterheadUrl={customLetterheadUrl}
                 />
               )}
 

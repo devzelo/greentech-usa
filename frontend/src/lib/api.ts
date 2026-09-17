@@ -400,6 +400,8 @@ export interface ProposalCoverLetter {
   salutation?: string;
   closing?: string;
   stampUrl?: string;    // the company seal printed beside the first signature
+  /** CR 195 - where the letter prints: page 2 after the cover (default), or page 1 before it. */
+  position?: "after-cover" | "before-cover";
 }
 
 /** Step 9 (spec 38) - an RFP requirement: where the proposal answers it and whether it complies. */

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { PDFViewer } from "@react-pdf/renderer";
+import { Eye, Plus, X } from "lucide-react";
 import {
   fetchSignatories, fetchStamps, uploadProposalAsset, withFileToken,
-  type ApiProject, type ApiSignatory, type CompanyFile, type ProposalCover, type ProposalCoverLetter, type ProposalSignatory,
+  type ApiProject, type ApiSignatory, type CompanyFile, type ProposalCover, type ProposalCoverLetter, type ProposalLetterhead, type ProposalSignatory,
 } from "../../lib/api";
 import { letterDefaults } from "../../lib/proposalLetter";
 import RichTextEditor from "./RichTextEditor";
 import { COMPANY } from "../pdf/brand";
-import { defaultSubmitter } from "./ProposalPDF";
+import { OpeningPagesDocument, defaultSubmitter } from "./ProposalPDF";
 
 // CR-P (93) - the transmittal letter, laid out as on the client's samples: Date, To, Subject,
 // Dear ..., the paragraphs, Sincerely, then the signature with the company seal and the signer's
@@ -37,8 +38,11 @@ const longDate = (s: string) => {
 };
 
 export default function ProposalLetterBuilder({
-  projectId, project, cover, letter, onChange, canEdit,
+  projectId, project, cover, letter, onChange, canEdit, volume = "technical", letterhead, customLetterheadUrl,
 }: {
+  volume?: "technical" | "financial";
+  letterhead?: ProposalLetterhead;
+  customLetterheadUrl?: string;
   projectId: string;
   project: ApiProject;
   cover: ProposalCover;
@@ -47,6 +51,7 @@ export default function ProposalLetterBuilder({
   canEdit: boolean;
 }) {
   const [staff, setStaff] = useState<ApiSignatory[]>([]);
+  const [preview, setPreview] = useState(false);
   const [stamps, setStamps] = useState<CompanyFile[]>([]);
   useEffect(() => {
     fetchSignatories().then(setStaff).catch(() => {});
@@ -97,11 +102,41 @@ export default function ProposalLetterBuilder({
       <div className={card}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h4 className="font-bold text-slate-800 text-sm">Transmittal Letter</h4>
-          <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" checked={letter.enabled} onChange={(e) => set("enabled", e.target.checked)} disabled={!canEdit} className="accent-emerald-600" />
-            Include in the proposal (right after the cover)
-          </label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+              <input type="checkbox" checked={letter.enabled} onChange={(e) => set("enabled", e.target.checked)} disabled={!canEdit} className="accent-emerald-600" />
+              Include in the proposal
+            </label>
+            {/* CR 195 - which page the letter is. */}
+            <select
+              value={letter.position || "after-cover"}
+              onChange={(e) => set("position", e.target.value as ProposalCoverLetter["position"])}
+              disabled={!canEdit || !letter.enabled}
+              aria-label="Letter position"
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 disabled:opacity-50"
+            >
+              <option value="after-cover">Page 2, after the cover</option>
+              <option value="before-cover">Page 1, before the cover</option>
+            </select>
+            <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200">
+              <Eye size={12} /> Preview letter
+            </button>
+          </div>
         </div>
+        {!letter.enabled && <p className="text-[11px] font-bold text-amber-600">Not included yet: tick "Include in the proposal" for the letter to print.</p>}
+        {preview && (
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex flex-col" onClick={() => setPreview(false)}>
+            <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-display font-bold text-slate-900 text-sm">Preview: cover and transmittal letter ({letter.position === "before-cover" ? "letter first" : "letter after the cover"})</h3>
+              <button type="button" onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
+            </div>
+            <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>
+              <PDFViewer width="100%" height="100%" showToolbar>
+                <OpeningPagesDocument volume={volume} cover={cover} coverLetter={letter} project={project} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={`${window.location.origin}/gt-usa-logo-new.png`} />
+              </PDFViewer>
+            </div>
+          </div>
+        )}
         <p className="text-[11px] text-slate-500">
           The header fills itself from the <strong>Cover Page</strong>. Type in a box to change a line for this letter only; clear it to go back to the cover's value.
         </p>
