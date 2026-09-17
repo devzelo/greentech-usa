@@ -3477,7 +3477,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider ${statusMeta(project.status).badge}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${statusMeta(project.status).dot}`} /> {statusMeta(project.status).label}
                 </span>
-                {project.jointVenture?.enabled && (
+                {project.jointVenture?.enabled && !isGuest && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600" title={`Joint Venture with ${project.jointVenture.partnerName || "partner"}${project.jointVenture.lead ? ` · ${project.jointVenture.lead}` : ""}`}>
                     <Users size={11} /> JV{project.jointVenture.partnerName ? ` · ${project.jointVenture.partnerName}` : ""}
                   </span>
@@ -3501,6 +3501,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   projectName={project.name}
                 />
               </div>
+              {/* CR 182: subcontractors and vendors get the project name and their tabs only. */}
+              {!isGuest && (<>
               <div className="flex flex-wrap items-center gap-2.5">
                 {project.clientInfo?.name && (
                   <>
@@ -3605,6 +3607,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 }}
                 className="mt-3 max-w-3xl"
               />
+              </>)}
             </div>
           </div>
 
@@ -3671,7 +3674,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               )}
 
               {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
-              {canSeeFigures && (
+              {canSeeFigures && !isGuest && (
                 <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
                   <FileText size={14} /> Quick Report
                 </button>
@@ -3727,7 +3730,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           </div>
         </div>
         {/* CR-P-15 — five-number financial overview of this project */}
-        {canSeeFigures && (
+        {canSeeFigures && !isGuest && (
           <div className="mt-4 pt-4 border-t border-slate-100">
             <FinanceStrip five={projectFive} />
           </div>
