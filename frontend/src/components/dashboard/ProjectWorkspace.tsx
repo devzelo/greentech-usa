@@ -89,6 +89,8 @@ import YesNo from "./YesNo";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import { locationFlag, flagForCountry } from "../../lib/countryFlag";
+import { projectTimeZone } from "../../lib/countryTimeZone";
+import LocalClock from "./LocalClock";
 import CountrySelect from "./CountrySelect";
 import ScrollableTabs from "./ScrollableTabs";
 import FinanceStrip from "./FinanceStrip";
@@ -3518,6 +3520,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
                   <MapPin size={11} /> <span className="text-[1.3em] leading-none align-middle">{flagForCountry(project.siteAddress?.country) || locationFlag(project.location)}</span> {shortLocation(project.siteAddress, project.location)}
                 </span>
+                <LocalClock
+                  timeZone={projectTimeZone(project.siteAddress, project.location)}
+                  place={shortLocation(project.siteAddress, project.location)}
+                />
                 <span className="text-xs font-bold text-slate-300">·</span>
                 {/* Two numbers: our internal project number, and the client's contract number. */}
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" title="Internal project number">Project No: {id}</span>
