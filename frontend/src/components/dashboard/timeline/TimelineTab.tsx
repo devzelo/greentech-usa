@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle, ArrowDown, ArrowUp, ChevronDown, Copy, Download, FileSpreadsheet, Flag, GripVertical, History, Import, ListChecks, Loader2,
-  Pencil, Plus, Printer, Save, Search, Trash2, Undo2, X,
+  Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
-  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, saveTimeline, saveTimelineDraft, uploadDocument, documentUrl,
+  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import {
   CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
-  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, type DurationUnit,
+  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
@@ -137,8 +138,20 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const save = async () => {
     const bad = rows.find((r) => { const s = parseDate(r.plannedStart), e = parseDate(r.plannedEnd); return s && e && e < s; });
     if (bad) { toast(`"${bad.name}" ends before it starts. Fix its dates first.`, "error"); return; }
-    const note = await prompt({ title: "Save timeline", label: "What changed? (optional, kept with this version)", placeholder: "e.g. Monthly update: design finished, delivery moved to June", confirmLabel: "Save version" });
-    if (note === null) return;
+    // CR 236 - list what changed since the last revision (row saves included) and save that as the
+    // revision's note, instead of asking the PM to remember it.
+    const since = revisions?.[0]?.milestones || [];
+    const changes = timelineChanges(since, rows);
+    if (!changes.length && revisions?.length) { toast("Nothing has changed since the last revision.", "info"); return; }
+    const shownChanges = changes.length ? changes : ["First version of this timeline"];
+    const list = shownChanges.slice(0, 14).map((c) => `• ${c}`).join("\n") + (shownChanges.length > 14 ? `\n• and ${shownChanges.length - 14} more` : "");
+    if (!(await confirm({
+      title: `Save revision ${(revisions?.[0]?.version || 0) + 1}?`,
+      message: `In this revision:\n${list}`,
+      confirmLabel: "Save revision",
+      danger: false,
+    }))) return;
+    const note = shownChanges.join("; ").slice(0, 500);
     setBusy("save");
     try {
       const r = await saveTimeline(project.id, rows, note);
@@ -149,6 +162,41 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     } catch (e) { toast(e instanceof Error ? e.message : "Could not save the timeline.", "error"); }
     finally { setBusy(""); }
   };
+  // CR 235 - save one task: its edits go live straight away, without filing a revision.
+  // Changes not yet filed as a revision (row saves included).
+  const sinceRevision = useMemo(
+    () => (revisions ? timelineChanges(revisions[0]?.milestones || [], rows).length : 0),
+    [revisions, rows],
+  );
+  const baseRow = (id: string) => base.find((r) => r.id === id);
+  const rowDirty = (m: ApiMilestone) => { const b = baseRow(m.id); return !b || JSON.stringify(b) !== JSON.stringify(m); };
+  const [rowBusy, setRowBusy] = useState("");
+  const saveRow = async (m: ApiMilestone) => {
+    const s = parseDate(m.plannedStart), e = parseDate(m.plannedEnd);
+    if (s && e && e < s) { toast(`"${m.name}" ends before it starts. Fix its dates first.`, "error"); return; }
+    setRowBusy(m.id);
+    try {
+      const r = await saveTimelineRow(project.id, m);
+      const saved = r.milestone;
+      setBase((p) => (p.some((x) => x.id === saved.id) ? p.map((x) => (x.id === saved.id ? saved : x)) : [...p, saved]));
+      setRows((p) => p.map((x) => (x.id === saved.id ? saved : x)));
+      onScheduleSaved(r.schedule, r.progress);
+      toast(`"${saved.name}" saved. Save the timeline when you are done to file a revision.`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save this row.", "error"); }
+    finally { setRowBusy(""); }
+  };
+  // CR 234 - the project manager's note on a task: internal, never printed.
+  const [noteFor, setNoteFor] = useState<ApiMilestone | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const openNote = (m: ApiMilestone) => { setNoteFor(m); setNoteText(m.notes || ""); };
+  const saveNote = async () => {
+    if (!noteFor) return;
+    const next = { ...(rows.find((x) => x.id === noteFor.id) || noteFor), notes: noteText.trim() };
+    update(noteFor.id, { notes: next.notes });
+    setNoteFor(null);
+    if (canEdit) await saveRow(next);
+  };
+
   const saveDraft = async () => {
     setBusy("draft");
     try {
@@ -348,17 +396,18 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       <th rowSpan={2} className="px-2 py-2 text-left">#</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">Phase / milestone</th>
                       <th colSpan={2} className="border-l border-slate-100 px-2 pt-2 text-center">Planned</th>
-                      <th colSpan={2} className="border-l border-slate-100 px-2 pt-2 text-center">Actual</th>
+                      <th colSpan={2} className="border-l border-sky-100 bg-sky-50 px-2 pt-2 text-center text-sky-800" title="Only entered when it differs from the plan">Actual</th>
                       <th rowSpan={2} className="border-l border-slate-100 px-2 py-2 text-right">Duration</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">Status</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">% complete</th>
+                      <th rowSpan={2} className="px-2 py-2 text-center" title="The project manager's note on this task. Internal, never printed.">Remark</th>
                       <th rowSpan={2} className="px-2 py-2 text-right">Actions</th>
                     </tr>
                     <tr className="normal-case tracking-normal">
                       <th className="border-l border-slate-100 px-2 pb-2 text-left font-semibold">Start</th>
                       <th className="px-2 pb-2 text-left font-semibold">End</th>
-                      <th className="border-l border-slate-100 px-2 pb-2 text-left font-semibold">Start</th>
-                      <th className="px-2 pb-2 text-left font-semibold">End</th>
+                      <th className="border-l border-sky-100 bg-sky-50 px-2 pb-2 text-left font-semibold text-sky-800">Start</th>
+                      <th className="bg-sky-50 px-2 pb-2 text-left font-semibold text-sky-800">End</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -388,8 +437,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                               {isMilestonePoint(m) ? <Flag size={13} className="mt-0.5 shrink-0" style={{ color }} /> : <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />}
                               <span>
                                 <span className="block font-semibold text-slate-800 hover:text-primary">{m.name}</span>
-                                {(m.responsible?.length || m.notes) ? (
-                                  <span className="block max-w-[16rem] truncate text-[10px] text-slate-400">{[m.responsible?.join(", "), m.notes].filter(Boolean).join(" · ")}</span>
+                                {m.responsible?.length ? (
+                                  <span className="block max-w-[16rem] truncate text-[10px] text-slate-400">{m.responsible.join(", ")}</span>
                                 ) : null}
                               </span>
                             </button>
@@ -402,14 +451,25 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                             <input type="date" disabled={!canEdit} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={dateInp} />
                             {moved && m.baselineEnd !== m.plannedEnd && <span className="block px-1 text-[10px] text-slate-400" title="Baseline end">was {fmtDay(m.baselineEnd)}</span>}
                           </td>
-                          <td className={`${cell} border-l border-slate-50`}>
+                          <td className={`${cell} border-l border-sky-100 bg-sky-50/50`}>
                             <input type="date" disabled={!canEdit} value={m.actualStart || ""} onChange={(e) => update(m.id, { actualStart: e.target.value })} className={`${dateInp} ${slip > 0 ? "!text-red-600 font-bold" : ""}`} />
                           </td>
-                          <td className={cell}>
+                          <td className={`${cell} bg-sky-50/50`}>
                             <input type="date" disabled={!canEdit} value={m.actualEnd || ""} min={m.actualStart || undefined} onChange={(e) => update(m.id, { actualEnd: e.target.value })} className={`${dateInp} ${late > 0 && m.actualEnd ? "!text-red-600 font-bold" : ""}`} />
                             {late > 0 && <span className="block px-1 text-[10px] font-bold text-red-600">{late} day{late === 1 ? "" : "s"} late</span>}
                           </td>
-                          <td className={`${cell} border-l border-slate-50 text-right tabular-nums text-slate-600`}>{d === null ? "-" : `${d} day${d === 1 ? "" : "s"}`}</td>
+                          <td className={`${cell} border-l border-slate-50 text-right tabular-nums text-slate-600`}>
+                            {(() => {
+                              const ed = effectiveDays(m);
+                              if (ed.days === null) return "-";
+                              return (
+                                <span title={ed.actual ? `From the actual dates (planned ${d ?? "-"} days)` : "From the planned dates"}>
+                                  {ed.days} day{ed.days === 1 ? "" : "s"}
+                                  {ed.actual && <span className="block text-[9px] font-bold uppercase tracking-wide text-sky-700">actual</span>}
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td className={cell}>
                             <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, statusPatch(m, e.target.value as MilestoneStatus))} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
                               {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
@@ -421,8 +481,24 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                               <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} /></span>
                             </div>
                           </td>
+                          <td className={`${cell} text-center`}>
+                            <button
+                              type="button"
+                              onClick={() => openNote(m)}
+                              title={m.notes ? m.notes : canEdit ? "Add a note (internal, not printed)" : "No note"}
+                              aria-label={m.notes ? `Note on ${m.name}` : `Add a note to ${m.name}`}
+                              className={`rounded p-1 ${m.notes ? "text-amber-500 hover:bg-amber-50" : "text-slate-300 hover:bg-slate-100 hover:text-slate-500"}`}
+                            >
+                              <StickyNote size={14} fill={m.notes ? "currentColor" : "none"} />
+                            </button>
+                          </td>
                           <td className={`${cell} text-right`}>
                             <div className="inline-flex items-center gap-0.5">
+                              {canEdit && rowDirty(m) && (
+                                <button type="button" onClick={() => void saveRow(m)} disabled={rowBusy === m.id} title="Save this task now (no revision is filed)" className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-bold text-white hover:bg-primary disabled:opacity-50">
+                                  {rowBusy === m.id ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+                                </button>
+                              )}
                               <button type="button" onClick={() => setEditing(m)} title={canEdit ? "Edit" : "View"} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-primary"><Pencil size={13} /></button>
                               {canEdit && (
                                 <>
@@ -436,7 +512,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                         </tr>
                       );
                     })}
-                    {shown.length === 0 && <tr><td colSpan={11} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
+                    {shown.length === 0 && <tr><td colSpan={12} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -484,7 +560,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             <button type="button" onClick={cancel} disabled={!!busy} className={btn}><Undo2 size={13} /> Cancel</button>
             {loadedFrom === "Draft" && draft && <button type="button" onClick={dropDraft} disabled={!!busy} className={btn}><Trash2 size={13} /> Delete draft</button>}
             <button type="button" onClick={saveDraft} disabled={!!busy || !unsaved} className={btn}>{busy === "draft" ? <Loader2 size={13} className="animate-spin" /> : <Copy size={13} />} Save as draft</button>
-            <button type="button" onClick={save} disabled={!!busy || (!dirty && !loadedFrom)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
+            {/* CR 235 / 236 - rows saved one by one are live but not yet a revision: Save stays on
+                until they are filed. */}
+            <button type="button" onClick={save} disabled={!!busy || (!dirty && !loadedFrom && !sinceRevision)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
               {busy === "save" ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save
             </button>
           </div>
@@ -495,6 +573,37 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
+
+      {/* CR 234 - the project manager's note on one task. Internal, never printed. */}
+      {noteFor && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setNoteFor(null)}>
+          <div className="my-24 w-full max-w-md rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><StickyNote size={15} className="text-amber-500" /> Note on {noteFor.name}</p>
+              <button onClick={() => setNoteFor(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 p-5">
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                disabled={!canEdit}
+                rows={5}
+                autoFocus
+                placeholder="e.g. Design end moved from 16 Aug to 23 Sep per the client's letter of 2 Aug."
+                className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-[11px] text-slate-400">For the project manager only. It stays with this task and is never printed.</p>
+              {canEdit && (
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setNoteFor(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                  <button onClick={() => void saveNote()} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">Save note</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

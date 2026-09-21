@@ -3,7 +3,7 @@ import type { ApiMilestone } from "./api";
 import { C, GUTTER, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
-  DAY, STATUS_META, daysBetween, delayDays, fmtDay, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
+  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
 } from "./projectSchedule";
 
 /**
@@ -74,10 +74,10 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
         m.plannedStart ? `${fmtDay(m.plannedStart)}\n${fmtDay(m.plannedEnd)}` : "-",
         moved ? `${fmtDay(m.baselineStart)}\n${fmtDay(m.baselineEnd)}` : "same",
         m.actualStart ? `${fmtDay(m.actualStart)}\n${m.actualEnd ? fmtDay(m.actualEnd) : "ongoing"}` : "-",
-        m.plannedStart && m.plannedEnd ? `${d} day${d === 1 ? "" : "s"}` : "-",
+        (() => { const ed = effectiveDays(m); return ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? "\n(actual)" : ""}`; })(),
         STATUS_META[m.status || "not_started"].label + (lateBy ? `\n${lateBy} days late` : ""),
         `${phasePercent(m)}%`,
-        m.notes || "",
+        m.description || "",   // CR 234 - the PM's note is internal and never printed
       ],
       color: lateBy ? RED : undefined,
     };
@@ -88,7 +88,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     { label: "Status", w: 66, wrap: true }, { label: "%", w: 34, align: "right" as const },
   ];
   const used = cols.reduce((s, c) => s + c.w, 0);
-  f = drawTable(b, f, X, [...cols, { label: "Notes", w: W - used, wrap: true }], tableRows.length ? tableRows : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
+  f = drawTable(b, f, X, [...cols, { label: "Description", w: W - used, wrap: true }], tableRows.length ? tableRows : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
 
   // ── Gantt ──
   if (rows.some((m) => m.plannedStart && m.plannedEnd)) drawGantt(doc, b, newPage, rows, o, today);

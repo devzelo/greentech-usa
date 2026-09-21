@@ -91,6 +91,28 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
   } catch (err) { next(err); }
 });
 
+// CR 235 - save one row: that task's edits go live at once, without filing a revision. The Save for
+// the whole timeline files the revision later, listing everything changed since the last one.
+router.put("/milestones/:mid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const [row] = cleanMilestones([{ ...(req.body?.milestone || {}), id: req.params.mid }]);
+    if (!row) return res.status(400).json({ error: "Nothing to save." });
+    const current = (project.schedule?.milestones || []) as MilestoneRecord[];
+    const at = current.findIndex((m) => m.id === row.id);
+    // Keep the row's first planned dates as its baseline, as a full save does.
+    const prev = at >= 0 ? current[at] : null;
+    const saved = { ...row, baselineStart: prev?.baselineStart || row.baselineStart, baselineEnd: prev?.baselineEnd || row.baselineEnd };
+    const milestones = at >= 0 ? current.map((m, i) => (i === at ? saved : m)) : [...current, saved];
+    project.schedule = { ...(project.schedule || { extensions: [] }), milestones } as typeof project.schedule;
+    project.markModified("schedule");
+    if (milestones.length) project.progress = overallProgress(milestones);
+    await project.save();
+    res.json({ schedule: project.schedule, progress: project.progress, milestone: saved });
+  } catch (err) { next(err); }
+});
+
 router.put("/draft", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const project = await Project.findOne({ projectId: req.params.id });

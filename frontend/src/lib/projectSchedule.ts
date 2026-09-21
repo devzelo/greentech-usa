@@ -125,6 +125,45 @@ export function plannedDays(m: ApiMilestone): number | null {
 }
 export const isMilestonePoint = (m: ApiMilestone) => plannedDays(m) === 0;
 
+/**
+ * CR 233 - the duration that counts: actual dates are only entered when they differ from the plan,
+ * and when they are there the duration follows them.
+ */
+export function effectiveDays(m: ApiMilestone): { days: number | null; actual: boolean } {
+  const as = parseDate(m.actualStart), ae = parseDate(m.actualEnd);
+  if (as && ae) return { days: Math.max(0, daysBetween(as, ae)), actual: true };
+  return { days: plannedDays(m), actual: false };
+}
+
+/**
+ * CR 236 - what changed between two versions of a timeline, in words, so a revision is saved with
+ * its own change list instead of asking "what changed".
+ */
+export function timelineChanges(before: ApiMilestone[], after: ApiMilestone[]): string[] {
+  const out: string[] = [];
+  const byId = new Map(before.map((m) => [m.id, m]));
+  const day = (s?: string) => (s ? fmtDay(s) : "blank");
+  for (const m of after) {
+    const o = byId.get(m.id);
+    if (!o) { out.push(`Added "${m.name}"`); continue; }
+    const n = m.name;
+    if (o.name !== m.name) out.push(`Renamed "${o.name}" to "${m.name}"`);
+    if ((o.status || "not_started") !== (m.status || "not_started")) out.push(`${n}: ${STATUS_META[o.status || "not_started"].label} to ${STATUS_META[m.status || "not_started"].label}`);
+    if (phasePercent(o) !== phasePercent(m)) out.push(`${n}: ${phasePercent(o)}% to ${phasePercent(m)}%`);
+    const dates: Array<[keyof ApiMilestone, string]> = [["plannedStart", "planned start"], ["plannedEnd", "planned end"], ["actualStart", "actual start"], ["actualEnd", "actual end"]];
+    for (const [k, label] of dates) {
+      if ((o[k] || "") !== (m[k] || "")) out.push(`${n}: ${label} ${day(o[k] as string)} to ${day(m[k] as string)}`);
+    }
+    if ((o.responsible || []).join(", ") !== (m.responsible || []).join(", ")) out.push(`${n}: responsible changed`);
+    if ((o.notes || "") !== (m.notes || "")) out.push(`${n}: note updated`);
+  }
+  const now = new Set(after.map((m) => m.id));
+  for (const o of before) if (!now.has(o.id)) out.push(`Removed "${o.name}"`);
+  const order = (l: ApiMilestone[]) => l.filter((m) => byId.has(m.id) && now.has(m.id)).map((m) => m.id).join(",");
+  if (order(before) !== order(after)) out.push("Order of phases changed");
+  return out;
+}
+
 /** "2 months 5 days" between two dates (months first). */
 export function humanGap(from: Date, to: Date): string {
   let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());

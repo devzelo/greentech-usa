@@ -1084,6 +1084,10 @@ type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress:
 export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = ""): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
   return request(`/projects/${projectId}/schedule/save`, { method: "POST", body: JSON.stringify({ milestones, note }) });
 }
+/** CR 235 - save one row: its edits go live, no revision is filed. */
+export async function saveTimelineRow(projectId: string, milestone: ApiMilestone): Promise<ScheduleResult & { milestone: ApiMilestone }> {
+  return request(`/projects/${projectId}/schedule/milestones/${encodeURIComponent(milestone.id)}`, { method: "PUT", body: JSON.stringify({ milestone }) });
+}
 export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[]): Promise<ScheduleResult> {
   return request(`/projects/${projectId}/schedule/draft`, { method: "PUT", body: JSON.stringify({ milestones }) });
 }

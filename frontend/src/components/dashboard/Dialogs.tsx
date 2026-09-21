@@ -83,7 +83,8 @@ export function ConfirmDialog({
               </span>
               <div className="min-w-0 flex-grow">
                 <h3 className="text-lg font-display font-bold text-slate-900">{title}</h3>
-                <p className="text-sm text-slate-500 mt-1">{message}</p>
+                {/* Line breaks in a message are kept (a list of changes, for example). */}
+                <p className="text-sm text-slate-500 mt-1 whitespace-pre-line max-h-[50vh] overflow-y-auto">{message}</p>
               </div>
               <button onClick={onCancel} className="p-2 -mt-1 -mr-1 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors shrink-0"><X size={18} /></button>
             </div>
