@@ -109,6 +109,9 @@ export interface IProject extends Document {
     // CR-P (126) — approved extensions of time. The latest endDate is the project's deadline now;
     // the project's own endDate stays the original one.
     extensions: Array<{ id: string; endDate: string; reason: string; addedAt: string; addedBy: string }>;
+    // CR 243 - sub-schedules drawn from the master by category (a Design schedule, a Construction
+    // schedule...). They hold no tasks of their own, so they always show the master's latest.
+    subs: Array<{ id: string; name: string; categories: string[] }>;
   };
   assignedEmployees: string[];
   subcontractors: Array<{
@@ -294,6 +297,10 @@ const ProjectSchema = new Schema<IProject>(
           addedBy: { type: String, default: "" },
           _id: false,
         }],
+        default: [],
+      },
+      subs: {
+        type: [{ id: { type: String, default: "" }, name: { type: String, default: "" }, categories: { type: [String], default: [] }, _id: false }],
         default: [],
       },
     },

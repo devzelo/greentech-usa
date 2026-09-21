@@ -26,13 +26,14 @@ export interface TimelinePdfInput {
   originalDeadline?: string;
   milestones: ApiMilestone[];
   version?: string;       // e.g. "Version 4" or "Draft (not saved)"
+  scheduleName?: string;  // CR 243 - "Master schedule", "Design schedule"...
 }
 
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
   const X = GUTTER, W = PAGE.w - GUTTER * 2;
-  const note = ["Project timeline", o.projectName, o.version].filter(Boolean).join("  ·  ");
+  const note = [o.scheduleName || "Project timeline", o.projectName, o.version].filter(Boolean).join("  ·  ");
   const newPage = (): Flow => brandPage(doc, b, PAGE, note);
   const today = new Date();
   const rows = o.milestones.filter((m) => m.status !== "cancelled");
@@ -41,7 +42,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   // ── Summary ──
   let f = newPage();
   f.y = titleBlock(f.page, b, {
-    x: X, y: f.y, w: W, eyebrow: "Project timeline · phases & milestones", title: o.projectName,
+    x: X, y: f.y, w: W, eyebrow: o.scheduleName ? `${o.scheduleName} · phases & milestones` : "Project timeline · phases & milestones", title: o.projectName,
     meta: [["Project no.", o.projectNo || ""], ["Client", o.clientName || ""], ["As of", fmtDay(today)], ["Version", o.version || ""]],
   });
   const start = parseDate(o.contractStart), end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline);

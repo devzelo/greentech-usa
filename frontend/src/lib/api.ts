@@ -187,7 +187,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: { milestones: ApiMilestone[]; savedAt: string; savedBy: string } | null };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: { milestones: ApiMilestone[]; savedAt: string; savedBy: string } | null; subs?: ApiSubSchedule[] };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -1084,6 +1084,11 @@ export interface ApiScheduleRevision {
 type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress: number };
 export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = ""): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
   return request(`/projects/${projectId}/schedule/save`, { method: "POST", body: JSON.stringify({ milestones, note }) });
+}
+/** CR 243 - a sub-schedule: a named extract of the master schedule, by category. */
+export interface ApiSubSchedule { id: string; name: string; categories: string[] }
+export async function saveScheduleSubs(projectId: string, subs: ApiSubSchedule[]): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/subs`, { method: "PUT", body: JSON.stringify({ subs }) });
 }
 /** CR 235 - save one row: its edits go live, no revision is filed. */
 export async function saveTimelineRow(projectId: string, milestone: ApiMilestone): Promise<ScheduleResult & { milestone: ApiMilestone }> {

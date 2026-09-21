@@ -115,6 +115,24 @@ router.put("/milestones/:mid", async (req: AuthedRequest, res: Response, next: N
   } catch (err) { next(err); }
 });
 
+// CR 243 - the list of sub-schedules (name + the categories each draws from the master).
+router.put("/subs", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const input = Array.isArray(req.body?.subs) ? req.body.subs : [];
+    const subs = input.slice(0, 30).map((raw: Record<string, unknown>) => ({
+      id: str(raw?.id, 40) || `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      name: str(raw?.name, 80).trim() || "Schedule",
+      categories: Array.isArray(raw?.categories) ? (raw.categories as unknown[]).map((c) => str(c, 80).trim()).filter(Boolean).slice(0, 40) : [],
+    }));
+    project.schedule = { ...(project.schedule || { milestones: [], extensions: [] }), subs } as typeof project.schedule;
+    project.markModified("schedule");
+    await project.save();
+    res.json({ schedule: project.schedule, progress: project.progress });
+  } catch (err) { next(err); }
+});
+
 router.put("/draft", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const project = await Project.findOne({ projectId: req.params.id });

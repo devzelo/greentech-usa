@@ -5284,7 +5284,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 ) : null,
               }}
               defaults={[
-                { id: "pm-schedules", label: "Schedules", section: "pm-schedules" },
                 { id: "pm-meeting-minutes", label: "Meeting Minutes", section: "pm-meeting-minutes" },
                 { id: "pm-progress-reports", label: "Progress Reports", section: "pm-progress-reports" },
                 { id: "pm-site-data", label: "Site Data", section: "pm-site-data" },
