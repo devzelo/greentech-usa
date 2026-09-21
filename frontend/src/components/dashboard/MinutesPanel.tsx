@@ -222,7 +222,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
             </p>
             <ul className="divide-y divide-slate-50">
               {m.attendees.map((a, i) => (
-                <li key={`${a.userId || a.name}-${i}`} className="flex items-center gap-3 px-4 py-2">
+                <li key={a.userId || `row-${i}`} className="flex items-center gap-3 px-4 py-2">
                   <input type="checkbox" checked={a.present !== false} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, present: e.target.checked } : x)) })} className="accent-emerald-600" />
                   <input value={a.name} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-800 outline-none" aria-label="Name" />
                   <input value={a.role || ""} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, role: e.target.value } : x)) })} placeholder="Role" className="w-32 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Role" />
