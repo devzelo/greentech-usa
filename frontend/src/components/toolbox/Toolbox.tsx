@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import {
   Calculator as CalcIcon, CalendarDays, Camera, ChevronLeft, Coins, FileStack, FolderOpen, Image as ImageIcon,
-  Pencil, Percent, Ruler, Sparkles, StickyNote, Timer, Type, Wrench, X,
+  Pencil, Percent, Ruler, Sparkles, StickyNote, Timer, ToolCase, Type, X,
 } from "lucide-react";
 import { useCapturing, type CaptureKind } from "./capture";
 import { useSnip } from "./SnipTool";
@@ -117,9 +117,11 @@ export default function Toolbox() {
         aria-expanded={open}
         aria-label="Toolbox"
         title="Toolbox: calculator, converters, screenshot, draw, PDF and image tools, notes, timer"
-        className={`relative p-2 rounded-lg transition-colors ${open ? "bg-emerald-50 text-primary" : "text-slate-500 hover:bg-slate-100 hover:text-primary"}`}
+        className={`relative inline-flex items-center gap-1.5 p-2 rounded-lg transition-colors ${open ? "bg-emerald-50 text-primary" : "text-slate-500 hover:bg-slate-100 hover:text-primary"}`}
       >
-        <Wrench size={18} />
+        {/* CR 225 - a toolbox, not a spanner: the spanner read as "settings". */}
+        <ToolCase size={18} />
+        <span className="hidden text-xs font-bold lg:inline">Tools</span>
         {clockRunning && <span className="absolute right-1 top-1 h-2 w-2 animate-pulse rounded-full bg-amber-500 ring-2 ring-white" title="A timer is running" />}
       </button>
 
@@ -137,7 +139,7 @@ export default function Toolbox() {
                 <span className="truncate">{current.label}</span>
               </button>
             ) : (
-              <p className="flex items-center gap-1.5 px-1 text-sm font-bold text-slate-800"><Wrench size={15} className="text-primary" /> Toolbox</p>
+              <p className="flex items-center gap-1.5 px-1 text-sm font-bold text-slate-800"><ToolCase size={15} className="text-primary" /> Toolbox</p>
             )}
             <button type="button" onClick={() => setOpen(false)} aria-label="Close toolbox" className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
           </div>
