@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plus, Loader2, Trash2, Archive, ArchiveRestore, FileDown, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign,
+  Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye,
 } from "lucide-react";
 import {
   fetchMinutes, createMinute, updateMinute, deleteMinute, uploadDocument, documentUrl,
@@ -10,6 +10,7 @@ import { buildMinutesPdf } from "../../lib/minutesPdf";
 import RichTextEditor from "./RichTextEditor";
 import ShareMenu from "./ShareMenu";
 import HelpTip from "./HelpTip";
+import PdfPreviewModal from "./PdfPreviewModal";
 import AttendeePicker from "./AttendeePicker";
 import { findMentions, type MentionUser } from "./MentionInput";
 import { toast } from "../../lib/toast";
@@ -140,18 +141,22 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
   };
 
   const pdfName = (m: ApiMinute) => `${(m.title || NOUN).replace(/[^a-z0-9._-]+/gi, "_")}.pdf`;
-  const download = async (m: ApiMinute) => {
-    setBusy(m._id);
-    try {
-      const blob = await buildMinutesPdf({ minute: m, projectName, projectNo });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = pdfName(m);
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not build the PDF.", "error"); }
-    finally { setBusy(""); }
-  };
+  // CR 250 - the printed look before saving, before marking final and before printing.
+  const [preview, setPreview] = useState<{ m: ApiMinute; final?: boolean } | null>(null);
+  const previewModal = preview && (
+    <PdfPreviewModal
+      title={preview.m.title || (isProgress ? "Progress report" : "Meeting minutes")}
+      fileName={pdfName(preview.m)}
+      build={() => buildMinutesPdf({ minute: preview.m, projectName, projectNo })}
+      onClose={() => setPreview(null)}
+      hint={preview.final ? "Check the printed version. Once final it is shown as final to everyone." : undefined}
+      actions={canEdit && open?._id === preview.m._id ? [
+        ...(preview.final ? [] : [{ label: "Save", icon: <Save size={12} />, onClick: async () => !!(await save(preview.m)) }]),
+        ...(preview.m.status !== "final" ? [{ label: "Mark as final", icon: <CheckCircle2 size={12} />, tone: "final" as const, onClick: async () => !!(await save(preview.m, { status: "final" })) }] : []),
+      ] : undefined}
+    />
+  );
+
 
   // ── One record, open for writing ──────────────────────────────────────────
   if (open) {
@@ -162,6 +167,8 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
     return (
       <div className="space-y-5">
         {dialogs}
+      {previewModal}
+        {previewModal}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button onClick={() => { void (dirty.current ? save(m, {}, true) : null); setOpen(null); }} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-primary">
             <ArrowLeft size={13} /> All {isProgress ? "reports" : "minutes"}
@@ -176,12 +183,12 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
               </button>
             )}
             {canEdit && m.status !== "final" && (
-              <button onClick={() => void save(m, { status: "final" })} className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">
+              <button onClick={() => setPreview({ m, final: true })} className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">
                 <CheckCircle2 size={12} /> Mark as final
               </button>
             )}
-            <button onClick={() => void download(m)} disabled={busy === m._id} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
-              {busy === m._id ? <Loader2 size={12} className="animate-spin" /> : <FileDown size={12} />} PDF
+            <button onClick={() => setPreview({ m })} title="The printed version: print, send or download it, save it or mark it final" className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-200">
+              <Eye size={12} /> Preview
             </button>
             {canEdit && (
               <button onClick={() => void setArchived(m, true)} title="Archive" className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"><Archive size={14} /></button>
@@ -347,8 +354,8 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
                 </span>
               </button>
               <div className="flex items-center gap-1">
-                <button onClick={() => void download(m)} disabled={busy === m._id} title="Download as PDF" className="rounded p-1.5 text-slate-400 hover:text-primary disabled:opacity-50">
-                  {busy === m._id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+                <button onClick={() => setPreview({ m })} title="Preview: print, send or download" className="rounded p-1.5 text-slate-400 hover:text-primary">
+                  <Eye size={13} />
                 </button>
                 {/* Sharing needs a link: the PDF is filed in this section's documents, then shared. */}
                 <ShareMenu

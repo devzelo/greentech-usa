@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, Download, Printer, X, Send, Minimize2 } from "lucide-react";
 import { emailFileAttachment } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -8,14 +8,32 @@ import { fitToOnePage } from "../../lib/pdfBrand";
  * Branded modal that builds a PDF (pdf-lib Blob) once, shows it in an iframe preview, and
  * offers a Download button — used for BOQ / RFQ / PO, mirroring the resume preview.
  */
-export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption }: {
+/** CR 250 - an action taken from the preview (Save, Mark as final, Save revision). Returning false keeps the preview open. */
+export interface PreviewAction {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => Promise<boolean | void> | boolean | void;
+  tone?: "primary" | "final";
+}
+
+export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption, actions, hint }: {
   title: string;
   fileName: string;
   build: () => Promise<Blob>;
   onClose: () => void;
   /** CR 247 - offer "Fit to one page" (large schedules and logs); the text goes in the footer note. */
   fitOption?: { note?: string };
+  /** CR 250 - "preview before save / before final": the step itself, taken from the preview. */
+  actions?: PreviewAction[];
+  /** A line under the title, e.g. what the action will do. */
+  hint?: string;
 }) {
+  const [acting, setActing] = useState("");
+  const act = async (a: PreviewAction) => {
+    setActing(a.label);
+    try { if ((await a.onClick()) !== false) onClose(); }
+    finally { setActing(""); }
+  };
   const [fit, setFit] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -69,9 +87,12 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-          <h3 className="text-base font-display font-bold text-slate-900 truncate">{title}</h3>
+          <div className="min-w-0">
+            <h3 className="text-base font-display font-bold text-slate-900 truncate">{title}</h3>
+            {hint && <p className="truncate text-[11px] text-slate-400">{hint}</p>}
+          </div>
           <div className="flex items-center gap-2 shrink-0">
             {/* CR 247 - like Excel's "fit to one page": smaller, but one sheet instead of many. */}
             {fitOption && (
@@ -93,7 +114,13 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
                 </div>
               )}
             </div>
-            <button onClick={download} disabled={!blob} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50"><Download size={12} /> Download</button>
+            <button onClick={download} disabled={!blob} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-50 ${actions?.length ? "border border-slate-200 text-slate-600 hover:bg-slate-50" : "bg-slate-900 text-white hover:bg-primary"}`}><Download size={12} /> Download</button>
+            {actions?.map((a) => (
+              <button key={a.label} onClick={() => void act(a)} disabled={!blob || !!acting}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 ${a.tone === "final" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900 hover:bg-primary"}`}>
+                {acting === a.label ? <Loader2 size={12} className="animate-spin" /> : a.icon} {a.label}
+              </button>
+            ))}
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
           </div>
         </div>

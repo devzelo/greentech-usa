@@ -147,14 +147,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const sortByDate = () => setRows((p) => [...p].sort((a, b) => (parseDate(a.plannedStart)?.getTime() ?? Infinity) - (parseDate(b.plannedStart)?.getTime() ?? Infinity)));
 
   // ── Save / draft / cancel ──
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     const bad = rows.find((r) => { const s = parseDate(r.plannedStart), e = parseDate(r.plannedEnd); return s && e && e < s; });
-    if (bad) { toast(`"${bad.name}" ends before it starts. Fix its dates first.`, "error"); return; }
+    if (bad) { toast(`"${bad.name}" ends before it starts. Fix its dates first.`, "error"); return false; }
     // CR 236 - list what changed since the last revision (row saves included) and save that as the
     // revision's note, instead of asking the PM to remember it.
     const since = revisions?.[0]?.milestones || [];
     const changes = timelineChanges(since, rows);
-    if (!changes.length && revisions?.length) { toast("Nothing has changed since the last revision.", "info"); return; }
+    if (!changes.length && revisions?.length) { toast("Nothing has changed since the last revision.", "info"); return false; }
     const shownChanges = changes.length ? changes : ["First version of this timeline"];
     const list = shownChanges.slice(0, 14).map((c) => `• ${c}`).join("\n") + (shownChanges.length > 14 ? `\n• and ${shownChanges.length - 14} more` : "");
     if (!(await confirm({
@@ -162,7 +162,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       message: `In this revision:\n${list}`,
       confirmLabel: "Save revision",
       danger: false,
-    }))) return;
+    }))) return false;
     const note = shownChanges.join("; ").slice(0, 500);
     setBusy("save");
     try {
@@ -177,7 +177,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       } catch {
         toast(`Saved as revision ${r.revision.version}. The PDF could not be filed; use PDF to download it.`, "info");
       }
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the timeline.", "error"); }
+      return true;
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the timeline.", "error"); return false; }
     finally { setBusy(""); }
   };
   // CR 235 - save one task: its edits go live straight away, without filing a revision.
@@ -801,7 +802,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {dialogs}
 
       {previewOpen && (
-        <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }} />
+        <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }}
+          actions={!canEdit ? undefined : sub
+            ? (dirty ? undefined : [{ label: "Save revision", icon: <Save size={12} />, onClick: async () => { await saveSubRevision(); } }])
+            : (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
+          hint={canEdit && !sub && (dirty || !!loadedFrom || sinceRevision > 0) ? "This is how the revision will print. Save it from here once it looks right." : undefined} />
       )}
 
       {/* CR 241 / 244 - the schedule files, by schedule, searchable. */}
