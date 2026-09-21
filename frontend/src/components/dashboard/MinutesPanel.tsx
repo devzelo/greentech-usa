@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye,
+  Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye, FolderOpen,
 } from "lucide-react";
 import {
   fetchMinutes, createMinute, updateMinute, deleteMinute, uploadDocument, documentUrl,
@@ -56,6 +56,16 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState("");
   const dirty = useRef(false);
+  // CR 251 - say where a saved record lives, and open that list with it highlighted.
+  const FOLDER = `Project Management › ${isProgress ? "Progress Reports" : "Meeting Minutes"}`;
+  const [flash, setFlash] = useState("");
+  const showInFolder = (id: string) => { setOpen(null); setFlash(id); };
+  useEffect(() => {
+    if (!flash || open) return;
+    const t1 = setTimeout(() => document.getElementById(`minute-${flash}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
+    const t2 = setTimeout(() => setFlash(""), 4000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [flash, open]);
 
   const mentionUsers = useMemo<MentionUser[]>(() => people.filter((p) => p.name).map((p) => ({ id: p.id || p.name, name: p.name })), [people]);
 
@@ -110,7 +120,14 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
       setOpen((cur) => (cur && cur._id === saved._id ? saved : cur));
       dirty.current = false;
       if (fresh.length && onMention) onMention(fresh, saved.title || NOUN, plain(text).slice(0, 300));
-      if (!silent) toast(`${isProgress ? "Report" : "Minutes"} saved.`, "success");
+      if (!silent) {
+        const others = (rows || []).filter((x) => x._id !== saved._id).length;
+        toast(
+          `${saved.status === "final" ? "Marked final and saved" : "Saved"}. It is kept in ${FOLDER}${others ? `, with ${others} other ${isProgress ? "report" : "meeting"}${others === 1 ? "" : "s"} of this project` : ""}.`,
+          "success",
+          { action: { label: "Open folder", onClick: () => showInFolder(saved._id) } },
+        );
+      }
       return saved;
     } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); return null; }
     finally { setSaving(false); }
@@ -170,9 +187,14 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
       {previewModal}
         {previewModal}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button onClick={() => { void (dirty.current ? save(m, {}, true) : null); setOpen(null); }} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-primary">
-            <ArrowLeft size={13} /> All {isProgress ? "reports" : "minutes"}
-          </button>
+          <div>
+            <button onClick={() => { void (dirty.current ? save(m, {}, true) : null); showInFolder(m._id); }} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-primary">
+              <ArrowLeft size={13} /> All {isProgress ? "reports" : "minutes"}
+            </button>
+            <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400">
+              <FolderOpen size={11} /> Kept in {projectName} › {FOLDER} ({(rows || []).length})
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {m.status === "final"
               ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={11} /> Final</span>
@@ -337,7 +359,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
           const actions = m.items.reduce((n, it) => n + it.actions.length, 0);
           const openActions = m.items.reduce((n, it) => n + it.actions.filter((a) => !a.done).length, 0);
           return (
-            <li key={m._id} className="flex flex-wrap items-center gap-3 py-2.5">
+            <li key={m._id} id={`minute-${m._id}`} className={`flex flex-wrap items-center gap-3 py-2.5 transition-colors ${flash === m._id ? "-mx-2 rounded-xl bg-emerald-50 px-2 ring-1 ring-emerald-200" : ""}`}>
               <button onClick={() => setOpen(m)} className="min-w-0 flex-1 text-left">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-xs font-bold text-slate-800">{m.title || (isProgress ? "Progress report" : "Meeting")}</span>
