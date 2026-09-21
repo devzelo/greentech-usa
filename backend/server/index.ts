@@ -179,6 +179,14 @@ async function runBootstrapTasks() {
   } catch (err) {
     console.error("Timeline migration failed:", err);
   }
+  // CR 238: tasks made before schedule categories get the category their phase implies. Idempotent.
+  try {
+    const { categoriseMilestones } = await import("./lib/timelineMigration");
+    const n = await categoriseMilestones();
+    if (n) console.log(`🔁 Grouped the timeline tasks of ${n} project(s) by category.`);
+  } catch (err) {
+    console.error("Timeline category backfill failed:", err);
+  }
   // Backfill: ensure every Employee-directory entry has an employee login account, so all
   // employees appear in admin User Management with their original empIds. Idempotent.
   try {

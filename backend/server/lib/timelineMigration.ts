@@ -49,3 +49,36 @@ export async function datedMilestones(): Promise<number> {
   }
   return changed;
 }
+
+// CR 238: a schedule is grouped by category. Tasks created before categories existed get the one
+// their master-list phase (or name) implies, the same rule the builder uses for new tasks. A task
+// that already has a category, or whose name implies none, is left alone; idempotent.
+export function categoryFor(key = "", name = ""): string {
+  const k = `${key} ${name}`.toLowerCase();
+  if (/opportunity|prebid|pre-bid|proposal|negotiation|solicitation|bid/.test(k)) return "Pre-award / Bidding";
+  if (/award|execution|bonds|ntp|notice to proceed/.test(k)) return "Award / NTP";
+  if (/submittal/.test(k)) return "Pre-construction submittals";
+  if (/design|survey|boq/.test(k)) return "Design";
+  if (/procure|rfq|vendor|purchase|manufactur|fabricat|fat|packing|shipping|customs|delivery/.test(k)) return "Procurement";
+  if (/mobiliz/.test(k)) return "Mobilization";
+  if (/commission|testing|training|inspection|punch/.test(k)) return "Testing & commissioning";
+  if (/closeout|as-built|handover|completion|warranty|final/.test(k)) return "Closeout";
+  if (/site|install|construct|electrical|civil|building|piping/.test(k)) return "Construction";
+  return "";
+}
+
+export async function categoriseMilestones(): Promise<number> {
+  const projects = await Project.find({ "schedule.milestones.0": { $exists: true } }).select("schedule");
+  let changed = 0;
+  for (const p of projects) {
+    const ms = p.schedule?.milestones || [];
+    let touched = false;
+    for (const m of ms) {
+      if ((m.category || "").trim()) continue;
+      const c = categoryFor(m.key, m.name);
+      if (c) { m.category = c; touched = true; }
+    }
+    if (touched) { p.markModified("schedule"); await p.save(); changed++; }
+  }
+  return changed;
+}
