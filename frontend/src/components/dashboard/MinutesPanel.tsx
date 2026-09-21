@@ -10,6 +10,7 @@ import { buildMinutesPdf } from "../../lib/minutesPdf";
 import RichTextEditor from "./RichTextEditor";
 import ShareMenu from "./ShareMenu";
 import HelpTip from "./HelpTip";
+import AttendeePicker from "./AttendeePicker";
 import { findMentions, type MentionUser } from "./MentionInput";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -218,7 +219,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
           <div className="rounded-2xl border border-slate-100">
             <p className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               <Users size={12} /> {isProgress ? "People this concerns" : "Attendees"} ({m.attendees.filter((a) => a.present !== false).length} of {m.attendees.length})
-              <HelpTip title={isProgress ? "People" : "Attendees"}>Everyone on this project is here from the start. Untick anyone who was not there, or add a name for someone outside the platform.</HelpTip>
+              <HelpTip title={isProgress ? "People" : "Attendees"}>Everyone on this project is here from the start. Untick anyone who was not there. Add someone picks from the team, the staff and the Directory, or takes a name for a visitor.</HelpTip>
             </p>
             <ul className="divide-y divide-slate-50">
               {m.attendees.map((a, i) => (
@@ -232,9 +233,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
               ))}
             </ul>
             {canEdit && (
-              <button onClick={() => patch({ attendees: [...m.attendees, { name: "", role: "", company: "", present: true }] })} className="m-3 inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-200">
-                <Plus size={11} /> Add someone
-              </button>
+              <AttendeePicker team={people} taken={m.attendees.map((a) => a.name)} onAdd={(a) => patch({ attendees: [...m.attendees, a] })} />
             )}
           </div>
 
