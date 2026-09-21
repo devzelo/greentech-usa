@@ -3721,7 +3721,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 {project.contractDate && (
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract: {project.contractDate}</span>
+                    {/* CR 229 - the signing date, named as such, so it is never mistaken for the start. */}
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" title="The date the contract was signed or awarded. The work starts on the start date.">Contract date: {project.contractDate}</span>
                   </>
                 )}
                 {project.endDate && (

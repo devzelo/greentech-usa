@@ -40,6 +40,8 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 
   const milestones = useMemo(() => (project.schedule?.milestones || []).filter((m) => m.status !== "cancelled"), [project.schedule]);
   const contractStart = parseDate(project.startDate || project.contractDate);
+  const startIsContractDate = !parseDate(project.startDate) && !!parseDate(project.contractDate);
+  const startLabel = startIsContractDate ? "Contract date" : "Start date";
   const origEnd = parseDate(project.endDate);
   const deadline = parseDate(effectiveEndDate(project));
   const extended = !!(deadline && origEnd && deadline > origEnd);
@@ -67,10 +69,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 
   const extensions = (
     <div ref={extRef} className={`relative min-w-0 ${variant === "time" ? "shrink-0" : ""}`}>
-      {variant !== "time" && <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Extended deadline" : "Contract deadline"}</p>}
-      <button type="button" onClick={() => setExtOpen((v) => !v)} className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-[11px]" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`} title={variant === "time" ? `${extended ? "Extended deadline" : "Contract deadline"}. Click for extensions of time.` : "Extensions of time"}>
+      {variant !== "time" && <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "End date (extended)" : "End date"}</p>}
+      <button type="button" onClick={() => setExtOpen((v) => !v)} className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-[11px]" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`} title={variant === "time" ? `${extended ? `End date, extended from ${origEnd ? fmtDay(origEnd) : "the original end date"}` : "End date"}. Click for extensions of time.` : "Extensions of time"}>
+        {variant === "time" && <span className="font-bold uppercase tracking-widest text-[9px] text-slate-400">End</span>}
         {deadline ? fmtDay(deadline) : "Not set"}
         {extended && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">Extended</span>}
+        {extended && origEnd && variant === "time" && <span className="text-[10px] font-semibold text-slate-400">(original <span className="line-through">{fmtDay(origEnd)}</span>)</span>}
       </button>
       {extended && origEnd && variant !== "time" && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
       {extOpen && (
@@ -92,9 +96,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
     return (
       <div className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-100 bg-white px-3 py-1.5 shadow-sm lg:w-[44rem] ${className}`}>
         <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-          <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract
+          <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract time
         </span>
-        <span className="shrink-0 text-[11px] font-bold text-slate-700" title="Contract start">{cs ? fmtDay(cs) : "No start"}</span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-slate-700" title={startIsContractDate ? "No start date is set on the project, so the contract date is used. Set the start date in Project Info." : "Start date"}>
+          <span className={`text-[9px] uppercase tracking-widest ${startIsContractDate ? "text-amber-600" : "text-slate-400"}`}>{startIsContractDate ? "Contract" : "Start"}</span>
+          {cs ? fmtDay(cs) : "Not set"}
+        </span>
         <div className="relative h-1.5 min-w-[8rem] flex-1 rounded-full bg-slate-100" title={elapsedPct !== null ? `${Math.round(elapsedPct)}% of contract time elapsed` : "Contract time"}>
           {cs && dl && extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-200" style={{ left: `${p2(origEnd)}%`, right: 0 }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(dl)}`} />}
           {cs && dl && <div className={`absolute inset-y-0 left-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${p2(today > dl ? dl : today)}%` }} />}
@@ -178,7 +185,7 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
         <div className="flex items-center gap-2 min-w-0">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Contract start</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{startLabel}</p>
             <p className="truncate text-sm font-bold text-slate-900">{contractStart ? fmtDay(contractStart) : "Not set"}</p>
           </div>
         </div>
