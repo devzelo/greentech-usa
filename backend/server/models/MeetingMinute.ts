@@ -40,6 +40,10 @@ export interface IMeetingMinute extends Document {
   summary: string;         // rich text, the opening note
   mentioned: string[];     // names already notified, so nobody is told twice
   status: "draft" | "final";
+  /** CR 252 - like the proposals: 0 for the first issue, +1 each time a final one is reopened. */
+  revision: number;
+  finalizedAt?: Date | null;
+  finalizedByName?: string;
   archived: boolean;
   createdById?: string;
   createdByName: string;
@@ -86,6 +90,9 @@ const MeetingMinuteSchema = new Schema<IMeetingMinute>(
     summary: { type: String, default: "" },
     mentioned: { type: [String], default: [] },
     status: { type: String, enum: ["draft", "final"], default: "draft" },
+    revision: { type: Number, default: 0 },
+    finalizedAt: { type: Date, default: null },
+    finalizedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false },
     createdById: { type: String, default: "" },
     createdByName: { type: String, default: "" },

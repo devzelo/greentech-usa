@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye, FolderOpen,
+  Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye, FolderOpen, RotateCcw, Pencil,
 } from "lucide-react";
 import {
   fetchMinutes, createMinute, updateMinute, deleteMinute, uploadDocument, documentUrl,
@@ -157,6 +157,26 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
     } catch (e) { toast(e instanceof Error ? e.message : "Could not archive.", "error"); }
   };
 
+  // CR 252 - final works like the proposals: a clear status, locked until a new revision is started.
+  const statusLine = (m: ApiMinute) => m.status === "final"
+    ? `Final${m.revision ? ` · Rev ${m.revision}` : ""}${m.finalizedByName ? ` · by ${m.finalizedByName}` : ""}${m.finalizedAt ? ` on ${dayLabel(m.finalizedAt)}` : ""}`
+    : `Draft${m.revision ? ` · Rev ${m.revision}` : ""}`;
+  const startRevision = async (m: ApiMinute) => {
+    if (!(await confirm({
+      title: `Start revision ${(m.revision || 0) + 1}?`,
+      message: `"${m.title || NOUN}" goes back to draft as revision ${(m.revision || 0) + 1} so it can be changed. Mark it final again when it is done.`,
+      confirmLabel: "Start revision",
+      danger: false,
+    }))) return;
+    try {
+      const saved = await updateMinute(projectId, m._id, { status: "draft" });
+      setRows((r) => (r || []).map((x) => (x._id === saved._id ? saved : x)));
+      setOpen(saved);
+      dirty.current = false;
+      toast(`Revision ${saved.revision} started. It is a draft until you mark it final.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not start a revision.", "error"); }
+  };
+
   const pdfName = (m: ApiMinute) => `${(m.title || NOUN).replace(/[^a-z0-9._-]+/gi, "_")}.pdf`;
   // CR 250 - the printed look before saving, before marking final and before printing.
   const [preview, setPreview] = useState<{ m: ApiMinute; final?: boolean } | null>(null);
@@ -166,11 +186,15 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
       fileName={pdfName(preview.m)}
       build={() => buildMinutesPdf({ minute: preview.m, projectName, projectNo })}
       onClose={() => setPreview(null)}
-      hint={preview.final ? "Check the printed version. Once final it is shown as final to everyone." : undefined}
-      actions={canEdit && open?._id === preview.m._id ? [
-        ...(preview.final ? [] : [{ label: "Save", icon: <Save size={12} />, onClick: async () => !!(await save(preview.m)) }]),
-        ...(preview.m.status !== "final" ? [{ label: "Mark as final", icon: <CheckCircle2 size={12} />, tone: "final" as const, onClick: async () => !!(await save(preview.m, { status: "final" })) }] : []),
-      ] : undefined}
+      hint={preview.final ? "Check the printed version. Once final it is locked, like a final proposal, until a new revision is started." : statusLine(preview.m)}
+      actions={!canEdit ? undefined : preview.m.status === "final"
+        ? [{ label: "Start a new revision", icon: <RotateCcw size={12} />, onClick: async () => { await startRevision(preview.m); } }]
+        : [
+            ...(preview.final ? [] : open?._id === preview.m._id
+              ? [{ label: "Save", icon: <Save size={12} />, onClick: async () => !!(await save(preview.m)) }]
+              : [{ label: "Edit", icon: <Pencil size={12} />, onClick: () => { setOpen(preview.m); dirty.current = false; } }]),
+            { label: "Mark as final", icon: <CheckCircle2 size={12} />, tone: "final" as const, onClick: async () => !!(await save(preview.m, { status: "final" })) },
+          ]}
     />
   );
 
@@ -178,13 +202,13 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
   // ── One record, open for writing ──────────────────────────────────────────
   if (open) {
     const m = open;
+    const editable = canEdit && m.status !== "final";
     const mentioned = findMentions([m.summary, ...m.items.map((i) => i.notes)].map(plain).join(" "), mentionUsers);
     const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/10";
     const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
     return (
       <div className="space-y-5">
         {dialogs}
-      {previewModal}
         {previewModal}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -197,14 +221,19 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {m.status === "final"
-              ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={11} /> Final</span>
-              : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-700">Draft</span>}
-            {canEdit && (
+              ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={11} /> Final{m.revision ? ` · Rev ${m.revision}` : ""}</span>
+              : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-700">Draft{m.revision ? ` · Rev ${m.revision}` : ""}</span>}
+            {canEdit && m.status === "final" && (
+              <button onClick={() => void startRevision(m)} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-[11px] font-bold text-white hover:bg-primary">
+                <RotateCcw size={12} /> Start a new revision
+              </button>
+            )}
+            {editable && (
               <button onClick={() => void save(m)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-[11px] font-bold text-white hover:bg-primary disabled:opacity-50">
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
               </button>
             )}
-            {canEdit && m.status !== "final" && (
+            {editable && (
               <button onClick={() => setPreview({ m, final: true })} className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">
                 <CheckCircle2 size={12} /> Mark as final
               </button>
@@ -222,20 +251,20 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
         </div>
 
         <div className="space-y-4 rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-          <input value={m.title} onChange={(e) => patch({ title: e.target.value })} disabled={!canEdit} placeholder={isProgress ? "Report title" : "Meeting title"} aria-label="Title"
+          <input value={m.title} onChange={(e) => patch({ title: e.target.value })} disabled={!editable} placeholder={isProgress ? "Report title" : "Meeting title"} aria-label="Title"
             className="w-full bg-transparent text-lg font-display font-bold text-slate-900 outline-none" />
           <div className="grid gap-3 md:grid-cols-4">
             <label className="space-y-1"><span className={lbl}>{isProgress ? "Report date" : "Date"}</span>
-              <input type="date" value={m.date || ""} onChange={(e) => patch({ date: e.target.value })} disabled={!canEdit} className={inp} /></label>
+              <input type="date" value={m.date || ""} onChange={(e) => patch({ date: e.target.value })} disabled={!editable} className={inp} /></label>
             {isProgress ? (
               <label className="space-y-1 md:col-span-2"><span className={lbl}>Period covered</span>
-                <input value={m.period || ""} onChange={(e) => patch({ period: e.target.value })} disabled={!canEdit} placeholder="e.g. Week 12, or 1 to 31 May 2026" className={inp} /></label>
+                <input value={m.period || ""} onChange={(e) => patch({ period: e.target.value })} disabled={!editable} placeholder="e.g. Week 12, or 1 to 31 May 2026" className={inp} /></label>
             ) : (
               <>
                 <label className="space-y-1"><span className={lbl}>Time</span>
-                  <input value={m.time || ""} onChange={(e) => patch({ time: e.target.value })} disabled={!canEdit} placeholder="10:00" className={inp} /></label>
+                  <input value={m.time || ""} onChange={(e) => patch({ time: e.target.value })} disabled={!editable} placeholder="10:00" className={inp} /></label>
                 <label className="space-y-1"><span className={lbl}>Location</span>
-                  <input value={m.location || ""} onChange={(e) => patch({ location: e.target.value })} disabled={!canEdit} placeholder="Site office, Teams, ..." className={inp} /></label>
+                  <input value={m.location || ""} onChange={(e) => patch({ location: e.target.value })} disabled={!editable} placeholder="Site office, Teams, ..." className={inp} /></label>
               </>
             )}
             <div className="space-y-1">
@@ -253,22 +282,22 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
             <ul className="divide-y divide-slate-50">
               {m.attendees.map((a, i) => (
                 <li key={a.userId || `row-${i}`} className="flex items-center gap-3 px-4 py-2">
-                  <input type="checkbox" checked={a.present !== false} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, present: e.target.checked } : x)) })} className="accent-emerald-600" />
-                  <input value={a.name} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-800 outline-none" aria-label="Name" />
-                  <input value={a.role || ""} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, role: e.target.value } : x)) })} placeholder="Role" className="w-32 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Role" />
-                  <input value={a.company || ""} disabled={!canEdit} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, company: e.target.value } : x)) })} placeholder="Company" className="w-36 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Company" />
-                  {canEdit && <button onClick={() => patch({ attendees: m.attendees.filter((_, k) => k !== i) })} title="Remove" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>}
+                  <input type="checkbox" checked={a.present !== false} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, present: e.target.checked } : x)) })} className="accent-emerald-600" />
+                  <input value={a.name} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-800 outline-none" aria-label="Name" />
+                  <input value={a.role || ""} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, role: e.target.value } : x)) })} placeholder="Role" className="w-32 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Role" />
+                  <input value={a.company || ""} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, company: e.target.value } : x)) })} placeholder="Company" className="w-36 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Company" />
+                  {editable && <button onClick={() => patch({ attendees: m.attendees.filter((_, k) => k !== i) })} title="Remove" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>}
                 </li>
               ))}
             </ul>
-            {canEdit && (
+            {editable && (
               <AttendeePicker team={people} taken={m.attendees.map((a) => a.name)} onAdd={(a) => patch({ attendees: [...m.attendees, a] })} />
             )}
           </div>
 
           <div className="space-y-1">
             <span className={lbl}>{isProgress ? "Summary" : "Purpose"}</span>
-            <RichTextEditor value={m.summary} onChange={(html) => patch({ summary: html })} disabled={!canEdit} placeholder={isProgress ? "How the period went, in a few lines..." : "Why the meeting was held..."} minHeight={90} />
+            <RichTextEditor value={m.summary} onChange={(html) => patch({ summary: html })} disabled={!editable} placeholder={isProgress ? "How the period went, in a few lines..." : "Why the meeting was held..."} minHeight={90} />
           </div>
         </div>
 
@@ -277,27 +306,27 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
           <div key={it.id} className="space-y-3 rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-400">{i + 1}.</span>
-              <input value={it.title} onChange={(e) => patchItem(it.id, { title: e.target.value })} disabled={!canEdit} placeholder={isProgress ? "What this part covers" : "Agenda item"} className="flex-1 bg-transparent text-sm font-bold text-slate-800 outline-none" aria-label={`Item ${i + 1} title`} />
-              {canEdit && <button onClick={() => patch({ items: m.items.filter((x) => x.id !== it.id) })} title="Remove this item" className="rounded p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>}
+              <input value={it.title} onChange={(e) => patchItem(it.id, { title: e.target.value })} disabled={!editable} placeholder={isProgress ? "What this part covers" : "Agenda item"} className="flex-1 bg-transparent text-sm font-bold text-slate-800 outline-none" aria-label={`Item ${i + 1} title`} />
+              {editable && <button onClick={() => patch({ items: m.items.filter((x) => x.id !== it.id) })} title="Remove this item" className="rounded p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>}
             </div>
-            <RichTextEditor value={it.notes} onChange={(html) => patchItem(it.id, { notes: html })} disabled={!canEdit} placeholder="What was said, decided or done. Type @ and a name to bring someone in." minHeight={110} />
+            <RichTextEditor value={it.notes} onChange={(html) => patchItem(it.id, { notes: html })} disabled={!editable} placeholder="What was said, decided or done. Type @ and a name to bring someone in." minHeight={110} />
             <div className="rounded-2xl border border-slate-100">
               <p className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400"><ListChecks size={12} /> Actions</p>
               <ul className="divide-y divide-slate-50">
                 {it.actions.map((a, k) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-2 px-4 py-2">
-                    <input type="checkbox" checked={!!a.done} disabled={!canEdit} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, done: e.target.checked } : x)) })} className="accent-emerald-600" />
-                    <input value={a.text} disabled={!canEdit} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, text: e.target.value } : x)) })} placeholder="What needs doing" className={`min-w-[12rem] flex-1 bg-transparent text-xs outline-none ${a.done ? "text-slate-400 line-through" : "text-slate-700"}`} aria-label="Action" />
-                    <select value={a.ownerName || ""} disabled={!canEdit} onChange={(e) => { const p = people.find((x) => x.name === e.target.value); patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, ownerName: e.target.value, ownerUserId: p?.id } : x)) }); }} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600" aria-label="Owner">
+                    <input type="checkbox" checked={!!a.done} disabled={!editable} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, done: e.target.checked } : x)) })} className="accent-emerald-600" />
+                    <input value={a.text} disabled={!editable} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, text: e.target.value } : x)) })} placeholder="What needs doing" className={`min-w-[12rem] flex-1 bg-transparent text-xs outline-none ${a.done ? "text-slate-400 line-through" : "text-slate-700"}`} aria-label="Action" />
+                    <select value={a.ownerName || ""} disabled={!editable} onChange={(e) => { const p = people.find((x) => x.name === e.target.value); patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, ownerName: e.target.value, ownerUserId: p?.id } : x)) }); }} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600" aria-label="Owner">
                       <option value="">Owner...</option>
                       {people.map((p) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                     </select>
-                    <input type="date" value={a.due || ""} disabled={!canEdit} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, due: e.target.value } : x)) })} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-600" aria-label="Due date" />
-                    {canEdit && <button onClick={() => patchItem(it.id, { actions: it.actions.filter((_, j) => j !== k) })} title="Remove" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>}
+                    <input type="date" value={a.due || ""} disabled={!editable} onChange={(e) => patchItem(it.id, { actions: it.actions.map((x, j) => (j === k ? { ...x, due: e.target.value } : x)) })} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-600" aria-label="Due date" />
+                    {editable && <button onClick={() => patchItem(it.id, { actions: it.actions.filter((_, j) => j !== k) })} title="Remove" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>}
                   </li>
                 ))}
               </ul>
-              {canEdit && (
+              {editable && (
                 <button onClick={() => patchItem(it.id, { actions: [...it.actions, { id: uid(), text: "", done: false }] })} className="m-3 inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-200">
                   <Plus size={11} /> Add an action
                 </button>
@@ -307,7 +336,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
         ))}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {canEdit && (
+          {editable && (
             <button onClick={() => patch({ items: [...m.items, { id: uid(), title: "", notes: "", actions: [] }] })} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-200">
               <Plus size={12} /> Add {isProgress ? "a part" : "an agenda item"}
             </button>
@@ -324,6 +353,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
   return (
     <div className="space-y-4 rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
       {dialogs}
+      {previewModal}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h4 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
@@ -359,13 +389,14 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
           const actions = m.items.reduce((n, it) => n + it.actions.length, 0);
           const openActions = m.items.reduce((n, it) => n + it.actions.filter((a) => !a.done).length, 0);
           return (
-            <li key={m._id} id={`minute-${m._id}`} className={`flex flex-wrap items-center gap-3 py-2.5 transition-colors ${flash === m._id ? "-mx-2 rounded-xl bg-emerald-50 px-2 ring-1 ring-emerald-200" : ""}`}>
-              <button onClick={() => setOpen(m)} className="min-w-0 flex-1 text-left">
+            <li key={m._id} id={`minute-${m._id}`} className={`flex flex-wrap items-center gap-3 py-2.5 transition-colors ${flash === m._id ? "-mx-2 rounded-xl bg-emerald-50 px-2 ring-1 ring-emerald-200" : m.status === "final" ? "-mx-2 rounded-xl bg-emerald-50/40 px-2" : ""}`}>
+              {/* CR 252 - opening one shows the printed version first; Edit or New revision from there. */}
+              <button onClick={() => setPreview({ m })} className="min-w-0 flex-1 text-left">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-xs font-bold text-slate-800">{m.title || (isProgress ? "Progress report" : "Meeting")}</span>
                   {m.status === "final"
-                    ? <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Final</span>
-                    : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Draft</span>}
+                    ? <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Final{m.revision ? ` · Rev ${m.revision}` : ""}</span>
+                    : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Draft{m.revision ? ` · Rev ${m.revision}` : ""}</span>}
                 </span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-3 text-[10px] text-slate-400">
                   <span className="inline-flex items-center gap-1"><Calendar size={10} /> {dayLabel(m.date) || "-"}{isProgress && m.period ? ` · ${m.period}` : ""}</span>

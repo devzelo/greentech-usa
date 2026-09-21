@@ -593,6 +593,10 @@ export interface ApiMinute {
   summary: string;
   mentioned: string[];
   status: "draft" | "final";
+  /** CR 252 - 0 for the first issue, +1 each time a final one is reopened. */
+  revision?: number;
+  finalizedAt?: string | null;
+  finalizedByName?: string;
   archived: boolean;
   createdById?: string;
   createdByName: string;

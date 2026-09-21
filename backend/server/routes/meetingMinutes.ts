@@ -50,15 +50,32 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 });
 
 // PUT /:id — save the edits (also used to archive or mark final).
+// CR 252 - a final one is locked, like a final proposal: only archiving, or reopening it as the
+// next revision (status back to draft), is accepted until then.
 router.put("/:minuteId", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (!mongoose.isValidObjectId(req.params.minuteId)) return res.status(404).json({ error: "Not found" });
-    const doc = await MeetingMinute.findOneAndUpdate(
-      { _id: req.params.minuteId, projectId: req.params.id },
-      { ...body(req), updatedByName: req.user!.name || "" },
-      { new: true },
-    );
+    const doc = await MeetingMinute.findOne({ _id: req.params.minuteId, projectId: req.params.id });
     if (!doc) return res.status(404).json({ error: "Not found" });
+    const patch = body(req);
+    const who = req.user!.name || "";
+    if (doc.status === "final") {
+      if (patch.status === "draft") {
+        doc.status = "draft";
+        doc.revision = (doc.revision || 0) + 1;
+        doc.finalizedAt = null;
+        doc.finalizedByName = "";
+      } else if (patch.archived !== undefined && Object.keys(patch).every((k) => k === "archived" || k === "status")) {
+        doc.archived = !!patch.archived;
+      } else {
+        return res.status(409).json({ error: "This one is final. Start a new revision to change it." });
+      }
+    } else {
+      Object.assign(doc, patch);
+      if (patch.status === "final") { doc.finalizedAt = new Date(); doc.finalizedByName = who; }
+    }
+    doc.updatedByName = who;
+    await doc.save();
     res.json(doc);
   } catch (err) { next(err); }
 });

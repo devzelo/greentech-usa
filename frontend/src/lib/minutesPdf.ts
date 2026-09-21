@@ -51,7 +51,7 @@ export async function buildMinutesPdf(o: MinutesPdfInput): Promise<Blob> {
       [isProgress ? "Period" : "Date", isProgress ? (m.period || dayLabel(m.date)) : dayLabel(m.date)],
       ...(isProgress ? [] : [["Time", m.time || ""] as [string, string], ["Location", m.location || ""] as [string, string]]),
       ["Prepared by", m.createdByName || ""],
-      ["Status", m.status === "final" ? "Final" : "Draft"],
+      ["Status", `${m.status === "final" ? "Final" : "Draft"}${m.revision ? ` (Rev ${m.revision})` : ""}`],
     ].filter(([, v]) => !!v) as Array<[string, string]>,
   });
 
