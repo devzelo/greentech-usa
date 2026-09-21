@@ -1,6 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
-import { GUTTER, brandPage, drawTable, loadBrand, stampPageNumbers, titleBlock, type Flow, type PageSize, type TableCol, type TableRow } from "./pdfBrand";
+import { marginFor, brandPage, drawTable, loadBrand, stampPageNumbers, titleBlock, type Flow, type PageSize, type TableCol, type TableRow } from "./pdfBrand";
 
 /**
  * A printable table report on the letterhead (the procurement master log, the purchase-order
@@ -20,7 +20,7 @@ export async function buildTableReportPdf(o: {
 }): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
-  const X = GUTTER, W = o.size.w - GUTTER * 2;
+  const X = marginFor(o.size), W = o.size.w - X * 2;   // CR 246 - narrow margins on the wide sheets
   const newPage = (): Flow => brandPage(doc, b, o.size, o.note);
   const f = newPage();
   f.y = titleBlock(f.page, b, { x: X, y: f.y, w: W, eyebrow: o.eyebrow, title: o.title, meta: o.meta });

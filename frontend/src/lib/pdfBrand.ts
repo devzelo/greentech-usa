@@ -16,6 +16,14 @@ import { drawWrapped, fitOneLine, wrapText } from "./pdfText";
 
 export const LETTER = { w: 612, h: 792 } as const;              // 8.5" x 11"
 export const TABLOID_LANDSCAPE = { w: 1224, h: 792 } as const;  // 11" x 17", landscape
+/**
+ * CR 246 - "don't use 11 by 17, it's still small": every landscape document (the schedule, the
+ * master log, the BOQ, submittals) is 18" x 24" landscape, with margins as narrow as possible.
+ */
+export const WIDE_LANDSCAPE = { w: 1728, h: 1296 } as const;    // 24" x 18", landscape
+export const NARROW = 30;                                         // the side margin on wide sheets
+/** The side margin for a page: narrow on the wide landscape sheets, the letterhead gutter otherwise. */
+export const marginFor = (size: { w: number }) => (size.w >= 1200 ? NARROW : GUTTER);
 export type PageSize = { w: number; h: number };
 export const GUTTER = 72;                                         // lines up with the logo in the band
 export const BAND_H = (LETTER.w * 220) / 3264;                    // the letterhead band, ~41 pt
@@ -109,6 +117,49 @@ export function brandPage(doc: PDFDocument, b: Brand, size: PageSize = LETTER, n
   drawBand(page, b);
   drawFooter(page, b, note);
   return { page, y: size.h - BAND_H - 36 };
+}
+
+/**
+ * CR 247 - "Fit to one page", like Excel's print option: a document that runs over several pages
+ * is put on one sheet, smaller but whole. Each page's content (below the letterhead band, above the
+ * footer; the first page keeps its band) is stacked in order and scaled to the sheet, then one
+ * footer is drawn. A one-page document comes back unchanged.
+ */
+export async function fitToOnePage(input: Blob, note?: string): Promise<Blob> {
+  const src = await PDFDocument.load(await input.arrayBuffer());
+  const pages = src.getPages();
+  if (pages.length <= 1) return input;
+  const out = await PDFDocument.create();
+  const b = await loadBrand(out);
+  const { width: pw, height: ph } = pages[0].getSize();
+  const bottom = BOTTOM - 10;
+  const topOf = (i: number) => (i === 0 ? ph : ph - BAND_H - 20);
+  const heights = pages.map((_, i) => topOf(i) - bottom);
+  const strips = await Promise.all(pages.map((p, i) => out.embedPage(p, { left: 0, bottom, right: pw, top: topOf(i) })));
+  // Lay the pages out in newspaper columns (down the first column, then the next), choosing the
+  // number of columns that gives the largest scale: a wide sheet then uses its width instead of
+  // shrinking one long strip.
+  const sheet = out.addPage([pw, ph]);
+  const room = ph - BOTTOM;                                    // keep the footer clear
+  const gap = 12;
+  const cellH = Math.max(...heights);
+  let best = { cols: 1, rows: pages.length, scale: 0 };
+  for (let cols = 1; cols <= pages.length; cols++) {
+    const rowsN = Math.ceil(pages.length / cols);
+    const scale = Math.min(1, (pw - gap * (cols - 1)) / (cols * pw), (room - gap * (rowsN - 1)) / (rowsN * cellH));
+    if (scale > best.scale) best = { cols, rows: rowsN, scale };
+  }
+  const { cols, rows: rowsN, scale } = best;
+  const colW = pw * scale;
+  const x0 = (pw - (colW * cols + gap * (cols - 1))) / 2;
+  strips.forEach((strip, i) => {
+    const col = Math.floor(i / rowsN), row = i % rowsN;
+    const h = heights[i] * scale;
+    const top = ph - row * (cellH * scale + gap);
+    sheet.drawPage(strip, { x: x0 + col * (colW + gap), y: top - h, width: colW, height: h });
+  });
+  drawFooter(sheet, b, [note, `Fitted to one page (${pages.length} pages at ${Math.round(scale * 100)}%)`].filter(Boolean).join("  ·  "));
+  return new Blob([new Uint8Array(await out.save())], { type: "application/pdf" });
 }
 
 /** "Page i of N" at the bottom right of every page, except the indices in `skip` (as-is uploads). */

@@ -1,6 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { attachmentUrl, type ApiSubmittal, type ApiSubmittalRevision, type ApiSubmittalAttachment } from "./api";
-import { BOTTOM, C, GUTTER, TABLOID_LANDSCAPE, brandPage, dividerPage, flowText, imagePage, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Flow } from "./pdfBrand";
+import { BOTTOM, C, WIDE_LANDSCAPE, marginFor, brandPage, dividerPage, flowText, imagePage, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Flow } from "./pdfBrand";
 
 // Submittal packages are assembled in this conventional order.
 const COMPONENT_ORDER = ["cover", "spec", "catalog", "drawing", "photo", "other"];
@@ -25,7 +25,8 @@ export async function buildSubmittalPackage(sub: ApiSubmittal, rev: ApiSubmittal
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
   const skipped: string[] = [];
-  const size = TABLOID_LANDSCAPE, X = GUTTER, W = size.w - GUTTER * 2;
+  // CR 246 - 18" x 24" landscape, narrow margins.
+  const size = WIDE_LANDSCAPE, X = marginFor(size), W = size.w - X * 2;
   const name = sub.title || sub.productName || "Submittal";
   const decision = DISPO_LABEL[rev.disposition] || rev.disposition || "";
   const note = [`Submittal: ${name}`, `Rev ${rev.revisionNo}`].join("  ·  ");

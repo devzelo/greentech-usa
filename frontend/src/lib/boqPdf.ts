@@ -1,7 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import type { ApiProcurementSection, ApiProcurementItem } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
-import { C, GUTTER, TABLOID_LANDSCAPE, brandPage, drawTable, loadBrand, stampPageNumbers, titleBlock, type Flow, type TableCol, type TableRow } from "./pdfBrand";
+import { C, WIDE_LANDSCAPE, marginFor, brandPage, drawTable, loadBrand, stampPageNumbers, titleBlock, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 
 // order-by date = need-on-site − lead-time(days)
 function orderByDate(needOnSite: string, leadDays: string): string {
@@ -18,7 +18,8 @@ function orderByDate(needOnSite: string, leadDays: string): string {
 export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiProcurementItem[], projectInfo?: ProjectPdfInfo): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
-  const size = TABLOID_LANDSCAPE, X = GUTTER, W = size.w - GUTTER * 2;
+  // CR 246 - 18" x 24" landscape, narrow margins.
+  const size = WIDE_LANDSCAPE, X = marginFor(size), W = size.w - X * 2;
   const note = ["Bill of Quantities", projectInfo?.name].filter(Boolean).join("  ·  ");
   const newPage = (): Flow => brandPage(doc, b, size, note);
   let f = newPage();

@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, type PDFPage } from "pdf-lib";
 import type { ApiMilestone } from "./api";
-import { C, GUTTER, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableRow } from "./pdfBrand";
+import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
   DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
@@ -12,7 +12,8 @@ import {
  * US Letter, landscape, so the chart has room.
  */
 
-const PAGE = { w: 792, h: 612 };
+// CR 245 / 246 - the schedule prints on 18" x 24" landscape with narrow margins (they pin it on the wall).
+const PAGE = WIDE_LANDSCAPE;
 const RED = rgb(0.86, 0.15, 0.15);
 const hex = (h: string) => { const n = parseInt(h.replace("#", ""), 16); return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
 const mix = (h: string, a: number) => { const n = parseInt(h.replace("#", ""), 16); const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v * a + 255 * (1 - a)) / 255); return rgb(c[0], c[1], c[2]); };
@@ -32,7 +33,7 @@ export interface TimelinePdfInput {
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
-  const X = GUTTER, W = PAGE.w - GUTTER * 2;
+  const X = NARROW, W = PAGE.w - NARROW * 2;
   const note = [o.scheduleName || "Project timeline", o.projectName, o.version].filter(Boolean).join("  ·  ");
   const newPage = (): Flow => brandPage(doc, b, PAGE, note);
   const today = new Date();
@@ -104,7 +105,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
 }
 
 function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date) {
-  const X = GUTTER, W = PAGE.w - GUTTER * 2, LABEL = 170, CH = W - LABEL, ROW = 17, BOTTOM = 70;
+  const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = 260, CH = W - LABEL, ROW = 17, BOTTOM = 70;
   const dates: Date[] = [];
   for (const m of rows) for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd, m.baselineStart, m.baselineEnd]) { const d = parseDate(v); if (d) dates.push(d); }
   for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }

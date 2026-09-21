@@ -22,6 +22,7 @@ import GanttChart, { GanttLegend } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
+import PdfPreviewModal from "../PdfPreviewModal";
 
 /**
  * CR 188-192 + Reza's "Project Timeline – Phases & Milestones": Project Management >
@@ -272,16 +273,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     } catch (e) { toast(e instanceof Error ? e.message : "Could not build the PDF.", "error"); }
     finally { setBusy(""); }
   };
-  const printPdf = async () => {
-    const win = window.open("", "_blank");
-    setBusy("pdf");
-    try {
-      const blob = await buildPdf();
-      const { showPdfInTab } = await import("../../../lib/reportPdf");
-      showPdfInTab(win, blob);
-    } catch (e) { win?.close(); toast(e instanceof Error ? e.message : "Could not build the PDF.", "error"); }
-    finally { setBusy(""); }
-  };
+  // CR 245 / 250 - Print opens a preview of the whole schedule (summary, table and chart on 18" x 24"),
+  // with Print, Send, Download and "Fit to one page".
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const printPdf = () => setPreviewOpen(true);
   // Sharing files the PDF under Project Management > Schedules, then shares that copy.
   const sharePdf = async () => {
     const blob = await buildPdf();
@@ -531,7 +526,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </label>
             <button type="button" onClick={() => { setVersionsOpen(true); void loadRevisions(); }} className={btn}><History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}</button>
-            <button type="button" onClick={printPdf} disabled={busy === "pdf"} className={btn}>{busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Print</button>
+            <button type="button" onClick={printPdf} className={btn}><Printer size={13} /> Preview / Print</button>
             <button type="button" onClick={downloadPdf} disabled={busy === "pdf"} className={btn}><Download size={13} /> PDF</button>
             <button type="button" onClick={downloadCsv} className={btn} title="Download for Excel"><FileSpreadsheet size={13} /> Excel</button>
             <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} />
@@ -804,6 +799,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
+
+      {previewOpen && (
+        <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }} />
+      )}
 
       {/* CR 241 / 244 - the schedule files, by schedule, searchable. */}
       <ScheduleFiles ref={filesRef} projectId={project.id} projectName={project.name} canEdit={canEdit} highlight={filedTo} />

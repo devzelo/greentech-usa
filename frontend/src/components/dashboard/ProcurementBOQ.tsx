@@ -1014,7 +1014,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       )}
       {dialogs}
       {showPreview && (
-        <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, items, projectInfo)} onClose={() => setShowPreview(false)} />
+        <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, items, projectInfo)} onClose={() => setShowPreview(false)} fitOption={{ note: "Bill of Quantities" }} />
       )}
       {/* CR-P-14 — per-line export (one BOQ line as its own PDF, downloadable/shareable). */}
       {linePreview && (

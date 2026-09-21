@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
-import { Loader2, Download, Printer, X, Send } from "lucide-react";
+import { Loader2, Download, Printer, X, Send, Minimize2 } from "lucide-react";
 import { emailFileAttachment } from "../../lib/api";
 import { toast } from "../../lib/toast";
+import { fitToOnePage } from "../../lib/pdfBrand";
 
 /**
  * Branded modal that builds a PDF (pdf-lib Blob) once, shows it in an iframe preview, and
  * offers a Download button — used for BOQ / RFQ / PO, mirroring the resume preview.
  */
-export default function PdfPreviewModal({ title, fileName, build, onClose }: {
+export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption }: {
   title: string;
   fileName: string;
   build: () => Promise<Blob>;
   onClose: () => void;
+  /** CR 247 - offer "Fit to one page" (large schedules and logs); the text goes in the footer note. */
+  fitOption?: { note?: string };
 }) {
+  const [fit, setFit] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +40,11 @@ export default function PdfPreviewModal({ title, fileName, build, onClose }: {
   useEffect(() => {
     let cancelled = false;
     let created = "";
+    setUrl(null);
     (async () => {
       try {
-        const b = await build();
+        const full = await build();
+        const b = fit ? await fitToOnePage(full, fitOption?.note) : full;
         if (cancelled) return;
         created = URL.createObjectURL(b);
         setBlob(b);
@@ -49,7 +55,7 @@ export default function PdfPreviewModal({ title, fileName, build, onClose }: {
     })();
     return () => { cancelled = true; if (created) URL.revokeObjectURL(created); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fit]);
 
   const download = () => {
     if (!blob) return;
@@ -67,6 +73,13 @@ export default function PdfPreviewModal({ title, fileName, build, onClose }: {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h3 className="text-base font-display font-bold text-slate-900 truncate">{title}</h3>
           <div className="flex items-center gap-2 shrink-0">
+            {/* CR 247 - like Excel's "fit to one page": smaller, but one sheet instead of many. */}
+            {fitOption && (
+              <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${fit ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`} title="Put the whole document on one sheet">
+                <input type="checkbox" checked={fit} onChange={(e) => setFit(e.target.checked)} className="accent-emerald-600" />
+                <Minimize2 size={12} /> Fit to one page
+              </label>
+            )}
             {/* CR-P-01 — Print the previewed PDF directly. */}
             <button onClick={() => { const f = document.querySelector<HTMLIFrameElement>(`iframe[title="${title.replace(/"/g, "")}"]`); (f?.contentWindow || window).print(); }} disabled={!url} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50"><Printer size={12} /> Print</button>
             {/* CR-P-14 — Send this exact document (with any past revisions) to someone by email. */}

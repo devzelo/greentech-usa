@@ -9,7 +9,7 @@ import {
 import { projectInfoHtml, type ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { buildBoqPdf } from "../../lib/boqPdf";
 import { buildTableReportPdf, showPdfInTab } from "../../lib/reportPdf";
-import { TABLOID_LANDSCAPE } from "../../lib/pdfBrand";
+import { WIDE_LANDSCAPE } from "../../lib/pdfBrand";
 import { toast } from "../../lib/toast";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useDialogs } from "../../lib/useDialogs";
@@ -203,12 +203,14 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
 
   // Printable report as a branded PDF (letterhead, footer, page numbers), honouring the current
   // section/status filter + sort. 11" x 17" landscape (client request) so every column fits in full.
-  const printReport = async () => {
-    const win = window.open("", "_blank");   // opened in the click, so a popup blocker lets it through
+  // CR 245 / 247 - the report opens in the preview (print, send, download) with "Fit to one page".
+  const [reportOpen, setReportOpen] = useState(false);
+  const printReport = () => setReportOpen(true);
+  const buildReport = async () => {
     const scope = sectionFilter === "all" ? "All categories" : sectionName(sectionFilter);
-    try {
-      const blob = await buildTableReportPdf({
-        size: TABLOID_LANDSCAPE, eyebrow: "Procurement status report", title: projectInfo?.name || "Procurement Master Log",
+    {
+      return buildTableReportPdf({
+        size: WIDE_LANDSCAPE, eyebrow: "Procurement status report", title: projectInfo?.name || "Procurement Master Log",
         meta: [["Scope", scope], ["Items", String(sorted.length)], ["Date", new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })]],
         projectInfo, note: ["Procurement status report", projectInfo?.name].filter(Boolean).join("  ·  "),
         cols: [
@@ -224,10 +226,6 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
           ],
         })),
       });
-      showPdfInTab(win, blob);
-    } catch (err) {
-      win?.close();
-      toast(err instanceof Error ? err.message : "Could not build the report.", "error");
     }
   };
 
@@ -376,6 +374,15 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
           </tbody>
         </table>
       </div>
+      {reportOpen && (
+        <PdfPreviewModal
+          title="Procurement Master Log"
+          fileName={`${(projectInfo?.name || "Project").replace(/[\\/:*?"<>|]/g, "_")} - Master Log.pdf`}
+          build={buildReport}
+          onClose={() => setReportOpen(false)}
+          fitOption={{ note: "Procurement Master Log" }}
+        />
+      )}
       {linePreview && (
         <PdfPreviewModal
           title={`Master Log item #${boqNo[linePreview.item._id] ?? ""} — ${linePreview.item.description || "line"}${linePreview.extras.length ? " (+ past revisions)" : ""}`}
