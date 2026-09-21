@@ -11,7 +11,7 @@ import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import {
   CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
-  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, toIso, type DurationUnit,
+  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
@@ -411,7 +411,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           </td>
                           <td className={`${cell} border-l border-slate-50 text-right tabular-nums text-slate-600`}>{d === null ? "-" : `${d} day${d === 1 ? "" : "s"}`}</td>
                           <td className={cell}>
-                            <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, { status: e.target.value as MilestoneStatus })} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
+                            <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, statusPatch(m, e.target.value as MilestoneStatus))} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
                               {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
                             </select>
                           </td>
@@ -458,7 +458,18 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-display text-base font-bold text-slate-900">Timeline chart</h3>
-            {rows.some((m) => delayDays(m, today) > 0) && <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600"><AlertTriangle size={12} /> {rows.filter((m) => delayDays(m, today) > 0).length} late</span>}
+            {/* CR 232 - "late" means the same as on the header: past its planned end and not done.
+                Phases that are finished but finished late are counted apart. */}
+            {(() => {
+              const lateNow = rows.filter((m) => m.status !== "completed" && m.status !== "cancelled" && delayDays(m, today) > 0).length;
+              const finishedLate = rows.filter((m) => m.status === "completed" && delayDays(m, today) > 0).length;
+              return (
+                <>
+                  {lateNow > 0 && <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600" title="Past the planned end and not completed"><AlertTriangle size={12} /> {lateNow} late</span>}
+                  {finishedLate > 0 && <span className="text-[11px] font-bold text-amber-600" title="Completed after the planned end">{finishedLate} finished late</span>}
+                </>
+              );
+            })()}
           </div>
           <GanttChart rows={shown.map((s) => s.m)} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} />
           <GanttLegend />

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Flag, History, Plus, X } from "lucide-react";
 import { fetchEmployees, type ApiMilestone, type MilestoneStatus } from "../../../lib/api";
 import {
-  CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, toIso, type DurationUnit,
+  CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
 
 /**
@@ -153,7 +153,7 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
 
           <label>
             <span className={lbl}>Status</span>
-            <select value={m.status || "not_started"} onChange={(e) => { const st = e.target.value as MilestoneStatus; set({ status: st, ...(st === "completed" ? { percent: 100 } : {}) }); }} className={inp}>
+            <select value={m.status || "not_started"} onChange={(e) => set(statusPatch(m, e.target.value as MilestoneStatus))} className={inp}>
               {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
             </select>
           </label>

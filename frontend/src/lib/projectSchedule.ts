@@ -136,15 +136,20 @@ export function humanGap(from: Date, to: Date): string {
   return days ? `${p(months, "month")} ${p(days, "day")}` : p(months, "month");
 }
 
-/** Days late at the end: actual (or, while running, today) past the baseline end. */
+/**
+ * Days late at the end: the actual end (or, while the phase runs, today) past the CURRENT planned
+ * end. CR 230 / 231 - it used to measure against the baseline, the first version of the plan, so a
+ * phase re-planned to end on 23 Sep read "33 days late" on 18 Sep. Before the planned end it is
+ * never late, and an actual end on the planned end is on time.
+ */
 export function delayDays(m: ApiMilestone, today = new Date()): number {
-  const base = parseDate(m.baselineEnd || m.plannedEnd);
+  const base = parseDate(m.plannedEnd);
   if (!base) return 0;
   const ref = parseDate(m.actualEnd) || (m.status !== "completed" && m.status !== "cancelled" ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : null);
   return ref ? Math.max(0, daysBetween(base, ref)) : 0;
 }
 export const startSlip = (m: ApiMilestone) => {
-  const b = parseDate(m.baselineStart || m.plannedStart), a = parseDate(m.actualStart);
+  const b = parseDate(m.plannedStart), a = parseDate(m.actualStart);   // CR 231 - against the current plan
   return a && b ? daysBetween(b, a) : 0;
 };
 
@@ -161,6 +166,17 @@ export function effectiveEndDate(p: { endDate?: string; schedule?: { extensions?
   const last = exts[exts.length - 1];
   const orig = parseDate(p.endDate);
   return last && (!orig || parseDate(last.endDate)! > orig) ? last.endDate : p.endDate || "";
+}
+
+/**
+ * CR 232 - what else changes when a phase's status changes, so the status, the percent and the
+ * bars always agree: Completed is 100%; any other status clears the "done" mark, and a phase that
+ * still read 100% from before starts again at 0% (Not started always at 0%).
+ */
+export function statusPatch(m: ApiMilestone, status: MilestoneStatus): Partial<ApiMilestone> {
+  if (status === "completed") return { status, percent: 100 };
+  const pct = Math.max(0, Math.min(100, Math.round(m.percent ?? 0)));
+  return { status, doneAt: "", percent: status === "not_started" || pct >= 100 ? 0 : pct };
 }
 
 export const newMilestoneId = () => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -189,7 +205,8 @@ export interface SchedulePlan {
 /** The state a phase is in today. */
 export function milestoneState(m: ApiMilestone, today = new Date()): MilestoneState {
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  if (m.status === "completed" || (m.percent ?? 0) >= 100 || m.doneAt) return "done";
+  if (m.status === "completed") return "done";
+  if (!m.status && ((m.percent ?? 0) >= 100 || m.doneAt)) return "done";   // phases from before statuses
   const s = parseDate(m.plannedStart), e = parseDate(m.plannedEnd);
   if (e && now > e) return "overdue";
   if (m.status === "in_progress" || (s && now >= s)) return "current";
@@ -197,7 +214,7 @@ export function milestoneState(m: ApiMilestone, today = new Date()): MilestoneSt
 }
 
 export function phasePercent(m: ApiMilestone): number {
-  if (m.status === "completed" || m.doneAt) return 100;
+  if (m.status === "completed" || (!m.status && m.doneAt)) return 100;
   return Math.max(0, Math.min(100, Math.round(m.percent ?? 0)));
 }
 
