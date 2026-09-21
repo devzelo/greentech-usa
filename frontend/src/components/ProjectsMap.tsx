@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -33,12 +33,16 @@ const pinIcon = (count: number) =>
 
 type CountryShapes = FeatureCollection<Geometry, { name: string; iso: string }>;
 
-// Country outlines (Natural Earth 1:110m), loaded on demand so they stay out of the main bundle.
-// Countries too small for this scale (Singapore, Bahrain...) simply keep their pin.
-async function loadCountryShapes(): Promise<CountryShapes> {
+// Country outlines (Natural Earth 1:50m), loaded on demand so they stay out of the main bundle.
+// The client asked for the green to follow the basemap's borders exactly: the 1:110m set was too
+// coarse for that (straight-cut coasts and borders), 1:50m sits on the basemap's lines at the
+// zoom levels the home page uses.
+// Zoomed in past the world view, the 1:10m set replaces it (fetched only then), so the green keeps
+// following the basemap's borders up close.
+async function loadCountryShapes(detail: "50m" | "10m" = "50m"): Promise<CountryShapes> {
   const [{ feature }, atlas] = await Promise.all([
     import("topojson-client"),
-    import("world-atlas/countries-110m.json"),
+    detail === "10m" ? import("world-atlas/countries-10m.json") : import("world-atlas/countries-50m.json"),
   ]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const topo = (atlas as any).default ?? atlas;
@@ -47,6 +51,18 @@ async function loadCountryShapes(): Promise<CountryShapes> {
     type: "FeatureCollection",
     features: fc.features.map((f) => ({ ...f, properties: { name: f.properties.name, iso: isoForCountryName(f.properties.name) } })),
   };
+}
+
+// Tell the page once the visitor zooms in close enough to need the detailed outlines.
+function ZoomWatch({ onDetail }: { onDetail: () => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const check = () => { if (map.getZoom() >= 5) onDetail(); };
+    map.on("zoomend", check);
+    check();
+    return () => { map.off("zoomend", check); };
+  }, [map, onDetail]);
+  return null;
 }
 
 // Frame the map to the pins once they load.
@@ -87,13 +103,19 @@ export default function ProjectsMap() {
 
   // CR 178: shade every country that has a published project.
   const [shapes, setShapes] = useState<CountryShapes | null>(null);
-  useEffect(() => { loadCountryShapes().then(setShapes).catch(() => setShapes(null)); }, []);
+  const [detail, setDetail] = useState<"50m" | "10m">("50m");
+  const wantDetail = useCallback(() => setDetail("10m"), []);
+  const [shapesDetail, setShapesDetail] = useState("");
+  useEffect(() => {
+    loadCountryShapes(detail).then((s) => { setShapes(s); setShapesDetail(detail); }).catch(() => { if (detail === "50m") setShapes(null); });
+  }, [detail]);
   const activeShapes = useMemo<CountryShapes | null>(() => {
     if (!shapes) return null;
     const active = new Set(groups.map((g) => g.iso));
     return { type: "FeatureCollection", features: shapes.features.filter((f) => active.has(f.properties.iso)) };
   }, [shapes, groups]);
-  const shapesKey = activeShapes?.features.map((f) => f.properties.iso).sort().join(",") || "";
+  // GeoJSON data is fixed once mounted, so the key changes when the detailed set arrives.
+  const shapesKey = `${shapesDetail}:${activeShapes?.features.map((f) => f.properties.iso).sort().join(",") || ""}`;
 
   const points = useMemo(() => groups.map((g) => g.coords), [groups]);
   const countries = groups.length;
@@ -138,10 +160,12 @@ export default function ProjectsMap() {
                 key={shapesKey}
                 data={activeShapes}
                 interactive={false}
-                style={() => ({ color: "#059669", weight: 1.2, fillColor: "#10B981", fillOpacity: 0.35 })}
+                smoothFactor={0.5}
+                style={() => ({ color: "#059669", weight: 0.8, opacity: 0.7, fillColor: "#10B981", fillOpacity: 0.3, lineJoin: "round" })}
               />
             )}
             <FitToPins points={points} />
+            <ZoomWatch onDetail={wantDetail} />
             {groups.map((g) => (
               <Marker key={g.iso} position={g.coords} icon={pinIcon(g.projects.length)}>
                 <Popup>
