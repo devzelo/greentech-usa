@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ChevronDown, Copy, Download, FileSpreadsheet, Flag, GripVertical, History, Import, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Download, Eraser, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
@@ -12,12 +12,13 @@ import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import {
   CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
-  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, type DurationUnit,
+  newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, defaultCategoryFor, groupByCategory, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
+import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
 
 /**
  * CR 188-192 + Reza's "Project Timeline – Phases & Milestones": Project Management >
@@ -31,9 +32,10 @@ type View = "all" | "active" | "late" | "upcoming" | "completed";
 const VIEWS: Array<[View, string]> = [["all", "All milestones"], ["active", "In progress"], ["late", "Late"], ["upcoming", "Not started"], ["completed", "Completed"]];
 
 const same = (a: ApiMilestone[], b: ApiMilestone[]) => JSON.stringify(a) === JSON.stringify(b);
-const blank = (key: string, name: string): ApiMilestone => ({
+const blank = (key: string, name: string, category = defaultCategoryFor(key, name)): ApiMilestone => ({
   id: newMilestoneId(), key, name, description: "", plannedStart: "", plannedEnd: "", baselineStart: "", baselineEnd: "",
   actualStart: "", actualEnd: "", durationValue: 0, durationUnit: "days", status: "not_started", percent: 0, responsible: [], notes: "",
+  category,
 });
 const hasData = (m: ApiMilestone) => !!(m.plannedStart || m.plannedEnd || m.actualStart || m.actualEnd || m.notes || (m.percent ?? 0) > 0 || m.responsible?.length);
 
@@ -227,7 +229,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const incoming = (src.schedule?.milestones || []).filter((m) => m.key === CUSTOM_KEY || !usedKeys.includes(m.key || ""));
     if (!incoming.length) { toast("That project has no phases this timeline doesn't already have.", "error"); return; }
     setRows((p) => [...p, ...incoming.map((m) => ({
-      ...blank(m.key || CUSTOM_KEY, m.name), description: m.description || "", plannedStart: mv(m.plannedStart), plannedEnd: mv(m.plannedEnd),
+      ...blank(m.key || CUSTOM_KEY, m.name, m.category || defaultCategoryFor(m.key, m.name)), description: m.description || "", plannedStart: mv(m.plannedStart), plannedEnd: mv(m.plannedEnd),
       durationValue: m.durationValue || 0, durationUnit: m.durationUnit || "days", responsible: [],
     }))]);
     setImportOpen(false);
@@ -284,6 +286,53 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   };
 
+  // ── CR 237 - a schedule is created on purpose, and can be cleared in one go ──
+  const [creating, setCreating] = useState(false);
+  const started = rows.length > 0 || creating || !!loadedFrom;
+  const startCreate = () => { setCreating(true); setPickerOpen(true); };
+  const clearSchedule = async () => {
+    if (!(await confirm({
+      title: "Clear the whole schedule?",
+      message: `All ${rows.length} task${rows.length === 1 ? "" : "s"} are taken off this schedule. Nothing changes until you Save, and every saved revision is kept.`,
+      confirmLabel: "Clear schedule",
+      danger: true,
+    }))) return;
+    setRows([]); setCreating(true); setPickerOpen(true);
+    toast("Schedule cleared. Add tasks or import them, then Save.", "success");
+  };
+
+  // ── CR 239 - import from Excel ──
+  const xlsInput = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState<(ImportResult & { fileName: string }) | null>(null);
+  const readExcel = async (file: File) => {
+    setBusy("import");
+    try {
+      const r = await readScheduleFile(file);
+      if (!r.milestones.length) { toast("No tasks found. The sheet needs a Task / Milestone column (download the template to see the layout).", "error"); return; }
+      setImported({ ...r, fileName: file.name });
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not read that file.", "error"); }
+    finally { setBusy(""); }
+  };
+  const applyImport = (mode: "replace" | "add") => {
+    if (!imported) return;
+    setRows((p) => (mode === "replace" ? imported.milestones : [...p, ...imported.milestones]));
+    setCreating(true);
+    toast(`${imported.milestones.length} task${imported.milestones.length === 1 ? "" : "s"} imported from ${imported.fileName}. Review, then Save.`, "success");
+    setImported(null);
+  };
+  const downloadTemplate = async () => {
+    const blob = await scheduleTemplate();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "Schedule template.xlsx";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  // ── CR 240 - long schedules: fold a category away ──
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCategory = (c: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n; });
+
   // ── View ──
   const shown = rows
     .map((m, index) => ({ m, index }))
@@ -294,6 +343,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       if (view === "active") return m.status === "in_progress" || (phasePercent(m) > 0 && phasePercent(m) < 100);
       return (m.status || "not_started") === "not_started" && phasePercent(m) === 0;
     });
+  // CR 238 - grouped by category when any task has one; a flat list otherwise.
+  const hasCategories = rows.some((m) => (m.category || "").trim());
+  const groups = hasCategories ? groupByCategory(shown) : [{ category: "", items: shown }];
   const previewProject: ApiProject = { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
 
@@ -317,10 +369,39 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+      {/* Hidden file input for the Excel import (CR 239). */}
+      <input ref={xlsInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readExcel(f); e.target.value = ""; }} />
+
+      {/* CR 237 - no schedule yet: create one on purpose, instead of a half-empty editor. */}
+      {!started && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
+          <Flag size={30} className="mx-auto text-slate-300" />
+          <p className="mt-3 font-display text-lg font-bold text-slate-900">No schedule yet</p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+            {canEdit
+              ? "Create the project schedule: pick the phases and tasks, group them by category, or import a schedule prepared in Excel."
+              : "The project manager has not created the schedule yet."}
+          </p>
+          {canEdit && (
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> Create schedule</button>
+              <button type="button" onClick={() => xlsInput.current?.click()} className={btn}><FileUp size={13} /> Import from Excel</button>
+              <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Copy from another project</button>
+              <button type="button" onClick={() => void downloadTemplate()} className={btn}><FileSpreadsheet size={13} /> Excel template</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {started && <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-base font-bold text-slate-900">Phases & Milestones</h3>
+            {hasCategories && (
+              <button type="button" onClick={() => setCollapsed((s) => (s.size ? new Set() : new Set(groups.map((g) => g.category))))} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 hover:text-primary">
+                {collapsed.size ? "Expand all" : "Collapse all"}
+              </button>
+            )}
             {loadedFrom && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Editing: {loadedFrom}</span>}
             {!loadedFrom && revisions?.[0] && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">Version {revisions[0].version}</span>}
           </div>
@@ -338,7 +419,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} />
             {canEdit && (
               <>
+                <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={btn} title="Import tasks from an Excel sheet (download the template for the columns)">
+                  {busy === "import" ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} Import from Excel
+                </button>
                 <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Import from project</button>
+                {rows.length > 0 && <button type="button" onClick={() => void clearSchedule()} className={btn} title="Take every task off this schedule"><Eraser size={13} /> Clear</button>}
                 <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700"><Plus size={13} /> Add milestone</button>
               </>
             )}
@@ -388,9 +473,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                 <p className="mt-1 text-xs text-slate-500">{canEdit ? "Tick the phases that apply on the left, add a custom one, or import them from a similar project." : "The project manager has not set up the timeline yet."}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="max-h-[72vh] overflow-auto">
                 <table className="w-full min-w-[980px] text-xs">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 shadow-[0_1px_0_#e2e8f0]">
                     <tr>
                       <th rowSpan={2} className="w-8" />
                       <th rowSpan={2} className="px-2 py-2 text-left">#</th>
@@ -411,7 +496,31 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                     </tr>
                   </thead>
                   <tbody>
-                    {shown.map(({ m, index }) => {
+                    {groups.map((g) => {
+                      const folded = collapsed.has(g.category);
+                      const starts = g.items.map(({ m }) => parseDate(m.plannedStart)).filter((d): d is Date => !!d);
+                      const ends = g.items.map(({ m }) => parseDate(m.plannedEnd)).filter((d): d is Date => !!d);
+                      const gFrom = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
+                      const gTo = ends.length ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
+                      const gPct = g.items.length ? Math.round(g.items.reduce((s2, { m }) => s2 + phasePercent(m), 0) / g.items.length) : 0;
+                      const gLate = g.items.filter(({ m }) => m.status !== "completed" && m.status !== "cancelled" && delayDays(m, today) > 0).length;
+                      return (
+                      <Fragment key={g.category || "all"}>
+                        {g.category && (
+                          <tr className="border-t border-slate-200 bg-slate-100/80">
+                            <td colSpan={12} className="px-2 py-1.5">
+                              <button type="button" onClick={() => toggleCategory(g.category)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-left">
+                                {folded ? <ChevronRight size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-700">{g.category}</span>
+                                <span className="text-[10px] font-bold text-slate-400">{g.items.length} task{g.items.length === 1 ? "" : "s"}</span>
+                                {gFrom && gTo && <span className="text-[10px] text-slate-500">{fmtDay(gFrom)} to {fmtDay(gTo)}</span>}
+                                <span className="text-[10px] font-bold text-slate-500">{gPct}% complete</span>
+                                {gLate > 0 && <span className="text-[10px] font-bold text-red-600">{gLate} late</span>}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {!folded && g.items.map(({ m, index }) => {
                       const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
                       const d = ps && pe ? daysBetween(ps, pe) : null;
                       const late = delayDays(m, today);
@@ -511,6 +620,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           </td>
                         </tr>
                       );
+                        })}
+                      </Fragment>
+                      );
                     })}
                     {shown.length === 0 && <tr><td colSpan={12} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
                   </tbody>
@@ -528,7 +640,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {rows.some((m) => m.plannedStart && m.plannedEnd) && (
         <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -547,7 +659,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               );
             })()}
           </div>
-          <GanttChart rows={shown.map((s) => s.m)} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} />
+          {/* CR 238 - the chart follows the table's grouping, folded categories left out. */}
+          <GanttChart rows={groups.flatMap((g) => (collapsed.has(g.category) ? [] : g.items.map((s) => s.m)))} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} />
           <GanttLegend />
         </div>
       )}
@@ -573,6 +686,48 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
+
+      {/* CR 239 - what the Excel file holds, before it touches the schedule. */}
+      {imported && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setImported(null)}>
+          <div className="my-20 w-full max-w-2xl rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FileUp size={15} className="text-primary" /> Import {imported.fileName}</p>
+              <button onClick={() => setImported(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 p-5 text-xs text-slate-600">
+              <p>
+                <b className="text-slate-900">{imported.milestones.length} task{imported.milestones.length === 1 ? "" : "s"}</b>
+                {imported.categories.length ? <> in <b className="text-slate-900">{imported.categories.length} categor{imported.categories.length === 1 ? "y" : "ies"}</b></> : null}
+                {imported.skipped ? `, ${imported.skipped} row${imported.skipped === 1 ? "" : "s"} without a name skipped` : ""}.
+                {" "}Headings read from row {imported.headerRow}.
+              </p>
+              {imported.categories.length > 0 && <p className="text-[11px] text-slate-500">{imported.categories.join(" · ")}</p>}
+              <div className="max-h-64 overflow-auto rounded-xl border border-slate-100">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400"><tr><th className="px-2 py-1.5">Category</th><th className="px-2 py-1.5">Task</th><th className="px-2 py-1.5">Start</th><th className="px-2 py-1.5">Finish</th><th className="px-2 py-1.5">Status</th></tr></thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {imported.milestones.slice(0, 40).map((m) => (
+                      <tr key={m.id}><td className="px-2 py-1 text-slate-500">{m.category || "-"}</td><td className="px-2 py-1 font-semibold text-slate-800">{m.name}</td><td className="px-2 py-1">{fmtDay(m.plannedStart) || "-"}</td><td className="px-2 py-1">{fmtDay(m.plannedEnd) || "-"}</td><td className="px-2 py-1">{STATUS_META[m.status || "not_started"].label}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                {imported.milestones.length > 40 && <p className="px-2 py-1.5 text-[10px] text-slate-400">and {imported.milestones.length - 40} more</p>}
+              </div>
+              {imported.unknownColumns.length > 0 && <p className="text-[10px] text-slate-400">Columns not used: {imported.unknownColumns.join(", ")}</p>}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <button type="button" onClick={() => void downloadTemplate()} className="text-[11px] font-bold text-primary hover:underline">Download the template</button>
+                <div className="flex gap-2">
+                  <button onClick={() => setImported(null)} className="rounded-xl px-3 py-2 font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                  {rows.length > 0 && <button onClick={() => applyImport("add")} className="rounded-xl border border-slate-200 px-3 py-2 font-bold text-slate-700 hover:bg-slate-50">Add to the schedule</button>}
+                  <button onClick={() => applyImport("replace")} className="rounded-xl bg-slate-900 px-4 py-2 font-bold text-white hover:bg-primary">{rows.length > 0 ? "Replace the schedule" : "Import"}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* CR 234 - the project manager's note on one task. Internal, never printed. */}
       {noteFor && createPortal(

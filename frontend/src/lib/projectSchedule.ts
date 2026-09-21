@@ -53,6 +53,47 @@ export const MASTER_PHASES: PhaseDef[] = [
 ];
 export const CUSTOM_KEY = "custom";
 
+/**
+ * CR 238 - a schedule is grouped into categories with tasks under each, the way a Primavera
+ * schedule is laid out. These are offered first; any other name can be typed.
+ */
+export const SCHEDULE_CATEGORIES = [
+  "Pre-award / Bidding", "Award / NTP", "Post award", "Pre-construction submittals", "Design",
+  "Procurement", "Mobilization", "Construction", "Testing & commissioning", "Closeout",
+];
+export const UNCATEGORISED = "Other";
+
+/** The category a master-list phase belongs in, so picking phases groups them straight away. */
+export function defaultCategoryFor(key?: string, name = ""): string {
+  const k = `${key || ""} ${name}`.toLowerCase();
+  if (/opportunity|prebid|pre-bid|proposal|negotiation|solicitation|bid/.test(k)) return "Pre-award / Bidding";
+  if (/award|execution|bonds|ntp|notice to proceed/.test(k)) return "Award / NTP";
+  if (/submittal/.test(k)) return "Pre-construction submittals";
+  if (/design|survey|boq/.test(k)) return "Design";
+  if (/procure|rfq|vendor|purchase|manufactur|fabricat|fat|packing|shipping|customs|delivery/.test(k)) return "Procurement";
+  if (/mobiliz/.test(k)) return "Mobilization";
+  if (/commission|testing|training|inspection|punch/.test(k)) return "Testing & commissioning";
+  if (/closeout|as-built|handover|completion|warranty|final/.test(k)) return "Closeout";
+  if (/site|install|construct|electrical|civil|building|piping/.test(k)) return "Construction";
+  return "";
+}
+
+/**
+ * CR 238 / 240 - the rows grouped by category, in the order each category first appears, keeping
+ * the rows' own order inside a category. Tasks without one gather under "Other" at the end.
+ */
+export function groupByCategory<T extends { m: ApiMilestone }>(list: T[]): Array<{ category: string; items: T[] }> {
+  const order: string[] = [];
+  const map = new Map<string, T[]>();
+  for (const it of list) {
+    const c = (it.m.category || "").trim() || UNCATEGORISED;
+    if (!map.has(c)) { map.set(c, []); if (c !== UNCATEGORISED) order.push(c); }
+    map.get(c)!.push(it);
+  }
+  if (map.has(UNCATEGORISED)) order.push(UNCATEGORISED);
+  return order.map((category) => ({ category, items: map.get(category)! }));
+}
+
 // A steady colour per phase (by list position), so a phase looks the same everywhere.
 const PALETTE = ["#10b981", "#3b82f6", "#8b5cf6", "#f97316", "#0d9488", "#ec4899", "#eab308", "#6366f1", "#ef4444", "#14b8a6", "#a855f7", "#0ea5e9"];
 export function phaseColor(m: Pick<ApiMilestone, "key" | "id">, index = 0): string {
@@ -154,6 +195,7 @@ export function timelineChanges(before: ApiMilestone[], after: ApiMilestone[]): 
     for (const [k, label] of dates) {
       if ((o[k] || "") !== (m[k] || "")) out.push(`${n}: ${label} ${day(o[k] as string)} to ${day(m[k] as string)}`);
     }
+    if ((o.category || "") !== (m.category || "")) out.push(`${n}: moved to ${m.category || "no category"}`);
     if ((o.responsible || []).join(", ") !== (m.responsible || []).join(", ")) out.push(`${n}: responsible changed`);
     if ((o.notes || "") !== (m.notes || "")) out.push(`${n}: note updated`);
   }

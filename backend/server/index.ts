@@ -76,7 +76,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,ht
   .map((o) => o.trim())
   .filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
+// CR 240 - a real schedule (hundreds of tasks) is larger than the 100 KB default.
+app.use(express.json({ limit: "5mb" }));
 
 // Serve uploaded files — documents require a token, images stay public (see uploadsGuard)
 app.use("/uploads", uploadsGuard, express.static(path.join(process.cwd(), "uploads")));

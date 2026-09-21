@@ -19,7 +19,8 @@ const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
 function cleanMilestones(input: unknown): MilestoneRecord[] {
   if (!Array.isArray(input)) return [];
-  return input.slice(0, 200).map((raw) => {
+  // CR 240 - real schedules run to hundreds of tasks.
+  return input.slice(0, 2000).map((raw) => {
     const m = (raw || {}) as Record<string, unknown>;
     const unit = UNITS.has(String(m.durationUnit)) ? String(m.durationUnit) : "days";
     return {
@@ -39,6 +40,7 @@ function cleanMilestones(input: unknown): MilestoneRecord[] {
       percent: Math.max(0, Math.min(100, Math.round(Number(m.percent) || 0))),
       responsible: Array.isArray(m.responsible) ? m.responsible.map((r) => str(r, 120).trim()).filter(Boolean).slice(0, 30) : [],
       notes: str(m.notes, 4000),
+      category: str(m.category, 80).trim(),
       duration: 0, unit: "days" as const, doneAt: "", doneBy: "",
     };
   }).map((m) => ({

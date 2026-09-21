@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Flag, History, Plus, X } from "lucide-react";
 import { fetchEmployees, type ApiMilestone, type MilestoneStatus } from "../../../lib/api";
 import {
-  CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
+  CUSTOM_KEY, MASTER_PHASES, SCHEDULE_CATEGORIES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
 
 /**
@@ -92,6 +92,14 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
           <label className="sm:col-span-2">
             <span className={lbl}>Name {isCustom ? "" : "(rename if needed)"}</span>
             <input value={m.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Client Training" className={inp} />
+          </label>
+          {/* CR 238 - the group this task sits in on the schedule. Pick one or type your own. */}
+          <label className="sm:col-span-2">
+            <span className={lbl}>Category</span>
+            <input list="schedule-categories" value={m.category || ""} onChange={(e) => set({ category: e.target.value })} placeholder="e.g. Design, Procurement, Construction" className={inp} />
+            <datalist id="schedule-categories">
+              {SCHEDULE_CATEGORIES.map((c) => <option key={c} value={c} />)}
+            </datalist>
           </label>
           {isCustom && (
             <label className="sm:col-span-2">

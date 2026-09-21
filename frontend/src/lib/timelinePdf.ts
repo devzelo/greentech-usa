@@ -3,7 +3,7 @@ import type { ApiMilestone } from "./api";
 import { C, GUTTER, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
-  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
+  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
 } from "./projectSchedule";
 
 /**
@@ -82,13 +82,18 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
       color: lateBy ? RED : undefined,
     };
   });
+  // CR 238 - grouped under their categories when the schedule has them, each group with a heading
+  // row; a flat list otherwise.
+  const grouped: TableRow[] = rows.some((m) => (m.category || "").trim())
+    ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] }))).flatMap((g) => [{ group: `${g.category}  (${g.items.length})` }, ...g.items.map((x) => x.row)])
+    : tableRows;
   const cols = [
     { label: "#", w: 22 }, { label: "Phase / milestone", w: 132, wrap: true }, { label: "Planned", w: 70, wrap: true },
     { label: "Baseline", w: 70, wrap: true }, { label: "Actual", w: 70, wrap: true }, { label: "Duration", w: 50 },
     { label: "Status", w: 66, wrap: true }, { label: "%", w: 34, align: "right" as const },
   ];
   const used = cols.reduce((s, c) => s + c.w, 0);
-  f = drawTable(b, f, X, [...cols, { label: "Description", w: W - used, wrap: true }], tableRows.length ? tableRows : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
+  f = drawTable(b, f, X, [...cols, { label: "Description", w: W - used, wrap: true }], grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
 
   // ── Gantt ──
   if (rows.some((m) => m.plannedStart && m.plannedEnd)) drawGantt(doc, b, newPage, rows, o, today);

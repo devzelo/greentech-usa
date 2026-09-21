@@ -1069,6 +1069,7 @@ export interface ApiMilestone {
   percent?: number;
   responsible?: string[];
   notes?: string;
+  category?: string;       // CR 238 - the group the task sits in (Design, Procurement, Construction...)
   // The older chained schedule (read only).
   duration?: number;
   unit?: "days" | "weeks" | "months";

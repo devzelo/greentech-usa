@@ -9,6 +9,7 @@ export interface MilestoneRecord {
   actualStart: string; actualEnd: string;
   durationValue: number; durationUnit: "days" | "weeks" | "months";
   status: string; percent: number; responsible: string[]; notes: string;
+  category: string;   // CR 238 - the group a task sits in (Design, Procurement, Construction...)
   duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string;
 }
 
@@ -182,6 +183,7 @@ const MilestoneSchema = new Schema({
   percent: { type: Number, default: 0, min: 0, max: 100 },
   responsible: { type: [String], default: [] },
   notes: { type: String, default: "" },
+  category: { type: String, default: "" },      // CR 238 - Award / NTP, Design, Procurement, Construction...
   // Older chained schedule
   duration: { type: Number, default: 0, min: 0 },
   unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
