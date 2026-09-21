@@ -31,7 +31,7 @@ type Tool = { key: ToolKey; label: string; hint: string; icon: ComponentType<{ s
 
 const GROUPS: Array<{ title: string; tools: Tool[] }> = [
   { title: "Calculate", tools: [
-    { key: "calc", label: "Calculator", hint: "Everyday maths", icon: CalcIcon },
+    { key: "calc", label: "Calculator", hint: "Trig, logs, powers, memory", icon: CalcIcon },
     { key: "margin", label: "Markup / Margin", hint: "Price, profit, tax, %", icon: Percent },
     { key: "units", label: "Unit Converter", hint: "Engineering units", icon: Ruler },
     { key: "currency", label: "Currency", hint: "Today's rates", icon: Coins },
