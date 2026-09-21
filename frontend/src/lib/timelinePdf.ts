@@ -28,6 +28,7 @@ export interface TimelinePdfInput {
   milestones: ApiMilestone[];
   version?: string;       // e.g. "Version 4" or "Draft (not saved)"
   scheduleName?: string;  // CR 243 - "Master schedule", "Design schedule"...
+  categories?: string[];  // the schedule's categories, in order
 }
 
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
@@ -87,7 +88,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   // CR 238 - grouped under their categories when the schedule has them, each group with a heading
   // row; a flat list otherwise.
   const grouped: TableRow[] = rows.some((m) => (m.category || "").trim())
-    ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] }))).flatMap((g) => [{ group: `${g.category}  (${g.items.length})` }, ...g.items.map((x) => x.row)])
+    ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] })), o.categories).flatMap((g) => [{ group: `${g.category}  (${g.items.length})` }, ...g.items.map((x) => x.row)])
     : tableRows;
   const cols = [
     { label: "#", w: 22 }, { label: "Phase / milestone", w: 132, wrap: true }, { label: "Planned", w: 70, wrap: true },

@@ -82,16 +82,26 @@ export function defaultCategoryFor(key?: string, name = ""): string {
  * CR 238 / 240 - the rows grouped by category, in the order each category first appears, keeping
  * the rows' own order inside a category. Tasks without one gather under "Other" at the end.
  */
-export function groupByCategory<T extends { m: ApiMilestone }>(list: T[]): Array<{ category: string; items: T[] }> {
-  const order: string[] = [];
-  const map = new Map<string, T[]>();
+export function groupByCategory<T extends { m: ApiMilestone }>(list: T[], categories: string[] = [], keepEmpty = false): Array<{ category: string; items: T[] }> {
+  // The schedule's own order first (its categories, like BOQ sections), then any others the tasks name.
+  const order: string[] = categories.filter((c) => c.trim() && c !== UNCATEGORISED);
+  const map = new Map<string, T[]>(order.map((c) => [c, [] as T[]]));
   for (const it of list) {
     const c = (it.m.category || "").trim() || UNCATEGORISED;
     if (!map.has(c)) { map.set(c, []); if (c !== UNCATEGORISED) order.push(c); }
     map.get(c)!.push(it);
   }
   if (map.has(UNCATEGORISED)) order.push(UNCATEGORISED);
-  return order.map((category) => ({ category, items: map.get(category)! }));
+  return order.map((category) => ({ category, items: map.get(category)! })).filter((g) => keepEmpty || g.items.length > 0);
+}
+
+/** A schedule's categories in order: the saved list, then any a task names that the list lacks. */
+export function categoryList(saved: string[] | undefined, rows: ApiMilestone[]): string[] {
+  const out: string[] = [];
+  const add = (c: string) => { const v = c.trim(); if (v && v !== UNCATEGORISED && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v); };
+  (saved || []).forEach(add);
+  rows.forEach((m) => add(m.category || ""));
+  return out;
 }
 
 // A steady colour per phase (by list position), so a phase looks the same everywhere.

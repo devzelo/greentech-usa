@@ -187,7 +187,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: { milestones: ApiMilestone[]; savedAt: string; savedBy: string } | null; subs?: ApiSubSchedule[] };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[] };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -1081,31 +1081,35 @@ export interface ApiMilestone {
   doneBy?: string;
 }
 
+export interface ApiScheduleDraft { milestones: ApiMilestone[]; categories?: string[]; savedAt: string; savedBy: string }
 export interface ApiScheduleRevision {
-  _id: string; projectId: string; version: number; milestones: ApiMilestone[]; progress: number;
+  _id: string; projectId: string; scheduleId?: string; categories?: string[]; version: number; milestones: ApiMilestone[]; progress: number;
   note: string; savedBy: string; createdAt: string;
 }
 type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress: number };
-export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = ""): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
-  return request(`/projects/${projectId}/schedule/save`, { method: "POST", body: JSON.stringify({ milestones, note }) });
+// 2026-09-21 - `sched` names a schedule beside the master (its id); left out, the master.
+const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : "");
+export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
+  return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories }) });
 }
 /** CR 243 - a sub-schedule: a named extract of the master schedule, by category. */
-export interface ApiSubSchedule { id: string; name: string; categories: string[] }
-export async function saveScheduleSubs(projectId: string, subs: ApiSubSchedule[]): Promise<ScheduleResult> {
+/** A schedule beside the master: its own tasks, categories, draft and revisions. */
+export interface ApiSubSchedule { id: string; name: string; categories: string[]; milestones?: ApiMilestone[]; draft?: ApiScheduleDraft | null; own?: boolean }
+export async function saveScheduleSubs(projectId: string, subs: Array<Pick<ApiSubSchedule, "id" | "name"> & { categories?: string[] }>): Promise<ScheduleResult> {
   return request(`/projects/${projectId}/schedule/subs`, { method: "PUT", body: JSON.stringify({ subs }) });
 }
 /** CR 235 - save one row: its edits go live, no revision is filed. */
-export async function saveTimelineRow(projectId: string, milestone: ApiMilestone): Promise<ScheduleResult & { milestone: ApiMilestone }> {
-  return request(`/projects/${projectId}/schedule/milestones/${encodeURIComponent(milestone.id)}`, { method: "PUT", body: JSON.stringify({ milestone }) });
+export async function saveTimelineRow(projectId: string, milestone: ApiMilestone, sched?: string): Promise<ScheduleResult & { milestone: ApiMilestone }> {
+  return request(`/projects/${projectId}/schedule/milestones/${encodeURIComponent(milestone.id)}${sq(sched)}`, { method: "PUT", body: JSON.stringify({ milestone }) });
 }
-export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[]): Promise<ScheduleResult> {
-  return request(`/projects/${projectId}/schedule/draft`, { method: "PUT", body: JSON.stringify({ milestones }) });
+export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[], sched?: string, categories?: string[]): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/draft${sq(sched)}`, { method: "PUT", body: JSON.stringify({ milestones, categories }) });
 }
-export async function discardTimelineDraft(projectId: string): Promise<ScheduleResult> {
-  return request(`/projects/${projectId}/schedule/draft`, { method: "DELETE" });
+export async function discardTimelineDraft(projectId: string, sched?: string): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/draft${sq(sched)}`, { method: "DELETE" });
 }
-export async function fetchTimelineRevisions(projectId: string): Promise<ApiScheduleRevision[]> {
-  return request(`/projects/${projectId}/schedule/revisions`);
+export async function fetchTimelineRevisions(projectId: string, sched?: string): Promise<ApiScheduleRevision[]> {
+  return request(`/projects/${projectId}/schedule/revisions${sq(sched)}`);
 }
 
 /** CR-P (126) - an approved extension of time: the new deadline, and why. */

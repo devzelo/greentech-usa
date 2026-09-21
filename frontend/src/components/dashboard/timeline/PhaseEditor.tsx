@@ -11,8 +11,10 @@ import {
  * description), planned start and end or a duration, actual dates, status, % complete, the people
  * responsible and notes. The baseline (first planned dates) is shown, and can be reset on purpose.
  */
-export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdit, isNew = false }: {
+export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdit, isNew = false, categories }: {
   initial: ApiMilestone;
+  /** The open schedule's categories, offered first in the Category list. */
+  categories?: string[];
   isNew?: boolean;
   usedKeys: string[];
   onSave: (m: ApiMilestone) => void;
@@ -98,7 +100,7 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
             <span className={lbl}>Category</span>
             <input list="schedule-categories" value={m.category || ""} onChange={(e) => set({ category: e.target.value })} placeholder="e.g. Design, Procurement, Construction" className={inp} />
             <datalist id="schedule-categories">
-              {SCHEDULE_CATEGORIES.map((c) => <option key={c} value={c} />)}
+              {[...new Set([...(categories || []), ...SCHEDULE_CATEGORIES])].map((c) => <option key={c} value={c} />)}
             </datalist>
           </label>
           {isCustom && (

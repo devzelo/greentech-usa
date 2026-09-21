@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Download, Eraser, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
   discardTimelineDraft, fetchProjects, fetchTimelineRevisions, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl,
-  fetchDocuments, saveScheduleSubs, type ApiSubSchedule,
+  saveScheduleSubs,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
@@ -14,7 +14,7 @@ import { useDialogs } from "../../../lib/useDialogs";
 import {
   CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
   newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, defaultCategoryFor, groupByCategory,
-  SCHEDULE_CATEGORIES, UNCATEGORISED, type DurationUnit,
+  UNCATEGORISED, categoryList, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
@@ -52,10 +52,22 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   onSaveExtensions?: (next: ApiExtension[], message: string) => Promise<void>;
 }) {
   const { confirm, prompt, dialogs } = useDialogs();
-  const live = useMemo(() => project.schedule?.milestones || [], [project.schedule]);
-  const draft = project.schedule?.draft || null;
+  // 2026-09-21 - the master schedule (the default) and separate schedules beside it. Each has its own
+  // tasks, categories, draft, revisions and files; a new one is made from scratch.
+  const [activeSub, setActiveSub] = useState("");
+  const subs = project.schedule?.subs || [];
+  const sub = subs.find((x) => x.id === activeSub) || null;
+  const sched = sub ? sub.id : undefined;
+  const scheduleName = sub ? sub.name : "Master schedule";
+  const live = useMemo(() => (sub ? sub.milestones || [] : project.schedule?.milestones || []), [project.schedule, activeSub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveCats = useMemo(() => (sub ? sub.categories || [] : project.schedule?.categories || []), [project.schedule, activeSub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const draft = (sub ? sub.draft : project.schedule?.draft) || null;
   const [rows, setRows] = useState<ApiMilestone[]>(live);
   const [base, setBase] = useState<ApiMilestone[]>(live);        // what the rows are compared with
+  // The schedule's categories, in order, like BOQ sections: named, renamable, kept when empty.
+  const [cats, setCats] = useState<string[]>(liveCats);
+  const [baseCats, setBaseCats] = useState<string[]>(liveCats);
+  const catList = useMemo(() => categoryList(cats, rows), [cats, rows]);
   const [editing, setEditing] = useState<ApiMilestone | null>(null);
   const [view, setView] = useState<View>("all");
   const [pickerOpen, setPickerOpen] = useState(live.length === 0);
@@ -74,7 +86,13 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setBase(live);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live]);
-  const dirty = !same(rows, base);
+  useEffect(() => {
+    setCats((cur) => (JSON.stringify(cur) === JSON.stringify(baseCats) ? liveCats : cur));
+    setBaseCats(liveCats);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveCats]);
+  const catsChanged = JSON.stringify(catList) !== JSON.stringify(categoryList(baseCats, base));
+  const dirty = !same(rows, base) || catsChanged;
   // Rows last parked as a draft: leaving the page with exactly those needs no warning.
   const [draftRows, setDraftRows] = useState<ApiMilestone[] | null>(null);
   const unsaved = dirty && !(draftRows && same(rows, draftRows));
@@ -86,19 +104,20 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     return () => window.removeEventListener("beforeunload", h);
   }, [unsaved]);
 
-  const loadRevisions = () => fetchTimelineRevisions(project.id).then(setRevisions).catch(() => setRevisions([]));
-  useEffect(() => { void loadRevisions(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [project.id]);
+  const loadRevisions = () => fetchTimelineRevisions(project.id, sched).then(setRevisions).catch(() => setRevisions([]));
+  // Opening another schedule starts clean on that schedule's own tasks, categories and revisions.
+  useEffect(() => {
+    setRows(live); setBase(live); setCats(liveCats); setBaseCats(liveCats);
+    setLoadedFrom(""); setCreating(false); setDraftRows(null); setEditing(null); setCollapsed(new Set());
+    setRevisions(null);
+    void loadRevisions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, activeSub]);
 
   const today = new Date();
   const contractStart = project.startDate || project.contractDate || "";
   const deadline = effectiveEndDate(project);
   const usedKeys = rows.map((r) => r.key || "").filter((k) => k && k !== CUSTOM_KEY);
-  // CR 242 / 243 - which schedule is open: the master, or one drawn from it by category.
-  const [subs, setSubs] = useState<ApiSubSchedule[]>(project.schedule?.subs || []);
-  const [activeSub, setActiveSub] = useState("");
-  const sub = subs.find((x) => x.id === activeSub) || null;
-  const scheduleName = sub ? sub.name : "Master schedule";
-  const inScope = (m: ApiMilestone) => !sub || sub.categories.includes((m.category || "").trim() || UNCATEGORISED);
 
   // ── Editing ──
   const update = (id: string, patch: Partial<ApiMilestone>) => setRows((p) => p.map((r) => {
@@ -134,16 +153,50 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     next.splice(to, 0, x);
     return next;
   });
+  // Where items ticked in the side panel (or added from the toolbar) go: a chosen category, or each
+  // phase's usual one. Either way the task lands on the schedule that is open.
+  const [addTo, setAddTo] = useState("");
+  const catFor = (key: string, name: string) => addTo || defaultCategoryFor(key, name);
   const togglePhase = async (key: string, name: string) => {
     const existing = rows.find((r) => r.key === key);
     if (existing) await remove(existing);
-    else setRows((p) => [...p, blank(key, name)]);
+    else { setRows((p) => [...p, blank(key, name, catFor(key, name))]); setCreating(true); }
   };
-  const addCustom = () => setEditing(blank(CUSTOM_KEY, ""));
+  const addCustom = () => setEditing(blank(CUSTOM_KEY, "", addTo));
   const addMilestone = () => {
     const next = MASTER_PHASES.find((p) => !usedKeys.includes(p.key));
-    setEditing(next ? blank(next.key, next.name) : blank(CUSTOM_KEY, ""));
+    setEditing(next ? blank(next.key, next.name, catFor(next.key, next.name)) : blank(CUSTOM_KEY, "", addTo));
   };
+
+  // ── Categories, like BOQ sections: add, rename, order, delete, and add a milestone inside one ──
+  const addCategory = async () => {
+    const name = (await prompt({ title: "New category", label: "Category name", placeholder: "e.g. Design, Procurement, Construction", confirmLabel: "Add category" }))?.trim();
+    if (!name) return;
+    if (catList.some((c) => c.toLowerCase() === name.toLowerCase()) || name === UNCATEGORISED) { toast(`"${name}" is already a category.`, "error"); return; }
+    setCats([...catList, name]); setCreating(true);
+  };
+  const renameCategory = async (c: string) => {
+    const name = (await prompt({ title: `Rename "${c}"`, label: "Category name", initialValue: c === UNCATEGORISED ? "" : c, confirmLabel: "Rename" }))?.trim();
+    if (!name || name === c) return;
+    const inIt = (m: ApiMilestone) => ((m.category || "").trim() || UNCATEGORISED) === c;
+    setRows((p) => p.map((m) => (inIt(m) ? { ...m, category: name } : m)));
+    setCats(c === UNCATEGORISED ? [...catList, name] : catList.map((x) => (x === c ? name : x)));
+  };
+  const moveCategory = (c: string, dir: -1 | 1) => {
+    const i = catList.indexOf(c), j = i + dir;
+    if (i < 0 || j < 0 || j >= catList.length) return;
+    const next = [...catList];
+    [next[i], next[j]] = [next[j], next[i]];
+    setCats(next);
+  };
+  const deleteCategory = async (c: string) => {
+    const inIt = (m: ApiMilestone) => ((m.category || "").trim() || UNCATEGORISED) === c;
+    const n = rows.filter(inIt).length;
+    if (n && !(await confirm({ title: `Delete "${c}"?`, message: `The category and its ${n} milestone${n === 1 ? "" : "s"} are taken off this schedule when you save. Saved revisions keep them.`, confirmLabel: "Delete category", danger: true }))) return;
+    setRows((p) => p.filter((m) => !inIt(m)));
+    setCats(catList.filter((x) => x !== c));
+  };
+  const addInCategory = (c: string) => setEditing(blank(CUSTOM_KEY, "", c === UNCATEGORISED ? "" : c));
   const sortByDate = () => setRows((p) => [...p].sort((a, b) => (parseDate(a.plannedStart)?.getTime() ?? Infinity) - (parseDate(b.plannedStart)?.getTime() ?? Infinity)));
 
   // ── Save / draft / cancel ──
@@ -166,14 +219,15 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const note = shownChanges.join("; ").slice(0, 500);
     setBusy("save");
     try {
-      const r = await saveTimeline(project.id, rows, note);
+      const r = await saveTimeline(project.id, rows, note, sched, catList);
+      const savedRows = r.revision.milestones;
       onScheduleSaved(r.schedule, r.progress);
-      setRows(r.schedule.milestones); setBase(r.schedule.milestones); setLoadedFrom(""); setDraftRows(null);
+      setRows(savedRows); setBase(savedRows); setCats(catList); setBaseCats(catList); setLoadedFrom(""); setDraftRows(null);
       setRevisions((p) => [r.revision, ...(p || [])]);
-      // CR 244 - file the revision as a PDF in the Master schedule folder, and say where it went.
+      // CR 244 - file the revision as a PDF in this schedule's folder, and say where it went.
       try {
-        const name = await fileRevision("Master schedule", r.revision.version, r.schedule.milestones);
-        toast(`Saved as revision ${r.revision.version}. Filed in Schedule files › Master schedule as "${name}".`, "success");
+        const name = await fileRevision(scheduleName, r.revision.version, savedRows);
+        toast(`Saved as revision ${r.revision.version}. Filed in Schedule files › ${scheduleName} as "${name}".`, "success");
       } catch {
         toast(`Saved as revision ${r.revision.version}. The PDF could not be filed; use PDF to download it.`, "info");
       }
@@ -195,7 +249,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (s && e && e < s) { toast(`"${m.name}" ends before it starts. Fix its dates first.`, "error"); return; }
     setRowBusy(m.id);
     try {
-      const r = await saveTimelineRow(project.id, m);
+      const r = await saveTimelineRow(project.id, m, sched);
       const saved = r.milestone;
       setBase((p) => (p.some((x) => x.id === saved.id) ? p.map((x) => (x.id === saved.id ? saved : x)) : [...p, saved]));
       setRows((p) => p.map((x) => (x.id === saved.id ? saved : x)));
@@ -219,7 +273,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const saveDraft = async () => {
     setBusy("draft");
     try {
-      const r = await saveTimelineDraft(project.id, rows);
+      const r = await saveTimelineDraft(project.id, rows, sched, catList);
       onScheduleSaved(r.schedule, r.progress);
       setDraftRows(rows); setLoadedFrom("Draft");
       toast("Saved as a draft. The live timeline has not changed until you Save.", "success");
@@ -228,15 +282,15 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   };
   const cancel = async () => {
     if (unsaved && !(await confirm({ title: "Discard changes?", message: "Your edits since the last save will be lost.", confirmLabel: "Discard", danger: true }))) return;
-    setRows(base); setLoadedFrom("");
+    setRows(base); setCats(baseCats); setLoadedFrom("");
   };
-  const openDraft = () => { if (draft) { setRows(draft.milestones); setDraftRows(draft.milestones); setLoadedFrom("Draft"); } };
+  const openDraft = () => { if (draft) { setRows(draft.milestones); setCats(draft.categories || categoryList([], draft.milestones)); setDraftRows(draft.milestones); setLoadedFrom("Draft"); } };
   const dropDraft = async () => {
     if (!(await confirm({ title: "Delete the draft?", message: "The saved draft is removed. The live timeline stays as it is.", confirmLabel: "Delete draft", danger: true }))) return;
-    try { const r = await discardTimelineDraft(project.id); onScheduleSaved(r.schedule, r.progress); setDraftRows(null); if (loadedFrom === "Draft") { setRows(base); setLoadedFrom(""); } toast("Draft deleted.", "success"); }
+    try { const r = await discardTimelineDraft(project.id, sched); onScheduleSaved(r.schedule, r.progress); setDraftRows(null); if (loadedFrom === "Draft") { setRows(base); setLoadedFrom(""); } toast("Draft deleted.", "success"); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete the draft.", "error"); }
   };
-  const loadVersion = (v: ApiScheduleRevision) => { setRows(v.milestones); setLoadedFrom(`Version ${v.version}`); setVersionsOpen(false); toast(`Version ${v.version} loaded. Save to make it the live timeline again.`, "success"); };
+  const loadVersion = (v: ApiScheduleRevision) => { setRows(v.milestones); setCats(v.categories?.length ? v.categories : categoryList([], v.milestones)); setLoadedFrom(`Version ${v.version}`); setVersionsOpen(false); toast(`Version ${v.version} loaded. Save to make it the live timeline again.`, "success"); };
 
   // ── Import from another project ──
   const importFrom = async (src: ApiProject) => {
@@ -256,7 +310,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // ── Output ──
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
-    originalDeadline: project.endDate, milestones: rows.filter(inScope), version: label, scheduleName,
+    originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName,
   });
   const versionLabel = dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
   const buildPdf = async () => {
@@ -297,47 +351,43 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   };
 
-  // ── CR 242 / 243 - the master schedule and the sub-schedules drawn from it by category ──
-  const [subDialog, setSubDialog] = useState<{ id?: string; name: string; categories: string[] } | null>(null);
-  const allCategories = useMemo(() => {
-    const used = rows.map((m) => (m.category || "").trim()).filter(Boolean);
-    return [...new Set([...used, ...SCHEDULE_CATEGORIES])];
-  }, [rows]);
-  // Suggest the categories a schedule's name implies ("Design schedule" -> Design).
-  const guessCategories = (name: string) => {
-    const n = name.toLowerCase();
-    return allCategories.filter((c) => {
-      const lc = c.toLowerCase();
-      if (/bid/.test(n)) return /bid|award|pre-award/.test(lc);
-      if (/design/.test(n)) return /design/.test(lc);
-      if (/construct/.test(n)) return /mobiliz|construct|testing/.test(lc);
-      if (/procure/.test(n)) return /procure/.test(lc);
-      return false;
-    });
-  };
-  const saveSubs = async (next: ApiSubSchedule[], message: string) => {
+  // ── The master schedule and the separate schedules beside it ──
+  const [subDialog, setSubDialog] = useState<{ id?: string; name: string; copyCats: boolean } | null>(null);
+  const saveSubs = async (next: Array<{ id: string; name: string; categories?: string[] }>, message: string) => {
     try {
       const r = await saveScheduleSubs(project.id, next);
-      setSubs(r.schedule.subs || next);
       onScheduleSaved(r.schedule, r.progress);
       toast(message, "success");
-      return r.schedule.subs || next;
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the schedule list.", "error"); return null; }
+      return true;
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the schedule list.", "error"); return false; }
   };
   const submitSubDialog = async () => {
     if (!subDialog) return;
     const name = subDialog.name.trim();
     if (!name) { toast("Name the schedule.", "error"); return; }
-    if (!subDialog.categories.length) { toast("Pick at least one category from the master schedule.", "error"); return; }
-    const entry: ApiSubSchedule = { id: subDialog.id || `s${Date.now().toString(36)}`, name, categories: subDialog.categories };
-    const next = subDialog.id ? subs.map((x) => (x.id === subDialog.id ? entry : x)) : [...subs, entry];
-    const saved = await saveSubs(next, subDialog.id ? `${name} updated.` : `${name} created from the master schedule.`);
-    if (saved) { setActiveSub(entry.id); setSubDialog(null); }
+    if (name.toLowerCase() === "master schedule" || subs.some((x) => x.id !== subDialog.id && x.name.toLowerCase() === name.toLowerCase())) { toast(`There is already a schedule called "${name}".`, "error"); return; }
+    const keep = subs.map((x) => ({ id: x.id, name: x.id === subDialog.id ? name : x.name }));
+    if (subDialog.id) {
+      if (await saveSubs(keep, `Renamed to ${name}.`)) setSubDialog(null);
+      return;
+    }
+    const id = `s${Date.now().toString(36)}`;
+    const categories = subDialog.copyCats ? categoryList(project.schedule?.categories, project.schedule?.milestones || []) : [];
+    if (await saveSubs([...keep, { id, name, categories }], `${name} created. Add its categories and milestones.`)) {
+      setSubDialog(null);
+      setActiveSub(id);
+    }
   };
-  const deleteSub = async (x: ApiSubSchedule) => {
-    if (!(await confirm({ title: `Delete ${x.name}?`, message: "Only this sub-schedule goes. Its tasks stay on the master schedule, and its saved revisions stay in Schedule files.", confirmLabel: "Delete", danger: true }))) return;
-    const saved = await saveSubs(subs.filter((s2) => s2.id !== x.id), `${x.name} deleted.`);
-    if (saved) { setActiveSub(""); setSubDialog(null); }
+  const deleteSub = async (id: string) => {
+    const x = subs.find((s2) => s2.id === id);
+    if (!x) return;
+    if (!(await confirm({ title: `Delete ${x.name}?`, message: `Its ${x.milestones?.length || 0} milestone${(x.milestones?.length || 0) === 1 ? "" : "s"}, categories and draft are deleted. The master schedule is not touched, and the revision PDFs stay in Schedule files.`, confirmLabel: "Delete schedule", danger: true }))) return;
+    if (await saveSubs(subs.filter((s2) => s2.id !== id).map((s2) => ({ id: s2.id, name: s2.name })), `${x.name} deleted.`)) { setActiveSub(""); setSubDialog(null); }
+  };
+  const openSchedule = async (id: string) => {
+    if (id === activeSub) return;
+    if (unsaved && !(await confirm({ title: "Leave without saving?", message: `Your changes to ${scheduleName} have not been saved.`, confirmLabel: "Discard and switch", danger: true }))) return;
+    setActiveSub(id);
   };
 
   // ── CR 244 - every revision is filed as a PDF in its schedule's folder ──
@@ -352,21 +402,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     filesRef.current?.reload();
     return name;
   };
-  const saveSubRevision = async () => {
-    if (!sub) return;
-    if (dirty) { toast("Save the master schedule first, so this schedule is filed from saved tasks.", "error"); return; }
-    setBusy("pdf");
-    try {
-      const existing = (await fetchDocuments(project.id, SCHEDULE_SECTION)).filter((d) => (d.folder || "").split("/")[0] === sub.name).length;
-      const name = await fileRevision(sub.name, existing + 1, rows.filter(inScope));
-      toast(`Saved to Schedule files › ${sub.name} as "${name}".`, "success");
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not file the schedule.", "error"); }
-    finally { setBusy(""); }
-  };
-
   // ── CR 237 - a schedule is created on purpose, and can be cleared in one go ──
   const [creating, setCreating] = useState(false);
-  const started = rows.length > 0 || creating || !!loadedFrom;
+  const started = rows.length > 0 || catList.length > 0 || creating || !!loadedFrom;
   const startCreate = () => { setCreating(true); setPickerOpen(true); };
   const clearSchedule = async () => {
     if (!(await confirm({
@@ -415,17 +453,18 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const shown = rows
     .map((m, index) => ({ m, index }))
     .filter(({ m }) => {
-      if (!inScope(m)) return false;             // CR 243 - a sub-schedule shows only its categories
       if (view === "all") return true;
       if (view === "completed") return m.status === "completed" || phasePercent(m) >= 100;
       if (view === "late") return delayDays(m, today) > 0;
       if (view === "active") return m.status === "in_progress" || (phasePercent(m) > 0 && phasePercent(m) < 100);
       return (m.status || "not_started") === "not_started" && phasePercent(m) === 0;
     });
-  // CR 238 - grouped by category when any task has one; a flat list otherwise.
-  const hasCategories = rows.some((m) => (m.category || "").trim());
-  const groups = hasCategories ? groupByCategory(shown) : [{ category: "", items: shown }];
-  const previewProject: ApiProject = { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
+  // Grouped by category (empty categories still show, so milestones can be added to them) once the
+  // schedule has any; a flat list otherwise.
+  const hasCategories = catList.length > 0;
+  const groups = hasCategories ? groupByCategory(shown, catList, view === "all") : [{ category: "", items: shown }];
+  // The header bar is the project's: it follows the master schedule only.
+  const previewProject: ApiProject = sub ? project : { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
 
   const btn = "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary disabled:opacity-50";
@@ -451,58 +490,53 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {/* Hidden file input for the Excel import (CR 239). */}
       <input ref={xlsInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readExcel(f); e.target.value = ""; }} />
 
-      {/* CR 237 - no schedule yet: create one on purpose, instead of a half-empty editor. */}
-      {!started && (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
-          <Flag size={30} className="mx-auto text-slate-300" />
-          <p className="mt-3 font-display text-lg font-bold text-slate-900">No schedule yet</p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-            {canEdit
-              ? "Create the project schedule: pick the phases and tasks, group them by category, or import a schedule prepared in Excel."
-              : "The project manager has not created the schedule yet."}
-          </p>
-          {canEdit && (
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> Create schedule</button>
-              <button type="button" onClick={() => xlsInput.current?.click()} className={btn}><FileUp size={13} /> Import from Excel</button>
-              <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Copy from another project</button>
-              <button type="button" onClick={() => void downloadTemplate()} className={btn}><FileSpreadsheet size={13} /> Excel template</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* CR 242 / 243 - the master schedule and the schedules drawn from it, as tabs. */}
-      {started && (
+      {/* The master schedule and the separate schedules beside it, as tabs. */}
+      {(started || subs.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-1.5">
-          {[{ id: "", name: "Master schedule", categories: [] as string[] }, ...subs].map((x) => {
+          {[{ id: "", name: "Master schedule", count: project.schedule?.milestones?.length || 0 }, ...subs.map((x) => ({ id: x.id, name: x.name, count: x.milestones?.length || 0 }))].map((x) => {
             const on = activeSub === x.id;
             return (
               <span key={x.id || "master"} className={`inline-flex items-center rounded-xl ${on ? "bg-white shadow-sm ring-1 ring-primary/20" : ""}`}>
-                <button type="button" onClick={() => setActiveSub(x.id)} className={`px-3 py-1.5 text-xs font-bold ${on ? "text-slate-900" : "text-slate-500 hover:text-slate-900"}`}>
+                <button type="button" onClick={() => void openSchedule(x.id)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold ${on ? "text-slate-900" : "text-slate-500 hover:text-slate-900"}`}>
+                  <CalendarRange size={12} className={on ? "text-primary" : "text-slate-400"} />
                   {x.name}
-                  {x.id && <span className="ml-1.5 text-[10px] font-semibold text-slate-400">{rows.filter((m) => x.categories.includes((m.category || "").trim() || UNCATEGORISED)).length}</span>}
+                  <span className="text-[10px] font-semibold text-slate-400">{x.count}</span>
                 </button>
                 {x.id && on && canEdit && (
-                  <button type="button" onClick={() => setSubDialog({ id: x.id, name: x.name, categories: x.categories })} title="Rename, change categories or delete" className="mr-1 rounded p-1 text-slate-400 hover:text-primary"><Pencil size={11} /></button>
+                  <button type="button" onClick={() => setSubDialog({ id: x.id, name: x.name, copyCats: false })} title="Rename or delete this schedule" className="mr-1 rounded p-1 text-slate-400 hover:text-primary"><Pencil size={11} /></button>
                 )}
               </span>
             );
           })}
           {canEdit && (
-            <button type="button" onClick={() => setSubDialog({ name: "", categories: [] })} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-500 hover:border-primary hover:text-primary">
-              <Plus size={12} /> New schedule from the master
+            <button type="button" onClick={() => setSubDialog({ name: "", copyCats: false })} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-500 hover:border-primary hover:text-primary">
+              <Plus size={12} /> New schedule
             </button>
           )}
-          {sub && (
-            <span className="ml-auto flex items-center gap-2 pr-1 text-[11px] text-slate-500">
-              Categories: <b className="text-slate-700">{sub.categories.join(", ")}</b>
-              {canEdit && (
-                <button type="button" onClick={() => void saveSubRevision()} disabled={busy === "pdf"} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-primary disabled:opacity-50">
-                  {busy === "pdf" ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save revision
-                </button>
-              )}
-            </span>
+          {sub && <span className="ml-auto pr-2 text-[11px] text-slate-400">Separate from the master: its own milestones, revisions and files.</span>}
+        </div>
+      )}
+
+      {/* CR 237 - no schedule yet: create one on purpose, instead of a half-empty editor. */}
+      {!started && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
+          <Flag size={30} className="mx-auto text-slate-300" />
+          <p className="mt-3 font-display text-lg font-bold text-slate-900">{sub ? `${sub.name} is empty` : "No schedule yet"}</p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+            {!canEdit
+              ? "The project manager has not created this schedule yet."
+              : sub
+                ? "Build it from scratch: add its categories, then the milestones in each, or import it from Excel. It is separate from the master schedule."
+                : "Create the project schedule: pick the phases and tasks, group them by category, or import a schedule prepared in Excel."}
+          </p>
+          {canEdit && (
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> {sub ? "Start this schedule" : "Create schedule"}</button>
+              <button type="button" onClick={() => void addCategory()} className={btn}><FolderPlus size={13} /> Add a category</button>
+              <button type="button" onClick={() => xlsInput.current?.click()} className={btn}><FileUp size={13} /> Import from Excel</button>
+              <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Copy from another project</button>
+              <button type="button" onClick={() => void downloadTemplate()} className={btn}><FileSpreadsheet size={13} /> Excel template</button>
+            </div>
           )}
         </div>
       )}
@@ -538,6 +572,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                 </button>
                 <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Import from project</button>
                 {rows.length > 0 && <button type="button" onClick={() => void clearSchedule()} className={btn} title="Take every task off this schedule"><Eraser size={13} /> Clear</button>}
+                <button type="button" onClick={() => void addCategory()} className={btn} title="A new category (section) on this schedule"><FolderPlus size={13} /> Add category</button>
                 <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700"><Plus size={13} /> Add milestone</button>
               </>
             )}
@@ -553,6 +588,13 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </button>
               {pickerOpen && (
                 <div className="px-3 pb-3">
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Add to category
+                    <select value={addTo} onChange={(e) => setAddTo(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold normal-case tracking-normal text-slate-700 focus:border-primary focus:outline-none">
+                      <option value="">Each item's usual category</option>
+                      {catList.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
                   <label className="relative block">
                     <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input value={pickQuery} onChange={(e) => setPickQuery(e.target.value)} placeholder="Search milestone..." className="w-full rounded-lg border border-slate-200 py-1.5 pl-7 pr-2 text-xs focus:border-primary focus:outline-none" />
@@ -580,7 +622,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
           {/* Table */}
           <div className="min-w-0 flex-1">
-            {rows.length === 0 ? (
+            {rows.length === 0 && catList.length === 0 ? (
               <div className="px-6 py-12 text-center">
                 <Flag size={28} className="mx-auto text-slate-300" />
                 <p className="mt-2 text-sm font-bold text-slate-700">No phases yet</p>
@@ -623,14 +665,32 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                         {g.category && (
                           <tr className="border-t border-slate-200 bg-slate-100/80">
                             <td colSpan={12} className="px-2 py-1.5">
-                              <button type="button" onClick={() => toggleCategory(g.category)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-left">
-                                {folded ? <ChevronRight size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
-                                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-700">{g.category}</span>
-                                <span className="text-[10px] font-bold text-slate-400">{g.items.length} task{g.items.length === 1 ? "" : "s"}</span>
-                                {gFrom && gTo && <span className="text-[10px] text-slate-500">{fmtDay(gFrom)} to {fmtDay(gTo)}</span>}
-                                <span className="text-[10px] font-bold text-slate-500">{gPct}% complete</span>
-                                {gLate > 0 && <span className="text-[10px] font-bold text-red-600">{gLate} late</span>}
-                              </button>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button type="button" onClick={() => toggleCategory(g.category)} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-left">
+                                  {folded ? <ChevronRight size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                                  <span className="text-[11px] font-bold uppercase tracking-widest text-slate-700">{g.category}</span>
+                                  <span className="text-[10px] font-bold text-slate-400">{g.items.length} milestone{g.items.length === 1 ? "" : "s"}</span>
+                                  {gFrom && gTo && <span className="text-[10px] text-slate-500">{fmtDay(gFrom)} to {fmtDay(gTo)}</span>}
+                                  {g.items.length > 0 && <span className="text-[10px] font-bold text-slate-500">{gPct}% complete</span>}
+                                  {gLate > 0 && <span className="text-[10px] font-bold text-red-600">{gLate} late</span>}
+                                </button>
+                                {canEdit && (
+                                  <span className="ml-2 flex shrink-0 items-center gap-0.5">
+                                    <button type="button" onClick={() => addInCategory(g.category)} title={`Add a milestone to ${g.category}`} className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[10px] font-bold text-blue-600 shadow-sm ring-1 ring-slate-200 hover:bg-blue-50"><Plus size={11} /> Milestone</button>
+                                    <button type="button" onClick={() => void renameCategory(g.category)} title="Rename this category" className="rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><Pencil size={12} /></button>
+                                    {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, -1)} disabled={catList.indexOf(g.category) <= 0} title="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>}
+                                    {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, 1)} disabled={catList.indexOf(g.category) >= catList.length - 1} title="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>}
+                                    <button type="button" onClick={() => void deleteCategory(g.category)} title="Delete this category" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {g.category && !folded && g.items.length === 0 && (
+                          <tr className="border-t border-slate-100">
+                            <td colSpan={12} className="px-10 py-3 text-[11px] italic text-slate-400">
+                              No milestones in {g.category} yet.{canEdit && <> <button type="button" onClick={() => addInCategory(g.category)} className="font-bold not-italic text-blue-600 hover:underline">Add one</button>, or tick items on the left with "Add to category" set to {g.category}.</>}
                             </td>
                           </tr>
                         )}
@@ -796,61 +856,53 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>
       )}
 
-      {editing && <PhaseEditor initial={editing} isNew={!rows.some((r) => r.id === editing.id)} usedKeys={usedKeys} canEdit={canEdit} onSave={applyEditor} onClose={() => setEditing(null)} />}
+      {editing && <PhaseEditor initial={editing} isNew={!rows.some((r) => r.id === editing.id)} usedKeys={usedKeys} canEdit={canEdit} categories={catList} onSave={applyEditor} onClose={() => setEditing(null)} />}
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
 
       {previewOpen && (
         <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }}
-          actions={!canEdit ? undefined : sub
-            ? (dirty ? undefined : [{ label: "Save revision", icon: <Save size={12} />, onClick: async () => { await saveSubRevision(); } }])
-            : (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
-          hint={canEdit && !sub && (dirty || !!loadedFrom || sinceRevision > 0) ? "This is how the revision will print. Save it from here once it looks right." : undefined} />
+          actions={canEdit && (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
+          hint={canEdit && (dirty || !!loadedFrom || sinceRevision > 0) ? "This is how the revision will print. Save it from here once it looks right." : undefined} />
       )}
 
       {/* CR 241 / 244 - the schedule files, by schedule, searchable. */}
       <ScheduleFiles ref={filesRef} projectId={project.id} projectName={project.name} canEdit={canEdit} highlight={filedTo} />
 
-      {/* CR 243 - make or change a schedule drawn from the master. */}
+      {/* A new schedule beside the master, made from scratch (or rename / delete one). */}
       {subDialog && createPortal(
         <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setSubDialog(null)}>
           <div className="my-20 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
-              <p className="text-sm font-bold text-slate-900">{subDialog.id ? `Edit ${subDialog.name}` : "New schedule from the master"}</p>
+              <p className="text-sm font-bold text-slate-900">{subDialog.id ? `Edit ${subs.find((x) => x.id === subDialog.id)?.name || "schedule"}` : "New schedule"}</p>
               <button onClick={() => setSubDialog(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
             </div>
             <div className="space-y-4 p-5">
               <label className="block space-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Name</span>
-                <input value={subDialog.name} onChange={(e) => setSubDialog({ ...subDialog, name: e.target.value })} placeholder="e.g. Design schedule" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                <input autoFocus value={subDialog.name} onChange={(e) => setSubDialog({ ...subDialog, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") void submitSubDialog(); }} placeholder="e.g. Design schedule" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
               </label>
               {!subDialog.id && (
-                <div className="flex flex-wrap gap-1.5">
-                  {["Bidding schedule", "Design schedule", "Construction schedule", "Procurement schedule"].filter((n) => !subs.some((x) => x.name === n)).map((n) => (
-                    <button key={n} type="button" onClick={() => setSubDialog({ ...subDialog, name: n, categories: subDialog.categories.length ? subDialog.categories : guessCategories(n) })} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-primary/10 hover:text-primary">{n}</button>
-                  ))}
-                </div>
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Bidding schedule", "Design schedule", "Construction schedule", "Procurement schedule"].filter((n) => !subs.some((x) => x.name === n)).map((n) => (
+                      <button key={n} type="button" onClick={() => setSubDialog({ ...subDialog, name: n })} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-primary/10 hover:text-primary">{n}</button>
+                    ))}
+                  </div>
+                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                    It starts empty and is separate from the master schedule: its own categories, milestones, revisions and files. The master stays the default.
+                  </p>
+                  {categoryList(project.schedule?.categories, project.schedule?.milestones || []).length > 0 && (
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                      <input type="checkbox" checked={subDialog.copyCats} onChange={(e) => setSubDialog({ ...subDialog, copyCats: e.target.checked })} className="accent-emerald-600" />
+                      Start with the master's category names (no milestones)
+                    </label>
+                  )}
+                </>
               )}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Categories it takes from the master</span>
-                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  {[...allCategories, ...(rows.some((m) => !(m.category || "").trim()) ? [UNCATEGORISED] : [])].map((c) => {
-                    const count = rows.filter((m) => ((m.category || "").trim() || UNCATEGORISED) === c).length;
-                    const on = subDialog.categories.includes(c);
-                    return (
-                      <label key={c} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs ${on ? "bg-primary/5 font-semibold text-slate-900" : "text-slate-600 hover:bg-slate-50"}`}>
-                        <input type="checkbox" checked={on} onChange={() => setSubDialog({ ...subDialog, categories: on ? subDialog.categories.filter((x) => x !== c) : [...subDialog.categories, c] })} className="accent-emerald-600" />
-                        <span className="flex-1">{c}</span>
-                        <span className="text-[10px] text-slate-400">{count}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-slate-400">It holds no tasks of its own: it always shows the master schedule's latest dates for these categories.</p>
-              </div>
               <div className="flex items-center justify-between gap-2">
-                {subDialog.id ? <button type="button" onClick={() => void deleteSub(subs.find((x) => x.id === subDialog.id)!)} className="text-[11px] font-bold text-rose-600 hover:underline">Delete this schedule</button> : <span />}
+                {subDialog.id ? <button type="button" onClick={() => void deleteSub(subDialog.id!)} className="text-[11px] font-bold text-rose-600 hover:underline">Delete this schedule</button> : <span />}
                 <div className="flex gap-2">
                   <button onClick={() => setSubDialog(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
                   <button onClick={() => void submitSubDialog()} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">{subDialog.id ? "Save" : "Create schedule"}</button>

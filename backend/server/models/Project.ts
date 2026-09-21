@@ -105,13 +105,21 @@ export interface IProject extends Document {
   schedule: {
     milestones: MilestoneRecord[];
     // Timeline work saved as a draft (not live) until the PM saves it.
-    draft: { milestones: MilestoneRecord[]; savedAt: string; savedBy: string } | null;
+    draft: { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
     // CR-P (126) — approved extensions of time. The latest endDate is the project's deadline now;
     // the project's own endDate stays the original one.
     extensions: Array<{ id: string; endDate: string; reason: string; addedAt: string; addedBy: string }>;
-    // CR 243 - sub-schedules drawn from the master by category (a Design schedule, a Construction
-    // schedule...). They hold no tasks of their own, so they always show the master's latest.
-    subs: Array<{ id: string; name: string; categories: string[] }>;
+    /** The master schedule's categories, in order (like BOQ sections). Empty ones are kept. */
+    categories: string[];
+    // Schedules beside the master (a Design schedule, a Construction schedule...). Since the client's
+    // 2026-09-21 review each is separate: its own tasks, categories, draft and revisions, made from
+    // scratch. `own` marks the ones already moved off the old "view of the master" model.
+    subs: Array<{
+      id: string; name: string; categories: string[];
+      milestones: MilestoneRecord[];
+      draft: { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
+      own: boolean;
+    }>;
   };
   assignedEmployees: string[];
   subcontractors: Array<{
@@ -285,7 +293,7 @@ const ProjectSchema = new Schema<IProject>(
     schedule: {
       milestones: { type: [MilestoneSchema], default: [] },
       draft: {
-        type: new Schema({ milestones: { type: [MilestoneSchema], default: [] }, savedAt: { type: String, default: "" }, savedBy: { type: String, default: "" } }, { _id: false }),
+        type: new Schema({ milestones: { type: [MilestoneSchema], default: [] }, categories: { type: [String], default: [] }, savedAt: { type: String, default: "" }, savedBy: { type: String, default: "" } }, { _id: false }),
         default: null,
       },
       extensions: {
@@ -299,8 +307,17 @@ const ProjectSchema = new Schema<IProject>(
         }],
         default: [],
       },
+      categories: { type: [String], default: [] },
       subs: {
-        type: [{ id: { type: String, default: "" }, name: { type: String, default: "" }, categories: { type: [String], default: [] }, _id: false }],
+        type: [{
+          id: { type: String, default: "" },
+          name: { type: String, default: "" },
+          categories: { type: [String], default: [] },
+          milestones: { type: [MilestoneSchema], default: [] },
+          draft: { type: Schema.Types.Mixed, default: null },
+          own: { type: Boolean, default: false },
+          _id: false,
+        }],
         default: [],
       },
     },

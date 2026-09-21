@@ -187,6 +187,14 @@ async function runBootstrapTasks() {
   } catch (err) {
     console.error("Timeline category backfill failed:", err);
   }
+  // 2026-09-21: each schedule beside the master keeps its own tasks. Idempotent.
+  try {
+    const { separateSubSchedules } = await import("./lib/timelineMigration");
+    const n = await separateSubSchedules();
+    if (n) console.log(`🔁 Gave the extra schedules of ${n} project(s) their own tasks.`);
+  } catch (err) {
+    console.error("Schedule separation failed:", err);
+  }
   // Backfill: ensure every Employee-directory entry has an employee login account, so all
   // employees appear in admin User Management with their original empIds. Idempotent.
   try {

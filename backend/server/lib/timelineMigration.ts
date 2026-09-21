@@ -82,3 +82,32 @@ export async function categoriseMilestones(): Promise<number> {
   }
   return changed;
 }
+
+/**
+ * 2026-09-21 - schedules beside the master stopped being views of it: each holds its own tasks.
+ * A schedule made the old way gets a copy of the master tasks it was showing (its categories), so
+ * nothing it displayed disappears; from then on the two are edited separately. Idempotent (`own`).
+ */
+export async function separateSubSchedules(): Promise<number> {
+  const projects = await Project.find({ "schedule.subs.0": { $exists: true } });
+  let changed = 0;
+  for (const p of projects) {
+    const plain = (p.toObject() as unknown as { schedule?: { milestones?: Array<Record<string, unknown>>; subs?: Array<Record<string, unknown>> } }).schedule || {};
+    const subs = plain.subs || [];
+    if (subs.every((x) => x.own)) continue;
+    const master = plain.milestones || [];
+    const next = subs.map((x) => {
+      if (x.own) return x;
+      const cats = ((x.categories as string[]) || []).map((c) => c.trim());
+      const mine = master
+        .filter((m) => cats.includes(String(m.category || "").trim() || "Other"))
+        .map((m) => ({ ...m, id: `${String(m.id)}-${String(x.id)}`.slice(0, 40) }));
+      return { ...x, milestones: mine, draft: null, own: true };
+    });
+    p.schedule = { ...plain, subs: next } as unknown as typeof p.schedule;
+    p.markModified("schedule");
+    await p.save();
+    changed++;
+  }
+  return changed;
+}

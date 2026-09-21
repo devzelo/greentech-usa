@@ -51,6 +51,45 @@ function cleanMilestones(input: unknown): MilestoneRecord[] {
   }));
 }
 
+function cleanCategories(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  for (const c of input.slice(0, 100)) {
+    const v = str(c, 80).trim();
+    if (v && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
+  }
+  return out;
+}
+
+type Draft = { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
+type Plain = {
+  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[];
+  subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean }>;
+};
+// 2026-09-21 - every call names its schedule (?sched=<id>); none means the master. The master's
+// save also moves the project's progress; a separate schedule never does.
+const schedId = (req: AuthedRequest) => str(req.query.sched, 40).trim();
+function scheduleOf(project: InstanceType<typeof Project>, id: string) {
+  const s = ((project.toObject() as { schedule?: Plain }).schedule || {}) as Plain;
+  const subs = s.subs || [];
+  const at = id ? subs.findIndex((x) => x.id === id) : -1;
+  if (id && at < 0) return null;
+  const cur = id ? subs[at] : { milestones: s.milestones || [], draft: s.draft || null, categories: s.categories || [] };
+  return {
+    milestones: (cur.milestones || []) as MilestoneRecord[],
+    draft: (cur.draft || null) as Draft,
+    categories: cur.categories || [],
+    apply(patch: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[] }) {
+      const next: Plain = id
+        ? { ...s, subs: subs.map((x, k) => (k === at ? { ...x, ...patch } : x)) }
+        : { ...s, ...patch };
+      project.schedule = next as unknown as typeof project.schedule;
+      project.markModified("schedule");
+    },
+  };
+}
+const noSchedule = { error: "That schedule no longer exists." };
+
 /** Overall % complete, weighted by each phase's planned length (a zero-length milestone counts as one day). */
 function overallProgress(ms: MilestoneRecord[]): number {
   if (!ms.length) return 0;
@@ -66,7 +105,8 @@ function overallProgress(ms: MilestoneRecord[]): number {
 
 router.get("/revisions", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    res.json(await ScheduleRevision.find({ projectId: req.params.id }).sort({ version: -1 }).limit(100).lean());
+    const id = schedId(req);
+    res.json(await ScheduleRevision.find({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ version: -1 }).limit(100).lean());
   } catch (err) { next(err); }
 });
 
@@ -74,17 +114,22 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
+    const id = schedId(req);
+    const target = scheduleOf(project, id);
+    if (!target) return res.status(404).json(noSchedule);
     const milestones = cleanMilestones(req.body?.milestones);
+    const categories = req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories;
     const progress = overallProgress(milestones);
-    project.schedule = { ...(project.schedule || { extensions: [] }), milestones, draft: null } as typeof project.schedule;
-    project.markModified("schedule");
-    if (milestones.length) project.progress = progress;
+    target.apply({ milestones, categories, draft: null });
+    if (!id && milestones.length) project.progress = progress;
     await project.save();
-    const last = await ScheduleRevision.findOne({ projectId: req.params.id }).sort({ version: -1 }).select("version").lean();
+    const last = await ScheduleRevision.findOne({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ version: -1 }).select("version").lean();
     const rev = await ScheduleRevision.create({
       projectId: req.params.id,
+      scheduleId: id,
       version: (last?.version || 0) + 1,
       milestones,
+      categories,
       progress,
       note: str(req.body?.note, 500).trim(),
       savedBy: req.user!.name || "",
@@ -99,34 +144,46 @@ router.put("/milestones/:mid", async (req: AuthedRequest, res: Response, next: N
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
+    const id = schedId(req);
+    const target = scheduleOf(project, id);
+    if (!target) return res.status(404).json(noSchedule);
     const [row] = cleanMilestones([{ ...(req.body?.milestone || {}), id: req.params.mid }]);
     if (!row) return res.status(400).json({ error: "Nothing to save." });
-    const current = (project.schedule?.milestones || []) as MilestoneRecord[];
+    const current = target.milestones;
     const at = current.findIndex((m) => m.id === row.id);
     // Keep the row's first planned dates as its baseline, as a full save does.
     const prev = at >= 0 ? current[at] : null;
     const saved = { ...row, baselineStart: prev?.baselineStart || row.baselineStart, baselineEnd: prev?.baselineEnd || row.baselineEnd };
     const milestones = at >= 0 ? current.map((m, i) => (i === at ? saved : m)) : [...current, saved];
-    project.schedule = { ...(project.schedule || { extensions: [] }), milestones } as typeof project.schedule;
-    project.markModified("schedule");
-    if (milestones.length) project.progress = overallProgress(milestones);
+    // A task saved into a category the schedule does not list yet adds that category.
+    const cat = (saved.category || "").trim();
+    const categories = cat && !target.categories.some((c) => c.toLowerCase() === cat.toLowerCase()) ? [...target.categories, cat] : target.categories;
+    target.apply({ milestones, categories });
+    if (!id && milestones.length) project.progress = overallProgress(milestones);
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress, milestone: saved });
   } catch (err) { next(err); }
 });
 
-// CR 243 - the list of sub-schedules (name + the categories each draws from the master).
+// The schedules beside the master: this call names, adds, renames and removes them. Each one's
+// tasks, categories and draft are kept as they are; a new one starts empty (from scratch), or with
+// the category names it was given.
 router.put("/subs", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
+    const s = ((project.toObject() as { schedule?: Plain }).schedule || {}) as Plain;
+    const existing = s.subs || [];
     const input = Array.isArray(req.body?.subs) ? req.body.subs : [];
-    const subs = input.slice(0, 30).map((raw: Record<string, unknown>) => ({
-      id: str(raw?.id, 40) || `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-      name: str(raw?.name, 80).trim() || "Schedule",
-      categories: Array.isArray(raw?.categories) ? (raw.categories as unknown[]).map((c) => str(c, 80).trim()).filter(Boolean).slice(0, 40) : [],
-    }));
-    project.schedule = { ...(project.schedule || { milestones: [], extensions: [] }), subs } as typeof project.schedule;
+    const subs = input.slice(0, 30).map((raw: Record<string, unknown>) => {
+      const id = str(raw?.id, 40) || `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      const name = str(raw?.name, 80).trim() || "Schedule";
+      const had = existing.find((x) => x.id === id);
+      return had
+        ? { ...had, name }
+        : { id, name, categories: cleanCategories(raw?.categories), milestones: [], draft: null, own: true };
+    });
+    project.schedule = { ...s, subs } as unknown as typeof project.schedule;
     project.markModified("schedule");
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress });
@@ -137,9 +194,15 @@ router.put("/draft", async (req: AuthedRequest, res: Response, next: NextFunctio
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
-    const draft = { milestones: cleanMilestones(req.body?.milestones), savedAt: new Date().toISOString(), savedBy: req.user!.name || "" };
-    project.schedule = { ...(project.schedule || { milestones: [], extensions: [] }), draft } as typeof project.schedule;
-    project.markModified("schedule");
+    const target = scheduleOf(project, schedId(req));
+    if (!target) return res.status(404).json(noSchedule);
+    const draft = {
+      milestones: cleanMilestones(req.body?.milestones),
+      categories: req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories,
+      savedAt: new Date().toISOString(),
+      savedBy: req.user!.name || "",
+    };
+    target.apply({ draft });
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress });
   } catch (err) { next(err); }
@@ -149,8 +212,9 @@ router.delete("/draft", async (req: AuthedRequest, res: Response, next: NextFunc
   try {
     const project = await Project.findOne({ projectId: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
-    project.schedule = { ...(project.schedule || { milestones: [], extensions: [] }), draft: null } as typeof project.schedule;
-    project.markModified("schedule");
+    const target = scheduleOf(project, schedId(req));
+    if (!target) return res.status(404).json(noSchedule);
+    target.apply({ draft: null });
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress });
   } catch (err) { next(err); }
