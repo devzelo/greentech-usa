@@ -21,34 +21,78 @@ const humanFileSize = (bytes: number) => {
 };
 
 // ── Exchange rates ───────────────────────────────────────────────────────────
-// open.er-api.com: free, no key, ~160 currencies, updated daily. Cached per base for 6 hours.
-type Rates = { base: string; date: string; rates: Record<string, number>; source: string };
+// Two free, keyless sources, merged: open.er-api.com (~165 currencies, the main one) and the
+// fawazahmed0 currency-api on jsDelivr (~340 codes: every ISO currency plus crypto, metals and a few
+// legacy ones). Any code the first lacks comes from the second, and either one alone is enough if
+// the other is down. The Iranian Toman (IRT, not an ISO code) is added as 1/10 of the Rial, because
+// prices in Iran are quoted in Toman. Cached per base for 6 hours.
+type Rates = { base: string; date: string; rates: Record<string, number>; names: Record<string, string>; source: string };
 const rateCache = new Map<string, { at: number; data: Rates }>();
 const SIX_HOURS = 6 * 60 * 60 * 1000;
+const EXTRA_NAMES: Record<string, string> = { IRT: "Iranian Toman (10 Rial)" };
+
+async function getJson<T>(url: string): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json() as T;
+  } finally { clearTimeout(timer); }
+}
+
+async function fromErApi(base: string) {
+  const j = await getJson<{ result?: string; base_code?: string; time_last_update_utc?: string; rates?: Record<string, number> }>(`https://open.er-api.com/v6/latest/${base}`);
+  if (j.result !== "success" || !j.rates) throw new Error("open.er-api returned no rates");
+  return { date: j.time_last_update_utc ? new Date(j.time_last_update_utc).toISOString() : new Date().toISOString(), rates: j.rates };
+}
+
+async function fromCurrencyApi(base: string) {
+  const b = base.toLowerCase();
+  const urls = [
+    `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${b}.min.json`,
+    `https://latest.currency-api.pages.dev/v1/currencies/${b}.min.json`,
+  ];
+  let last: unknown;
+  for (const u of urls) {
+    try {
+      const j = await getJson<Record<string, unknown>>(u);
+      const raw = j[b] as Record<string, number> | undefined;
+      if (!raw) throw new Error("currency-api returned no rates");
+      const rates: Record<string, number> = {};
+      for (const [k, v] of Object.entries(raw)) if (/^[a-z]{3}$/.test(k) && typeof v === "number" && v > 0) rates[k.toUpperCase()] = v;
+      const names = await getJson<Record<string, string>>(u.replace(/currencies\/[a-z]+\.min\.json$/, "currencies.min.json")).catch(() => ({} as Record<string, string>));
+      const upperNames: Record<string, string> = {};
+      for (const [k, v] of Object.entries(names)) if (/^[a-z]{3}$/.test(k) && v) upperNames[k.toUpperCase()] = v;
+      return { date: new Date(`${String(j.date || "").slice(0, 10) || new Date().toISOString().slice(0, 10)}T00:00:00Z`).toISOString(), rates, names: upperNames };
+    } catch (e) { last = e; }
+  }
+  throw last instanceof Error ? last : new Error("currency-api unavailable");
+}
 
 async function loadRates(base: string): Promise<Rates> {
   const hit = rateCache.get(base);
   if (hit && Date.now() - hit.at < SIX_HOURS) return hit.data;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
-  try {
-    const r = await fetch(`https://open.er-api.com/v6/latest/${base}`, { signal: ctrl.signal });
-    const j = await r.json() as { result?: string; base_code?: string; time_last_update_utc?: string; rates?: Record<string, number> };
-    if (!r.ok || j.result !== "success" || !j.rates) throw new Error("Exchange rates are not available right now.");
-    const data: Rates = {
-      base: j.base_code || base,
-      date: j.time_last_update_utc ? new Date(j.time_last_update_utc).toISOString() : new Date().toISOString(),
-      rates: j.rates,
-      source: "ExchangeRate-API (open.er-api.com)",
-    };
-    rateCache.set(base, { at: Date.now(), data });
-    return data;
-  } catch (err) {
+  const [a, b] = await Promise.allSettled([fromErApi(base), fromCurrencyApi(base)]);
+  if (a.status === "rejected" && b.status === "rejected") {
     if (hit) return hit.data; // stale beats nothing
-    throw err;
-  } finally {
-    clearTimeout(timer);
+    throw new Error("Exchange rates are not available right now.");
   }
+  const main = a.status === "fulfilled" ? a.value : null;
+  const more = b.status === "fulfilled" ? b.value : null;
+  const rates: Record<string, number> = { ...(more?.rates || {}), ...(main?.rates || {}) };
+  if (rates.IRR) rates.IRT = rates.IRR / 10;
+  if (base === "IRR") rates.IRT = 0.1;
+  const sources = [main && "ExchangeRate-API (open.er-api.com)", more && (main ? "currency-api (extra currencies)" : "currency-api")].filter(Boolean).join(" + ");
+  const data: Rates = {
+    base,
+    date: (main || more)!.date,
+    rates,
+    names: { ...(more?.names || {}), ...EXTRA_NAMES },
+    source: sources,
+  };
+  rateCache.set(base, { at: Date.now(), data });
+  return data;
 }
 
 router.get("/rates", async (req: AuthedRequest, res: Response, next: NextFunction) => {

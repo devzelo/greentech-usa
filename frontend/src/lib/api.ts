@@ -1363,7 +1363,7 @@ export async function createProjectCategory(name: string): Promise<ApiProjectCat
 export async function deleteProjectCategory(id: string): Promise<void> { await request(`/project-categories/${id}`, { method: "DELETE" }); }
 
 // ── Quick Toolbox — exchange rates and the user's saved tool files ──────────
-export interface ApiRates { base: string; date: string; rates: Record<string, number>; source: string }
+export interface ApiRates { base: string; date: string; rates: Record<string, number>; source: string; /** Names the browser may not know (IRT, crypto, metals). */ names?: Record<string, string> }
 export async function fetchExchangeRates(base = "USD"): Promise<ApiRates> { return request(`/toolbox/rates?base=${encodeURIComponent(base)}`); }
 export async function fetchToolboxFiles(): Promise<UserFile[]> { return request(`/toolbox/files`); }
 export async function saveToolboxFile(file: File): Promise<UserFile> {
