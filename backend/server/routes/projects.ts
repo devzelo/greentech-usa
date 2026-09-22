@@ -367,7 +367,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 const IDENTITY_FIELDS = new Set([
   "name", "status", "category", "categories", "contractType", "cpars", "contractNo", "contractYear", "contractDate", "contractFile", "location", "siteAddress", "description",
   "owner", "ownerId", "image", "published", "progress",
-  "startDate", "endDate", "fiscal", "compliance", "value", "disciplines",
+  "startDate", "endDate", "fiscal", "compliance", "value", "disciplines", "scopeOfWork",
   "projectNature", "clientInfo", "timeline",
   "schedule",   // CR-P (121)-(126) — milestones & extensions; assigned employees are let through below
   // The JV partner record carries the partner's stamps & signatures, which end up on signed

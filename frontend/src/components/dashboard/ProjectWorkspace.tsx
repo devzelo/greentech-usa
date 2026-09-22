@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Globe, Clock, ExternalLink, MapPin,
@@ -406,6 +406,8 @@ export default function ProjectWorkspace() {
   const [aboutSaving, setAboutSaving] = useState(false);
   const [aboutCats, setAboutCats] = useState<string[]>([]);
   const [aboutDesc, setAboutDesc] = useState("");
+  // CR 277 - the key scope of work, edited as one bullet per line.
+  const [aboutScope, setAboutScope] = useState("");
 
   // Client info (editable form on the Client Info tab)
   type ClientInfo = { name: string; reference: string; contactName: string; email: string; phone: string; country: string; address: string; notes: string; companyId: string };
@@ -3074,6 +3076,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // CR 276 - folds away like the client section above it.
+  // CR 277 - one labelled fact in the About / Client grids.
+  const aboutField = (label: string, value: ReactNode) => (
+    <div className="flex gap-3">
+      <span className="w-28 shrink-0 pt-px text-xs font-semibold text-slate-400">{label}</span>
+      <span className="min-w-0 flex-1 text-sm text-slate-800">{value || <span className="text-slate-300">-</span>}</span>
+    </div>
+  );
+
   const aboutCard = project && (
     <SectionCard
       title="About This Project"
@@ -3082,7 +3092,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       actions={<>
         {!canEditIdentity ? null : !aboutEditing ? (
           <button
-            onClick={() => { setAboutCats(projectCategories(project)); setAboutDesc(project.description || ""); setAboutEditing(true); }}
+            onClick={() => { setAboutCats(projectCategories(project)); setAboutDesc(project.description || ""); setAboutScope((project.scopeOfWork || []).join("\n")); setAboutEditing(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors shrink-0"
           >
             <Edit2 size={12} /> Edit
@@ -3102,7 +3112,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 if (!(await brandedConfirm({ title: "Save project info?", message: "Are you sure you want to save these changes? The box locks again after saving.", confirmLabel: "Save", danger: false }))) return;
                 setAboutSaving(true);
                 try {
-                  const u = await updateProject(id, { categories: aboutCats, category: aboutCats[0] || "", description: aboutDesc.trim() });
+                  const scopeOfWork = aboutScope.split("\n").map((l) => l.replace(/^[-*\u2022]\s*/, '').trim()).filter(Boolean).slice(0, 60);
+                  const u = await updateProject(id, { categories: aboutCats, category: aboutCats[0] || "", description: aboutDesc.trim(), scopeOfWork });
                   setProject(u); setAboutEditing(false);
                   toast("Project info saved.", "success");
                 } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); }
@@ -3125,35 +3136,72 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             <CategoryMultiSelect value={aboutCats} onChange={setAboutCats} />
           </div>
           <div className="space-y-1.5">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Short description</p>
             <textarea
               value={aboutDesc}
               onChange={(e) => setAboutDesc(e.target.value)}
-              rows={5}
-              placeholder="What is this project about? Scope, the services we provide, key facts."
+              rows={4}
+              placeholder="What is this project about, in a sentence or two."
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y"
             />
           </div>
+          {/* CR 277 - the key scope of work, one line per bullet. */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Key scope of work</p>
+            <textarea
+              value={aboutScope}
+              onChange={(e) => setAboutScope(e.target.value)}
+              rows={6}
+              placeholder={"One line per point, e.g.\nDismantle and remove existing chillers\nInstall two new YORK YVAA0213 chillers"}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 leading-relaxed outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y"
+            />
+            <p className="text-[10px] text-slate-400">Each line becomes a bullet.</p>
+          </div>
         </div>
       ) : (
-        <>
-          <div className="flex flex-wrap gap-1.5">
-            {projectCategories(project).map((c) => (
-              <span key={c} className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border border-primary/30 bg-primary/5 text-primary">{c}</span>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 lg:grid-cols-3 lg:divide-x lg:divide-slate-100">
+          {/* What it is - from Project Identity. */}
+          <div className="space-y-3">
+            {aboutField("Project Title", project.name)}
+            {aboutField("Project Location", project.siteAddress?.full || project.location)}
+            {aboutField("Project Type", (
+              <span className="flex flex-wrap gap-1.5">
+                {projectCategories(project).map((c) => (
+                  <span key={c} className="inline-flex items-center rounded-lg border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-bold text-primary">{c}</span>
+                ))}
+                {projectCategories(project).length === 0 && <span className="text-slate-300">-</span>}
+              </span>
             ))}
-            {projectCategories(project).length === 0 && (
-              <span className="text-[11px] text-slate-400 italic">No categories yet.{canEditIdentity ? " Click Edit to choose." : ""}</span>
+            {aboutField("Contract Type", project.contractType)}
+            {aboutField("Contract No.", project.contractNo)}
+            {aboutField("Status", project.status)}
+          </div>
+
+          {/* The description. */}
+          <div className="lg:pl-8">
+            <p className="mb-1.5 text-xs font-bold text-slate-500">Short Description</p>
+            {project.description ? (
+              <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{project.description}</p>
+            ) : (
+              <p className="text-sm italic text-slate-400">
+                No description yet.{canEditIdentity ? " Click Edit to describe the scope and the services we provide." : ""}
+                {" "}An AI summary from the solicitation documents will fill this in a later phase.
+              </p>
             )}
           </div>
-          {project.description ? (
-            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{project.description}</p>
-          ) : (
-            <p className="text-sm text-slate-400 italic">
-              No description yet.{canEditIdentity ? " Click Edit to describe the scope and the services we provide." : ""}
-              {" "}An AI summary from the solicitation documents will fill this in a later phase.
-            </p>
-          )}
-        </>
+
+          {/* CR 277 - the key scope of work, as bullets. */}
+          <div className="lg:pl-8">
+            <p className="mb-1.5 text-xs font-bold text-slate-500">Key Scope of Work</p>
+            {(project.scopeOfWork || []).length ? (
+              <ul className="list-disc space-y-1 pl-4 text-sm leading-relaxed text-slate-700 marker:text-primary">
+                {(project.scopeOfWork || []).map((line, i) => <li key={`${line}-${i}`}>{line}</li>)}
+              </ul>
+            ) : (
+              <p className="text-sm italic text-slate-400">Nothing listed yet.{canEditIdentity ? " Click Edit and add one point per line." : ""}</p>
+            )}
+          </div>
+        </div>
       )}
       </div>
     </SectionCard>
@@ -3502,7 +3550,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 hint="Not in the Directory? Type the name and add it, or use Open in Directory to create it with the full details, then pick it here."
               />
             )}
-            <ClientInfoCard info={clientInfo} />
+            <ClientInfoCard info={clientInfo} notes={clientInfo.notes} />
+            {/* CR 277 - the project's own two fields; in the read view they are part of the card. */}
+            {canEditIdentity && !clientLocked && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Reference Number</label>
@@ -3527,6 +3577,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 />
               </div>
             </div>
+            )}
       </div>
     </SectionCard>
   );

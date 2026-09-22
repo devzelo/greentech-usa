@@ -181,6 +181,8 @@ export interface ApiProject {
   compliance: string;
   value: string; // contract value / project worth (free-form)
   disciplines: string[];
+  /** CR 277 - key scope of work bullets, shown in About This Project. */
+  scopeOfWork?: string[];
   startDate: string;
   endDate: string;
   projectNature: { selected: string[]; custom: string[] };

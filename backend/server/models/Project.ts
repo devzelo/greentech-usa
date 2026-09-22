@@ -55,6 +55,8 @@ export interface IProject extends Document {
   // and outside logins do not (lib/access canSeeFigures).
   figuresAccess: Record<string, boolean>;
   disciplines: string[];
+  /** CR 277 - the key scope of work, one bullet per line, shown in About This Project. */
+  scopeOfWork: string[];
   startDate: string;
   endDate: string;
   projectNature: {
@@ -245,6 +247,7 @@ const ProjectSchema = new Schema<IProject>(
     value: { type: String, default: "" },
     figuresAccess: { type: Schema.Types.Mixed, default: {} },   // financial figures access, per userId
     disciplines: [{ type: String }],
+    scopeOfWork: { type: [String], default: [] },
     startDate: { type: String, default: "" },
     endDate: { type: String, default: "" },
     projectNature: {
