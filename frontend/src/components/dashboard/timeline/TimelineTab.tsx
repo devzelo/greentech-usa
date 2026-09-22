@@ -342,7 +342,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // ── Output ──
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
-    originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName,
+    originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName, remarks: printRemarks,
   });
   const versionLabel = dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
   const buildPdf = async () => {
@@ -479,6 +479,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
   // CR 269 - how tightly the chart's time axis is packed.
   const [zoom, setZoom] = useState<GanttZoom>("month");
+  // CR 270 - the remarks are internal notes, so printing them is a choice made at the preview.
+  const [printRemarks, setPrintRemarks] = useState(false);
 
   // ── CR 240 - long schedules: fold a category away ──
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -935,6 +937,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
       {previewOpen && (
         <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }}
+          toggles={[{ key: "remarks", label: "Print remarks", title: "Print each row's remark in its own column on that row", icon: <StickyNote size={12} />, value: printRemarks, onChange: setPrintRemarks }]}
+          rebuildKey={printRemarks ? "remarks" : "plain"}
           actions={canEdit && (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
           hint={canEdit && (dirty || !!loadedFrom || sinceRevision > 0) ? "This is how the revision will print. Save it from here once it looks right." : undefined} />
       )}

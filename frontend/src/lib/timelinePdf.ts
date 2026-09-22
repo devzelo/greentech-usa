@@ -29,6 +29,8 @@ export interface TimelinePdfInput {
   version?: string;       // e.g. "Version 4" or "Draft (not saved)"
   scheduleName?: string;  // CR 243 - "Master schedule", "Design schedule"...
   categories?: string[];  // the schedule's categories, in order
+  /** CR 270 - print each row's remark on its row. Off by default: remarks are internal notes. */
+  remarks?: boolean;
 }
 
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
@@ -80,7 +82,9 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
         (() => { const ed = effectiveDays(m); return ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? "\n(actual)" : ""}`; })(),
         STATUS_META[m.status || "not_started"].label + (lateBy ? `\n${lateBy} days late` : ""),
         `${phasePercent(m)}%`,
-        m.description || "",   // CR 234 - the PM's note is internal and never printed
+        m.description || "",
+        // CR 234 kept the PM's note off the print; CR 270 makes it a choice, off unless asked for.
+        ...(o.remarks ? [m.notes || ""] : []),
       ],
       color: lateBy ? RED : undefined,
     };
@@ -96,7 +100,11 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     { label: "Status", w: 66, wrap: true }, { label: "%", w: 34, align: "right" as const },
   ];
   const used = cols.reduce((s, c) => s + c.w, 0);
-  f = drawTable(b, f, X, [...cols, { label: "Description", w: W - used, wrap: true }], grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
+  // CR 270 - with remarks on, the last two columns share what is left of the row.
+  const tail = o.remarks
+    ? [{ label: "Description", w: (W - used) / 2, wrap: true }, { label: "Remark", w: (W - used) / 2, wrap: true }]
+    : [{ label: "Description", w: W - used, wrap: true }];
+  f = drawTable(b, f, X, [...cols, ...tail], grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
 
   // ── Gantt ──
   if (rows.some((m) => m.plannedStart && m.plannedEnd)) drawGantt(doc, b, newPage, rows, o, today);
@@ -126,8 +134,21 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
   const end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline);
   const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
+  // CR 270 - the printed chart follows the screen: a band per category over its milestones.
+  type Line = { kind: "section"; category: string; items: ApiMilestone[] } | { kind: "row"; m: ApiMilestone; index: number };
+  const lines: Line[] = [];
+  if (rows.some((m) => (m.category || "").trim())) {
+    let n = 0;
+    for (const g of groupByCategory(rows.map((m) => ({ m })), o.categories)) {
+      lines.push({ kind: "section", category: g.category, items: g.items.map((z) => z.m) });
+      for (const z of g.items) lines.push({ kind: "row", m: z.m, index: n++ });
+    }
+  } else {
+    rows.forEach((m, n) => lines.push({ kind: "row", m, index: n }));
+  }
+
   let i = 0;
-  while (i < rows.length) {
+  while (i < lines.length) {
     const f = newPage();
     const page = f.page;
     let y = sectionHeading(page, b, "Gantt chart", X, f.y, W) - 4;
@@ -148,16 +169,33 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
     y -= 26;
     const bodyTop = y;
     const perPage = Math.floor((bodyTop - BOTTOM) / ROW);
-    const chunk = rows.slice(i, i + perPage);
+    const chunk = lines.slice(i, i + perPage);
     const bodyH = chunk.length * ROW;
     // Grid
     months.forEach((m, k) => {
       page.drawLine({ start: { x: X + LABEL + k * mw, y: headTop - 13 * (m.getMonth() === 0 ? 0 : 1) }, end: { x: X + LABEL + k * mw, y: bodyTop - bodyH }, thickness: m.getMonth() === 0 ? 0.6 : 0.25, color: C.border });
     });
     if (origEnd && end && end > origEnd) page.drawRectangle({ x: xEnd(origEnd), y: bodyTop - bodyH, width: xEnd(end) - xEnd(origEnd), height: bodyH, color: rgb(0.93, 0.91, 0.99) });
-    chunk.forEach((m, r) => {
-      const idx = i + r;
+    chunk.forEach((line, r) => {
       const top = bodyTop - r * ROW;
+      if (line.kind === "section") {
+        // The category band: its name on the left, its span drawn like a printed summary bar.
+        page.drawRectangle({ x: X, y: top - ROW, width: W, height: ROW, color: C.mist });
+        page.drawText(fitOneLine(b.bold, line.category.toUpperCase(), 7, LABEL - 10), { x: X + 5, y: top - ROW / 2 - 2.6, size: 7, font: b.bold, color: C.slate });
+        const ss = line.items.map((z) => parseDate(z.plannedStart) || parseDate(z.actualStart)).filter((d): d is Date => !!d);
+        const ee = line.items.map((z) => parseDate(z.plannedEnd) || parseDate(z.actualEnd)).filter((d): d is Date => !!d);
+        if (ss.length && ee.length) {
+          const s0 = new Date(Math.min(...ss.map((d) => d.getTime()))), e0 = new Date(Math.max(...ee.map((d) => d.getTime())));
+          const bx = x(s0), bw = Math.max(2, xEnd(e0) - bx);
+          page.drawRectangle({ x: bx, y: top - 8, width: bw, height: 3.4, color: C.slate });
+          page.drawRectangle({ x: bx, y: top - 10, width: 1.2, height: 7, color: C.slate });
+          page.drawRectangle({ x: bx + bw - 1.2, y: top - 10, width: 1.2, height: 7, color: C.slate });
+        }
+        page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
+        return;
+      }
+      const m = line.m;
+      const idx = line.index;
       if (r % 2 === 1) page.drawRectangle({ x: X, y: top - ROW, width: LABEL, height: ROW, color: C.mist });
       const color = phaseColor(m, idx);
       page.drawCircle({ x: X + 18, y: top - ROW / 2, size: 2.6, color: hex(color) });
@@ -204,7 +242,9 @@ function legend(page: PDFPage, b: Brand, x: number, y: number) {
     ["Actual, late", (px) => page.drawLine({ start: { x: px, y: y + 1.5 }, end: { x: px + 18, y: y + 1.5 }, thickness: 1.4, dashArray: [2.5, 1.5], color: rgb(0.86, 0.15, 0.15) })],
     ["Baseline", (px) => page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: rgb(0.88, 0.9, 0.93) })],
     ["Milestone", (px) => page.drawSvgPath(`M ${px + 5} ${-(y - 2.5)} L ${px + 9} ${-(y + 1.5)} L ${px + 5} ${-(y + 5.5)} L ${px + 1} ${-(y + 1.5)} Z`, { x: 0, y: 0, color: rgb(0.06, 0.73, 0.51) })],
+    ["Category (summary)", (px) => { page.drawRectangle({ x: px, y: y, width: 18, height: 3, color: C.slate }); page.drawRectangle({ x: px, y: y - 1.5, width: 1.2, height: 6, color: C.slate }); page.drawRectangle({ x: px + 16.8, y: y - 1.5, width: 1.2, height: 6, color: C.slate }); }],
     ["Today", (px) => page.drawLine({ start: { x: px + 8, y: y - 2 }, end: { x: px + 8, y: y + 6 }, thickness: 1, color: rgb(0.15, 0.39, 0.92) })],
+    ["Contract deadline", (px) => page.drawLine({ start: { x: px + 8, y: y - 2 }, end: { x: px + 8, y: y + 6 }, thickness: 1, color: C.slate })],
     ["Extension", (px) => page.drawRectangle({ x: px, y: y - 2, width: 18, height: 7, color: rgb(0.93, 0.91, 0.99) })],
   ];
   let px = x;

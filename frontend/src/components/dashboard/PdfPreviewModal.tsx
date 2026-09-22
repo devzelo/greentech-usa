@@ -16,7 +16,7 @@ export interface PreviewAction {
   tone?: "primary" | "final";
 }
 
-export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption, actions, hint }: {
+export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption, actions, hint, toggles, rebuildKey }: {
   title: string;
   fileName: string;
   build: () => Promise<Blob>;
@@ -27,6 +27,10 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
   actions?: PreviewAction[];
   /** A line under the title, e.g. what the action will do. */
   hint?: string;
+  /** CR 270 - switches that change what the PDF contains, e.g. "Print remarks". */
+  toggles?: Array<{ key: string; label: string; icon?: ReactNode; title?: string; value: boolean; onChange: (v: boolean) => void }>;
+  /** Changes whenever a toggle above changes, so the PDF is built again. */
+  rebuildKey?: string | number;
 }) {
   const [acting, setActing] = useState("");
   const act = async (a: PreviewAction) => {
@@ -73,7 +77,7 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
     })();
     return () => { cancelled = true; if (created) URL.revokeObjectURL(created); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fit]);
+  }, [fit, rebuildKey]);
 
   const download = () => {
     if (!blob) return;
@@ -101,6 +105,13 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
                 <Minimize2 size={12} /> Fit to one page
               </label>
             )}
+            {/* CR 270 - what goes into the PDF, decided here and rebuilt on the spot. */}
+            {toggles?.map((t) => (
+              <label key={t.key} title={t.title} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${t.value ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                <input type="checkbox" checked={t.value} onChange={(e) => t.onChange(e.target.checked)} className="accent-emerald-600" />
+                {t.icon} {t.label}
+              </label>
+            ))}
             {/* CR-P-01 — Print the previewed PDF directly. */}
             <button onClick={() => { const f = document.querySelector<HTMLIFrameElement>(`iframe[title="${title.replace(/"/g, "")}"]`); (f?.contentWindow || window).print(); }} disabled={!url} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50"><Printer size={12} /> Print</button>
             {/* CR-P-14 — Send this exact document (with any past revisions) to someone by email. */}
