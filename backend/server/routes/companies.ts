@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -265,7 +266,7 @@ router.post("/:id/pending/:action", async (req: AuthedRequest, res: Response, ne
   } catch (err) { next(err); }
 });
 
-export default router;
+
 
 // ── Public self-registration router (NO auth) — mounted separately at /api/public/companies ──
 export const publicCompanyRouter = Router();
@@ -296,3 +297,101 @@ publicCompanyRouter.patch("/:token", async (req: Request, res: Response, next: N
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
+// ── CR 266 (2026-09-22): the login is separate from the project access ───────
+// It used to be created again for every project, so the same company ended up being asked for a
+// password each time. Now it is made once here, on the company's profile, and project access is
+// granted as often as needed without touching it.
+
+/** What login this company has, if any. */
+router.get("/:id/login", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findById(req.params.id).lean();
+    if (!c) return res.status(404).json({ error: "Company not found." });
+    const email = String((c as { email?: string }).email || "").toLowerCase().trim();
+    const user = await User.findOne(email ? { $or: [{ companyId: c._id }, { email }] } : { companyId: c._id })
+      .select("name email role archived companyId createdAt updatedAt").lean();
+    if (!user) return res.json({ exists: false, email });
+    const projects = await Project.countDocuments({ "guests.userId": String(user._id) });
+    res.json({
+      exists: true,
+      userId: String(user._id),
+      name: user.name || "",
+      email: user.email || "",
+      role: user.role || "",
+      archived: !!user.archived,
+      linked: String((user as { companyId?: unknown }).companyId || "") === String(c._id),
+      projects,
+      createdAt: (user as { createdAt?: Date }).createdAt,
+    });
+  } catch (err) { next(err); }
+});
+
+/** Create the login (once), or set a new password / email on it later. */
+router.put("/:id/login", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role !== "admin" && req.user!.role !== "employee") return res.status(403).json({ error: "Not allowed." });
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: "Company not found." });
+    const wanted = String(req.body?.email || c.email || "").toLowerCase().trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wanted)) return res.status(400).json({ error: "Add a valid email for this company first." });
+    const password = String(req.body?.password || "");
+
+    let user = await User.findOne({ $or: [{ companyId: c._id }, { email: wanted }] });
+    if (!user) {
+      if (password.length < 6) return res.status(400).json({ error: "Set a password of at least 6 characters." });
+      user = await User.create({
+        name: c.name || wanted.split("@")[0],
+        email: wanted,
+        password: await bcrypt.hash(password, 12),
+        role: "subcontractor",
+        companyId: c._id,
+      });
+    } else {
+      // A staff account is never rewritten from here; only the company's own login is.
+      if (user.role !== "subcontractor") return res.status(400).json({ error: "That email already belongs to a staff account." });
+      if (user.email !== wanted) {
+        const taken = await User.findOne({ email: wanted, _id: { $ne: user._id } }).select("_id").lean();
+        if (taken) return res.status(400).json({ error: "Another account already uses that email." });
+        user.email = wanted;
+      }
+      if (password) {
+        if (password.length < 6) return res.status(400).json({ error: "Set a password of at least 6 characters." });
+        user.password = await bcrypt.hash(password, 12);
+      }
+      if (!user.companyId) user.companyId = c._id;
+      if (typeof req.body?.archived === "boolean") user.archived = req.body.archived;
+      if (c.name && user.name !== c.name) user.name = c.name;
+      await user.save();
+    }
+    if (c.email !== wanted) { c.email = wanted; await c.save(); }
+    const projects = await Project.countDocuments({ "guests.userId": String(user._id) });
+    res.json({ exists: true, userId: String(user._id), name: user.name, email: user.email, role: user.role, archived: !!user.archived, linked: true, projects });
+  } catch (err) { next(err); }
+});
+
+/** Every project this company's login can reach, with what it may see there. */
+router.get("/:id/project-access", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = await Company.findById(req.params.id).lean();
+    if (!c) return res.status(404).json({ error: "Company not found." });
+    const email = String((c as { email?: string }).email || "").toLowerCase().trim();
+    const user = await User.findOne(email ? { $or: [{ companyId: c._id }, { email }] } : { companyId: c._id }).select("_id").lean();
+    if (!user) return res.json([]);
+    const uid = String(user._id);
+    const projects = await Project.find({ "guests.userId": uid }).select("projectId name status guests ownerId").lean();
+    res.json(projects.map((p) => {
+      const g = (p.guests || []).find((x) => String(x.userId) === uid) as
+        { tabPermissions?: Record<string, string>; expiresAt?: Date | null } | undefined;
+      return {
+        projectId: p.projectId,
+        name: p.name,
+        status: p.status,
+        owned: String((p as { ownerId?: unknown }).ownerId || "") === req.user!.userId,
+        tabPermissions: g?.tabPermissions || {},
+        expiresAt: g?.expiresAt || null,
+      };
+    }));
+  } catch (err) { next(err); }
+});
+
+export default router;

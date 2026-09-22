@@ -3176,6 +3176,23 @@ export async function verifyClassifiedPin(pin: string): Promise<{ token: string 
 
 // Company stamps (the classified Stamps tab) — readable by any staff to stamp a PO.
 // ── CR 263 - website credentials kept on the Classified Documents page ───────
+// ── CR 266 - a company's login is created once, apart from its project access ──
+export interface ApiCompanyLogin {
+  exists: boolean; email: string; userId?: string; name?: string; role?: string;
+  archived?: boolean; linked?: boolean; projects?: number; createdAt?: string;
+}
+export interface ApiCompanyProjectAccess {
+  projectId: string; name: string; status?: string; owned: boolean;
+  tabPermissions: Record<string, GuestTabPermission>; expiresAt?: string | null;
+}
+export async function fetchCompanyLogin(companyId: string): Promise<ApiCompanyLogin> { return request(`/companies/${companyId}/login`); }
+export async function saveCompanyLogin(companyId: string, body: { email?: string; password?: string; archived?: boolean }): Promise<ApiCompanyLogin> {
+  return request(`/companies/${companyId}/login`, { method: 'PUT', body: JSON.stringify(body) });
+}
+export async function fetchCompanyProjectAccess(companyId: string): Promise<ApiCompanyProjectAccess[]> {
+  return request(`/companies/${companyId}/project-access`);
+}
+
 export interface ApiCredential {
   _id: string; platform: string; url: string; username: string; hint: string; notes: string;
   ownerId: string; ownerName: string; sharedWith: string[]; createdAt?: string; updatedAt?: string;
