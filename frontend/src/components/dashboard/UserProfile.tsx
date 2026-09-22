@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import { fetchUserLinks, fetchUserFiles, fetchUserTasks, userFileUrl, withFileToken, type AdminUser, type UserLinks, type UserFile, type ProfileTask } from "../../lib/api";
 import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
+import PdfPreviewModal from "./PdfPreviewModal";
+import { fileName } from "../../lib/fileNames";
 import TaskMiniBoard from "./TaskMiniBoard";
 import UserAccessManager from "./UserAccessManager";
 
@@ -59,6 +61,78 @@ export default function UserProfile({
     setHighlight(key);
     jumpToSection("up", key, setHighlight);
   };
+  // CR 267 - the full report for this person: their details and everything that names them.
+  const [reportOpen, setReportOpen] = useState(false);
+  const pname = (id?: string) => (id ? projById[id] || id : "-");
+  const buildReport = async () => {
+    const { buildProfileReportPdf } = await import("../../lib/profileReportPdf");
+    return buildProfileReportPdf({
+      kind: "person",
+      name: user.name || user.email,
+      subtitle: [user.jobTitle, user.role].filter(Boolean).join(" · "),
+      fields: [
+        ["Role", user.role || ""],
+        ["Job title", user.jobTitle || ""],
+        ["Employee ID", user.empId || ""],
+        ["Work email", user.email || ""],
+        ["Personal email", user.personalEmail || ""],
+        ["Phone", user.phone || ""],
+        ["Home address", user.homeAddress || ""],
+        ["Account", user.archived ? "Deactivated" : "Active"],
+      ],
+      stats: [
+        ["Projects", String(counts.projects)],
+        ["Agreements", String(counts.agreements)],
+        ["POs", String(counts.pos)],
+        ["Submittals", String(counts.submittals)],
+        ["Expenses", String(counts.expenses)],
+        ["Documents", String(counts.documents)],
+      ],
+      sections: [
+        {
+          title: "Projects",
+          columns: [{ label: "Project", w: 220, wrap: true }, { label: "Location", w: 130, wrap: true }, { label: "Status", w: 118 }],
+          rows: (links?.projects || []).map((p) => [p.name, p.location || "", p.status]),
+        },
+        {
+          title: "Agreements",
+          columns: [{ label: "Agreement", w: 220, wrap: true }, { label: "Type", w: 110 }, { label: "Project", w: 110, wrap: true }, { label: "Status", w: 28 }],
+          rows: (links?.agreements || []).map((a) => [a.title || a.name, a.agreementType, pname(a.ownerProjectId), a.status]),
+        },
+        {
+          title: "Purchase orders",
+          columns: [{ label: "PO", w: 100 }, { label: "Vendor", w: 170, wrap: true }, { label: "Total", w: 90, align: "right" }, { label: "Project", w: 108, wrap: true }],
+          rows: (links?.pos || []).map((p) => [p.poNo, p.vendorName, p.total, pname(p.projectId)]),
+        },
+        {
+          title: "Submittals",
+          columns: [{ label: "Product", w: 250, wrap: true }, { label: "Project", w: 130, wrap: true }, { label: "Status", w: 88 }],
+          rows: (links?.submittals || []).map((x) => [x.productName, pname(x.projectId), x.status]),
+        },
+        {
+          title: "Expenses",
+          columns: [{ label: "Description", w: 200, wrap: true }, { label: "Amount", w: 90, align: "right" }, { label: "Project", w: 100, wrap: true }, { label: "Approval", w: 78 }],
+          rows: (links?.expenses || []).map((e) => [e.description, e.amount, pname(e.projectId), e.approval || ""]),
+        },
+        {
+          title: "Reminders",
+          columns: [{ label: "Reminder", w: 250, wrap: true }, { label: "Due", w: 110 }, { label: "Project", w: 108, wrap: true }],
+          rows: (links?.reminders || []).map((x) => [x.title, x.dueAt ? new Date(x.dueAt).toLocaleString() : "", x.projectName || pname(x.projectId)]),
+        },
+        {
+          title: "Tasks",
+          columns: [{ label: "Task", w: 250, wrap: true }, { label: "Project", w: 110, wrap: true }, { label: "Status", w: 108 }],
+          rows: tasks.map((t) => [t.title, t.projectName || "", t.status || ""]),
+        },
+        {
+          title: "Documents on file",
+          columns: [{ label: "Document", w: 250, wrap: true }, { label: "Type", w: 110 }, { label: "Size", w: 108 }],
+          rows: files.map((d) => [d.name, d.fileType || "", d.size || ""]),
+        },
+      ],
+    });
+  };
+
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
     <p className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
       <Icon size={14} className="text-slate-300 shrink-0" />
@@ -71,6 +145,8 @@ export default function UserProfile({
       <div className="flex items-center justify-between gap-3">
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={16} /> Back to users</button>
         <div className="flex items-center gap-1.5">
+          {/* CR 267 - everything held for this person, as one document. */}
+          <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-primary"><FileText size={14} /> Report</button>
           <button onClick={() => onEdit(user)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-primary"><Pencil size={14} /> Edit</button>
           <button onClick={() => onResetPassword(user)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-amber-600"><KeyRound size={14} /> Reset password</button>
           <button onClick={() => onDelete(user)} disabled={isSelf} title={isSelf ? "You can't delete your own account" : ""} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-red-500 disabled:opacity-40"><Trash2 size={14} /> Delete</button>
@@ -171,6 +247,15 @@ export default function UserProfile({
             ))}</div>
           )}
         </div>
+      )}
+      {reportOpen && (
+        <PdfPreviewModal
+          title={`${user.name || user.email} · profile report`}
+          fileName={fileName([user.name || user.email, "Profile report"], "pdf")}
+          build={buildReport}
+          onClose={() => setReportOpen(false)}
+          fitOption={{ note: `${user.name || user.email} · profile report` }}
+        />
       )}
     </div>
   );

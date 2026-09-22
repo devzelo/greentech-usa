@@ -12,6 +12,8 @@ import {
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
+import PdfPreviewModal from "./PdfPreviewModal";
+import { fileName } from "../../lib/fileNames";
 import TaskMiniBoard from "./TaskMiniBoard";
 import CompanyAccessManager from "./CompanyAccessManager";
 
@@ -109,6 +111,85 @@ export default function CompanyProfile({
     documents: files.length,
   }), [links, files]);
 
+  // CR 267 - the full report: the profile itself and everything in the platform that names it.
+  const [reportOpen, setReportOpen] = useState(false);
+  const pname = (id?: string) => (id ? projById[id] || id : "-");
+  const buildReport = async () => {
+    const { buildProfileReportPdf } = await import("../../lib/profileReportPdf");
+    return buildProfileReportPdf({
+      kind: "company",
+      name: company.name,
+      subtitle: company.category || "",
+      fields: [
+        ["Category", company.category || ""],
+        ["Email", company.email || ""],
+        ["Phone", company.phone || ""],
+        ["Website", company.website || ""],
+        ["Address", company.address || ""],
+        ["Contacts", (company.contactPersons || []).map((c) => [c.name, c.role, c.email, c.phone].filter(Boolean).join(" / ")).join(" | ")],
+        ["Tax ID", company.tax?.taxId || ""],
+        ["Registration no.", company.tax?.registrationNo || ""],
+        ["Bank", [company.banking?.bankName, company.banking?.accountName, company.banking?.iban].filter(Boolean).join(" · ")],
+        ["Notes", company.notes || ""],
+      ],
+      stats: [
+        ["Projects", String(counts.projects)],
+        ["Agreements", String(counts.agreements)],
+        ["POs", String(counts.pos)],
+        ["Invoices", String(counts.invoices)],
+        ["Submittals", String(counts.submittals)],
+        ["Documents", String(counts.documents)],
+      ],
+      sections: [
+        {
+          title: "Projects",
+          columns: [{ label: "Project", w: 240, wrap: true }, { label: "No.", w: 110 }, { label: "Status", w: 118 }],
+          rows: (links?.projects || []).map((p) => [p.name, p.projectId, p.status]),
+        },
+        {
+          title: "Agreements",
+          columns: [{ label: "Agreement", w: 250, wrap: true }, { label: "Project", w: 120, wrap: true }, { label: "Status", w: 98 }],
+          rows: (links?.agreements || []).map((a) => [a.name, pname(a.projectId), a.status]),
+        },
+        {
+          title: "RFQs",
+          columns: [{ label: "RFQ", w: 90 }, { label: "Title", w: 180, wrap: true }, { label: "Project", w: 110, wrap: true }, { label: "Status", w: 88 }],
+          rows: (links?.rfqs || []).map((r) => [r.rfqNo, r.title, pname(r.projectId), r.status]),
+        },
+        {
+          title: "Quotes",
+          columns: [{ label: "Quote for RFQ", w: 150 }, { label: "Total", w: 120, align: "right" }, { label: "Project", w: 110, wrap: true }, { label: "Status", w: 88 }],
+          rows: (links?.quotes || []).map((q) => [q.rfqId, q.total, pname(q.projectId), q.accepted ? "Accepted" : q.status]),
+        },
+        {
+          title: "Purchase orders",
+          columns: [{ label: "PO", w: 100 }, { label: "Vendor", w: 170, wrap: true }, { label: "Total", w: 90, align: "right" }, { label: "Project", w: 108, wrap: true }],
+          rows: (links?.pos || []).map((p) => [p.poNo, p.vendorName, p.total, pname(p.projectId)]),
+        },
+        {
+          title: "Invoices",
+          columns: [{ label: "Number", w: 96 }, { label: "Type", w: 84 }, { label: "Amount", w: 92, align: "right" }, { label: "Date", w: 88 }, { label: "Status", w: 108 }],
+          rows: (links?.invoices || []).map((i) => [i.number, i.type, i.amount, i.date, i.status]),
+        },
+        {
+          title: "Submittals",
+          columns: [{ label: "Product", w: 200, wrap: true }, { label: "Manufacturer", w: 150, wrap: true }, { label: "Status", w: 118 }],
+          rows: (links?.submittals || []).map((s) => [s.productName, s.manufacturer, s.status]),
+        },
+        {
+          title: "Shipments",
+          columns: [{ label: "Shipment", w: 150, wrap: true }, { label: "Agency", w: 150, wrap: true }, { label: "Arrival", w: 80 }, { label: "Status", w: 88 }],
+          rows: (links?.shipments || []).map((s) => [s.name, s.agencyName, s.etaDate, s.status]),
+        },
+        {
+          title: "Documents on file",
+          columns: [{ label: "Document", w: 250, wrap: true }, { label: "Type", w: 110 }, { label: "Size", w: 108 }],
+          rows: files.map((d) => [d.name, d.fileType || "", d.size || ""]),
+        },
+      ],
+    });
+  };
+
   const contactRow = (Icon: typeof Mail, value?: string, href?: string) => value ? (
     <p className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
       <Icon size={14} className="text-slate-300 shrink-0" />
@@ -123,6 +204,8 @@ export default function CompanyProfile({
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={16} /> Back to directory</button>
         <div className="flex items-center gap-1.5">
           <button onClick={() => onCopyLink(company)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-primary"><Link2 size={14} /> Copy link</button>
+          {/* CR 267 - everything held for this profile, as one document. */}
+          <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-primary"><FileText size={14} /> Report</button>
           <button onClick={() => onEdit(company)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-primary"><Pencil size={14} /> Edit</button>
           <button onClick={() => onArchive(company, !showArchived)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-amber-600">{showArchived ? <><RotateCcw size={14} /> Restore</> : <><Archive size={14} /> Archive</>}</button>
           <button onClick={() => onDelete(company)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:text-red-500"><Trash2 size={14} /> Delete</button>
@@ -342,6 +425,15 @@ export default function CompanyProfile({
         </div>
       )}
 
+      {reportOpen && (
+        <PdfPreviewModal
+          title={`${company.name} · profile report`}
+          fileName={fileName([company.name, "Profile report"], "pdf")}
+          build={buildReport}
+          onClose={() => setReportOpen(false)}
+          fitOption={{ note: `${company.name} · profile report` }}
+        />
+      )}
       {dialogs}
     </div>
   );
