@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -55,6 +55,13 @@ async function loadCountryShapes(detail: "50m" | "10m" = "50m"): Promise<Country
 }
 
 // Tell the page once the visitor zooms in close enough to need the detailed outlines.
+// Hands the Leaflet map back to the page (to close a pop-up when the modal opens).
+function MapHandle({ onReady }: { onReady: (m: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => { onReady(map); }, [map, onReady]);
+  return null;
+}
+
 function ZoomWatch({ onDetail }: { onDetail: () => void }) {
   const map = useMap();
   useEffect(() => {
@@ -86,6 +93,11 @@ export default function ProjectsMap() {
   // CR 261 - a pin opens the same project modal as the cards: photos, client, location, documents.
   const [showcaseId, setShowcaseId] = useState<string | null>(null);
   const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
+  const mapRef = useRef<L.Map | null>(null);
+  const openProject = useCallback((id: string) => {
+    mapRef.current?.closePopup();   // the pin's card would otherwise sit behind the modal
+    setShowcaseId(id);
+  }, []);
   useEffect(() => { setMapReady(true); }, []);
 
   useEffect(() => {
@@ -142,7 +154,7 @@ export default function ProjectsMap() {
           </p>
         </div>
 
-        <div className="rounded-[2rem] overflow-hidden border border-slate-200 shadow-lg" style={{ height: 480, background: "#eef2f6" }}>
+        <div className="isolate rounded-[2rem] overflow-hidden border border-slate-200 shadow-lg" style={{ height: 480, background: "#eef2f6" }}>
           {mapReady && (
           <MapContainer
             center={[20, 10]}
@@ -170,31 +182,35 @@ export default function ProjectsMap() {
             )}
             <FitToPins points={points} />
             <ZoomWatch onDetail={wantDetail} />
+            <MapHandle onReady={(m) => { mapRef.current = m; }} />
             {groups.map((g) => (
               <Marker
                 key={g.iso}
                 position={g.coords}
                 icon={pinIcon(g.projects.length)}
-                // Hover opens it on a desktop; tapping the pin still opens it on a phone, where
-                // there is no hover at all.
-                eventHandlers={{ mouseover: (e) => e.target.openPopup() }}
+                // Hover opens the card on a desktop. Click and tap open it too, rather than
+                // toggling it shut again, so it works the same on a phone, where there is no hover.
+                eventHandlers={{
+                  mouseover: (e) => e.target.openPopup(),
+                  click: (e) => e.target.openPopup(),
+                }}
               >
                 <Popup maxWidth={320} minWidth={260}>
                   {/* Include the flag font so the country emoji renders on Windows (Leaflet forces
                       its own font, which falls back to the ISO letters otherwise). */}
-                  <div style={{ minWidth: 180, fontFamily: "'Twemoji Country Flags', 'Inter', ui-sans-serif, system-ui, sans-serif" }}>
+                  <div style={{ width: 272, maxWidth: "100%", overflow: "hidden", fontFamily: "'Twemoji Country Flags', 'Inter', ui-sans-serif, system-ui, sans-serif" }}>
                     <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 6px", color: "#0f172a" }}>
                       <span style={{ fontFamily: "'Twemoji Country Flags', sans-serif" }}>{flagForCountry(g.projects[0].location)}</span> {g.projects.length} project{g.projects.length === 1 ? "" : "s"}
                     </p>
-                    <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
+                    <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 4 }}>
                       {g.projects.slice(0, 6).map((p) => (
                         <li key={p.id}>
                           <button
                             type="button"
-                            onClick={() => setShowcaseId(p.id)}
+                            onClick={() => openProject(p.id)}
                             title={`Open ${p.name}`}
                             style={{
-                              display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left",
+                              display: "flex", gap: 8, alignItems: "center", width: "100%", maxWidth: "100%", overflow: "hidden", textAlign: "left",
                               padding: 4, border: "1px solid transparent", borderRadius: 10, background: "transparent", cursor: "pointer",
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.borderColor = "#e2e8f0"; }}
@@ -214,9 +230,9 @@ export default function ProjectsMap() {
                                 GT
                               </span>
                             )}
-                            <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.35 }}>
-                              <span style={{ display: "block", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                              <span style={{ display: "block", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span style={{ flex: "1 1 auto", minWidth: 0, overflow: "hidden", fontSize: 12, lineHeight: 1.35 }}>
+                              <span style={{ display: "block", maxWidth: "100%", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                              <span style={{ display: "block", maxWidth: "100%", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {[p.category, p.location].filter(Boolean).join(" · ")}
                               </span>
                             </span>
