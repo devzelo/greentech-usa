@@ -21,12 +21,17 @@ const humanFileSize = (bytes: number) => {
 };
 
 // ── Exchange rates ───────────────────────────────────────────────────────────
-// Two free, keyless sources, merged: open.er-api.com (~165 currencies, the main one) and the
-// fawazahmed0 currency-api on jsDelivr (~340 codes: every ISO currency plus crypto, metals and a few
-// legacy ones). Any code the first lacks comes from the second, and either one alone is enough if
-// the other is down. The Iranian Toman (IRT, not an ISO code) is added as 1/10 of the Rial, because
-// prices in Iran are quoted in Toman. Cached per base for 6 hours.
-type Rates = { base: string; date: string; rates: Record<string, number>; names: Record<string, string>; source: string };
+// CR 264 (2026-09-22): the Toman we showed did not match what people see elsewhere. Three keyless
+// sources are now stacked, most authoritative first, and Iran is handled on its own:
+//   1. Frankfurter (European Central Bank reference rates) for the ~30 major currencies;
+//   2. open.er-api.com (ExchangeRate-API) for the rest, ~165 codes;
+//   3. the fawazahmed0 currency-api on jsDelivr to fill the tail, ~340 codes in total.
+// Iran quotes two very different rates: the central bank's (what Google and XE show) and the open
+// market's (what people actually trade at, roughly 40% higher). TGJU, Iran's main market site,
+// gives the open-market rate keylessly, and that is what IRR and the Toman use; the central bank
+// figure travels alongside it so the screen can explain the difference. Cached per base for 6 hours.
+type IranRates = { market: number; official: number; date: string; source: string };
+type Rates = { base: string; date: string; rates: Record<string, number>; names: Record<string, string>; source: string; iran?: IranRates };
 const rateCache = new Map<string, { at: number; data: Rates }>();
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const EXTRA_NAMES: Record<string, string> = { IRT: "Iranian Toman (10 Rial)" };
@@ -39,6 +44,23 @@ async function getJson<T>(url: string): Promise<T> {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json() as T;
   } finally { clearTimeout(timer); }
+}
+
+// Frankfurter serves the ECB's daily reference rates: the most authoritative free source there is,
+// but only for the ~30 currencies the ECB publishes.
+async function fromEcb(base: string) {
+  const j = await getJson<{ date?: string; rates?: Record<string, number> }>(`https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}`);
+  if (!j.rates || !Object.keys(j.rates).length) throw new Error("ECB returned no rates");
+  return { date: j.date ? new Date(`${j.date}T00:00:00Z`).toISOString() : new Date().toISOString(), rates: { ...j.rates, [base]: 1 } };
+}
+
+// TGJU's open-market US dollar, in rials. The table's first row is the latest close.
+async function fromTgju(): Promise<{ irr: number; date: string }> {
+  const j = await getJson<{ data?: unknown[][] }>("https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl");
+  const row = (j.data || [])[0] || [];
+  const irr = Number(String(row[0] ?? "").replace(/[^0-9.]/g, ""));
+  if (!isFinite(irr) || irr <= 0) throw new Error("TGJU returned no dollar price");
+  return { irr, date: String(row[6] ?? "").replace(/\//g, "-") };
 }
 
 async function fromErApi(base: string) {
@@ -73,23 +95,45 @@ async function fromCurrencyApi(base: string) {
 async function loadRates(base: string): Promise<Rates> {
   const hit = rateCache.get(base);
   if (hit && Date.now() - hit.at < SIX_HOURS) return hit.data;
-  const [a, b] = await Promise.allSettled([fromErApi(base), fromCurrencyApi(base)]);
-  if (a.status === "rejected" && b.status === "rejected") {
+  const [ecbR, erR, moreR, tgjuR] = await Promise.allSettled([fromEcb(base), fromErApi(base), fromCurrencyApi(base), fromTgju()]);
+  if (erR.status === "rejected" && moreR.status === "rejected" && ecbR.status === "rejected") {
     if (hit) return hit.data; // stale beats nothing
     throw new Error("Exchange rates are not available right now.");
   }
-  const main = a.status === "fulfilled" ? a.value : null;
-  const more = b.status === "fulfilled" ? b.value : null;
-  const rates: Record<string, number> = { ...(more?.rates || {}), ...(main?.rates || {}) };
+  const ecb = ecbR.status === "fulfilled" ? ecbR.value : null;
+  const main = erR.status === "fulfilled" ? erR.value : null;
+  const more = moreR.status === "fulfilled" ? moreR.value : null;
+  // Least authoritative first, so the better source wins each currency.
+  const rates: Record<string, number> = { ...(more?.rates || {}), ...(main?.rates || {}), ...(ecb?.rates || {}) };
+
+  // Iran: the open market is the rate that is actually used, so that is the one we convert with.
+  let iran: IranRates | undefined;
+  const official = rates.IRR;
+  if (tgjuR.status === "fulfilled" && base === "USD") {
+    rates.IRR = tgjuR.value.irr;
+    iran = { market: tgjuR.value.irr, official: official || 0, date: tgjuR.value.date, source: "TGJU (Iran open market)" };
+  } else if (tgjuR.status === "fulfilled" && rates.USD) {
+    // Any other base: price the rial through the dollar.
+    rates.IRR = tgjuR.value.irr * rates.USD;
+    iran = { market: rates.IRR, official: official || 0, date: tgjuR.value.date, source: "TGJU (Iran open market)" };
+  }
   if (rates.IRR) rates.IRT = rates.IRR / 10;
   if (base === "IRR") rates.IRT = 0.1;
-  const sources = [main && "ExchangeRate-API (open.er-api.com)", more && (main ? "currency-api (extra currencies)" : "currency-api")].filter(Boolean).join(" + ");
+  if (base === "IRT") { for (const k of Object.keys(rates)) rates[k] = rates[k] * 10; rates.IRT = 1; rates.IRR = 10; }
+
+  const sources = [
+    ecb && "European Central Bank (Frankfurter)",
+    main && "ExchangeRate-API",
+    more && "currency-api",
+    iran && "TGJU for Iran",
+  ].filter(Boolean).join(" + ");
   const data: Rates = {
     base,
-    date: (main || more)!.date,
+    date: (ecb || main || more)!.date,
     rates,
     names: { ...(more?.names || {}), ...EXTRA_NAMES },
     source: sources,
+    iran,
   };
   rateCache.set(base, { at: Date.now(), data });
   return data;

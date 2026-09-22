@@ -136,6 +136,15 @@ export default function CurrencyConverter() {
           <p className="text-[11px] font-semibold text-slate-500 tabular-nums">1 {from} = {rate.toLocaleString("en-US", { maximumFractionDigits: 6 })} {to} · 1 {to} = {(1 / rate).toLocaleString("en-US", { maximumFractionDigits: 6 })} {from}</p>
         )}
       </div>
+      {/* CR 264 - Iran has two rates that are far apart. Say which one this is, and what the other is. */}
+      {data?.iran && (from === "IRR" || from === "IRT" || to === "IRR" || to === "IRT") && (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-[10px] leading-relaxed text-amber-800">
+          Converted at Iran's <b>open market</b> rate: {data.iran.market.toLocaleString("en-US", { maximumFractionDigits: 0 })} rial
+          ({(data.iran.market / 10).toLocaleString("en-US", { maximumFractionDigits: 0 })} toman) per US dollar{data.iran.date ? `, ${data.iran.date}` : ""}.
+          {data.iran.official > 0 && <> Google and XE quote the central bank rate, about {data.iran.official.toLocaleString("en-US", { maximumFractionDigits: 0 })} rial
+          ({(data.iran.official / 10).toLocaleString("en-US", { maximumFractionDigits: 0 })} toman), which is not what money actually changes hands at.</>}
+        </p>
+      )}
       {data && (
         <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
           <span>Rates as of {new Date(data.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Source: {data.source}. Indicative only.</span>
