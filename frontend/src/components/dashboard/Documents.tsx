@@ -540,7 +540,7 @@ export default function Documents() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setSelected(d)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary transition-all" title="Preview"><Eye size={16} /></button>
-                        <a href={documentUrl(d)} download={d.name} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary transition-all" title="Download"><Download size={16} /></a>
+                        <a href={documentUrl(d, true)} download={d.name} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary transition-all" title="Download"><Download size={16} /></a>
                         <ShareMenu fileName={d.name} fileUrl={documentUrl(d)} projectName={d.projectName} size={16} />
                       </div>
                     </td>
@@ -577,7 +577,7 @@ export default function Documents() {
                 <span className="text-[10px] font-bold text-slate-400">{d.size} · {formatDate(d.uploadedAt)}</span>
                 <div className="flex gap-1">
                   <button onClick={() => setSelected(d)} className="p-1.5 rounded hover:bg-slate-50 text-slate-400 hover:text-primary"><Eye size={14} /></button>
-                  <a href={documentUrl(d)} download={d.name} className="p-1.5 rounded hover:bg-slate-50 text-slate-400 hover:text-primary"><Download size={14} /></a>
+                  <a href={documentUrl(d, true)} download={d.name} className="p-1.5 rounded hover:bg-slate-50 text-slate-400 hover:text-primary"><Download size={14} /></a>
                   <ShareMenu fileName={d.name} fileUrl={documentUrl(d)} projectName={d.projectName} size={14} />
                 </div>
               </div>

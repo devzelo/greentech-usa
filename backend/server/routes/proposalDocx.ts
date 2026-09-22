@@ -409,9 +409,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
       : (resumes.find((x) => String((x as { userId?: unknown }).userId) === userIdOf(e)) as ResumeLite | undefined));
 
     const buf = await buildProposalDocx(project as { name: string }, pc, kind, resumeOf);
-    const fileBase = (project.name || "project").replace(/[^a-z0-9]+/gi, "_");
+    // CR 265 - named after the document, readably: "Project C - Technical Proposal.docx".
+    const fileBase = String(project.name || "Project").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileBase}_${kind === "financial" ? "Financial" : "Technical"}_Proposal.docx"`);
+    const docxName = `${fileBase} - ${kind === "financial" ? "Financial" : "Technical"} Proposal.docx`;
+    res.setHeader("Content-Disposition", `attachment; filename="${docxName}"; filename*=UTF-8''${encodeURIComponent(docxName)}`);
     res.send(buf);
   } catch (err) { next(err); }
 });

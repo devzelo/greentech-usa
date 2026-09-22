@@ -466,7 +466,7 @@ export function TaskModal({ projectId, task, columns, members, canEdit, onClose,
                   </button>
                   <span className="flex items-center gap-1 shrink-0">
                     <button onClick={() => setViewFile({ name: f.name, url: attachmentUrl(f.filePath), fileType: f.fileType || (f.name.split(".").pop() || "") })} className="p-1 rounded text-slate-400 hover:text-primary" title="View"><Eye size={13} /></button>
-                    <a href={attachmentUrl(f.filePath)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
+                    <a href={attachmentUrl(f.filePath, f.name, true)} download={f.name} className="p-1 rounded text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
                     {canEdit && <button onClick={() => removeFile(f._id)} className="p-1 rounded text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
                   </span>
                 </div>

@@ -33,7 +33,7 @@ const parentOf = (p: string) => p.split("/").slice(0, -1).join("/");
 const leafOf = (p: string) => p.split("/").pop() || p;
 const join = (a: string, b: string) => [a, b].filter(Boolean).join("/");
 const inFolder = (d: ApiDocument, p: string) => { const f = d.folder || ""; return f === p || f.startsWith(`${p}/`); };
-const downloadAll = (list: ApiDocument[]) => list.forEach((d, i) => setTimeout(() => { const a = document.createElement("a"); a.href = documentUrl(d); a.download = d.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350));
+const downloadAll = (list: ApiDocument[]) => list.forEach((d, i) => setTimeout(() => { const a = document.createElement("a"); a.href = documentUrl(d, true); a.download = d.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350));
 
 // The folder picker attribute (Chrome, Edge, Firefox, Safari); not in React's typings.
 const FOLDER_INPUT = { webkitdirectory: "", directory: "" } as Record<string, string>;
@@ -291,7 +291,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
             {/* Actions — full opacity + own right-aligned row on mobile (no hover on touch). */}
             <div className="flex gap-1 shrink-0 justify-end opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
               <button onClick={() => setPreview(d)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview"><Eye size={13} /></button>
-              <a href={documentUrl(d)} download={d.name} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
+              <a href={documentUrl(d, true)} download={d.name} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={13} /></a>
               <ShareMenu fileName={d.name} fileUrl={documentUrl(d)} size={13} />
               {canPublish && (
                 <button

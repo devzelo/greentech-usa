@@ -507,7 +507,7 @@ function FileRow({ f, canEdit, projectName, onRemove, onPreview }: { f: ApiTechD
       {/* CR-P-07 — Preview opens the in-platform document viewer (no new browser tab). */}
       <button onClick={() => onPreview(f.name, [f])} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview in the platform"><Eye size={14} /></button>
       <ShareMenu fileName={f.name} fileUrl={techDocFileUrl(f)} projectName={projectName} />
-      <a href={techDocFileUrl(f)} download={f.name} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
+      <a href={techDocFileUrl(f, true)} download={f.name} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Download"><Download size={14} /></a>
       {canEdit && <button onClick={() => onRemove(f)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>}
     </div>
   );
@@ -567,7 +567,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
           <div className="flex items-center gap-1">
             <button onClick={() => onPreview(`${label} — ${titleFor}`, files)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview all"><Eye size={14} /></button>
             {/* CR-P-09 — download every file in this category at once. */}
-            <button onClick={() => files.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download all in this category"><Download size={14} /></button>
+            <button onClick={() => files.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f, true); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download all in this category"><Download size={14} /></button>
           </div>
         )}
       </div>
@@ -592,7 +592,7 @@ function CategorySection({ projectId, doc, category, label, canEdit, projectName
                   </button>
                   <div className="flex items-center gap-1">
                     {ff.length > 0 && <button onClick={() => onPreview(`${label} / ${name} — ${titleFor}`, ff)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Preview folder"><Eye size={13} /></button>}
-                    {ff.length > 0 && <button onClick={() => ff.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Download all files in this folder"><Download size={13} /></button>}
+                    {ff.length > 0 && <button onClick={() => ff.forEach((f, i) => setTimeout(() => { const a = document.createElement("a"); a.href = techDocFileUrl(f, true); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 350))} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary" title="Download all files in this folder"><Download size={13} /></button>}
                     {/* CR-P-08 — bigger, clearly-green Upload button so it's easy to find. */}
                     {canEdit && <button onClick={() => pickInto(name)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 shadow-sm shadow-emerald-500/20 shrink-0" title="Upload into this folder"><Upload size={15} /> Upload here</button>}
                     {canEdit && <button onClick={() => removeFolder(name)} className="p-1 rounded hover:bg-rose-50 text-rose-400" title="Delete folder"><Trash2 size={13} /></button>}

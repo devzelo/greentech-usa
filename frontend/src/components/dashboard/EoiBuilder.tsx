@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fileName } from "../../lib/fileNames";
 import { PDFViewer, pdf } from "@react-pdf/renderer";
 import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText } from "lucide-react";
 import { fetchSignatories, fetchStamps, withFileToken, type ApiProject, type ApiSignatory, type CompanyFile, type EoiContent, type ProposalCover } from "../../lib/api";
@@ -59,7 +60,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `EOI_${(r.solicitationNo || project.name || "project").replace(/[^\w.-]+/g, "_")}.pdf`;
+      a.download = fileName([project.name, "EOI", r.solicitationNo], "pdf");
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
     } finally { setBusy(false); }

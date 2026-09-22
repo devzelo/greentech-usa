@@ -86,6 +86,7 @@ import { effectiveEndDate } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
+import { fileName } from "../../lib/fileNames";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
@@ -787,7 +788,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         pages.forEach((pg) => merged.addPage(pg));
       }
       const out = new Blob([await merged.save()], { type: "application/pdf" });
-      const safe = `${project?.name || "project"}_Combined_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
+      const safe = fileName([project?.name, "Combined Proposal"], "").replace(/\.$/, "");
 
       // CR-P (112) - "the maximum file that they want most of the time is 30 megabytes per file...
       // if it is less than 30 we usually combine it together, or we just send it technical one PDF,
@@ -824,10 +825,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setProposalDownloading("combined-zip");
     try {
       const [tech, fin] = await Promise.all([buildProposalBlob("technical", true), buildProposalBlob("financial", true)]);
-      const base = (project?.name || "project").replace(/[^a-z0-9._-]+/gi, "_");
+      const base = String(project?.name || "Project");
       const zip = makeZip([
-        { name: `${base}_Technical_Proposal.pdf`, data: new Uint8Array(await tech.arrayBuffer()) },
-        { name: `${base}_Financial_Proposal.pdf`, data: new Uint8Array(await fin.arrayBuffer()) },
+        { name: fileName([base, "Technical Proposal"], "pdf"), data: new Uint8Array(await tech.arrayBuffer()) },
+        { name: fileName([base, "Financial Proposal"], "pdf"), data: new Uint8Array(await fin.arrayBuffer()) },
       ]);
       const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
       const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
@@ -835,7 +836,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const note = `ZIP: Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(zip.size)}`;
       await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial (ZIP)", note, status: "final" }, zip, `${base}_Proposals.zip`);
       await loadNextFinalVer();
-      downloadBlob(zip, `${base}_Proposals.zip`);
+      downloadBlob(zip, fileName([base, "Proposals"], "zip"));
       toast("ZIP created, downloaded and filed under Combined Proposal.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create the ZIP.", "error"); }
     finally { setProposalDownloading(null); }
@@ -1565,8 +1566,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setProposalDownloading(key);
     try {
       const blob = await buildProposalBlob(which, withAttachments);
-      const fileBase = (project.name || "project").replace(/\s+/g, "_");
-      downloadBlob(blob, `${fileBase}_${which === "technical" ? "Technical" : "Financial"}_Proposal.pdf`);
+      // CR 265 - saved as the document reads: "Project C - Technical Proposal.pdf".
+      downloadBlob(blob, fileName([project.name, `${which === "technical" ? "Technical" : "Financial"} Proposal`], "pdf"));
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not build the PDF.", "error");
     } finally {
@@ -4185,7 +4186,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       if (!id) return;
                       try {
                         const blob = await buildProposalBlob(which, true);
-                        const safe = `${project.name || "project"}_${which === "financial" ? "Financial" : "Technical"}_Proposal`.replace(/[^a-z0-9._-]+/gi, "_");
+                        const safe = fileName([project.name, `${which === "financial" ? "Financial" : "Technical"} Proposal`], "").replace(/\.$/, "");
                         const doc = await saveDocumentVersion(id, { kind: "proposal", refId: which, title: revLabel.trim() || `${which === "financial" ? "Financial" : "Technical"} Proposal (Final)`, status: "final" }, blob, `${safe}.pdf`);
                         // CR 203 - the volume itself now reads Final and is locked until a new revision is started.
                         const mark = { revision: Math.max(0, doc.version - 1), at: new Date().toISOString(), by: currentUser?.name || "" };
@@ -7988,7 +7989,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {showReport && project && (
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
-          fileName={`${(project.name || "project").replace(/\s+/g, "_")}_Report.pdf`}
+          fileName={fileName([project.name, "Report"], "pdf")}
           build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />).toBlob()}
           onClose={() => setShowReport(false)}
         />

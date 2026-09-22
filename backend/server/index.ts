@@ -6,6 +6,7 @@ import path from "path";
 import { connectDB } from "./config/db";
 import { errorHandler } from "./middleware/errorHandler";
 import { uploadsGuard } from "./middleware/uploadsGuard";
+import { fileNameHeader } from "./middleware/fileName";
 import projectRoutes from "./routes/projects";
 import employeeRoutes from "./routes/employees";
 import expenseRoutes from "./routes/expenses";
@@ -80,7 +81,7 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: "5mb" }));
 
 // Serve uploaded files — documents require a token, images stay public (see uploadsGuard)
-app.use("/uploads", uploadsGuard, express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads", uploadsGuard, fileNameHeader, express.static(path.join(process.cwd(), "uploads")));
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);

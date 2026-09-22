@@ -1,4 +1,5 @@
 // Thin fetch wrapper. In dev, requests are relative and go through Vite's /api proxy → localhost:4000.
+import { fileName } from './fileNames';
 // In production (split hosting), set VITE_API_URL to the backend's origin (e.g. https://api.example.com)
 // so the browser calls the backend directly; /api and /uploads are prefixed with it. Leave it unset
 // to keep same-origin/relative behaviour.
@@ -46,6 +47,22 @@ export function withFileToken(url: string): string {
   const withTok = token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url;
   // Prefix the backend origin in production (split hosting) so files load cross-origin.
   return `${API_BASE}${withTok}`;
+}
+
+/**
+ * CR 265 - carry the record's real name on the file URL, so the browser saves "Site survey.pdf"
+ * and not the timestamped name the file has on disk. `download` also forces the save dialog; with
+ * or without it the name is used when the viewer's own Save is used. In production files come from
+ * another origin, where an anchor's `download` attribute is ignored, so this is what names them.
+ */
+function fileUrl(filePath: string, name?: string, download = false): string {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  const rel = norm.startsWith('uploads/') ? norm.slice('uploads/'.length) : norm;
+  const url = withFileToken(`/uploads/${rel}`);
+  const clean = (name || '').trim();
+  if (!clean) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}name=${encodeURIComponent(clean)}${download ? '&dl=1' : ''}`;
 }
 
 /** Mint a signed single-file link (7-day expiry) safe to share outside the app. */
@@ -971,7 +988,7 @@ export async function downloadProposalDocx(projectId: string, kind: 'technical' 
   a.href = url;
   const dispo = res.headers.get('Content-Disposition') || '';
   const match = dispo.match(/filename="?([^";]+)"?/i);
-  a.download = match?.[1] || `${kind}_proposal.docx`;
+  a.download = match?.[1] || fileName([projectId, `${kind === "financial" ? "Financial" : "Technical"} Proposal`], "docx");
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1316,10 +1333,8 @@ export async function deleteExpenseAttachment(projectId: string, eid: string, ai
 }
 
 /** Resolve an expense/attachment stored path to a token-guarded viewable URL. */
-export function attachmentUrl(filePath: string): string {
-  const norm = (filePath || "").replace(/\\/g, '/');
-  const rel = norm.startsWith('uploads/') ? norm.slice('uploads/'.length) : norm;
-  return withFileToken(`/uploads/${rel}`);
+export function attachmentUrl(filePath: string, name?: string, download = false): string {
+  return fileUrl(filePath, name, download);
 }
 
 // ── Saved document versions (frozen PDF/Excel copies with history) ────────────
@@ -1758,11 +1773,9 @@ export async function deleteDocument(projectId: string, did: string): Promise<vo
 }
 
 // Build a downloadable URL for a stored document
-export function documentUrl(doc: ApiDocument): string {
-  // filePath is "uploads/<projectId>/<section>/<file>" — served at /uploads behind a token check
-  const norm = doc.filePath.replace(/\\/g, '/');
-  const rel = norm.startsWith('uploads/') ? norm.slice('uploads/'.length) : norm;
-  return withFileToken(`/uploads/${rel}`);
+export function documentUrl(doc: ApiDocument, download = false): string {
+  // filePath is "uploads/<projectId>/<section>/<file>" - served at /uploads behind a token check
+  return fileUrl(doc.filePath, doc.name, download);
 }
 
 // ── Public projects (used by the marketing site) ─────────────────────────────
@@ -2373,10 +2386,8 @@ export interface ApiTechnicalDoc {
   clientComments: string; clientFiles: ApiTechDocClientFile[]; createdAt?: string;
 }
 // filePath is "uploads/<projectId>/technical-docs/<file>" — served behind a token check.
-export function techDocFileUrl(f: { filePath: string }): string {
-  const norm = (f.filePath || "").replace(/\\/g, "/");
-  const rel = norm.startsWith("uploads/") ? norm.slice("uploads/".length) : norm;
-  return withFileToken(`/uploads/${rel}`);
+export function techDocFileUrl(f: { filePath: string; name?: string }, download = false): string {
+  return fileUrl(f.filePath, f.name, download);
 }
 const techBase = (projectId: string) => `/projects/${projectId}/technical-docs`;
 export async function fetchTechnicalDocs(projectId: string, kind?: TechDocKind): Promise<ApiTechnicalDoc[]> {
@@ -2429,7 +2440,7 @@ export async function exportTechnicalDocsZip(projectId: string, did?: string): P
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `Submittal_${projectId}.zip`;
+  a.href = url; a.download = fileName([projectId, "Submittals"], "zip");
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -2467,10 +2478,8 @@ export async function updateTableRowFile(projectId: string, rid: string, fid: st
 export async function deleteTableRowFile(projectId: string, rid: string, fid: string): Promise<ApiTableRow> {
   return request(`${tblBase(projectId)}/${rid}/files/${fid}`, { method: "DELETE" });
 }
-export function tableRowFileUrl(f: { filePath: string }): string {
-  const norm = (f.filePath || "").replace(/\\/g, "/");
-  const rel = norm.startsWith("uploads/") ? norm.slice("uploads/".length) : norm;
-  return withFileToken(`/uploads/${rel}`);
+export function tableRowFileUrl(f: { filePath: string; name?: string }, download = false): string {
+  return fileUrl(f.filePath, f.name, download);
 }
 
 // ── Agreements (one shared engine, two ownership contexts) ───────────────────

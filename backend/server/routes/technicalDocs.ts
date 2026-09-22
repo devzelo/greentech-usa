@@ -225,7 +225,9 @@ router.get("/export", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!rows.length) return res.status(404).json({ error: "Nothing to export." });
 
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="Submittal_${req.params.id}.zip"`);
+    // CR 265 - named after the project and what is inside, not the bare id.
+    const zipName = `${String(req.params.id).replace(/[\\/:*?"<>|]+/g, "-")} - Submittals.zip`;
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"; filename*=UTF-8''${encodeURIComponent(zipName)}`);
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.on("error", (err) => { throw err; });
     archive.pipe(res);

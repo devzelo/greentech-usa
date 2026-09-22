@@ -139,12 +139,13 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     ]);
     type Doc = (typeof docs)[number];
 
-    const safeName = sanitize(project.name || projectId).replace(/\s+/g, "_");
+    // CR 265 - readable: "Project C - Project export 2026-09-22.zip".
+    const safeName = sanitize(project.name || projectId);
     const ts = new Date().toISOString().slice(0, 10);
-    const zipFileName = `${safeName}_export_${ts}.zip`;
+    const zipFileName = `${safeName} - Project export ${ts}.zip`;
 
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipFileName}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${zipFileName}"; filename*=UTF-8''${encodeURIComponent(zipFileName)}`);
 
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.on("warning", (err) => { if (err.code !== "ENOENT") throw err; });

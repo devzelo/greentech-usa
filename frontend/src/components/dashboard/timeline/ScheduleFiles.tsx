@@ -106,7 +106,7 @@ const ScheduleFiles = forwardRef<ScheduleFilesHandle, { projectId: string; proje
                         <button type="button" onClick={() => setPreview(d)} className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-slate-700 hover:text-primary">{d.name}</button>
                         <span className="shrink-0 text-[10px] text-slate-400">{d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString(undefined, { dateStyle: "medium" }) : ""}</span>
                         <button type="button" onClick={() => setPreview(d)} title="Preview" className="rounded p-1 text-slate-400 hover:text-primary"><Eye size={13} /></button>
-                        <a href={documentUrl(d)} download={d.name} title="Download" className="rounded p-1 text-slate-400 hover:text-primary"><Download size={13} /></a>
+                        <a href={documentUrl(d, true)} download={d.name} title="Download" className="rounded p-1 text-slate-400 hover:text-primary"><Download size={13} /></a>
                         <ShareMenu fileName={d.name} fileUrl={documentUrl(d)} projectName={projectName} size={13} />
                         {canEdit && <button type="button" onClick={() => void remove(d)} title="Delete" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>}
                       </li>
