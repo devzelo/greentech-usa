@@ -40,6 +40,7 @@ import { fetchResumeByEmp, fetchResumeByUser, fetchSubResume, fetchSubResumes, t
 import RichTextEditor from "./RichTextEditor";
 import * as XLSX from "xlsx";
 import DocSection from "./DocSection";
+import SectionCard from "./SectionCard";
 import ProjectInfoTab from "./ProjectInfoTab";
 import TechnicalDocsTab from "./TechnicalDocsTab";
 import SubcontractorResumes from "./SubcontractorResumes";
@@ -246,8 +247,11 @@ function AccessToggleRow({ label, sublabel, on, busy, indent, onToggle }: {
 
 // ── Default tabs ───────────────────────────────────────────────────────────
 // CR-PR-13 / CR 184 — Project Nature is no longer its own tab; it is part of Categories, shown in the About box at the top of Project Info.
+// CR 276 (2026-09-22): Client Info is no longer a tab of its own. It only ever held the client's
+// name and contact, so it is now the first (foldable) section inside Project Info. The permission
+// key stays, so whoever could see it before still can, and whoever could not still cannot.
+const CLIENT_PERM_TAB = { id: "client", label: "Client Info (in Project Info)", icon: Building2 };
 const DEFAULT_TABS = [
-  { id: "client", label: "Client Info", icon: Building2 },
   { id: "project-info", label: "Project Info", icon: FileText },
   { id: "proposals", label: "Proposals", icon: FileSpreadsheet },
   { id: "pm", label: "Project Management", icon: Calendar },
@@ -305,7 +309,7 @@ export default function ProjectWorkspace() {
   const proposalPresent = useBuilderPresence(id ? `proposal:${id}` : null, "the Proposal builder"); // CR-B-01
 
   // Tabs
-  const [activeTab, setActiveTab] = useState("client");
+  const [activeTab, setActiveTab] = useState("project-info");
   // CR 191 — "Edit timeline" on the header card opens Project Management > Timeline / Milestones.
   const [pmFocus, setPmFocus] = useState<{ id: string; n: number } | undefined>(undefined);
   type FieldType = "text" | "textarea" | "number" | "date" | "url" | "email" | "select" | "checkbox" | "file";
@@ -674,6 +678,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // CR-P-30 — legacy deep-links (?tab=expenses|invoice-sent|invoice-received) now open the
     // Finances tab on the matching sub-tab; every existing wired link keeps working.
     if (tab && (FIN_PERM_BY_KEY as Record<string, string>)[tab]) { setFinSub(tab as FinSub); tab = "finances"; }
+    // CR 276 - Client Info became a section of Project Info; old links still land in the right place.
+    if (tab === "client") tab = "project-info";
     if (fin) setFinSub(fin as FinSub);
     if (tab) setActiveTab(tab);
     if (proc) setProcSub(proc as typeof procSub);
@@ -2230,7 +2236,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setGName(""); setGEmail(""); setGPassword(""); setGExistingId(null);
     // CR-P (77)/(80) — every tab starts Hidden: nothing is visible until the owner allows it.
     const initialPerms: Record<string, "none" | "view" | "edit"> = {};
-    allTabsAll.forEach((t) => { initialPerms[t.id] = "none"; });
+    permTabsAll.forEach((t) => { initialPerms[t.id] = "none"; });
     setGPerms(initialPerms); setGAlsoProjects([]); setGExpiry(""); setGuestStep(1);
     setGFigures(false);   // an outside login does not see the financial figures unless switched on
     setGrantingForSubIdx(null); setGrantingPartner(false); setGrantingVendor(false);
@@ -2276,7 +2282,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setGName(jvInfo.partnerName || jvInfo.contactName || "");
     setGEmail(jvInfo.email || "");
     const full: Record<string, "none" | "view" | "edit"> = {};
-    allTabsAll.forEach((t) => { full[t.id] = "edit"; });
+    permTabsAll.forEach((t) => { full[t.id] = "edit"; });
     setGPerms(full);
     setGrantingPartner(true);
     setGuestStep(2);
@@ -2380,7 +2386,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const emp = employeePool.find((e) => e.empId === empIdStr);
     const guest = emp?.id ? guestsList.find((g) => g.userId === emp.id) : undefined;
     const merged: Record<string, "view" | "edit"> = {};
-    for (const t of allTabsAll) {
+    for (const t of permTabsAll) {
       const v = empPerms[t.id] ?? (guest?.tabPermissions?.[t.id] as "view" | "edit" | undefined) ?? "none";
       if (v === "view" || v === "edit") merged[t.id] = v;
     }
@@ -2842,6 +2848,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   }, [showShowcaseModal]);
 
   const allTabsAll = [...DEFAULT_TABS, ...customTabs];
+  // What can be granted: the tabs above plus Client Info, which is a section now (CR 276).
+  const permTabsAll = [CLIENT_PERM_TAB, ...allTabsAll];
 
   // Reset all add-tab state and close the modal.
   const closeAddTab = () => {
@@ -2942,7 +2950,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const handleRemoveCustomTab = (tabId: string) => {
     // Remove the tab AND any sub-tabs (children) of it
     setCustomTabs((prev) => prev.filter((t) => t.id !== tabId && t.parentId !== tabId));
-    if (activeTab === tabId) setActiveTab("client");
+    if (activeTab === tabId) setActiveTab("project-info");
     setTabMenuOpen(null); setTabMenuAnchor(null);
   };
 
@@ -3065,13 +3073,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     } catch (e) { toast(e instanceof Error ? e.message : "Could not save the extension.", "error"); throw e; }
   };
 
+  // CR 276 - folds away like the client section above it.
   const aboutCard = project && (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-5 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Info size={14} className="text-primary shrink-0" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">About this project</span>
-        </div>
+    <SectionCard
+      title="About This Project"
+      icon={<Info size={16} className="shrink-0 text-primary" />}
+      storageKey={`gt-sec-about-${id || ""}`}
+      actions={<>
         {!canEditIdentity ? null : !aboutEditing ? (
           <button
             onClick={() => { setAboutCats(projectCategories(project)); setAboutDesc(project.description || ""); setAboutEditing(true); }}
@@ -3107,7 +3115,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             </button>
           </div>
         )}
-      </div>
+      </>}
+    >
+      <div className="space-y-3">
       {aboutEditing ? (
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -3145,7 +3155,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           )}
         </>
       )}
-    </div>
+      </div>
+    </SectionCard>
   );
   // The editor for a custom (library or free) section, in either proposal volume (step 7).
   // CR 199 - jump from the contents list to a section's editor and flash it, so it is obvious where it went.
@@ -3319,6 +3330,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           return (cfg?.employees ?? true) !== false;
         });
 
+  // CR 276 - the Client Information section follows the old Client Info tab's permission.
+  const canSeeClient = isOwner
+    ? true
+    : isGuest
+      ? myGuestPerms["client"] === "view" || myGuestPerms["client"] === "edit"
+      : (() => {
+          const cfg = tabAccess["client"];
+          if (cfg?.employeeIds && cfg.employeeIds.length > 0) return !!myEmpId && cfg.employeeIds.includes(myEmpId);
+          return (cfg?.employees ?? true) !== false;
+        })();
+
   // Per-procurement-sub-tab access for the current viewer. Staff get full edit; a guest gets exactly
   // what was granted (sub-tab perm, falling back to the module-level "procurement" perm).
   const procPermFor = (key: string): "none" | "view" | "edit" => {
@@ -3435,6 +3457,80 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [clientLocked, setClientLocked] = useState(true);
   // I5 — warn before leaving/reloading with unsaved workspace edits (proposal builder etc.).
   const [dirty, setDirty] = useState(false);
+
+  // CR 276 - the client's details, folded away when they are not needed. Same content as the old
+  // Client Info tab, now the first section of Project Info.
+  const clientSection = project && canSeeClient && (
+    <SectionCard
+      title="Client Information"
+      icon={<Users size={16} className="shrink-0 text-primary" />}
+      storageKey={`gt-sec-client-${id || ""}`}
+      actions={!canEditIdentity ? (
+        <span className="rounded-md bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">View only</span>
+      ) : clientLocked ? (
+        <button onClick={() => setClientLocked(false)} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-primary"><Edit2 size={12} /> Edit</button>
+      ) : (
+        <button onClick={() => setClientLocked(true)} className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700 transition-colors hover:bg-slate-200"><Lock size={12} /> Lock</button>
+      )}
+    >
+      <div className="space-y-6">
+        <p className="text-xs text-slate-400">{clientLocked ? <>Locked. Click <strong>Edit</strong> to change, then <strong>Save Workspace</strong>.</> : <>Editing - changes persist when you click <strong>Save Workspace</strong> at the top.</>}</p>
+            {/* CR-P (127) — the client is picked from the Directory; its details show as a small
+                information box (always from the Directory) instead of fields to type in. Only
+                the reference and a note are the project's own. */}
+            {canEditIdentity && !clientLocked && (
+              <CompanyPicker
+                label="Client from the Directory"
+                value={clientInfo.name}
+                category="client"
+                // Typing a new name drops the old link until a company is picked.
+                onNameChange={(v) => { setClientInfo((prev) => ({ ...prev, name: v, companyId: "" })); setDirty(true); }}
+                onSelectCompany={(c) => {
+                  const cp = c.contactPersons?.[0];
+                  setClientInfo((prev) => ({
+                    ...prev,
+                    companyId: c._id,
+                    name: c.name,
+                    contactName: cp?.name || "",
+                    email: c.email || cp?.email || "",
+                    phone: c.phone || cp?.phone || "",
+                    address: c.address || "",
+                  }));
+                  setDirty(true);
+                }}
+                placeholder="Search the Directory for the client…"
+                hint="Not in the Directory? Type the name and add it, or use Open in Directory to create it with the full details, then pick it here."
+              />
+            )}
+            <ClientInfoCard info={clientInfo} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Reference Number</label>
+                <input
+                  type="text"
+                  value={clientInfo.reference}
+                  onChange={(e) => updateClient("reference", e.target.value)}
+                  disabled={!canEditIdentity || clientLocked}
+                  placeholder="e.g. USAID-GH-2026-012"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Note</label>
+                <textarea
+                  rows={2}
+                  value={clientInfo.notes}
+                  onChange={(e) => updateClient("notes", e.target.value)}
+                  disabled={!canEditIdentity || clientLocked}
+                  placeholder="Anything to remember about this client on this project..."
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60"
+                />
+              </div>
+            </div>
+      </div>
+    </SectionCard>
+  );
+
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
@@ -4056,80 +4152,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         >
 
           {/* CLIENT INFO */}
-          {activeTab === "client" && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-display font-bold text-slate-900">Client Information</h3>
-                  <p className="text-xs text-slate-400 mt-1">{clientLocked ? <>Locked. Click <strong>Edit</strong> to change, then <strong>Save Workspace</strong>.</> : <>Editing — changes persist when you click <strong>Save Workspace</strong> at the top.</>}</p>
-                </div>
-                {!canEditIdentity ? (
-                  <span className="px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500">View only</span>
-                ) : clientLocked ? (
-                  <button onClick={() => setClientLocked(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary transition-colors"><Edit2 size={13} /> Edit</button>
-                ) : (
-                  <button onClick={() => setClientLocked(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors"><Lock size={13} /> Lock</button>
-                )}
-              </div>
-              {/* CR-P (127) — the client is picked from the Directory; its details show as a small
-                  information box (always from the Directory) instead of fields to type in. Only
-                  the reference and a note are the project's own. */}
-              {canEditIdentity && !clientLocked && (
-                <CompanyPicker
-                  label="Client from the Directory"
-                  value={clientInfo.name}
-                  category="client"
-                  // Typing a new name drops the old link until a company is picked.
-                  onNameChange={(v) => { setClientInfo((prev) => ({ ...prev, name: v, companyId: "" })); setDirty(true); }}
-                  onSelectCompany={(c) => {
-                    const cp = c.contactPersons?.[0];
-                    setClientInfo((prev) => ({
-                      ...prev,
-                      companyId: c._id,
-                      name: c.name,
-                      contactName: cp?.name || "",
-                      email: c.email || cp?.email || "",
-                      phone: c.phone || cp?.phone || "",
-                      address: c.address || "",
-                    }));
-                    setDirty(true);
-                  }}
-                  placeholder="Search the Directory for the client…"
-                  hint="Not in the Directory? Type the name and add it, or use Open in Directory to create it with the full details, then pick it here."
-                />
-              )}
-              <ClientInfoCard info={clientInfo} />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Reference Number</label>
-                  <input
-                    type="text"
-                    value={clientInfo.reference}
-                    onChange={(e) => updateClient("reference", e.target.value)}
-                    disabled={!canEditIdentity || clientLocked}
-                    placeholder="e.g. USAID-GH-2026-012"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Note</label>
-                  <textarea
-                    rows={2}
-                    value={clientInfo.notes}
-                    onChange={(e) => updateClient("notes", e.target.value)}
-                    disabled={!canEditIdentity || clientLocked}
-                    placeholder="Anything to remember about this client on this project..."
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60"
-                  />
-                </div>
-              </div>
-
-            </div>
-          )}
-
           {/* PROJECT INFO */}
           {activeTab === "project-info" && id && (
-            <ProjectInfoTab projectId={id} canEdit={canEdit} isOwner={isOwner} projectInfo={projectPdfInfo(project)} clientName={project?.clientInfo?.name} header={aboutCard} />
+            <ProjectInfoTab
+              projectId={id}
+              canEdit={canEdit}
+              isOwner={isOwner}
+              projectInfo={projectPdfInfo(project)}
+              clientName={project?.clientInfo?.name}
+              header={<div className="space-y-4">{clientSection}{aboutCard}</div>}
+            />
           )}
 
           {/* PROPOSALS */}
@@ -6612,7 +6644,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none appearance-none disabled:opacity-60"
                     >
                       <option value="">{editingFieldsForTab ? "Top-level tab" : "Select a main tab…"}</option>
-                      {[...DEFAULT_TABS, ...customTabs.filter((c) => !c.parentId && c.id !== editingFieldsForTab)].map((t) => (
+                      {[CLIENT_PERM_TAB, ...DEFAULT_TABS, ...customTabs.filter((c) => !c.parentId && c.id !== editingFieldsForTab)].map((t) => (
                         <option key={t.id} value={t.id}>↳ {t.label}</option>
                       ))}
                     </select>

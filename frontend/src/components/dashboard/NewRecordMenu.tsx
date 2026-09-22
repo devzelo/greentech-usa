@@ -48,7 +48,7 @@ const PROJECT_RECORDS: RecordDef[] = [
   { key: "expense", label: "New Expense", icon: DollarSign, scope: "project", dest: P("?tab=expenses") },
   { key: "shipment", label: "New Shipment", icon: Truck, scope: "project", dest: P("?tab=procurement&proc=shipment") },
   { key: "document", label: "New Document", icon: FileText, scope: "project", dest: P("?tab=tech-docs") },
-  { key: "client", label: "New Client", icon: Users, scope: "project", dest: P("?tab=client") },
+  { key: "client", label: "New Client", icon: Users, scope: "project", dest: P("?tab=project-info") },
 ];
 
 export default function NewRecordMenu() {
