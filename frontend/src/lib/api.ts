@@ -136,6 +136,8 @@ export const CONTRACT_TYPES = [
 
 export interface ApiProject {
   id: string;
+  /** When the project was created - the default order of the project lists (CR 262). */
+  createdAt?: string;
   name: string;
   status: ProjectStatus;
   owner: string;

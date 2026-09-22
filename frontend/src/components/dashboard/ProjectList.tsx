@@ -98,12 +98,14 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     : key === "client" ? (p.clientInfo?.name || "").toLowerCase()
     : key === "contractNo" ? (p.contractNo || "").toLowerCase()
     : String((p as unknown as Record<string, unknown>)[key] || "").toLowerCase();
+  // CR 262 - with no column picked, both lists are newest project first, by creation date.
+  const byCreated = (a: ApiProject, b: ApiProject) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
   const filtered = sort
     ? [...filteredRaw].sort((a, b) => {
         const av = sortVal(a, sort.key), bv = sortVal(b, sort.key);
         return av < bv ? -sort.dir : av > bv ? sort.dir : 0;
       })
-    : filteredRaw;
+    : [...filteredRaw].sort(byCreated);
   // A deadline that has passed on a project that isn't finished yet.
   const overdue = (p: ApiProject) =>
     !!effectiveEndDate(p) && effectiveEndDate(p) < new Date().toLocaleDateString("en-CA") &&
