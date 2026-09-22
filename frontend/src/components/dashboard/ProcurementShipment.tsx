@@ -54,6 +54,22 @@ const STATUS_PCT: Record<ShipmentStatus, number> = { Preparing: 0, Fabrication: 
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
+// CR 278 (2026-09-23): an open bed / flat rack is a kind of container, not a flag beside the type.
+// These are suggestions, not a closed list: the field still takes anything typed.
+const CONTAINER_TYPES = [
+  "DV (dry van)",
+  "HC (high cube)",
+  "Flat rack / open bed",
+  "Open top",
+  "Reefer (refrigerated)",
+  "Tank",
+  "Platform",
+  "LCL (part container)",
+  "Breakbulk",
+  "Air freight",
+  "Truck / road",
+];
+
 // CR-PR-08 — derive a live carrier tracking deep-link from the carrier name + tracking/container #,
 // so "Track on carrier site" opens the carrier's own live status page in one click without the user
 // pasting a URL. `{n}` is replaced with the tracking number. Unknown carriers fall back to a web
@@ -92,7 +108,7 @@ type ShipDraft = {
   status: ShipmentStatus; deadline: string; poIds: string[];
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
   trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
-  containerType: string; containerSize: string; openBed: boolean;
+  containerType: string; containerSize: string;
   goods: Array<{ description: string; qty: string; unit: string }>;
   agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
 };
@@ -100,7 +116,7 @@ const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
-  containerType: "", containerSize: "", openBed: false,
+  containerType: "", containerSize: "",
   goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
 
@@ -251,7 +267,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       status: s.status || "Preparing", deadline: s.deadline || "", poIds: s.poIds || [],
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
       trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
-      containerType: s.containerType || "", containerSize: s.containerSize || "", openBed: !!s.openBed,
+      // An old shipment carried the flag beside the type; it becomes the type itself (CR 278).
+      containerType: s.containerType || (s.openBed ? "Flat rack / open bed" : ""), containerSize: s.containerSize || "",
       goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
     setPopup({ mode: "edit", sid: s._id });
@@ -265,7 +282,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       description: draft.description, status: draft.status, deadline: draft.deadline, poIds: draft.poIds,
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
-      containerType: draft.containerType, containerSize: draft.containerSize, openBed: draft.openBed,
+      containerType: draft.containerType, containerSize: draft.containerSize, openBed: false,
       goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
       agencyWebsite: draft.agencyWebsite, agencyCountry: draft.agencyCountry,
     };
@@ -436,7 +453,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Carrier</p><p className="font-bold text-slate-800">{active.carrier || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Current location</p><p className="font-bold text-slate-800">{active.currentLocation || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</p><p className="font-bold text-slate-800">{active.etaDate || "—"}{active.etaDate && etaCountdown(active.etaDate) && <span className="text-primary"> ({etaCountdown(active.etaDate)})</span>}</p></div>
-                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType, active.containerSize].filter(Boolean).join(" · ") || "—"}{active.openBed ? " · Open bed" : ""}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType || (active.openBed ? "Flat rack / open bed" : ""), active.containerSize].filter(Boolean).join(" · ") || "—"}</p></div>
                   {(() => {
                     const url = carrierTrackingUrl(active.carrier, active.trackingNo, active.trackingUrl);
                     return url ? (
@@ -779,12 +796,15 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Anticipated arrival
                     <input type="date" className={`${inp} mt-1`} value={draft.etaDate} onChange={(e) => setDraft({ ...draft, etaDate: e.target.value })} /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container type
-                    <input className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. 40' HC" /></label>
+                    <input list="gt-container-types" className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. HC (high cube), Flat rack / open bed" />
+                    <datalist id="gt-container-types">
+                      {CONTAINER_TYPES.map((t) => <option key={t} value={t} />)}
+                    </datalist>
+                  </label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container size
                     <input className={`${inp} mt-1`} value={draft.containerSize} onChange={(e) => setDraft({ ...draft, containerSize: e.target.value })} placeholder="e.g. 40 ft" /></label>
                   <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional, auto-derived)</span>
                     <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="Leave blank to auto-link from carrier + number" /></label>
-                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
               </FormSection>
 

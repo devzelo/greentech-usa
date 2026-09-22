@@ -42,6 +42,14 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
         s.rows.unshift({ docType: required, remarks: "", files: [] });
         changed = true;
       }
+      // CR 278 (2026-09-23) - "open bed / flat rack" was a tick box beside the container type; it
+      // is a type in its own right now, so an old shipment's flag is folded into the type once.
+      if (s.openBed) {
+        const t = String(s.containerType || "").trim();
+        if (!/flat ?rack|open ?bed/i.test(t)) s.containerType = t ? `${t} · Flat rack / open bed` : "Flat rack / open bed";
+        s.openBed = false;
+        changed = true;
+      }
       if (changed) { try { await s.save(); } catch { /* best-effort backfill */ } }
     }
     res.json(docs);
