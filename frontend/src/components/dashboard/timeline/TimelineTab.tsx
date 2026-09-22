@@ -343,6 +343,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName, remarks: printRemarks,
+    zoom,
   });
   const versionLabel = dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
   const buildPdf = async () => {
@@ -350,10 +351,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     return buildTimelinePdf(pdfInput(versionLabel));
   };
   const fileName = `${project.name.replace(/[\\/:*?"<>|]/g, "_")} - ${scheduleName} ${toIso(today)}.pdf`;
-  const downloadPdf = async () => {
+  const downloadPdf = async (withRemarks = printRemarks) => {
     setBusy("pdf");
     try {
-      const blob = await buildPdf();
+      const { buildTimelinePdf } = await import("../../../lib/timelinePdf");
+      const blob = await buildTimelinePdf({ ...pdfInput(versionLabel), remarks: withRemarks });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = fileName; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -363,7 +365,19 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // CR 245 / 250 - Print opens a preview of the whole schedule (summary, table and chart on 18" x 24"),
   // with Print, Send, Download and "Fit to one page".
   const [previewOpen, setPreviewOpen] = useState(false);
-  const printPdf = () => setPreviewOpen(true);
+  // CR 273 - the remark is an internal note, so printing it is decided before anything is built:
+  // Preview and Download both ask first, then carry the answer into the document.
+  const [askRemarks, setAskRemarks] = useState<null | "preview" | "download">(null);
+  const printPdf = () => setAskRemarks("preview");
+  const startDownload = () => setAskRemarks("download");
+  const goAhead = (withRemarks: boolean) => {
+    const next = askRemarks;
+    setPrintRemarks(withRemarks);
+    setAskRemarks(null);
+    // The state lands on the next render, so hand the choice to the builder directly.
+    if (next === "preview") setPreviewOpen(true);
+    else if (next === "download") void downloadPdf(withRemarks);
+  };
   // Sharing files the PDF under Project Management > Schedules, then shares that copy.
   const sharePdf = async () => {
     const blob = await buildPdf();
@@ -578,9 +592,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>
       )}
 
-      {started && <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
-        {/* CR 268 - the bar follows the page down, so the actions stay reachable on a long schedule. */}
-        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+      {started && (
+      <div className="space-y-4">
+        {/* CR 268, extended 2026-09-22: one bar for the whole schedule. It stays at the top of the
+            page while you scroll the table AND the timeline chart, because the actions belong to
+            both (the chart is part of the same schedule). */}
+        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-base font-bold text-slate-900">Phases & Milestones</h3>
             {hasCategories && (
@@ -605,7 +622,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             {/* Everything that produces a file or a printout. */}
             <ToolMenu label="Export" icon={<Download size={13} />}>
               <button type="button" onClick={printPdf} className={MENU_ITEM}><Printer size={13} /> Preview / Print</button>
-              <button type="button" onClick={downloadPdf} disabled={busy === "pdf"} className={MENU_ITEM}>
+              <button type="button" onClick={startDownload} disabled={busy === "pdf"} className={MENU_ITEM}>
                 {busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF
               </button>
               <button type="button" onClick={downloadCsv} className={MENU_ITEM}><FileSpreadsheet size={13} /> Download for Excel</button>
@@ -638,6 +655,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           </div>
         </div>
 
+        <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
         <div className="flex flex-col lg:flex-row">
           {/* Master list */}
           {canEdit && (
@@ -873,7 +891,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             )}
           </div>
         </div>
-      </div>}
+        </div>
 
       {rows.some((m) => m.plannedStart && m.plannedEnd) && (
         <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -911,6 +929,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           />
           <GanttLegend />
         </div>
+      )}
+      </div>
       )}
 
       {/* Save bar */}
@@ -983,6 +1003,35 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                   <button onClick={() => setSubDialog(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
                   <button onClick={() => void submitSubDialog()} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">{subDialog.id ? "Save" : "Create schedule"}</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* CR 273 - before anything is built: does this print carry the remarks? */}
+      {askRemarks && createPortal(
+        <div className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setAskRemarks(null)}>
+          <div className="my-24 w-full max-w-sm rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                <StickyNote size={15} className="text-amber-500" /> {askRemarks === "preview" ? "Preview the schedule" : "Download the schedule"}
+              </p>
+              <button onClick={() => setAskRemarks(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 p-5">
+              <p className="text-xs text-slate-600">Print each row's remark beside it? Remarks are the project manager's internal notes, so they are left out unless you ask for them.</p>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary">
+                <input type="checkbox" checked={printRemarks} onChange={(e) => setPrintRemarks(e.target.checked)} className="accent-emerald-600" />
+                Include the remarks column
+              </label>
+              <p className="text-[10px] text-slate-400">The chart prints at the zoom you have chosen: {GANTT_ZOOMS.find(([k]) => k === zoom)?.[1].toLowerCase()}, across the whole timeline.</p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setAskRemarks(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                <button onClick={() => goAhead(printRemarks)} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">
+                  {askRemarks === "preview" ? <><Printer size={13} /> Open the preview</> : <><Download size={13} /> Download</>}
+                </button>
               </div>
             </div>
           </div>

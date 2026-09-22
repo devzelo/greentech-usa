@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, type PDFPage } from "pdf-lib";
 import type { ApiMilestone } from "./api";
-import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableRow } from "./pdfBrand";
+import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
   DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
@@ -15,6 +15,20 @@ import {
 // CR 245 / 246 - the schedule prints on 18" x 24" landscape with narrow margins (they pin it on the wall).
 const PAGE = WIDE_LANDSCAPE;
 const RED = rgb(0.86, 0.15, 0.15);
+// CR 273 - the status colours the screen uses, so the print reads the same.
+const STATUS_INK: Record<string, [number, number, number]> = {
+  not_started: [0.39, 0.45, 0.55],
+  in_progress: [0.15, 0.39, 0.92],
+  completed: [0.02, 0.59, 0.41],
+  on_hold: [0.85, 0.47, 0.02],
+  delayed: [0.86, 0.15, 0.15],
+  cancelled: [0.58, 0.64, 0.72],
+};
+const statusInk = (st?: string) => { const c = STATUS_INK[st || "not_started"] || STATUS_INK.not_started; return rgb(c[0], c[1], c[2]); };
+const SKY = rgb(0.94, 0.97, 1);          // the wash behind the Actual columns on screen
+const BLUE = rgb(0.15, 0.39, 0.92);
+const EMERALD = rgb(0.06, 0.73, 0.51);
+
 const hex = (h: string) => { const n = parseInt(h.replace("#", ""), 16); return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
 const mix = (h: string, a: number) => { const n = parseInt(h.replace("#", ""), 16); const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v * a + 255 * (1 - a)) / 255); return rgb(c[0], c[1], c[2]); };
 
@@ -31,6 +45,8 @@ export interface TimelinePdfInput {
   categories?: string[];  // the schedule's categories, in order
   /** CR 270 - print each row's remark on its row. Off by default: remarks are internal notes. */
   remarks?: boolean;
+  /** CR 273 - the chart prints at the zoom picked on screen, across the whole timeline. */
+  zoom?: "month" | "week" | "day";
 }
 
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
@@ -67,26 +83,34 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   f.y -= 62;
 
   // ── Table ──
+  // CR 273 - the same columns the screen shows, in the same order, with the same colours: no
+  // baseline, no description, and the remark only when it was asked for before printing.
   f.y = sectionHeading(f.page, b, "Phases & milestones", X, f.y, W);
   const tableRows: TableRow[] = rows.map((m, i) => {
-    const d = daysBetween(parseDate(m.plannedStart) || t0, parseDate(m.plannedEnd) || t0);
     const lateBy = delayDays(m, today);
-    const moved = (m.baselineStart && m.baselineStart !== m.plannedStart) || (m.baselineEnd && m.baselineEnd !== m.plannedEnd);
+    const pct = phasePercent(m);
+    const ed = effectiveDays(m);
+    const actualEnd = m.actualEnd ? fmtDay(m.actualEnd) : m.actualStart ? "ongoing" : "-";
+    const cells = [
+      String(i + 1),
+      m.name + (m.responsible?.length ? `\n${m.responsible.join(", ")}` : ""),
+      fmtDay(m.plannedStart) || "-",
+      fmtDay(m.plannedEnd) || "-",
+      fmtDay(m.actualStart) || "-",
+      actualEnd + (lateBy && m.actualEnd ? `\n${lateBy} days late` : ""),
+      ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? " (actual)" : ""}`,
+      STATUS_META[m.status || "not_started"].label,
+      `${pct}%`,
+      ...(o.remarks ? [m.notes || ""] : []),
+    ];
+    const cellColors: Array<ReturnType<typeof rgb> | undefined> = [];
+    cellColors[5] = lateBy && m.actualEnd ? RED : undefined;          // a late finish, red as on screen
+    cellColors[7] = statusInk(m.status);                              // the status chip's colour
     return {
-      cells: [
-        String(i + 1),
-        m.name + (m.responsible?.length ? `\n${m.responsible.join(", ")}` : ""),
-        m.plannedStart ? `${fmtDay(m.plannedStart)}\n${fmtDay(m.plannedEnd)}` : "-",
-        moved ? `${fmtDay(m.baselineStart)}\n${fmtDay(m.baselineEnd)}` : "same",
-        m.actualStart ? `${fmtDay(m.actualStart)}\n${m.actualEnd ? fmtDay(m.actualEnd) : "ongoing"}` : "-",
-        (() => { const ed = effectiveDays(m); return ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? "\n(actual)" : ""}`; })(),
-        STATUS_META[m.status || "not_started"].label + (lateBy ? `\n${lateBy} days late` : ""),
-        `${phasePercent(m)}%`,
-        m.description || "",
-        // CR 234 kept the PM's note off the print; CR 270 makes it a choice, off unless asked for.
-        ...(o.remarks ? [m.notes || ""] : []),
-      ],
-      color: lateBy ? RED : undefined,
+      cells,
+      cellColors,
+      bar: { col: 8, pct, color: pct >= 100 ? EMERALD : BLUE },
+      color: lateBy && !m.actualEnd ? RED : undefined,
     };
   });
   // CR 238 - grouped under their categories when the schedule has them, each group with a heading
@@ -94,49 +118,62 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const grouped: TableRow[] = rows.some((m) => (m.category || "").trim())
     ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] })), o.categories).flatMap((g) => [{ group: `${g.category}  (${g.items.length})` }, ...g.items.map((x) => x.row)])
     : tableRows;
-  const cols = [
-    { label: "#", w: 22 }, { label: "Phase / milestone", w: 132, wrap: true }, { label: "Planned", w: 70, wrap: true },
-    { label: "Baseline", w: 70, wrap: true }, { label: "Actual", w: 70, wrap: true }, { label: "Duration", w: 50 },
-    { label: "Status", w: 66, wrap: true }, { label: "%", w: 34, align: "right" as const },
+  const fixed: TableCol[] = [
+    { label: "#", w: 24 },
+    { label: "Phase / milestone", w: 200, wrap: true },
+    { label: "Start", w: 74, band: "Planned" },
+    { label: "End", w: 74, band: "Planned" },
+    { label: "Start", w: 74, band: "Actual", tint: SKY },
+    { label: "End", w: 74, band: "Actual", tint: SKY, wrap: true },
+    { label: "Duration", w: 74, align: "right" as const },
+    { label: "Status", w: 80 },
+    { label: "% complete", w: 62 },
   ];
-  const used = cols.reduce((s, c) => s + c.w, 0);
-  // CR 270 - with remarks on, the last two columns share what is left of the row.
-  const tail = o.remarks
-    ? [{ label: "Description", w: (W - used) / 2, wrap: true }, { label: "Remark", w: (W - used) / 2, wrap: true }]
-    : [{ label: "Description", w: W - used, wrap: true }];
-  f = drawTable(b, f, X, [...cols, ...tail], grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.5, maxLines: 5 });
+  const used = fixed.reduce((s2, c) => s2 + c.w, 0);
+  const cols: TableCol[] = o.remarks ? [...fixed, { label: "Remark", w: W - used, wrap: true }] : fixed;
+  // Without the remark column the table would float; widen the name instead.
+  if (!o.remarks) cols[1] = { ...cols[1], w: cols[1].w + (W - used) };
+  f = drawTable(b, f, X, cols, grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.8, maxLines: 4 });
 
   // ── Gantt ──
   if (rows.some((m) => m.plannedStart && m.plannedEnd)) drawGantt(doc, b, newPage, rows, o, today);
+
 
   stampPageNumbers(doc, b);
   return new Blob([await doc.save()], { type: "application/pdf" });
 }
 
-function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date) {
-  const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = 260, CH = W - LABEL, ROW = 17, BOTTOM = 70;
-  const dates: Date[] = [];
-  for (const m of rows) for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd, m.baselineStart, m.baselineEnd]) { const d = parseDate(v); if (d) dates.push(d); }
-  for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }
-  const min = new Date(Math.min(...dates.map((d) => d.getTime())));
-  const max = new Date(Math.max(...dates.map((d) => d.getTime())));
-  const from = new Date(min.getFullYear(), min.getMonth(), 1);
-  const to = new Date(max.getFullYear(), max.getMonth() + 1, 1);
-  const months: Date[] = [];
-  for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(d);
-  const mw = CH / months.length;
-  const x = (d: Date) => {
-    const mi = (d.getFullYear() - from.getFullYear()) * 12 + (d.getMonth() - from.getMonth());
-    const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    return X + LABEL + mi * mw + ((d.getDate() - 1) / dim) * mw;
-  };
-  const xEnd = (d: Date) => x(new Date(d.getTime() + DAY));
-  const end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline);
-  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+/**
+ * CR 273 - the chart prints at the zoom chosen on screen (monthly, weekly or daily) and covers the
+ * whole timeline: when the range does not fit the sheet at that zoom, it continues on the next page
+ * instead of being squeezed, with the phase column repeated and the dates it covers in the heading.
+ * Categories print as summary bands over their milestones, as they appear on screen.
+ */
+type GanttLine =
+  | { kind: "section"; category: string; items: ApiMilestone[] }
+  | { kind: "row"; m: ApiMilestone; index: number };
 
-  // CR 270 - the printed chart follows the screen: a band per category over its milestones.
-  type Line = { kind: "section"; category: string; items: ApiMilestone[] } | { kind: "row"; m: ApiMilestone; index: number };
-  const lines: Line[] = [];
+const DAY_MS = DAY;
+const startOfWeekPdf = (d: Date) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+const weekNoPdf = (d: Date) => {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const first = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t.getTime() - first.getTime()) / DAY_MS + 1) / 7);
+};
+// Points per day on paper, per zoom. Monthly keeps a two-year job on one sheet; daily is readable
+// day by day and simply runs onto more sheets.
+const PDF_PX_PER_DAY = { month: 2.3, week: 8, day: 12 } as const;
+
+function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date) {
+  const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = 250, CH = W - LABEL, ROW = 15, BOTTOM = 74;
+  const zoom = o.zoom || "month";
+  const pxPerDay = PDF_PX_PER_DAY[zoom];
+  const unit: "week" | "day" = zoom === "month" ? "week" : "day";
+  const band: "month" | "week" = zoom === "week" ? "week" : "month";
+
+  // Every line the chart draws, categories included, in the order the screen shows them.
+  const lines: GanttLine[] = [];
   if (rows.some((m) => (m.category || "").trim())) {
     let n = 0;
     for (const g of groupByCategory(rows.map((m) => ({ m })), o.categories)) {
@@ -147,89 +184,173 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
     rows.forEach((m, n) => lines.push({ kind: "row", m, index: n }));
   }
 
+  const dates: Date[] = [];
+  for (const m of rows) for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd]) { const d = parseDate(v); if (d) dates.push(d); }
+  for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }
+  if (!dates.length) return;
+  const min = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const max = new Date(Math.max(...dates.map((d) => d.getTime())));
+  const from = startOfWeekPdf(new Date(min.getFullYear(), min.getMonth(), min.getDate() - 3));
+  const to = new Date(max.getFullYear(), max.getMonth(), max.getDate() + 7);
+  const totalDays = Math.max(1, Math.round((to.getTime() - from.getTime()) / DAY_MS));
+
+  // How much of the calendar fits on one sheet at this zoom, and therefore how many sheets.
+  const daysPerSheet = Math.max(7, Math.floor(CH / pxPerDay));
+  const sheets = Math.max(1, Math.ceil(totalDays / daysPerSheet));
+
+  const end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline), cStart = parseDate(o.contractStart);
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
   let i = 0;
+  let perPage = 0;
   while (i < lines.length) {
-    const f = newPage();
-    const page = f.page;
-    let y = sectionHeading(page, b, "Gantt chart", X, f.y, W) - 4;
-    // Header: years and months
-    const headTop = y;
-    page.drawRectangle({ x: X, y: y - 26, width: W, height: 26, color: C.mist });
-    let yearStart = 0;
-    months.forEach((m, k) => {
-      const lab = mw >= 16 ? m.toLocaleDateString("en-GB", { month: "short" }) : m.toLocaleDateString("en-GB", { month: "narrow" });
-      const sz = Math.min(6.5, mw * 0.4);
-      page.drawText(lab, { x: X + LABEL + k * mw + (mw - b.regular.widthOfTextAtSize(lab, sz)) / 2, y: y - 22, size: sz, font: b.regular, color: C.s500 });
-      if (k === months.length - 1 || months[k + 1].getFullYear() !== m.getFullYear()) {
-        page.drawText(String(m.getFullYear()), { x: X + LABEL + yearStart * mw + 3, y: y - 10, size: 7, font: b.bold, color: C.slate });
-        yearStart = k + 1;
-      }
-    });
-    page.drawText("PHASE", { x: X + 4, y: y - 16, size: 6.8, font: b.bold, color: C.s500 });
-    y -= 26;
-    const bodyTop = y;
-    const perPage = Math.floor((bodyTop - BOTTOM) / ROW);
-    const chunk = lines.slice(i, i + perPage);
-    const bodyH = chunk.length * ROW;
-    // Grid
-    months.forEach((m, k) => {
-      page.drawLine({ start: { x: X + LABEL + k * mw, y: headTop - 13 * (m.getMonth() === 0 ? 0 : 1) }, end: { x: X + LABEL + k * mw, y: bodyTop - bodyH }, thickness: m.getMonth() === 0 ? 0.6 : 0.25, color: C.border });
-    });
-    if (origEnd && end && end > origEnd) page.drawRectangle({ x: xEnd(origEnd), y: bodyTop - bodyH, width: xEnd(end) - xEnd(origEnd), height: bodyH, color: rgb(0.93, 0.91, 0.99) });
-    chunk.forEach((line, r) => {
-      const top = bodyTop - r * ROW;
-      if (line.kind === "section") {
-        // The category band: its name on the left, its span drawn like a printed summary bar.
-        page.drawRectangle({ x: X, y: top - ROW, width: W, height: ROW, color: C.mist });
-        page.drawText(fitOneLine(b.bold, line.category.toUpperCase(), 7, LABEL - 10), { x: X + 5, y: top - ROW / 2 - 2.6, size: 7, font: b.bold, color: C.slate });
-        const ss = line.items.map((z) => parseDate(z.plannedStart) || parseDate(z.actualStart)).filter((d): d is Date => !!d);
-        const ee = line.items.map((z) => parseDate(z.plannedEnd) || parseDate(z.actualEnd)).filter((d): d is Date => !!d);
-        if (ss.length && ee.length) {
-          const s0 = new Date(Math.min(...ss.map((d) => d.getTime()))), e0 = new Date(Math.max(...ee.map((d) => d.getTime())));
-          const bx = x(s0), bw = Math.max(2, xEnd(e0) - bx);
-          page.drawRectangle({ x: bx, y: top - 8, width: bw, height: 3.4, color: C.slate });
-          page.drawRectangle({ x: bx, y: top - 10, width: 1.2, height: 7, color: C.slate });
-          page.drawRectangle({ x: bx + bw - 1.2, y: top - 10, width: 1.2, height: 7, color: C.slate });
+    let chunk: GanttLine[] = [];
+    for (let sheet = 0; sheet < sheets; sheet++) {
+      const sheetFrom = new Date(from.getFullYear(), from.getMonth(), from.getDate() + sheet * daysPerSheet);
+      const sheetTo = new Date(Math.min(to.getTime(), sheetFrom.getTime() + daysPerSheet * DAY_MS));
+      const x = (d: Date) => X + LABEL + ((d.getTime() - sheetFrom.getTime()) / DAY_MS) * pxPerDay;
+      const xEnd = (d: Date) => x(new Date(d.getTime() + DAY_MS));
+      const clampL = (v: number) => Math.max(X + LABEL, Math.min(X + LABEL + CH, v));
+
+      const f = newPage();
+      const page = f.page;
+      const range = `${fmtDay(sheetFrom)} to ${fmtDay(new Date(sheetTo.getTime() - DAY_MS))}`;
+      const heading = `Gantt chart · ${zoom === "month" ? "monthly" : zoom === "week" ? "weekly" : "daily"}${sheets > 1 ? ` · sheet ${sheet + 1} of ${sheets}` : ""}`;
+      let y = sectionHeading(page, b, heading, X, f.y, W) - 4;
+      page.drawText(range, { x: X + LABEL, y: y + 12, size: 7, font: b.regular, color: C.s500 });
+
+      // ── the two-level time header, as on screen ──
+      const headH = 26;
+      const headTop = y;
+      page.drawRectangle({ x: X, y: y - headH, width: W, height: headH, color: C.mist });
+      page.drawText("PHASE", { x: X + 4, y: y - 16, size: 6.8, font: b.bold, color: C.s500 });
+
+      if (band === "month") {
+        for (let d = new Date(sheetFrom.getFullYear(), sheetFrom.getMonth(), 1); d < sheetTo; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+          const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+          const left = clampL(x(d < sheetFrom ? sheetFrom : d)), right = clampL(x(next > sheetTo ? sheetTo : next));
+          if (right - left < 8) continue;
+          const lab = d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+          page.drawText(fitOneLine(b.bold, lab, 6.8, right - left - 4), { x: left + 3, y: y - 10, size: 6.8, font: b.bold, color: C.slate });
+          page.drawLine({ start: { x: left, y: y - 12 }, end: { x: left, y: y - headH }, thickness: 0.4, color: C.border });
         }
+      } else {
+        for (let d = new Date(startOfWeekPdf(sheetFrom)); d < sheetTo; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)) {
+          const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
+          const left = clampL(x(d < sheetFrom ? sheetFrom : d)), right = clampL(x(next > sheetTo ? sheetTo : next));
+          if (right - left < 8) continue;
+          const lab = `W${weekNoPdf(d)} · ${d.getDate()}/${d.getMonth() + 1}`;
+          page.drawText(fitOneLine(b.bold, lab, 6.8, right - left - 4), { x: left + 3, y: y - 10, size: 6.8, font: b.bold, color: C.slate });
+          page.drawLine({ start: { x: left, y: y - 12 }, end: { x: left, y: y - headH }, thickness: 0.4, color: C.border });
+        }
+      }
+
+      // the lower strip: weeks under months, or single days
+      const ticks: Array<{ at: Date; w: number; label: string; strong: boolean }> = [];
+      if (unit === "week") {
+        for (let d = new Date(startOfWeekPdf(sheetFrom)); d < sheetTo; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)) {
+          ticks.push({ at: new Date(d), w: 7 * pxPerDay, label: `W${weekNoPdf(d)}`, strong: d.getDate() <= 7 });
+        }
+      } else {
+        for (let d = new Date(sheetFrom); d < sheetTo; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+          ticks.push({ at: new Date(d), w: pxPerDay, label: String(d.getDate()), strong: d.getDay() === 0 || d.getDay() === 6 });
+        }
+      }
+      for (const t of ticks) {
+        const left = x(t.at);
+        if (left < X + LABEL - 1 || left > X + LABEL + CH) continue;
+        // Only label a tick that has room for it, so the strip never collides with itself.
+        const tickSize = unit === "day" ? 5.2 : 5.8;
+        const need = b.regular.widthOfTextAtSize(t.label, tickSize) + 2;
+        if (t.w >= need) {
+          page.drawText(t.label, { x: left + Math.max(1, (t.w - (need - 2)) / 2), y: y - 22, size: tickSize, font: b.regular, color: C.s500 });
+        }
+      }
+      y -= headH;
+
+      const bodyTop = y;
+      if (!perPage) perPage = Math.max(1, Math.floor((bodyTop - BOTTOM) / ROW));
+      if (sheet === 0) chunk = lines.slice(i, i + perPage);
+      const bodyH = chunk.length * ROW;
+
+      // ── grid, contract window, extension ──
+      for (const t of ticks) {
+        const left = x(t.at);
+        if (left < X + LABEL - 1 || left > X + LABEL + CH) continue;
+        page.drawLine({ start: { x: left, y: bodyTop }, end: { x: left, y: bodyTop - bodyH }, thickness: t.strong ? 0.5 : 0.25, color: C.border });
+        if (t.strong && unit === "day") page.drawRectangle({ x: left, y: bodyTop - bodyH, width: Math.min(t.w, X + LABEL + CH - left), height: bodyH, color: rgb(0.97, 0.98, 0.99) });
+      }
+      if (cStart && end) {
+        const l = clampL(x(cStart)), rr = clampL(xEnd(end));
+        if (rr > l) page.drawRectangle({ x: l, y: bodyTop - bodyH, width: rr - l, height: bodyH, color: rgb(0.94, 0.99, 0.96) });
+      }
+      if (origEnd && end && end > origEnd) {
+        const l = clampL(xEnd(origEnd)), rr = clampL(xEnd(end));
+        if (rr > l) page.drawRectangle({ x: l, y: bodyTop - bodyH, width: rr - l, height: bodyH, color: rgb(0.93, 0.91, 0.99) });
+      }
+
+      // ── the rows ──
+      chunk.forEach((line, k) => {
+        const top = bodyTop - k * ROW;
+        if (line.kind === "section") {
+          page.drawRectangle({ x: X, y: top - ROW, width: W, height: ROW, color: C.mist });
+          page.drawText(fitOneLine(b.bold, line.category.toUpperCase(), 7, LABEL - 10), { x: X + 5, y: top - ROW / 2 - 2.4, size: 7, font: b.bold, color: C.slate });
+          const ss = line.items.map((z) => parseDate(z.plannedStart) || parseDate(z.actualStart)).filter((d): d is Date => !!d);
+          const ee = line.items.map((z) => parseDate(z.plannedEnd) || parseDate(z.actualEnd)).filter((d): d is Date => !!d);
+          if (ss.length && ee.length) {
+            const s0 = new Date(Math.min(...ss.map((d) => d.getTime()))), e0 = new Date(Math.max(...ee.map((d) => d.getTime())));
+            if (e0 >= sheetFrom && s0 < sheetTo) {
+              const bx = clampL(x(s0)), bw = Math.max(1.5, clampL(xEnd(e0)) - bx);
+              page.drawRectangle({ x: bx, y: top - 8, width: bw, height: 3, color: C.slate });
+              if (s0 >= sheetFrom) page.drawRectangle({ x: bx, y: top - 10, width: 1.2, height: 6.5, color: C.slate });
+              if (e0 < sheetTo) page.drawRectangle({ x: bx + bw - 1.2, y: top - 10, width: 1.2, height: 6.5, color: C.slate });
+            }
+          }
+          page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
+          return;
+        }
+        const m = line.m, idx = line.index;
+        if (k % 2 === 1) page.drawRectangle({ x: X, y: top - ROW, width: LABEL, height: ROW, color: C.mist });
+        const color = phaseColor(m, idx);
+        page.drawCircle({ x: X + 18, y: top - ROW / 2, size: 2.4, color: hex(color) });
+        page.drawText(String(idx + 1), { x: X + 3, y: top - ROW / 2 - 2.3, size: 6.4, font: b.regular, color: C.s500 });
+        page.drawText(fitOneLine(b.regular, m.name, 7, LABEL - 30), { x: X + 25, y: top - ROW / 2 - 2.4, size: 7, font: b.regular, color: C.slate });
         page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
-        return;
-      }
-      const m = line.m;
-      const idx = line.index;
-      if (r % 2 === 1) page.drawRectangle({ x: X, y: top - ROW, width: LABEL, height: ROW, color: C.mist });
-      const color = phaseColor(m, idx);
-      page.drawCircle({ x: X + 18, y: top - ROW / 2, size: 2.6, color: hex(color) });
-      page.drawText(String(idx + 1), { x: X + 3, y: top - ROW / 2 - 2.5, size: 6.5, font: b.regular, color: C.s500 });
-      page.drawText(fitOneLine(b.regular, m.name, 7.2, LABEL - 30), { x: X + 25, y: top - ROW / 2 - 2.6, size: 7.2, font: b.regular, color: C.slate });
-      page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
-      const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
-      const bs = parseDate(m.baselineStart), be = parseDate(m.baselineEnd);
-      const as = parseDate(m.actualStart), ae = parseDate(m.actualEnd) || (as && m.status !== "completed" ? t0 : null);
-      if (bs && be && ps && pe && (bs.getTime() !== ps.getTime() || be.getTime() !== pe.getTime())) {
-        page.drawRectangle({ x: x(bs), y: top - 9, width: Math.max(1.5, xEnd(be) - x(bs)), height: 6, color: rgb(0.88, 0.9, 0.93) });
-      }
-      if (ps && pe) {
-        if (isMilestonePoint(m)) {
-          const cx = x(ps), cy = top - 6.5;
-          page.drawSvgPath(`M ${cx} ${-(cy - 4)} L ${cx + 4} ${-cy} L ${cx} ${-(cy + 4)} L ${cx - 4} ${-cy} Z`, { x: 0, y: 0, color: hex(color) });
-        } else {
-          const bx = x(ps), bw = Math.max(2, xEnd(pe) - bx);
-          page.drawRectangle({ x: bx, y: top - 9.5, width: bw, height: 6, color: mix(color, 0.3) });
-          const pct = phasePercent(m);
-          if (pct > 0) page.drawRectangle({ x: bx, y: top - 9.5, width: (bw * pct) / 100, height: 6, color: hex(color) });
+
+        const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
+        const as = parseDate(m.actualStart), ae = parseDate(m.actualEnd) || (as && m.status !== "completed" ? t0 : null);
+        if (ps && pe && pe >= sheetFrom && ps < sheetTo) {
+          if (isMilestonePoint(m)) {
+            const cx = clampL(x(ps)), cy = top - 6.5;
+            page.drawSvgPath(`M ${cx} ${-(cy - 3.6)} L ${cx + 3.6} ${-cy} L ${cx} ${-(cy + 3.6)} L ${cx - 3.6} ${-cy} Z`, { x: 0, y: 0, color: hex(color) });
+            const lab = fmtDay(ps);
+            if (cx + 6 + b.regular.widthOfTextAtSize(lab, 5.6) < X + LABEL + CH) {
+              page.drawText(lab, { x: cx + 5, y: top - 8.4, size: 5.6, font: b.regular, color: C.s500 });
+            }
+          } else {
+            const bx = clampL(x(ps)), bw = Math.max(1.5, clampL(xEnd(pe)) - bx);
+            page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: mix(color, 0.3) });
+            const pct = phasePercent(m);
+            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: hex(color) });
+          }
         }
+        if (as && ae && ae >= sheetFrom && as < sheetTo) {
+          const late = delayDays(m, t0) > 0;
+          const l = clampL(x(as)), rr = Math.max(l + 1.5, clampL(xEnd(ae)));
+          page.drawLine({ start: { x: l, y: top - 12.5 }, end: { x: rr, y: top - 12.5 }, thickness: 1.2, dashArray: [2.5, 1.5], color: late ? RED : C.s500 });
+        }
+      });
+
+      // ── deadline and today, when they fall on this sheet ──
+      if (end && end >= sheetFrom && end < sheetTo) {
+        page.drawLine({ start: { x: xEnd(end), y: bodyTop }, end: { x: xEnd(end), y: bodyTop - bodyH }, thickness: 0.9, color: C.slate });
       }
-      if (as && ae) {
-        const late = delayDays(m, t0) > 0;
-        page.drawLine({ start: { x: x(as), y: top - 13.5 }, end: { x: Math.max(x(as) + 2, xEnd(ae)), y: top - 13.5 }, thickness: 1.4, dashArray: [2.5, 1.5], color: late ? RED : C.s500 });
+      if (t0 >= sheetFrom && t0 < sheetTo) {
+        page.drawLine({ start: { x: x(t0), y: bodyTop }, end: { x: x(t0), y: bodyTop - bodyH }, thickness: 1, color: BLUE });
+        page.drawText("Today", { x: x(t0) - b.bold.widthOfTextAtSize("Today", 6) / 2, y: headTop + 3, size: 6, font: b.bold, color: BLUE });
       }
-    });
-    if (end) page.drawLine({ start: { x: xEnd(end), y: bodyTop }, end: { x: xEnd(end), y: bodyTop - bodyH }, thickness: 0.9, color: C.slate });
-    if (t0 >= from && t0 < new Date(from.getFullYear(), from.getMonth() + months.length, 1)) {
-      page.drawLine({ start: { x: x(t0), y: bodyTop }, end: { x: x(t0), y: bodyTop - bodyH }, thickness: 1, color: rgb(0.15, 0.39, 0.92) });
-      page.drawText("Today", { x: x(t0) - b.bold.widthOfTextAtSize("Today", 6) / 2, y: headTop + 3, size: 6, font: b.bold, color: rgb(0.15, 0.39, 0.92) });
+      legend(page, b, X, bodyTop - bodyH - 16);
     }
-    legend(page, b, X, bodyTop - bodyH - 16);
     i += chunk.length;
     if (!chunk.length) break;
   }

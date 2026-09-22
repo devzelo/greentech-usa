@@ -269,8 +269,20 @@ export function flowText(flow: Flow, text: string, o: { x: number; w: number; fo
 
 // ── Tables ──────────────────────────────────────────────────────────────────────────────────────
 
-export interface TableCol { label: string; w: number; align?: "left" | "right"; wrap?: boolean }
-export interface TableRow { cells?: string[]; group?: string; bold?: boolean; color?: Color; fill?: Color }
+export interface TableCol {
+  label: string; w: number; align?: "left" | "right"; wrap?: boolean;
+  /** CR 273 - columns under a shared heading (Planned: Start / End), as the screen shows them. */
+  band?: string;
+  /** A tint behind this column's cells, e.g. the sky wash the screen puts behind Actual. */
+  tint?: Color;
+}
+export interface TableRow {
+  cells?: string[]; group?: string; bold?: boolean; color?: Color; fill?: Color;
+  /** CR 273 - per-cell text colour (a status chip, a late date in red). */
+  cellColors?: Array<Color | undefined>;
+  /** CR 273 - the little progress bar the screen draws beside the percentage. */
+  bar?: { col: number; pct: number; color: Color };
+}
 
 /**
  * A branded table: slate header row, zebra rows, hairlines. Wrapping columns grow the row; the
@@ -280,16 +292,35 @@ export function drawTable(b: Brand, flow: Flow, x: number, cols: TableCol[], row
   const size = opts.size ?? 8, LH = size + 2.6, maxLines = opts.maxLines ?? 8, bottom = opts.bottom ?? BOTTOM;
   const W = cols.reduce((s, c) => s + c.w, 0);
   let { page, y } = flow;
+  // CR 273 - a second header strip when columns share a heading (Planned, Actual).
+  const bands = cols.some((c) => c.band);
+  const headH = bands ? 29 : 18;
   const head = () => {
-    page.drawRectangle({ x, y: y - 18, width: W, height: 18, color: C.slate });
+    page.drawRectangle({ x, y: y - headH, width: W, height: headH, color: C.slate });
+    if (bands) {
+      let cx = x, i = 0;
+      while (i < cols.length) {
+        const g = cols[i].band || "";
+        let span = cols[i].w, j = i + 1;
+        while (j < cols.length && (cols[j].band || "") === g && g) { span += cols[j].w; j++; }
+        if (g) {
+          const t = g.toUpperCase();
+          const tw = trackedWidth(b.bold, t, 6.2, 0.5);
+          tracked(page, t, { x: cx + Math.max(6, (span - tw) / 2), y: y - 8.6, size: 6.2, font: b.bold, color: C.white, spacing: 0.5 });
+          page.drawLine({ start: { x: cx + span, y: y - 11.5 }, end: { x: cx + span, y: y - headH }, thickness: 0.4, color: C.white });
+        }
+        cx += span; i = j;
+      }
+      page.drawLine({ start: { x, y: y - 11.5 }, end: { x: x + W, y: y - 11.5 }, thickness: 0.4, color: C.white });
+    }
     let cx = x;
     for (const c of cols) {
       const t = c.label.toUpperCase();
       const tw = trackedWidth(b.bold, t, 6.6, 0.5);
-      tracked(page, t, { x: c.align === "right" ? cx + c.w - 6 - tw : cx + 6, y: y - 11.8, size: 6.6, font: b.bold, color: C.white, spacing: 0.5 });
+      tracked(page, t, { x: c.align === "right" ? cx + c.w - 6 - tw : cx + 6, y: y - headH + 6.2, size: 6.6, font: b.bold, color: C.white, spacing: 0.5 });
       cx += c.w;
     }
-    y -= 18;
+    y -= headH;
   };
   head();
   let zebra = 0;
@@ -307,19 +338,32 @@ export function drawTable(b: Brand, flow: Flow, x: number, cols: TableCol[], row
     const cells = r.cells || [];
     const font = r.bold ? b.bold : b.regular;
     const lines = cols.map((c, ci) => (c.wrap ? Math.min(maxLines, Math.max(1, wrapText(font, cells[ci] || "", size, c.w - 12).length)) : 1));
-    const h = Math.max(...lines) * LH + 9;
+    const h = Math.max(...lines) * LH + 9 + (r.bar ? 4 : 0);
     if (y - h < bottom) { ({ page, y } = opts.newPage()); head(); }
     const fill = r.fill ?? (zebra % 2 === 1 ? C.mist : undefined);
     if (fill) page.drawRectangle({ x, y: y - h, width: W, height: h, color: fill });
+    // CR 273 - the tinted columns (the screen's sky wash behind Actual) go over the zebra.
+    let tx = x;
+    for (const c of cols) {
+      if (c.tint) page.drawRectangle({ x: tx, y: y - h, width: c.w, height: h, color: c.tint });
+      tx += c.w;
+    }
     const color = r.color ?? C.s700;
     let cx = x;
     cols.forEach((c, ci) => {
       const t = cells[ci] || "";
       const base = y - 4.5 - size;
-      if (c.wrap) drawWrapped(page, font, t, { x: cx + 6, y: base, size, maxW: c.w - 12, lineHeight: LH, color, maxLines });
+      const cellColor = r.cellColors?.[ci] ?? color;
+      if (c.wrap) drawWrapped(page, font, t, { x: cx + 6, y: base, size, maxW: c.w - 12, lineHeight: LH, color: cellColor, maxLines });
       else {
         const s = fitOneLine(font, t, size, c.w - 12);
-        page.drawText(s, { x: c.align === "right" ? cx + c.w - 6 - font.widthOfTextAtSize(s, size) : cx + 6, y: base, size, font, color });
+        page.drawText(s, { x: c.align === "right" ? cx + c.w - 6 - font.widthOfTextAtSize(s, size) : cx + 6, y: base, size, font, color: cellColor });
+      }
+      // the percentage's little bar, drawn under its number
+      if (r.bar && r.bar.col === ci) {
+        const bw = Math.min(c.w - 12, 34), bx = cx + 6, by = y - h + 4.5;
+        page.drawRectangle({ x: bx, y: by, width: bw, height: 2.6, color: C.border });
+        if (r.bar.pct > 0) page.drawRectangle({ x: bx, y: by, width: (bw * Math.min(100, r.bar.pct)) / 100, height: 2.6, color: r.bar.color });
       }
       cx += c.w;
     });
