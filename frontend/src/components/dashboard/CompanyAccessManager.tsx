@@ -41,9 +41,10 @@ export const TAB_ROWS: { id: string; label: string; indent?: boolean }[] = [
 export type Perm = "none" | "view" | "edit";
 const genPassword = () => `Gt-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-export default function CompanyAccessManager({ company, involvedProjects }: {
+export default function CompanyAccessManager({ company }: {
   company: ApiCompany;
-  involvedProjects: Array<{ projectId: string; name: string; status?: string }>;
+  /** Kept for the caller; the access list now comes from the server. */
+  involvedProjects?: Array<{ projectId: string; name: string; status?: string }>;
 }) {
   const { confirm, dialogs } = useDialogs();
   const myId = getAuthUser()?.id || "";
