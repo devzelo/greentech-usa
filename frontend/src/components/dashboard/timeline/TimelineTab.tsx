@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
@@ -34,6 +34,38 @@ import PdfPreviewModal from "../PdfPreviewModal";
 
 type View = "all" | "active" | "late" | "upcoming" | "completed";
 const VIEWS: Array<[View, string]> = [["all", "All milestones"], ["active", "In progress"], ["late", "Late"], ["upcoming", "Not started"], ["completed", "Completed"]];
+
+// CR 268 - the toolbar's actions live in two menus instead of a row of ten buttons.
+const MENU_ITEM = "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40";
+function ToolMenu({ label, icon, tone = "plain", align = "right", children }: {
+  label: string; icon: ReactNode; tone?: "plain" | "primary"; align?: "left" | "right"; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const trigger = tone === "primary"
+    ? "inline-flex items-center gap-1.5 rounded-r-lg border-l border-blue-500 bg-blue-600 px-2 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+    : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary";
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} className={trigger} aria-haspopup="menu" aria-expanded={open} title={label}>
+        {icon}{tone === "primary" ? "" : label}<ChevronDown size={12} className={tone === "primary" ? "" : "text-slate-400"} />
+      </button>
+      {open && (
+        <div role="menu" onClick={() => setOpen(false)} className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-1 shadow-xl`}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const same = (a: ApiMilestone[], b: ApiMilestone[]) => JSON.stringify(a) === JSON.stringify(b);
 const blank = (key: string, name: string, category = defaultCategoryFor(key, name)): ApiMilestone => ({
@@ -542,7 +574,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       )}
 
       {started && <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+        {/* CR 268 - the bar follows the page down, so the actions stay reachable on a long schedule. */}
+        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-base font-bold text-slate-900">Phases & Milestones</h3>
             {hasCategories && (
@@ -560,21 +593,42 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </select>
               <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </label>
-            <button type="button" onClick={() => { setVersionsOpen(true); void loadRevisions(); }} className={btn}><History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}</button>
-            <button type="button" onClick={printPdf} className={btn}><Printer size={13} /> Preview / Print</button>
-            <button type="button" onClick={downloadPdf} disabled={busy === "pdf"} className={btn}><Download size={13} /> PDF</button>
-            <button type="button" onClick={downloadCsv} className={btn} title="Download for Excel"><FileSpreadsheet size={13} /> Excel</button>
-            <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} />
+            <button type="button" onClick={() => { setVersionsOpen(true); void loadRevisions(); }} className={btn} title="Saved versions of this schedule">
+              <History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}
+            </button>
+
+            {/* Everything that produces a file or a printout. */}
+            <ToolMenu label="Export" icon={<Download size={13} />}>
+              <button type="button" onClick={printPdf} className={MENU_ITEM}><Printer size={13} /> Preview / Print</button>
+              <button type="button" onClick={downloadPdf} disabled={busy === "pdf"} className={MENU_ITEM}>
+                {busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF
+              </button>
+              <button type="button" onClick={downloadCsv} className={MENU_ITEM}><FileSpreadsheet size={13} /> Download for Excel</button>
+              <div className="my-1 border-t border-slate-100" />
+              <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} className={MENU_ITEM} />
+            </ToolMenu>
+
+            {/* The main action, with the rest of the building blocks behind its caret. */}
             {canEdit && (
-              <>
-                <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={btn} title="Import tasks from an Excel sheet (download the template for the columns)">
-                  {busy === "import" ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} Import from Excel
+              <span className="inline-flex">
+                <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-l-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+                  <Plus size={13} /> Add milestone
                 </button>
-                <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Import from project</button>
-                {rows.length > 0 && <button type="button" onClick={() => void clearSchedule()} className={btn} title="Take every task off this schedule"><Eraser size={13} /> Clear</button>}
-                <button type="button" onClick={() => void addCategory()} className={btn} title="A new category (section) on this schedule"><FolderPlus size={13} /> Add category</button>
-                <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700"><Plus size={13} /> Add milestone</button>
-              </>
+                <ToolMenu label="More ways to add" icon={<></>} tone="primary">
+                  <button type="button" onClick={() => void addCategory()} className={MENU_ITEM}><FolderPlus size={13} /> Add category</button>
+                  <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={MENU_ITEM}>
+                    {busy === "import" ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} Import from Excel
+                  </button>
+                  <button type="button" onClick={() => setImportOpen(true)} className={MENU_ITEM}><Import size={13} /> Import from another project</button>
+                  <button type="button" onClick={() => void downloadTemplate()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Excel template</button>
+                  {rows.length > 0 && (
+                    <>
+                      <div className="my-1 border-t border-slate-100" />
+                      <button type="button" onClick={() => void clearSchedule()} className={`${MENU_ITEM} hover:bg-red-50 hover:text-red-600`}><Eraser size={13} /> Clear the schedule</button>
+                    </>
+                  )}
+                </ToolMenu>
+              </span>
             )}
           </div>
         </div>
