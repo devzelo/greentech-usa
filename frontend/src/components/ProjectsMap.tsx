@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from "react-l
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin } from "lucide-react";
+import ProjectShowcaseModal from "./ProjectShowcaseModal";
 import type { FeatureCollection, Geometry } from "geojson";
 import { fetchPublicProjects, ApiPublicProject } from "../lib/api";
 import { isoForLocation, isoForCountryName, flagForCountry } from "../lib/countryFlag";
@@ -82,6 +83,9 @@ export default function ProjectsMap() {
   // Mount the Leaflet map only after the first client commit — avoids react-leaflet's
   // "Map container is already initialized" error under React 19 StrictMode's double-mount.
   const [mapReady, setMapReady] = useState(false);
+  // CR 261 - a pin opens the same project modal as the cards: photos, client, location, documents.
+  const [showcaseId, setShowcaseId] = useState<string | null>(null);
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
   useEffect(() => { setMapReady(true); }, []);
 
   useEffect(() => {
@@ -167,24 +171,61 @@ export default function ProjectsMap() {
             <FitToPins points={points} />
             <ZoomWatch onDetail={wantDetail} />
             {groups.map((g) => (
-              <Marker key={g.iso} position={g.coords} icon={pinIcon(g.projects.length)}>
-                <Popup>
+              <Marker
+                key={g.iso}
+                position={g.coords}
+                icon={pinIcon(g.projects.length)}
+                // Hover opens it on a desktop; tapping the pin still opens it on a phone, where
+                // there is no hover at all.
+                eventHandlers={{ mouseover: (e) => e.target.openPopup() }}
+              >
+                <Popup maxWidth={320} minWidth={260}>
                   {/* Include the flag font so the country emoji renders on Windows (Leaflet forces
                       its own font, which falls back to the ISO letters otherwise). */}
                   <div style={{ minWidth: 180, fontFamily: "'Twemoji Country Flags', 'Inter', ui-sans-serif, system-ui, sans-serif" }}>
                     <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 6px", color: "#0f172a" }}>
                       <span style={{ fontFamily: "'Twemoji Country Flags', sans-serif" }}>{flagForCountry(g.projects[0].location)}</span> {g.projects.length} project{g.projects.length === 1 ? "" : "s"}
                     </p>
-                    <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+                    <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
                       {g.projects.slice(0, 6).map((p) => (
-                        <li key={p.id} style={{ fontSize: 12, lineHeight: 1.3 }}>
-                          <span style={{ fontWeight: 700, color: "#0f172a" }}>{p.name}</span>
-                          <br />
-                          <span style={{ color: "#64748b" }}>{[p.category, p.location].filter(Boolean).join(" · ")}</span>
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            onClick={() => setShowcaseId(p.id)}
+                            title={`Open ${p.name}`}
+                            style={{
+                              display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left",
+                              padding: 4, border: "1px solid transparent", borderRadius: 10, background: "transparent", cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.borderColor = "#e2e8f0"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
+                          >
+                            {p.image && !brokenImages.has(p.id) ? (
+                              <img
+                                src={p.image}
+                                alt=""
+                                loading="lazy"
+                                // A cover whose file has gone missing falls back to the placeholder.
+                                onError={() => setBrokenImages((b) => new Set(b).add(p.id))}
+                                style={{ width: 54, height: 40, objectFit: "cover", borderRadius: 8, flexShrink: 0, background: "#e2e8f0" }}
+                              />
+                            ) : (
+                              <span style={{ width: 54, height: 40, borderRadius: 8, background: "#e2e8f0", flexShrink: 0, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 10, fontWeight: 700 }}>
+                                GT
+                              </span>
+                            )}
+                            <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.35 }}>
+                              <span style={{ display: "block", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                              <span style={{ display: "block", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {[p.category, p.location].filter(Boolean).join(" · ")}
+                              </span>
+                            </span>
+                          </button>
                         </li>
                       ))}
-                      {g.projects.length > 6 && <li style={{ fontSize: 11, color: "#94a3b8" }}>+ {g.projects.length - 6} more…</li>}
+                      {g.projects.length > 6 && <li style={{ fontSize: 11, color: "#94a3b8", padding: "2px 4px" }}>+ {g.projects.length - 6} more…</li>}
                     </ul>
+                    <p style={{ margin: "6px 0 0", fontSize: 10, color: "#94a3b8" }}>Click a project for its photos and details.</p>
                   </div>
                 </Popup>
               </Marker>
@@ -193,6 +234,8 @@ export default function ProjectsMap() {
           )}
         </div>
       </div>
+      {/* CR 261 - the same showcase the project cards open: slideable photos, client, dates, docs. */}
+      {showcaseId && <ProjectShowcaseModal projectId={showcaseId} onClose={() => setShowcaseId(null)} />}
     </section>
   );
 }
