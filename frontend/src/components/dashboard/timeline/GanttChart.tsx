@@ -140,6 +140,8 @@ export function GanttLegend() {
       <span className={item}><span className="h-1.5 w-8 rounded-full border-2 border-dashed border-red-500" /> Actual, late</span>
       <span className={item}><span className="h-2.5 w-8 rounded-sm bg-slate-200" /> Baseline (original plan)</span>
       <span className={item}><span className="h-3 w-0.5 bg-blue-600" /> Today</span>
+      {/* CR 271 - the black line at the end of the chart was in the chart but not in the legend. */}
+      <span className={item}><span className="h-3 w-0.5 bg-slate-800/70" /> Contract deadline</span>
       <span className={item}><span className="h-3 w-4 bg-violet-100" /> Extension</span>
     </div>
   );
