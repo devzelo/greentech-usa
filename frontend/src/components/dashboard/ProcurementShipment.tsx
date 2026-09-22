@@ -30,6 +30,34 @@ const COST_FIELDS = [
   ["costFreight", "Freight"], ["costCustoms", "Customs / clearance"],
   ["costDemurrage", "Demurrage"], ["costOther", "Other"],
 ] as const;
+/**
+ * CR 279 (2026-09-23): the shipment cost boxes read as money. While the box has focus it holds the
+ * plain number, so it stays easy to type and correct; the moment focus leaves, it is written back
+ * as "$12,100.00". What is stored is that same formatted text, and every total parses it with n().
+ */
+function MoneyInput({ value, onChange, className, placeholder }: {
+  value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState("");
+  const shown = editing ? raw : (n(value) ? money(n(value)) : "");
+  return (
+    <input
+      className={className}
+      inputMode="decimal"
+      value={shown}
+      placeholder={placeholder}
+      onFocus={() => { setRaw(n(value) ? String(n(value)) : ""); setEditing(true); }}
+      onChange={(e) => { setRaw(e.target.value); onChange(e.target.value); }}
+      onBlur={() => {
+        setEditing(false);
+        // Nothing but stray characters clears the box rather than writing $0.00.
+        onChange(/[0-9]/.test(raw) ? money(n(raw)) : "");
+      }}
+    />
+  );
+}
+
 // Cost of goods = sum of the linked POs' invoice amounts (falling back to the PO total). Pulled
 // automatically from the POs, never entered by hand.
 const goodsCost = (poIds: string[] | undefined, pos: { _id: string; invoiceAmount?: string; total?: string }[]) =>
@@ -859,7 +887,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {COST_FIELDS.map(([f, label]) => (
                     <label key={f} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}
-                      <input className={`${inp} mt-1`} value={draft[f]} onChange={(e) => setDraft({ ...draft, [f]: e.target.value })} placeholder="0.00" /></label>
+                      <MoneyInput className={`${inp} mt-1`} value={draft[f]} onChange={(v) => setDraft({ ...draft, [f]: v })} placeholder="$0.00" /></label>
                   ))}
                 </div>
               </FormSection>
