@@ -57,8 +57,8 @@ const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5
 // CR-PR-08 — derive a live carrier tracking deep-link from the carrier name + tracking/container #,
 // so "Track on carrier site" opens the carrier's own live status page in one click without the user
 // pasting a URL. `{n}` is replaced with the tracking number. Unknown carriers fall back to a web
-// search for the number. A true server-side auto-fetch of status needs a paid tracking-aggregator
-// API (AfterShip/EasyPost/Project44) with keys + billing; this is the no-infra live-tracking path.
+// search for the number. Pulling the status from the carrier itself is CR 219 (server side, off
+// until the client names the carrier), so today this link is how the team reads the live status.
 const CARRIER_TRACK_TEMPLATES: Array<{ match: RegExp; url: string }> = [
   { match: /maersk/i,                 url: "https://www.maersk.com/tracking/{n}" },
   { match: /msc/i,                    url: "https://www.msc.com/track-a-shipment?agencyPath=msc&trackingNumber={n}" },
@@ -786,7 +786,6 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="Leave blank to auto-link from carrier + number" /></label>
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 self-end pb-2"><input type="checkbox" checked={draft.openBed} onChange={(e) => setDraft({ ...draft, openBed: e.target.checked })} /> Open bed / flat rack</label>
                 </div>
-                <p className="text-[10px] text-slate-400">The <strong>Track live</strong> link is auto-generated from the carrier + tracking/container # for major lines (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, ONE, UPS, FedEx, DHL, USPS…). Paste a link above only to override. Fully automated status auto-fetch requires a paid carrier-tracking API.</p>
               </FormSection>
 
               {/* CR-PR-09 — goods in the shipment. */}
