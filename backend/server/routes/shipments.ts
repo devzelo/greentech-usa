@@ -7,6 +7,9 @@ import ProcurementPO from "../models/ProcurementPO";
 import ProcurementItem, { ProcurementStatus } from "../models/ProcurementItem";
 import ProcurementEvent from "../models/ProcurementEvent";
 import { recycleAndDelete } from "../lib/recycleBin";
+import Project from "../models/Project";
+import { createNotification } from "../lib/notify";
+import { fetchTracking, mergeStatus, trackingProvider } from "../lib/carrierTracking";
 
 // The Mongoose sub-document arrays expose .id()/.deleteOne() at runtime; the plain-array types
 // don't. `subs()` casts to reach those helpers without sprinkling `any` everywhere.
@@ -60,7 +63,7 @@ const rankOf = (s: ProcurementStatus) => STAGE_ORDER.indexOf(s);
 // Cascade the shipment's status onto the Master Log items of its linked POs. Only ever ADVANCES
 // an item (never moves it backwards) and never touches Cancelled items. Best-effort — the
 // shipment write itself never fails because of this.
-async function syncItemsFromShipment(req: AuthedRequest, projectId: string, shipmentId: string, poIds: string[], status: ShipmentStatus) {
+async function syncItemsFromShipment(actor: { id: string; name: string }, projectId: string, shipmentId: string, poIds: string[], status: ShipmentStatus) {
   try {
     const stage = STATUS_TO_ITEM[status];
     if (!stage || !poIds.length) return;
@@ -80,10 +83,147 @@ async function syncItemsFromShipment(req: AuthedRequest, projectId: string, ship
     await ProcurementEvent.create({
       projectId, entityType: "shipment", entityId: String(shipmentId), action: "status-sync",
       fromValue: status, toValue: `${stage} (${result.modifiedCount} item(s))`,
-      actorId: req.user!.userId, actorName: req.user!.name || "",
+      actorId: actor.id, actorName: actor.name,
     });
   } catch { /* best-effort */ }
 }
+
+// ── CR 219: automatic tracking ───────────────────────────────────────────────
+// A carrier aggregator (if one is configured) is asked once a day for each live shipment, and on
+// demand from the shipment screen. Whatever comes back is written on the shipment: last known
+// location, anticipated arrival, the events we did not have yet, and a status nudge that only ever
+// moves the shipment forward. With no aggregator configured the same fields are kept by hand
+// ("Log an update"), and a weekly reminder goes to the project owner when they go stale.
+type TrackDoc = InstanceType<typeof Shipment>;
+const ACTIVE_STATUSES: ShipmentStatus[] = ["Preparing", "Fabrication", "Transit", "Clearance", "Warehouse"];
+const eventKey = (e: { date?: string; description?: string; location?: string }) =>
+  `${e.date || ""}|${(e.description || "").toLowerCase()}|${(e.location || "").toLowerCase()}`;
+
+async function pullTracking(s: TrackDoc, actor: { id: string; name: string }): Promise<{ added: number; provider: string }> {
+  const r = await fetchTracking(s.trackingNo, s.carrier);
+  const known = new Set((s.trackingEvents || []).map(eventKey));
+  const fresh = r.events.filter((e) => !known.has(eventKey(e)));
+  s.trackingEvents = [
+    ...fresh.map((e) => ({ ...e, source: r.provider, addedBy: "" })),
+    ...(s.trackingEvents || []),
+  ].slice(0, 200);
+  if (r.currentLocation) s.currentLocation = r.currentLocation.slice(0, 300);
+  if (r.etaDate) s.etaDate = r.etaDate;
+  s.trackingCheckedAt = new Date().toISOString();
+  s.trackingSource = r.provider;
+  const next = mergeStatus(s.status, r.status);
+  const moved = next !== s.status;
+  s.status = next;
+  await s.save();
+  if (moved && s.poIds?.length) await syncItemsFromShipment(actor, s.projectId, String(s._id), s.poIds, s.status);
+  return { added: fresh.length, provider: r.provider };
+}
+
+/** Is automatic tracking available on this server, and for this shipment? */
+router.get("/tracking/config", async (_req: AuthedRequest, res: Response) => {
+  const { enabled, provider } = trackingProvider();
+  res.json({ enabled, provider, checkedDaily: enabled });
+});
+
+/** Ask the carrier now (the button on the shipment screen). */
+router.post("/:sid/tracking/refresh", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const s = await Shipment.findOne({ _id: req.params.sid, projectId: req.params.id });
+    if (!s) return res.status(404).json({ error: "Not found" });
+    const { added, provider } = await pullTracking(s, actorOf(req));
+    res.json({ shipment: s, added, provider });
+  } catch (err) {
+    if (err instanceof Error && !("statusCode" in err)) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** The manual path: log where the shipment is now (kept in the same history as the automatic pulls). */
+router.post("/:sid/tracking/log", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const s = await Shipment.findOne({ _id: req.params.sid, projectId: req.params.id });
+    if (!s) return res.status(404).json({ error: "Not found" });
+    const b = req.body || {};
+    const location = String(b.location || "").trim().slice(0, 300);
+    const description = String(b.description || "").trim().slice(0, 300);
+    if (!location && !description) return res.status(400).json({ error: "Add the location or a note." });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || "")) ? String(b.date) : new Date().toISOString().slice(0, 10);
+    s.trackingEvents = [
+      { date, location, description, status: "", source: "Manual", addedBy: req.user!.name || "" },
+      ...(s.trackingEvents || []),
+    ].slice(0, 200);
+    if (location) s.currentLocation = location;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(b.etaDate || ""))) s.etaDate = String(b.etaDate);
+    s.trackingCheckedAt = new Date().toISOString();
+    s.trackingSource = "Manual";
+    const moved = typeof b.status === "string" && STATUSES.includes(b.status as ShipmentStatus) && b.status !== s.status;
+    if (moved) s.status = b.status as ShipmentStatus;
+    await s.save();
+    if (moved && s.poIds?.length) await syncItemsFromShipment(actorOf(req), req.params.id, String(s._id), s.poIds, s.status);
+    res.json(s);
+  } catch (err) { next(err); }
+});
+
+/** Delete one logged update (a typo in the weekly entry). */
+router.delete("/:sid/tracking/:idx", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const s = await Shipment.findOne({ _id: req.params.sid, projectId: req.params.id });
+    if (!s) return res.status(404).json({ error: "Not found" });
+    const i = Number(req.params.idx);
+    if (!Number.isInteger(i) || i < 0 || i >= (s.trackingEvents || []).length) return res.status(404).json({ error: "No such update." });
+    s.trackingEvents = (s.trackingEvents || []).filter((_, k) => k !== i);
+    await s.save();
+    res.json(s);
+  } catch (err) { next(err); }
+});
+
+/**
+ * Daily sweep (the cron calls this): every live shipment with a tracking number is refreshed from
+ * the aggregator. Does nothing at all when no aggregator is configured.
+ */
+export async function sweepShipmentTracking(): Promise<{ checked: number; updated: number; failed: number }> {
+  const out = { checked: 0, updated: 0, failed: 0 };
+  if (!trackingProvider().enabled) return out;
+  const live = await Shipment.find({ status: { $in: ACTIVE_STATUSES }, trackingNo: { $nin: ["", null] } }).limit(500);
+  for (const s of live) {
+    out.checked++;
+    try {
+      const { added } = await pullTracking(s, { id: "system", name: "Automatic tracking" });
+      if (added) out.updated++;
+    } catch { out.failed++; }
+    await new Promise((r) => setTimeout(r, 400));   // stay well inside the free tiers' rate limits
+  }
+  return out;
+}
+
+/**
+ * Weekly nudge (the fallback the client asked for): a live shipment whose location has not moved in
+ * `days` days gets the project owner a reminder to update it from the carrier page.
+ */
+export async function remindStaleShipments(days = 7): Promise<number> {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  const live = await Shipment.find({ status: { $in: ACTIVE_STATUSES } }).limit(500);
+  let sent = 0;
+  for (const s of live) {
+    if (s.status === "Preparing") continue;               // nothing to track until it moves
+    if ((s.trackingCheckedAt || "") > cutoff) continue;   // updated recently enough
+    const project = await Project.findOne({ projectId: s.projectId }).select("ownerId name").lean();
+    const ownerId = (project as { ownerId?: unknown } | null)?.ownerId;
+    if (!ownerId) continue;
+    const since = s.trackingCheckedAt ? `last updated ${s.trackingCheckedAt.slice(0, 10)}` : "never updated";
+    await createNotification({
+      userId: String(ownerId),
+      type: "reminder",
+      title: `Update ${s.name || "the shipment"} location`,
+      message: `${s.name || "A shipment"} on ${(project as { name?: string } | null)?.name || s.projectId} is ${s.status === "Transit" ? "in transit" : s.status.toLowerCase()} and ${since}. Open the carrier page and log where it is now.`,
+      link: `/dashboard/projects/${s.projectId}?tab=procurement&proc=shipment`,
+    });
+    sent++;
+  }
+  return sent;
+}
+
+const actorOf = (req: AuthedRequest) => ({ id: req.user!.userId, name: req.user!.name || "" });
 
 const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadline",
   "costFreight", "costCustoms", "costDemurrage", "costOther",
@@ -124,7 +264,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       costOther: String(body.costOther || "").slice(0, 60),
       rows: DEFAULT_SHIPMENT_DOCS.map((d) => ({ docType: d, remarks: "", files: [] })),
     });
-    if (s.status !== "Preparing") await syncItemsFromShipment(req, req.params.id, String(s._id), s.poIds, s.status);
+    if (s.status !== "Preparing") await syncItemsFromShipment(actorOf(req), req.params.id, String(s._id), s.poIds, s.status);
     res.status(201).json(s);
   } catch (err) { next(err); }
 });
@@ -149,8 +289,8 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
     // Sync the Master Log only on a real status change (all linked POs), or for POs newly added
     // while the shipment is already in an active stage. Editing a description never re-syncs.
     if (s && s.status !== "Preparing") {
-      if (statusChanged) await syncItemsFromShipment(req, req.params.id, String(s._id), s.poIds, s.status);
-      else if (addedPoIds.length) await syncItemsFromShipment(req, req.params.id, String(s._id), addedPoIds, s.status);
+      if (statusChanged) await syncItemsFromShipment(actorOf(req), req.params.id, String(s._id), s.poIds, s.status);
+      else if (addedPoIds.length) await syncItemsFromShipment(actorOf(req), req.params.id, String(s._id), addedPoIds, s.status);
     }
     res.json(s);
   } catch (err) { next(err); }

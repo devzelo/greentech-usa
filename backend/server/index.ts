@@ -365,6 +365,23 @@ connectDB().then(() => {
       try { await fireDueReminders(); }
       catch (err) { console.error("Reminder sweep failed:", err); }
     });
+    // CR 219 - shipments: pull the route, location and ETA from the carrier aggregator every day at
+    // 07:00 (a no-op when no aggregator key is configured), and nudge the project owner on Monday
+    // mornings about any live shipment whose location has not been updated in a week.
+    cronSchedule("0 7 * * *", async () => {
+      try {
+        const { sweepShipmentTracking } = await import("./routes/shipments");
+        const r = await sweepShipmentTracking();
+        if (r.checked) console.log(`🚢 Tracking sweep: ${r.checked} shipment(s) checked, ${r.updated} updated, ${r.failed} failed.`);
+      } catch (err) { console.error("Shipment tracking sweep failed:", err); }
+    });
+    cronSchedule("0 8 * * 1", async () => {
+      try {
+        const { remindStaleShipments } = await import("./routes/shipments");
+        const n = await remindStaleShipments(7);
+        if (n) console.log(`🚢 Asked for a location update on ${n} shipment(s).`);
+      } catch (err) { console.error("Shipment reminder sweep failed:", err); }
+    });
     // Daily agreements expiry sweep — 08:30 server time (agreements past endDate → Expired).
     cronSchedule("30 8 * * *", async () => {
       try {

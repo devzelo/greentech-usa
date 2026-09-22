@@ -2149,8 +2149,12 @@ export interface ApiShipment {
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
   /** CR 220 - shown prominently on the shipment card. */
   agencyWebsite?: string; agencyCountry?: string;
+  /** CR 219 - the tracking trail: pulled from the carrier daily, or logged by hand. Newest first. */
+  trackingEvents?: ApiTrackingEvent[];
+  trackingCheckedAt?: string; trackingSource?: string;
   rows: ApiShipmentRow[];
 }
+export interface ApiTrackingEvent { date: string; location: string; description: string; status: string; source: string; addedBy: string }
 export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
@@ -2162,6 +2166,19 @@ export async function createShipment(projectId: string, body: ShipmentInput = {}
 export async function updateShipment(projectId: string, sid: string, body: ShipmentInput): Promise<ApiShipment> { return request(`${shipBase(projectId)}/${sid}`, { method: 'PATCH', body: JSON.stringify(body) }); }
 export async function renameShipment(projectId: string, sid: string, name: string): Promise<ApiShipment> { return updateShipment(projectId, sid, { name }); }
 export async function deleteShipment(projectId: string, sid: string): Promise<void> { await request(`${shipBase(projectId)}/${sid}`, { method: 'DELETE' }); }
+// CR 219 - automatic tracking when the server has a carrier aggregator key, the manual log otherwise.
+export async function fetchTrackingConfig(projectId: string): Promise<{ enabled: boolean; provider: string; checkedDaily: boolean }> {
+  return request(`${shipBase(projectId)}/tracking/config`);
+}
+export async function refreshShipmentTracking(projectId: string, sid: string): Promise<{ shipment: ApiShipment; added: number; provider: string }> {
+  return request(`${shipBase(projectId)}/${sid}/tracking/refresh`, { method: 'POST' });
+}
+export async function logShipmentTracking(projectId: string, sid: string, body: { location?: string; description?: string; date?: string; etaDate?: string; status?: ShipmentStatus }): Promise<ApiShipment> {
+  return request(`${shipBase(projectId)}/${sid}/tracking/log`, { method: 'POST', body: JSON.stringify(body) });
+}
+export async function deleteShipmentTracking(projectId: string, sid: string, index: number): Promise<ApiShipment> {
+  return request(`${shipBase(projectId)}/${sid}/tracking/${index}`, { method: 'DELETE' });
+}
 export async function addShipmentRow(projectId: string, sid: string, docType: string): Promise<ApiShipment> { return request(`${shipBase(projectId)}/${sid}/rows`, { method: 'POST', body: JSON.stringify({ docType }) }); }
 export async function updateShipmentRow(projectId: string, sid: string, rid: string, body: { docType?: string; remarks?: string }): Promise<ApiShipment> { return request(`${shipBase(projectId)}/${sid}/rows/${rid}`, { method: 'PATCH', body: JSON.stringify(body) }); }
 export async function renameShipmentRow(projectId: string, sid: string, rid: string, docType: string): Promise<ApiShipment> { return updateShipmentRow(projectId, sid, rid, { docType }); }

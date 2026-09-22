@@ -26,6 +26,11 @@ export interface IShipment extends Document {
   currentLocation: string; // last known location (e.g. Istanbul Port)
   etaDate: string;        // current anticipated date of arrival (date string) — countdown derives from this
   trackingUrl: string;    // link to the carrier's tracking page
+  // CR 219 - the tracking trail: pulled daily from the carrier aggregator when one is configured,
+  // otherwise logged by hand each week. Newest first.
+  trackingEvents: Array<{ date: string; location: string; description: string; status: string; source: string; addedBy: string }>;
+  trackingCheckedAt: string;   // ISO datetime of the last location update, automatic or manual
+  trackingSource: string;      // "Ship24", "TrackingMore", ... or "Manual"
   // Container details (client CR-PR-09).
   containerType: string;  // e.g. 40' HC, 20' DV, Flat Rack
   containerSize: string;
@@ -66,6 +71,20 @@ const ShipmentSchema = new Schema<IShipment>(
     currentLocation: { type: String, default: "" },
     etaDate: { type: String, default: "" },
     trackingUrl: { type: String, default: "" },
+    trackingEvents: {
+      type: [{
+        date: { type: String, default: "" },
+        location: { type: String, default: "" },
+        description: { type: String, default: "" },
+        status: { type: String, default: "" },
+        source: { type: String, default: "" },
+        addedBy: { type: String, default: "" },
+        _id: false,
+      }],
+      default: [],
+    },
+    trackingCheckedAt: { type: String, default: "" },
+    trackingSource: { type: String, default: "" },
     containerType: { type: String, default: "" },
     containerSize: { type: String, default: "" },
     openBed: { type: Boolean, default: false },

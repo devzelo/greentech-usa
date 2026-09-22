@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink, Building2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
   addShipmentRow, renameShipmentRow, updateShipmentRow, deleteShipmentRow, uploadShipmentFile, deleteShipmentFile,
   fetchProcurementPOs, fetchVendors, attachmentUrl,
+  fetchTrackingConfig, refreshShipmentTracking, logShipmentTracking, deleteShipmentTracking,
   type ApiShipment, type ApiProcurementPO, type ApiVendor, type ShipmentStatus, type ShipmentInput,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
@@ -103,6 +104,22 @@ const BLANK_DRAFT: ShipDraft = {
   goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
 
+// CR 219 - a live shipment whose location has not moved in a week needs a look. The server sends
+// the project owner the same nudge on Monday mornings.
+const STALE_DAYS = 7;
+const daysSince = (iso?: string) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null);
+const checkedLabel = (s: ApiShipment) => {
+  const d = daysSince(s.trackingCheckedAt);
+  if (d === null) return "No location update yet";
+  const when = d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+  return `Updated ${when}${s.trackingSource ? ` · ${s.trackingSource}` : ""}`;
+};
+const isStale = (s: ApiShipment) => {
+  if (s.status === "Delivered" || s.status === "Preparing") return false;
+  const d = daysSince(s.trackingCheckedAt);
+  return d === null || d >= STALE_DAYS;
+};
+
 // Days-until-ETA countdown for the tracking header (CR-PR-08).
 function etaCountdown(etaDate?: string): string {
   if (!etaDate) return "";
@@ -129,6 +146,12 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const [popup, setPopup] = useState<{ mode: "create" | "edit"; sid?: string } | null>(null);
   const [draft, setDraft] = useState<ShipDraft>(BLANK_DRAFT);
   const [poPickerOpen, setPoPickerOpen] = useState(false);
+  // CR 219 - automatic tracking when the server has a carrier aggregator key; the manual log always.
+  const [trackCfg, setTrackCfg] = useState<{ enabled: boolean; provider: string }>({ enabled: false, provider: "" });
+  const [checking, setChecking] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [logDraft, setLogDraft] = useState({ date: "", location: "", description: "", etaDate: "", status: "" as ShipmentStatus | "" });
   const [saving, setSaving] = useState(false);
   const { confirm, dialogs } = useDialogs();
 
@@ -155,6 +178,47 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
     catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => {
+    fetchTrackingConfig(projectId).then((c) => setTrackCfg({ enabled: c.enabled, provider: c.provider })).catch(() => setTrackCfg({ enabled: false, provider: "" }));
+  }, [projectId]);
+
+  // CR 219 - ask the carrier now. Only offered when the server has an aggregator key.
+  const checkTrackingNow = async (s: ApiShipment) => {
+    setChecking(true);
+    try {
+      const r = await refreshShipmentTracking(projectId, s._id);
+      setShipments((p) => p.map((x) => (x._id === s._id ? r.shipment : x)));
+      toast(r.added ? `${r.added} new update${r.added === 1 ? "" : "s"} from ${r.provider}.` : `${r.provider} has nothing newer.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not reach the carrier.", "error"); }
+    finally { setChecking(false); }
+  };
+
+  // CR 219 fallback - log where the shipment is now (the weekly update), kept in the same history.
+  const openLog = (s: ApiShipment) => {
+    setLogDraft({ date: new Date().toISOString().slice(0, 10), location: s.currentLocation || "", description: "", etaDate: s.etaDate || "", status: "" });
+    setLogOpen(true);
+  };
+  const saveLog = async (s: ApiShipment) => {
+    if (!logDraft.location.trim() && !logDraft.description.trim()) { toast("Add the location or a note.", "error"); return; }
+    setSaving(true);
+    try {
+      const updated = await logShipmentTracking(projectId, s._id, {
+        date: logDraft.date, location: logDraft.location.trim(), description: logDraft.description.trim(),
+        etaDate: logDraft.etaDate, ...(logDraft.status ? { status: logDraft.status } : {}),
+      });
+      setShipments((p) => p.map((x) => (x._id === s._id ? updated : x)));
+      setLogOpen(false);
+      toast("Location updated.", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the update.", "error"); }
+    finally { setSaving(false); }
+  };
+  const removeLog = async (s: ApiShipment, index: number) => {
+    if (!(await confirm({ title: "Delete this update?", message: "It is removed from the tracking history.", confirmLabel: "Delete", danger: true }))) return;
+    try {
+      const updated = await deleteShipmentTracking(projectId, s._id, index);
+      setShipments((p) => p.map((x) => (x._id === s._id ? updated : x)));
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not delete the update.", "error"); }
+  };
 
   // Remarks are edited optimistically and saved on blur; any other row action replaces the whole
   // shipment with the server's copy, which can briefly clobber an in-flight edit. Re-apply the
@@ -383,7 +447,59 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                       </div>
                     ) : null;
                   })()}
+
+                  {/* CR 219 - where the location came from and when, then the two ways to move it on:
+                      ask the carrier (when this server has a tracking account) or log it by hand. */}
+                  <div className="col-span-2 sm:col-span-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-primary/10 pt-2">
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${isStale(active) ? "text-amber-700" : "text-slate-500"}`}>
+                      {isStale(active) ? <AlertTriangle size={11} /> : <History size={11} />} {checkedLabel(active)}
+                    </span>
+                    {trackCfg.enabled && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700" title={`Checked automatically every day through ${trackCfg.provider}`}>
+                        Auto · {trackCfg.provider}
+                      </span>
+                    )}
+                    {canEdit && trackCfg.enabled && (
+                      <button onClick={() => void checkTrackingNow(active)} disabled={checking || !active.trackingNo} title={active.trackingNo ? "Ask the carrier now" : "Add the tracking / container number first"} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 hover:border-primary hover:text-primary disabled:opacity-40">
+                        {checking ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Check now
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button onClick={() => openLog(active)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+                        <MapPin size={11} /> Log an update
+                      </button>
+                    )}
+                    {(active.trackingEvents?.length || 0) > 0 && (
+                      <button onClick={() => setHistoryOpen((v) => !v)} className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline">
+                        <History size={11} /> {historyOpen ? "Hide" : "Show"} history ({active.trackingEvents!.length})
+                      </button>
+                    )}
+                    {isStale(active) && (
+                      <span className="text-[10px] text-amber-700">Open the carrier page and log where it is now — the owner is reminded every Monday.</span>
+                    )}
+                  </div>
                 </div>
+
+                {/* CR 219 - the trail itself: carrier pulls and hand-logged updates in one list. */}
+                {historyOpen && (active.trackingEvents?.length || 0) > 0 && (
+                  <ol className="space-y-1.5 rounded-2xl border border-slate-100 p-3">
+                    {active.trackingEvents!.map((e, i) => (
+                      <li key={`${e.date}-${i}`} className="flex items-start gap-2 text-[11px]">
+                        <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${i === 0 ? "bg-primary" : "bg-slate-300"}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-bold text-slate-700">{e.location || e.description || "Update"}</span>
+                          {e.location && e.description ? <span className="text-slate-500"> — {e.description}</span> : null}
+                          <span className="block text-[10px] text-slate-400">
+                            {e.date || "no date"}{e.source ? ` · ${e.source}` : ""}{e.addedBy ? ` · ${e.addedBy}` : ""}
+                          </span>
+                        </span>
+                        {canEdit && e.source === "Manual" && (
+                          <button onClick={() => void removeLog(active, i)} title="Delete this update" className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-600"><Trash2 size={11} /></button>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
 
                 {/* CR-PR-08 — route visual: origin → destination with a progress marker (no external map). */}
                 {(active.fromLocation || active.toLocation) && (() => {
@@ -532,6 +648,50 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       )}
       {dialogs}
       {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
+
+      {/* CR 219 - the manual side of tracking: where it is now, when it is expected, in one small form. */}
+      {logOpen && active && (
+        <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setLogOpen(false)}>
+          <div className="my-20 w-full max-w-md rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><MapPin size={15} className="text-primary" /> Update {active.name}</p>
+              <button onClick={() => setLogOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 p-5">
+              {(() => {
+                const url = carrierTrackingUrl(active.carrier, active.trackingNo, active.trackingUrl);
+                return url ? (
+                  <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-xl bg-primary/5 px-3 py-2 text-[11px] font-bold text-primary hover:underline">
+                    <ExternalLink size={12} /> Open {active.carrier || "the carrier"} tracking for {active.trackingNo || "this shipment"}
+                  </a>
+                ) : null;
+              })()}
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Date</span>
+                  <input type="date" value={logDraft.date} onChange={(e) => setLogDraft({ ...logDraft, date: e.target.value })} className={`${inp} mt-1`} /></label>
+                <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</span>
+                  <input type="date" value={logDraft.etaDate} onChange={(e) => setLogDraft({ ...logDraft, etaDate: e.target.value })} className={`${inp} mt-1`} /></label>
+              </div>
+              <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Current location</span>
+                <input autoFocus value={logDraft.location} onChange={(e) => setLogDraft({ ...logDraft, location: e.target.value })} placeholder="e.g. Istanbul Port" className={`${inp} mt-1`} /></label>
+              <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Note (optional)</span>
+                <input value={logDraft.description} onChange={(e) => setLogDraft({ ...logDraft, description: e.target.value })} placeholder="e.g. Vessel departed, next port Valencia" className={`${inp} mt-1`} /></label>
+              <label className="block"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Move the status (optional)</span>
+                <select value={logDraft.status} onChange={(e) => setLogDraft({ ...logDraft, status: e.target.value as ShipmentStatus | "" })} className={`${inp} mt-1`}>
+                  <option value="">Leave as {STATUS_META[active.status || "Preparing"].label}</option>
+                  {STATUSES.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
+                </select></label>
+              <p className="text-[10px] text-slate-400">Saved to this shipment's tracking history. Changing the status also moves the linked POs' items on the Master Log.</p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setLogOpen(false)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                <button onClick={() => void saveLog(active)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save update
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create / edit shipment popup — the whole shipment record is managed here (CRUD). */}
       {/* CR 220 - the items and the POs open as a list instead of filling the card. */}
