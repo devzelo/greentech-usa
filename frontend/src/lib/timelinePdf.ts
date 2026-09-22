@@ -136,7 +136,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   f = drawTable(b, f, X, cols, grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.8, maxLines: 4 });
 
   // ── Gantt ──
-  if (rows.some((m) => m.plannedStart && m.plannedEnd)) drawGantt(doc, b, newPage, rows, o, today);
+  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today);
 
 
   stampPageNumbers(doc, b);
@@ -165,7 +165,7 @@ const weekNoPdf = (d: Date) => {
 // day by day and simply runs onto more sheets.
 const PDF_PX_PER_DAY = { month: 2.3, week: 8, day: 12 } as const;
 
-function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date) {
+function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date): Flow {
   const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = 250, CH = W - LABEL, ROW = 15, BOTTOM = 74;
   const zoom = o.zoom || "month";
   const pxPerDay = PDF_PX_PER_DAY[zoom];
@@ -187,7 +187,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
   const dates: Date[] = [];
   for (const m of rows) for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd]) { const d = parseDate(v); if (d) dates.push(d); }
   for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }
-  if (!dates.length) return;
+  if (!dates.length) return flow;
   const min = new Date(Math.min(...dates.map((d) => d.getTime())));
   const max = new Date(Math.max(...dates.map((d) => d.getTime())));
   const from = startOfWeekPdf(new Date(min.getFullYear(), min.getMonth(), min.getDate() - 3));
@@ -201,6 +201,15 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
   const end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline), cStart = parseDate(o.contractStart);
   const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
+  // CR 275 - sections run on: the chart starts right under the table, on the same sheet, whenever
+  // its header and a few rows still fit. No page break, no blank half page between sections; a
+  // hairline marks the hand-over instead.
+  const HEAD_BLOCK = 26 + 26;                         // the section heading plus the time header
+  const roomFor = (y: number) => Math.floor((y - HEAD_BLOCK - BOTTOM) / ROW);
+  const minInline = 6;                                // worth continuing here if six rows fit
+
+  let f = flow;
+  let firstPage = true;
   let i = 0;
   let perPage = 0;
   while (i < lines.length) {
@@ -212,8 +221,18 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
       const xEnd = (d: Date) => x(new Date(d.getTime() + DAY_MS));
       const clampL = (v: number) => Math.max(X + LABEL, Math.min(X + LABEL + CH, v));
 
-      const f = newPage();
+      const carryOn = firstPage && roomFor(f.y) >= minInline;
+      if (!carryOn) f = newPage();
       const page = f.page;
+      // CR 275 - where one section hands over to the next: a little air, a hairline with a soft
+      // band under it (the edge of a card), then air again. No page break, no blank half sheet.
+      if (carryOn) {
+        const dy = f.y - 14;
+        page.drawLine({ start: { x: X, y: dy }, end: { x: X + W, y: dy }, thickness: 0.7, color: C.border });
+        page.drawRectangle({ x: X, y: dy - 3, width: W, height: 3, color: C.mist });
+        f = { page, y: dy - 20 };
+      }
+      firstPage = false;
       const range = `${fmtDay(sheetFrom)} to ${fmtDay(new Date(sheetTo.getTime() - DAY_MS))}`;
       const heading = `Gantt chart · ${zoom === "month" ? "monthly" : zoom === "week" ? "weekly" : "daily"}${sheets > 1 ? ` · sheet ${sheet + 1} of ${sheets}` : ""}`;
       let y = sectionHeading(page, b, heading, X, f.y, W) - 4;
@@ -269,8 +288,11 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
       y -= headH;
 
       const bodyTop = y;
-      if (!perPage) perPage = Math.max(1, Math.floor((bodyTop - BOTTOM) / ROW));
-      if (sheet === 0) chunk = lines.slice(i, i + perPage);
+      // Rows that fit under the header on THIS sheet; the first sheet of a chunk sets the size.
+      if (sheet === 0) {
+        perPage = Math.max(1, Math.floor((bodyTop - BOTTOM) / ROW));
+        chunk = lines.slice(i, i + perPage);
+      }
       const bodyH = chunk.length * ROW;
 
       // ── grid, contract window, extension ──
@@ -350,10 +372,12 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, rows: ApiMil
         page.drawText("Today", { x: x(t0) - b.bold.widthOfTextAtSize("Today", 6) / 2, y: headTop + 3, size: 6, font: b.bold, color: BLUE });
       }
       legend(page, b, X, bodyTop - bodyH - 16);
+      f = { page, y: bodyTop - bodyH - 30 };
     }
     i += chunk.length;
     if (!chunk.length) break;
   }
+  return f;
 }
 
 function legend(page: PDFPage, b: Brand, x: number, y: number) {
