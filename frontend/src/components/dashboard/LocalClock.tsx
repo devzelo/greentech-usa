@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 
-// Live "Current time" at the project site (CR 180), ticking every second, so the team knows the
+// Live "Local time" at the project site (CR 180), ticking every second, so the team knows the
 // hour on site before calling engineers abroad.
 export default function LocalClock({ timeZone, place }: { timeZone: string; place?: string }) {
   const [now, setNow] = useState(() => new Date());
@@ -21,10 +21,10 @@ export default function LocalClock({ timeZone, place }: { timeZone: string; plac
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold ${offHours ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-600"}`}
-      title={`Current time${place ? ` in ${place}` : ""} (${timeZone.replace(/_/g, " ")})${offHours ? ". Outside working hours on site." : ""}`}
+      title={`Local time${place ? ` in ${place}` : ""} (${timeZone.replace(/_/g, " ")})${offHours ? ". Outside working hours on site." : ""}`}
     >
       <Clock size={11} className={offHours ? "text-amber-500" : "text-primary"} />
-      <span className="text-slate-400 font-semibold">Current time</span>
+      <span className="text-slate-400 font-semibold">Local time</span>
       <span className="tabular-nums">{time}</span>
       <span className="text-slate-400 font-semibold">{day} · {zone}</span>
     </span>

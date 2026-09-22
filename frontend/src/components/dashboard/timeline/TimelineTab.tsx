@@ -51,7 +51,7 @@ function ToolMenu({ label, icon, tone = "plain", align = "right", children }: {
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
   const trigger = tone === "primary"
-    ? "inline-flex items-center gap-1.5 rounded-r-lg border-l border-blue-500 bg-blue-600 px-2 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+    ? "inline-flex items-center self-stretch rounded-r-lg px-2 text-xs font-bold text-white transition-colors hover:bg-blue-700"
     : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary";
   return (
     <div ref={box} className="relative">
@@ -632,10 +632,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
             {/* The main action, with the rest of the building blocks behind its caret. */}
             {canEdit && (
-              <span className="inline-flex">
-                <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-l-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+              <span className="inline-flex items-stretch rounded-lg bg-blue-600 shadow-sm">
+                <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-700">
                   <Plus size={13} /> Add milestone
                 </button>
+                <span aria-hidden className="my-1.5 w-px bg-white/30" />
                 <ToolMenu label="More ways to add" icon={<></>} tone="primary">
                   <button type="button" onClick={() => void addCategory()} className={MENU_ITEM}><FolderPlus size={13} /> Add category</button>
                   <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={MENU_ITEM}>
@@ -955,8 +956,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
 
+      {/* CR 275 - no "fit to one page" here: the schedule runs section by section down the sheet
+          and carries on to the next page when it runs out, which is what was asked for. */}
       {previewOpen && (
-        <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)} fitOption={{ note: `${scheduleName} · ${project.name}` }}
+        <PdfPreviewModal title={`${scheduleName} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => setPreviewOpen(false)}
           toggles={[{ key: "remarks", label: "Print remarks", title: "Print each row's remark in its own column on that row", icon: <StickyNote size={12} />, value: printRemarks, onChange: setPrintRemarks }]}
           rebuildKey={printRemarks ? "remarks" : "plain"}
           actions={canEdit && (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
