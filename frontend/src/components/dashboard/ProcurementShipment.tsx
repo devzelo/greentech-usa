@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { fileName } from "../../lib/fileNames";
 import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
@@ -205,6 +206,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   // The PO document opened from a linked-PO chip (Packing List row / info card).
   const [poPreview, setPoPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
+  // CR 280 - the whole status of one shipment as a page: dates, agency, location, costs, papers.
+  const [reportFor, setReportFor] = useState<ApiShipment | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -436,6 +439,10 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${STATUS_META[s.status || "Preparing"].cls}`}>{STATUS_META[s.status || "Preparing"].label}</span>
                     {!!s.deadline && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500" title="Deadline (expected receipt)">Due {s.deadline}</span>}
                   </span>
+                  {/* CR 280 - what is in this shipment, on its own line between the title and the route. */}
+                  {s.description ? (
+                    <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-500" title={s.description}>{s.description}</span>
+                  ) : null}
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
                     <span className="inline-flex items-center gap-1"><MapPin size={9} className="shrink-0" />{s.currentLocation || s.fromLocation || "Location not set"}</span>
                     <span className="inline-flex items-center gap-1">
@@ -469,6 +476,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     ) : (
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${STATUS_META[active.status || "Preparing"].cls}`}>{STATUS_META[active.status || "Preparing"].label}</span>
                     )}
+                    <button onClick={() => setReportFor(active)} title="Print or send this shipment's status" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-bold hover:border-primary hover:text-primary"><FileText size={11} /> Report</button>
                     {canEdit && <button onClick={() => openEdit(active)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-bold hover:border-primary hover:text-primary"><Pencil size={11} /> Edit</button>}
                     {canEdit && <button onClick={() => removeShipment(active)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-[11px] font-bold hover:bg-red-100"><Trash2 size={12} /> Delete</button>}
                   </div>
@@ -693,6 +701,26 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       )}
       {dialogs}
       {poPreview && <PdfPreviewModal title={poPreview.title} fileName={poPreview.fileName} build={poPreview.build} onClose={() => setPoPreview(null)} />}
+
+      {/* CR 280 - the shipment status, ready to print or email to a third party. */}
+      {reportFor && (
+        <PdfPreviewModal
+          title={`${reportFor.name} · status`}
+          fileName={fileName([projectInfo?.name, reportFor.name, "Status"], "pdf")}
+          onClose={() => setReportFor(null)}
+          build={async () => {
+            const { buildShipmentPdf } = await import("../../lib/shipmentPdf");
+            return buildShipmentPdf({
+              projectName: projectInfo?.name || projectId,
+              projectNo: projectId,
+              projectLocation: projectInfo?.siteAddress || projectInfo?.location,
+              shipment: reportFor,
+              pos: pos.map((p) => ({ _id: p._id, poNo: p.poNo, vendorName: p.vendorName, total: p.total, invoiceAmount: p.invoiceAmount })),
+              goodsCost: goodsCost(reportFor.poIds, pos),
+            });
+          }}
+        />
+      )}
 
       {/* CR 219 - the manual side of tracking: where it is now, when it is expected, in one small form. */}
       {logOpen && active && (

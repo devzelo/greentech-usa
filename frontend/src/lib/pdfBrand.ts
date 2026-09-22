@@ -316,6 +316,9 @@ export function drawTable(b: Brand, flow: Flow, x: number, cols: TableCol[], row
     }
     y -= headH;
   };
+  // A header printed at the very bottom of a page would sit on the footer, so start a fresh page
+  // unless the header and one row still fit.
+  if (y - headH - (size + 12) < bottom) ({ page, y } = opts.newPage());
   head();
   let zebra = 0;
   for (const r of rows) {
