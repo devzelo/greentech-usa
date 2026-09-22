@@ -188,9 +188,12 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
     if (e.button !== 0) return;
     const p = toContent(e);
     if (tool === "text") {
-      if (textAt) { commitText(); return; }
+      // A click places what is open and starts the next note where you clicked, so several
+      // labels can be added one after another without going back to the toolbar.
+      if (textAt) commitText();
       const r = canvasRef.current!.getBoundingClientRect();
       setTextAt({ at: p, css: [e.clientX - r.left, e.clientY - r.top] });
+      setText("");
       return;
     }
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -245,6 +248,9 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none"
         style={{ cursor }}
+        // The text box is created on pointerdown; the mousedown that follows would move focus off
+        // it (a canvas cannot hold focus), blurring it away before a word could be typed.
+        onMouseDown={(e) => { if (tool === "text") e.preventDefault(); }}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
