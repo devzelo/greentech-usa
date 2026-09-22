@@ -3175,6 +3175,26 @@ export async function verifyClassifiedPin(pin: string): Promise<{ token: string 
 }
 
 // Company stamps (the classified Stamps tab) — readable by any staff to stamp a PO.
+// ── CR 263 - website credentials kept on the Classified Documents page ───────
+export interface ApiCredential {
+  _id: string; platform: string; url: string; username: string; hint: string; notes: string;
+  ownerId: string; ownerName: string; sharedWith: string[]; createdAt?: string; updatedAt?: string;
+  /** Only present when a single entry is opened. */
+  password?: string;
+}
+export interface ApiCredentialPerson { _id: string; name: string; email: string; role: string }
+export type CredentialInput = Partial<Pick<ApiCredential, "platform" | "url" | "username" | "hint" | "notes" | "sharedWith">> & { password?: string };
+export async function fetchCredentials(): Promise<ApiCredential[]> { return request('/company/credentials'); }
+export async function fetchCredential(id: string): Promise<ApiCredential> { return request(`/company/credentials/${id}`); }
+export async function createCredential(body: CredentialInput): Promise<ApiCredential> {
+  return request('/company/credentials', { method: 'POST', body: JSON.stringify(body) });
+}
+export async function updateCredential(id: string, body: CredentialInput): Promise<ApiCredential> {
+  return request(`/company/credentials/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+export async function deleteCredential(id: string): Promise<void> { await request(`/company/credentials/${id}`, { method: 'DELETE' }); }
+export async function fetchCredentialPeople(): Promise<ApiCredentialPerson[]> { return request('/company/credential-people'); }
+
 export async function fetchStamps(): Promise<CompanyFile[]> { return request('/company/stamps'); }
 export async function fetchNdaFiles(): Promise<CompanyFile[]> { return request('/company/nda-files'); }
 /** CR-P (45) - the standard terms & conditions pool (its own Company Documents tab). */

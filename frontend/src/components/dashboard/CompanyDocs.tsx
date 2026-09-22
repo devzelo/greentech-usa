@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   Plus, Pencil, Trash2, Upload, Eye, Download, Loader2, FolderOpen,
-  List as ListIcon, LayoutGrid, ChevronRight, Archive, RotateCcw,
+  List as ListIcon, LayoutGrid, ChevronRight, Archive, RotateCcw, KeyRound,
 } from "lucide-react";
 import {
   fetchCompanyTabs, createCompanyTab, renameCompanyTab, deleteCompanyTab,
@@ -71,6 +71,7 @@ function DocMetaDialog({ file, onClose, onSaved }: { file: CompanyFile; onClose:
   );
 }
 import { iconFor, colorFor, classifyForFilter, formatDate } from "./fileHelpers";
+import CredentialsVault from "./CredentialsVault";
 import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
 import { PromptDialog, ConfirmDialog } from "./Dialogs";
@@ -78,6 +79,8 @@ import { toast } from "../../lib/toast";
 import { useTableSort, SortTh } from "../../lib/useTableSort";
 
 export default function CompanyDocs({ kind = "company", banner }: { kind?: "company" | "classified"; banner?: ReactNode } = {}) {
+  // CR 263 - the website credentials sit beside the sub-tabs, on the classified page only.
+  const [vaultOpen, setVaultOpen] = useState(kind === "classified");
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
   const [loadingTabs, setLoadingTabs] = useState(true);
   const [activeMain, setActiveMain] = useState<string>("");
@@ -273,9 +276,17 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
           <button onClick={() => setTabDialog({ mode: "addSub" })} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-primary border border-dashed border-primary/30 hover:bg-primary/5">
             <Plus size={12} /> Sub-tab
           </button>
+          {kind === "classified" && !vaultOpen && (
+            <button onClick={() => setVaultOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+              <KeyRound size={12} className="text-amber-500" /> Website credentials
+            </button>
+          )}
         </div>
       )}
 
+      {/* CR 263 - files on the left, the website credentials beside them on wide screens. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="min-w-0 flex-1 space-y-5">
       {/* Files toolbar */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <h2 className="text-lg font-display font-bold text-slate-900">
@@ -397,6 +408,14 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
           </div>
         </div>
       )}
+
+      </div>
+      {kind === "classified" && vaultOpen && (
+        <aside className="w-full shrink-0 lg:sticky lg:top-2 lg:h-[36rem] lg:w-[24rem]">
+          <CredentialsVault onClose={() => setVaultOpen(false)} />
+        </aside>
+      )}
+      </div>
 
       <AnimatePresence>
         {preview && <DocumentViewer doc={preview} onClose={() => setPreview(null)} />}

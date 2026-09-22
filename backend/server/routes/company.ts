@@ -8,6 +8,8 @@ import CompanyTab from "../models/CompanyTab";
 import CompanyFile from "../models/CompanyFile";
 import CompanyDetail from "../models/CompanyDetail";
 import ClassifiedAccess from "../models/ClassifiedAccess";
+import Credential, { encryptSecret, decryptSecret } from "../models/Credential";
+import User from "../models/User";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 import { JWT_SECRET } from "../config/secrets";
 
@@ -500,6 +502,117 @@ router.delete("/files/:id", async (req: AuthedRequest, res: Response, next: Next
   } catch (err) {
     next(err);
   }
+});
+
+// ── CR 263: website credentials, on the Classified Documents page ────────────
+// Everything here sits behind the same gate as the classified files: without the PIN (or, with no
+// PIN set, without being an admin) none of it is reachable. An entry belongs to whoever created it
+// and can be shared with named colleagues; an admin sees every entry. Passwords are encrypted at
+// rest and only travel to someone who may open that entry.
+const str = (v: unknown, max: number) => String(v ?? "").slice(0, max).trim();
+const mayOpen = (c: { ownerId?: string; sharedWith?: string[] }, req: AuthedRequest) =>
+  isAdmin(req) || c.ownerId === req.user!.userId || (c.sharedWith || []).includes(req.user!.userId);
+
+type CredShape = {
+  _id: unknown; platform: string; url: string; username: string; hint: string; notes: string;
+  ownerId: string; ownerName: string; sharedWith: string[]; createdAt?: Date; updatedAt?: Date;
+};
+const shape = (c: CredShape & { password?: string }, withSecret: boolean) => ({
+  _id: String(c._id),
+  platform: c.platform, url: c.url, username: c.username, hint: c.hint, notes: c.notes,
+  ownerId: c.ownerId, ownerName: c.ownerName, sharedWith: c.sharedWith || [],
+  createdAt: c.createdAt, updatedAt: c.updatedAt,
+  ...(withSecret ? { password: decryptSecret(c.password || "") } : {}),
+});
+
+const credGate = async (req: AuthedRequest, res: Response): Promise<boolean> => {
+  if (await classifiedAllowed(req)) return true;
+  res.status(403).json({ error: "Classified access required." });
+  return false;
+};
+
+/** The entries this user may see: their own and the ones shared with them (an admin sees all). */
+router.get("/credentials", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    const filter = isAdmin(req) ? {} : { $or: [{ ownerId: req.user!.userId }, { sharedWith: req.user!.userId }] };
+    const list = await Credential.find(filter).sort({ platform: 1, username: 1 }).lean();
+    res.json(list.map((c) => shape(c as unknown as CredShape, false)));
+  } catch (err) { next(err); }
+});
+
+/** One entry with its password - the screen asks for this when the entry is opened. */
+router.get("/credentials/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    const c = await Credential.findById(req.params.id).lean();
+    if (!c) return res.status(404).json({ error: "Not found." });
+    if (!mayOpen(c as unknown as CredShape, req)) return res.status(403).json({ error: "This entry has not been shared with you." });
+    res.json(shape(c as unknown as CredShape & { password?: string }, true));
+  } catch (err) { next(err); }
+});
+
+router.post("/credentials", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    const b = req.body || {};
+    const platform = str(b.platform, 120);
+    if (!platform) return res.status(400).json({ error: "Name the platform." });
+    const c = await Credential.create({
+      platform,
+      url: str(b.url, 400),
+      username: str(b.username, 200),
+      password: encryptSecret(str(b.password, 400)),
+      hint: str(b.hint, 300),
+      notes: str(b.notes, 2000),
+      ownerId: req.user!.userId,
+      ownerName: req.user!.name || "",
+      sharedWith: Array.isArray(b.sharedWith) ? b.sharedWith.map((x: unknown) => str(x, 60)).filter(Boolean).slice(0, 100) : [],
+    });
+    res.status(201).json(shape(c.toObject() as unknown as CredShape, false));
+  } catch (err) { next(err); }
+});
+
+router.patch("/credentials/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    const c = await Credential.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: "Not found." });
+    if (!mayOpen(c.toObject() as unknown as CredShape, req)) return res.status(403).json({ error: "This entry has not been shared with you." });
+    const b = req.body || {};
+    if (typeof b.platform === "string") c.platform = str(b.platform, 120) || c.platform;
+    if (typeof b.url === "string") c.url = str(b.url, 400);
+    if (typeof b.username === "string") c.username = str(b.username, 200);
+    if (typeof b.hint === "string") c.hint = str(b.hint, 300);
+    if (typeof b.notes === "string") c.notes = str(b.notes, 2000);
+    // An empty password field means "leave it as it is", so an edit never wipes the secret.
+    if (typeof b.password === "string" && b.password.trim()) c.password = encryptSecret(str(b.password, 400));
+    if (Array.isArray(b.sharedWith)) c.sharedWith = b.sharedWith.map((x: unknown) => str(x, 60)).filter(Boolean).slice(0, 100);
+    await c.save();
+    res.json(shape(c.toObject() as unknown as CredShape, false));
+  } catch (err) { next(err); }
+});
+
+router.delete("/credentials/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    const c = await Credential.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: "Not found." });
+    // Only the owner (or an admin) removes an entry; being shared with it is not enough.
+    if (!isAdmin(req) && c.ownerId !== req.user!.userId) return res.status(403).json({ error: "Only the person who saved this entry can delete it." });
+    await c.deleteOne();
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+/** Who an entry can be shared with: the internal accounts, for the picker. */
+router.get("/credential-people", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!(await credGate(req, res))) return;
+    // Internal accounts only; guests live in their own collection and never see classified data.
+    const users = await User.find({}).select("name email role").sort({ name: 1 }).limit(500).lean();
+    res.json(users.map((u) => ({ _id: String(u._id), name: u.name || "", email: u.email || "", role: u.role || "" })));
+  } catch (err) { next(err); }
 });
 
 export default router;
