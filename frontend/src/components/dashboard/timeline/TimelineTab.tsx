@@ -18,7 +18,7 @@ import {
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
-import GanttChart, { GanttLegend } from "./GanttChart";
+import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
@@ -477,6 +477,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
+  // CR 269 - how tightly the chart's time axis is packed.
+  const [zoom, setZoom] = useState<GanttZoom>("month");
+
   // ── CR 240 - long schedules: fold a category away ──
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCategory = (c: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n; });
@@ -874,6 +877,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-display text-base font-bold text-slate-900">Timeline chart</h3>
+            {/* CR 269 - how much of the calendar fits on screen: months, weeks or single days. */}
+            <div className="flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Chart zoom">
+              {GANTT_ZOOMS.map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setZoom(k)} className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${zoom === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
             {/* CR 232 - "late" means the same as on the header: past its planned end and not done.
                 Phases that are finished but finished late are counted apart. */}
             {(() => {
@@ -888,7 +899,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             })()}
           </div>
           {/* CR 238 - the chart follows the table's grouping, folded categories left out. */}
-          <GanttChart rows={groups.flatMap((g) => (collapsed.has(g.category) ? [] : g.items.map((s) => s.m)))} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} />
+          <GanttChart
+            rows={groups.flatMap((g) => (collapsed.has(g.category) ? [] : g.items.map((s) => s.m)))}
+            sections={hasCategories ? groups.filter((g) => !collapsed.has(g.category)).map((g) => ({ category: g.category, items: g.items.map((s) => s.m) })) : undefined}
+            contractStart={contractStart}
+            deadline={deadline}
+            originalDeadline={project.endDate}
+            zoom={zoom}
+          />
           <GanttLegend />
         </div>
       )}
