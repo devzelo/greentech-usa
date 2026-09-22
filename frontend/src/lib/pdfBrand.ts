@@ -136,29 +136,23 @@ export async function fitToOnePage(input: Blob, note?: string): Promise<Blob> {
   const topOf = (i: number) => (i === 0 ? ph : ph - BAND_H - 20);
   const heights = pages.map((_, i) => topOf(i) - bottom);
   const strips = await Promise.all(pages.map((p, i) => out.embedPage(p, { left: 0, bottom, right: pw, top: topOf(i) })));
-  // Lay the pages out in newspaper columns (down the first column, then the next), choosing the
-  // number of columns that gives the largest scale: a wide sheet then uses its width instead of
-  // shrinking one long strip.
+  // CR 275 (2026-09-22): stack the pages straight down, one column, in the order they were
+  // written. Never side by side: the client reads a schedule top to bottom, and a sheet that grows
+  // sideways is unreadable. The content only shrinks as far as it must to reach the footer.
   const sheet = out.addPage([pw, ph]);
   const room = ph - BOTTOM;                                    // keep the footer clear
   const gap = 12;
-  const cellH = Math.max(...heights);
-  let best = { cols: 1, rows: pages.length, scale: 0 };
-  for (let cols = 1; cols <= pages.length; cols++) {
-    const rowsN = Math.ceil(pages.length / cols);
-    const scale = Math.min(1, (pw - gap * (cols - 1)) / (cols * pw), (room - gap * (rowsN - 1)) / (rowsN * cellH));
-    if (scale > best.scale) best = { cols, rows: rowsN, scale };
-  }
-  const { cols, rows: rowsN, scale } = best;
+  const total = heights.reduce((s, h) => s + h, 0) + gap * (pages.length - 1);
+  const scale = Math.min(1, room / total);
   const colW = pw * scale;
-  const x0 = (pw - (colW * cols + gap * (cols - 1))) / 2;
+  const x0 = (pw - colW) / 2;
+  let top = ph;
   strips.forEach((strip, i) => {
-    const col = Math.floor(i / rowsN), row = i % rowsN;
     const h = heights[i] * scale;
-    const top = ph - row * (cellH * scale + gap);
-    sheet.drawPage(strip, { x: x0 + col * (colW + gap), y: top - h, width: colW, height: h });
+    sheet.drawPage(strip, { x: x0, y: top - h, width: colW, height: h });
+    top -= h + gap * scale;
   });
-  drawFooter(sheet, b, [note, `Fitted to one page (${pages.length} pages at ${Math.round(scale * 100)}%)`].filter(Boolean).join("  ·  "));
+  drawFooter(sheet, b, [note, `${pages.length} pages stacked on one sheet at ${Math.round(scale * 100)}%`].filter(Boolean).join("  ·  "));
   return new Blob([new Uint8Array(await out.save())], { type: "application/pdf" });
 }
 

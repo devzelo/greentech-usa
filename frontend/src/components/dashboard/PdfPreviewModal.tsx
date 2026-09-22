@@ -98,11 +98,11 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
             {hint && <p className="truncate text-[11px] text-slate-400">{hint}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* CR 247 - like Excel's "fit to one page": smaller, but one sheet instead of many. */}
+            {/* CR 247, reworked for CR 275 - the pages stacked down one sheet, never side by side. */}
             {fitOption && (
-              <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${fit ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`} title="Put the whole document on one sheet">
+              <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${fit ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`} title="Stack every page down a single sheet, top to bottom">
                 <input type="checkbox" checked={fit} onChange={(e) => setFit(e.target.checked)} className="accent-emerald-600" />
-                <Minimize2 size={12} /> Fit to one page
+                <Minimize2 size={12} /> One long sheet
               </label>
             )}
             {/* CR 270 - what goes into the PDF, decided here and rebuilt on the spot. */}
