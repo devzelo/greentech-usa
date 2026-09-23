@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
@@ -619,9 +619,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}
             </button>
 
+            {/* CR 284 - Preview is the one people reach for on every pass over a schedule, so it sits
+                in the bar itself rather than two clicks inside Export. Print stays in the menu; it
+                opens the same preview, with the printer a click away. */}
+            <button type="button" onClick={printPdf} className={btn} title="See the schedule as it will print">
+              <Eye size={13} /> Preview
+            </button>
+
             {/* Everything that produces a file or a printout. */}
             <ToolMenu label="Export" icon={<Download size={13} />}>
-              <button type="button" onClick={printPdf} className={MENU_ITEM}><Printer size={13} /> Preview / Print</button>
+              <button type="button" onClick={printPdf} className={MENU_ITEM}><Printer size={13} /> Print</button>
               <button type="button" onClick={startDownload} disabled={busy === "pdf"} className={MENU_ITEM}>
                 {busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF
               </button>
