@@ -145,6 +145,8 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
   const erased = useRef<Shape[] | null>(null);
   const [textAt, setTextAt] = useState<{ at: Pt; css: Pt } | null>(null);
   const [text, setText] = useState("");
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const pointerAt = useRef(0); // when the mouse was last pressed, to tell a click away from a focus steal
   const [scale, setScale] = useState(1); // CSS px per content unit
 
   const paint = useCallback((list: Shape[]) => {
@@ -183,6 +185,43 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
     setTextAt(null);
     setText("");
   };
+
+  /**
+   * The note has to be able to take what is typed, whatever else is on the page. Over a live page
+   * (Draw / Annotate) or inside a modal, something can hold or take the keyboard focus the moment
+   * the box opens - a focus trap, an autofocused field underneath - and then typing goes nowhere
+   * and the tool looks broken. So the box asks for focus itself, twice (mount and next frame), and
+   * while it is open any stray keystroke is brought back to it, keeping the character that would
+   * otherwise have been lost.
+   */
+  useEffect(() => {
+    if (!textAt) return;
+    const focus = () => textRef.current?.focus({ preventScroll: true });
+    focus();
+    const frame = requestAnimationFrame(focus);
+    const onDown = () => { pointerAt.current = Date.now(); };
+    window.addEventListener("pointerdown", onDown, true);
+    const onKey = (e: KeyboardEvent) => {
+      const ta = textRef.current;
+      if (!ta || document.activeElement === ta) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      ta.focus({ preventScroll: true });
+      if (e.key.length === 1) { e.preventDefault(); setText((t) => t + e.key); }
+      else if (e.key === "Backspace") { e.preventDefault(); setText((t) => t.slice(0, -1)); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [textAt]);
+
+  // Changing tool with a note open keeps what was typed instead of dropping it.
+  useEffect(() => {
+    if (tool !== "text" && textAt) commitText();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
 
   const down = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
@@ -258,18 +297,27 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
       />
       {textAt && (
         <textarea
+          ref={textRef}
           autoFocus
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onBlur={commitText}
+          // Clicking away places the note; an empty one simply stays open, so a stray blur cannot
+          // make the box vanish before a word has been typed. A blur with no click behind it is
+          // something else taking the keyboard, so the box takes it straight back and keeps what
+          // was typed. Escape closes it, Enter places it.
+          onBlur={() => {
+            if (Date.now() - pointerAt.current < 400) { if (text.trim()) commitText(); return; }
+            requestAnimationFrame(() => textRef.current?.focus({ preventScroll: true }));
+          }}
           onKeyDown={(e) => {
+            e.stopPropagation();
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitText(); }
             if (e.key === "Escape") { e.stopPropagation(); setTextAt(null); setText(""); }
           }}
-          placeholder="Type, Enter to place"
+          placeholder="Type here, Enter to place"
           rows={Math.max(1, text.split("\n").length)}
-          className="absolute min-w-[10rem] resize-none rounded border border-dashed border-slate-400 bg-white/80 px-1 font-bold leading-tight outline-none"
-          style={{ left: textAt.css[0], top: textAt.css[1], color, fontSize: 12 + width * 3 }}
+          className="absolute min-w-[10rem] resize-none rounded border border-dashed border-slate-500 bg-white/90 px-1 font-bold leading-tight shadow-sm outline-none ring-2 ring-primary/40"
+          style={{ left: textAt.css[0], top: textAt.css[1], color, fontSize: 12 + width * 3, zIndex: 2, pointerEvents: "auto" }}
         />
       )}
     </div>
