@@ -55,6 +55,8 @@ const s = StyleSheet.create({
   kv: { flexDirection: "row", paddingVertical: 4, borderBottom: `0.6 solid ${BRAND.border}` },
   kvLabel: { width: 88, fontSize: 7, fontWeight: 700, color: BRAND.s500, letterSpacing: 0.8, lineHeight: 1.4, paddingTop: 1 },
   kvValue: { flex: 1, fontSize: 9, color: BRAND.slate, fontWeight: 500, lineHeight: 1.4 },
+  // The client's own mark, sized to sit inside a row without pushing the column about.
+  clientLogo: { height: 34, maxWidth: 120, objectFit: "contain" },
 
   tHead: { flexDirection: "row", backgroundColor: BRAND.slate },
   th: { fontSize: 6.8, fontWeight: 700, color: BRAND.white, letterSpacing: 0.6, lineHeight: 1.3, paddingVertical: 5, paddingHorizontal: 6 },
@@ -141,15 +143,53 @@ function ReportRichText({ html }: { html: string }) {
   return <>{out}</>;
 }
 
+/**
+ * CR 286 (2026-09-23): the report is put together section by section. Everything is on by default,
+ * and the person printing it can leave out whatever does not belong in this particular copy.
+ */
+export type ReportSection =
+  | "overview" | "projectInfo" | "clientInfo" | "summary" | "milestones" | "phases"
+  | "notes" | "financials" | "subs" | "vendors" | "team";
+
+export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: string }> = [
+  { key: "overview", label: "Key figures and progress", hint: "Dates, team size, overall completion" },
+  { key: "projectInfo", label: "Project information", hint: "Identity, contract, categories, scope of work" },
+  { key: "clientInfo", label: "Client information", hint: "From the Directory, with the client's logo" },
+  { key: "summary", label: "Executive summary", hint: "The project's description" },
+  { key: "milestones", label: "Phases and milestones", hint: "The schedule behind the progress" },
+  { key: "phases", label: "Timeline phases", hint: "The older phase list, when one is kept" },
+  { key: "notes", label: "Notes and narrative", hint: "What was written in the report notes" },
+  { key: "financials", label: "Financial summary", hint: "Value, income, expenses, profit" },
+  { key: "subs", label: "Subcontractors", hint: "Who is working under this project" },
+  { key: "vendors", label: "Vendors", hint: "The suppliers on this project" },
+  { key: "team", label: "Assigned team", hint: "The people assigned" },
+];
+
+/** The client as the project page shows it: the Directory's version when it is linked. */
+export interface ReportClient {
+  name?: string; clientType?: string; contactName?: string; role?: string;
+  email?: string; phone?: string; address?: string; website?: string;
+  location?: string; reference?: string; notes?: string;
+  /** A data URL, so the page never waits on a network fetch while it renders. */
+  logo?: string;
+}
+
+export interface ReportVendor { name?: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string }
+
 interface Props {
   project: ApiProject;
   /** Kept for callers; the letterhead band carries the logo now. */
   logoUrl?: string;
   /** Current income (total invoiced to the client) and expenses (total spent). */
   financials?: { income: number; expenses: number };
+  /** Which sections to print. Anything left out of the map is printed. */
+  include?: Partial<Record<ReportSection, boolean>>;
+  client?: ReportClient;
+  vendors?: ReportVendor[];
 }
 
-export default function ProjectReportPDF({ project, financials }: Props) {
+export default function ProjectReportPDF({ project, financials, include, client, vendors = [] }: Props) {
+  const on = (k: ReportSection) => include?.[k] !== false;
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
   const assigned = project.assignedEmployees || [];
@@ -184,22 +224,59 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         </View>
 
         {/* Key figures */}
-        <KpiRow items={[
-          { label: "START DATE", value: project.startDate || "-" },
-          { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: effectiveEndDate(project) || "-" },
-          { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
-          { label: "VISIBILITY", value: project.published ? "Public" : "Internal" },
-        ]} />
-        <View style={s.progress} wrap={false}>
-          <View style={s.progressHead}>
-            <Text style={s.progressLabel}>OVERALL COMPLETION</Text>
-            <Text style={s.progressPct}>{progress}%</Text>
+        {on("overview") && (
+          <>
+            <KpiRow items={[
+              { label: "START DATE", value: project.startDate || "-" },
+              { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: effectiveEndDate(project) || "-" },
+              { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
+              { label: "VISIBILITY", value: project.published ? "Public" : "Internal" },
+            ]} />
+            <View style={s.progress} wrap={false}>
+              <View style={s.progressHead}>
+                <Text style={s.progressLabel}>OVERALL COMPLETION</Text>
+                <Text style={s.progressPct}>{progress}%</Text>
+              </View>
+              <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
+            </View>
+          </>
+        )}
+
+        {/* CR 286 - the project's own facts, as the Project Identity block holds them. */}
+        {on("projectInfo") && (
+          <View>
+            <SectionHeading title="Project Information" />
+            <View style={s.twoCol}>
+              <View style={[s.col, { marginRight: 18 }]}>
+                {kv("PROJECT", project.name)}
+                {kv("PROJECT NO.", project.id)}
+                {kv("LOCATION", project.location)}
+                {kv("SITE ADDRESS", project.siteAddress?.full || [project.siteAddress?.line1, project.siteAddress?.city, project.siteAddress?.country].filter(Boolean).join(", "))}
+                {kv("PROJECT TYPE", projectCategories(project).join(", "))}
+                {kv("STATUS", project.status)}
+              </View>
+              <View style={s.col}>
+                {kv("CONTRACT NO.", project.contractNo)}
+                {kv("CONTRACT TYPE", project.contractType)}
+                {kv("START", project.startDate)}
+                {kv("TARGET END", effectiveEndDate(project))}
+                {kv("DISCIPLINES", project.disciplines?.join(", "))}
+                {kv("FUNDING", project.fiscal)}
+              </View>
+            </View>
+            {(project.scopeOfWork || []).filter((x) => x && x.trim()).length > 0 && (
+              <View style={{ marginTop: 8 }}>
+                <Text style={s.progressLabel}>KEY SCOPE OF WORK</Text>
+                {(project.scopeOfWork || []).filter((x) => x && x.trim()).map((line, i) => (
+                  <View key={i} style={s.rtLi}><Text style={s.rtBullet}>•</Text><Text style={s.rtLiText}>{line.trim()}</Text></View>
+                ))}
+              </View>
+            )}
           </View>
-          <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
-        </View>
+        )}
 
         {/* CR-P (120)-(125) — the milestones behind the progress. */}
-        {plan.milestones.length > 0 && (
+        {on("milestones") && plan.milestones.length > 0 && (
           <View>
             <SectionHeading title="Timeline: phases & milestones" />
             <View style={s.tHead} wrap={false} minPresenceAhead={24}>
@@ -230,7 +307,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         )}
 
         {/* Narrative / notes, rich text (tables and pictures) from the report notes editor */}
-        {!!project.reportNotes?.trim() && (
+        {on("notes") && !!project.reportNotes?.trim() && (
           <View>
             <SectionHeading title="Notes & Narrative" />
             <ReportRichText html={project.reportNotes} />
@@ -238,6 +315,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         )}
 
         {/* Financial summary */}
+        {on("financials") && (
         <View wrap={false}>
           <SectionHeading title="Financial Summary" />
           <KpiRow items={[
@@ -248,39 +326,50 @@ export default function ProjectReportPDF({ project, financials }: Props) {
           ]} />
           <Text style={s.note}>Income is the total invoiced to the client (Invoice Sent). Expenses are the total logged in the Expenses tab (quantity × unit price), across all contributors.</Text>
         </View>
+        )}
 
         {/* Executive summary */}
-        {!!project.description && (
+        {on("summary") && !!project.description && (
           <View>
             <SectionHeading title="Executive Summary" />
             <Text style={s.body}>{project.description}</Text>
           </View>
         )}
 
-        {/* Client + fiscal */}
-        <View style={s.twoCol}>
-          <View style={[s.col, { marginRight: 18 }]}>
+        {/* CR 286 - the client as the project page shows them, read from the Directory, with their
+            logo beside the facts. Fiscal and compliance keep their column. */}
+        {on("clientInfo") && (
+          <View>
             <SectionHeading title="Client Information" />
-            {kv("NAME", project.clientInfo?.name)}
-            {kv("REFERENCE", project.clientInfo?.reference)}
-            {kv("CONTACT", project.clientInfo?.contactName)}
-            {kv("EMAIL", project.clientInfo?.email)}
-            {kv("PHONE", project.clientInfo?.phone)}
-            {kv("COUNTRY", project.clientInfo?.country)}
+            <View style={s.twoCol}>
+              <View style={[s.col, { marginRight: 18 }]}>
+                {kv("CLIENT / AGENCY", client?.name || project.clientInfo?.name)}
+                {kv("CLIENT TYPE", client?.clientType)}
+                {kv("CONTACT", [client?.contactName || project.clientInfo?.contactName, client?.role].filter(Boolean).join(" - "))}
+                {kv("EMAIL", client?.email || project.clientInfo?.email)}
+                {kv("PHONE", client?.phone || project.clientInfo?.phone)}
+                {kv("WEBSITE", client?.website)}
+              </View>
+              <View style={s.col}>
+                {kv("LOCATION", client?.location || project.clientInfo?.country)}
+                {kv("ADDRESS", client?.address || project.clientInfo?.address)}
+                {kv("REFERENCE", client?.reference || project.clientInfo?.reference)}
+                {kv("FUNDING", project.fiscal)}
+                {kv("COMPLIANCE", project.compliance)}
+                {client?.logo ? (
+                  <View style={s.kv} wrap={false}>
+                    <Text style={s.kvLabel}>CLIENT LOGO</Text>
+                    <View style={{ flex: 1 }}><Image src={client.logo} style={s.clientLogo} /></View>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+            {!!client?.notes?.trim() && <Text style={s.note}>{client.notes.trim()}</Text>}
           </View>
-          <View style={s.col}>
-            <SectionHeading title="Fiscal & Compliance" />
-            {kv("FUNDING", project.fiscal)}
-            {kv("COMPLIANCE", project.compliance)}
-            {kv("CATEGORIES", projectCategories(project).join(", "))}
-            {kv("DISCIPLINES", project.disciplines?.join(", "))}
-            {kv("CONTRACT NO.", project.contractNo)}
-            {kv("CONTRACT TYPE", project.contractType)}
-          </View>
-        </View>
+        )}
 
         {/* Timeline */}
-        {phases.length > 0 && (
+        {on("phases") && phases.length > 0 && (
           <View>
             <SectionHeading title="Timeline Phases" />
             <View style={s.tHead} wrap={false} minPresenceAhead={24}>
@@ -299,7 +388,7 @@ export default function ProjectReportPDF({ project, financials }: Props) {
         )}
 
         {/* Subcontractors */}
-        {subs.length > 0 && (
+        {on("subs") && subs.length > 0 && (
           <View>
             <SectionHeading title="Subcontractors" />
             <View style={s.tHead} wrap={false} minPresenceAhead={24}>
@@ -319,8 +408,29 @@ export default function ProjectReportPDF({ project, financials }: Props) {
           </View>
         )}
 
+        {/* CR 286 - the suppliers on this project, beside the subcontractors. */}
+        {on("vendors") && vendors.length > 0 && (
+          <View>
+            <SectionHeading title="Vendors" />
+            <View style={s.tHead} wrap={false} minPresenceAhead={24}>
+              <Text style={[s.th, { flex: 2 }]}>NAME</Text>
+              <Text style={[s.th, { flex: 1.5 }]}>CONTACT</Text>
+              <Text style={[s.th, { flex: 2 }]}>EMAIL / PHONE</Text>
+              <Text style={[s.th, { flex: 1.5 }]}>LOCATION</Text>
+            </View>
+            {vendors.map((v, i) => (
+              <View key={i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
+                <Text style={[s.td, { flex: 2, fontWeight: 700 }]}>{v.name || "-"}</Text>
+                <Text style={[s.td, { flex: 1.5 }]}>{v.contactName || "-"}</Text>
+                <Text style={[s.td, { flex: 2 }]}>{[v.email, v.phone].filter(Boolean).join("  ·  ") || "-"}</Text>
+                <Text style={[s.td, { flex: 1.5 }]}>{[v.city, v.country].filter(Boolean).join(", ") || "-"}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Assigned team */}
-        {assigned.length > 0 && (
+        {on("team") && assigned.length > 0 && (
           <View wrap={false}>
             <SectionHeading title="Assigned Team" />
             <Text style={s.body}>{assigned.join("   ·   ")}</Text>

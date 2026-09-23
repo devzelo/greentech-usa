@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Globe, Clock, ExternalLink, MapPin,
@@ -27,7 +28,8 @@ import ProcurementShipment from "./ProcurementShipment";
 import ProcurementPO from "./ProcurementPO";
 import { projectPdfInfo } from "../../lib/pdfProjectHeader";
 import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
-import ProjectReportPDF from "./ProjectReportPDF";
+import { logoAsPng } from "../../lib/logoImage";
+import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
@@ -91,7 +93,7 @@ import { fileName } from "../../lib/fileNames";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
-import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, type ApiVendor, type ApiCompany } from "../../lib/api";
+import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, fetchCompany, companyCategories, withFileToken, type ApiVendor, type ApiCompany } from "../../lib/api";
 import CompanyPicker from "./CompanyPicker";
 import YesNo from "./YesNo";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
@@ -305,6 +307,22 @@ export default function ProjectWorkspace() {
   const [isPublished, setIsPublished] = useState(false);
   const [financialLocked, setFinancialLocked] = useState(false); // CR-B-19b — Financial Proposal owner-only
   const [showReport, setShowReport] = useState(false);   // CR-P-01 — Quick Report popup preview
+  /**
+   * CR 286 (2026-09-23): Quick Report asks what to put in it first. Everything is ticked by
+   * default; the choice is remembered, so the next report comes out like the last one. The client
+   * (from the Directory, with their logo) and the vendors are fetched only when they are wanted.
+   */
+  const [reportPick, setReportPick] = useState(false);
+  const [reportInclude, setReportInclude] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("gt-report-sections") || "null");
+      if (saved && typeof saved === "object") return saved as Record<string, boolean>;
+    } catch { /* ignore */ }
+    return Object.fromEntries(REPORT_SECTIONS.map((x) => [x.key, true]));
+  });
+  const [reportClient, setReportClient] = useState<ReportClient | undefined>();
+  const [reportVendors, setReportVendors] = useState<ReportVendor[]>([]);
+  const [reportBusy, setReportBusy] = useState(false);
   const presentUsers = usePresence(id ? `project:${id}` : null);   // CR-B-16 — who else is in this project
   const proposalPresent = useBuilderPresence(id ? `proposal:${id}` : null, "the Proposal builder"); // CR-B-01
 
@@ -1838,6 +1856,52 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // Live financials for the Project Report PDF — income from subcontractor invoice
   // amounts, expenses from the Expenses tab. Declared after the states it reads.
+  /**
+   * CR 286 - gather what the ticked sections need before the preview opens: the client as the
+   * Directory holds them (logo included, turned into a data URL so the PDF never waits on a
+   * request), and this project's vendors.
+   */
+  const buildReport = async () => {
+    if (!project) return;
+    setReportBusy(true);
+    try {
+      const ci = project.clientInfo;
+      const next: ReportClient = {
+        name: ci?.name || "", contactName: ci?.contactName || "", email: ci?.email || "",
+        phone: ci?.phone || "", address: ci?.address || "", location: ci?.country || "",
+        reference: ci?.reference || "", notes: ci?.notes || "",
+      };
+      if (reportInclude.clientInfo !== false && ci?.companyId) {
+        try {
+          const c = await fetchCompany(ci.companyId);
+          const cp = c.contactPersons?.[0];
+          next.name = c.name || next.name;
+          next.clientType = companyCategories(c).join(", ");
+          next.contactName = cp?.name || next.contactName;
+          next.role = cp?.role || "";
+          next.email = c.email || cp?.email || next.email;
+          next.phone = c.phone || cp?.phone || next.phone;
+          next.address = c.address || next.address;
+          next.website = c.website || "";
+          // A logo that cannot be read is simply left out; it must never stop the report.
+          if (c.logoUrl) {
+            try { next.logo = await logoAsPng(withFileToken(c.logoUrl)); } catch { /* no logo in the report */ }
+          }
+        } catch { /* the saved client details stand */ }
+      }
+      setReportClient(next);
+      if (reportInclude.vendors !== false && id) {
+        try {
+          const v = await fetchVendors(id);
+          setReportVendors(v.map((x) => ({ name: x.name, contactName: x.contactName, email: x.email, phone: x.phone, city: x.city, country: x.country })));
+        } catch { setReportVendors([]); }
+      } else setReportVendors([]);
+      try { localStorage.setItem("gt-report-sections", JSON.stringify(reportInclude)); } catch { /* ignore */ }
+      setReportPick(false);
+      setShowReport(true);
+    } finally { setReportBusy(false); }
+  };
+
   const reportFinancials = (() => {
     const n = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
     const expenses = expenseRows.reduce((sum, e) => sum + (n(e.qty) || 1) * n(e.amount), 0);
@@ -3960,7 +4024,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
               {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
               {canSeeFigures && !isGuest && (
-                <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+                <button onClick={() => setReportPick(true)} className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
                   <FileText size={14} /> Quick Report
                 </button>
               )}
@@ -8068,12 +8132,54 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         )}
       </AnimatePresence>
 
+      {/* CR 286 - what goes in the report, asked before it is built. */}
+      {reportPick && project && createPortal(
+        <div className="fixed inset-0 z-[220] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setReportPick(false)}>
+          <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FileText size={15} className="text-primary" /> What goes in the report?</p>
+              <button onClick={() => setReportPick(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            </div>
+            <div className="max-h-[60vh] space-y-1 overflow-y-auto p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] text-slate-500">Everything is included unless you take it out.</p>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => setReportInclude(Object.fromEntries(REPORT_SECTIONS.map((x) => [x.key, true])))} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">All</button>
+                  <button type="button" onClick={() => setReportInclude(Object.fromEntries(REPORT_SECTIONS.map((x) => [x.key, false])))} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">None</button>
+                </div>
+              </div>
+              {REPORT_SECTIONS.map((sec) => (
+                <label key={sec.key} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-transparent p-2 hover:border-slate-100 hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                    checked={reportInclude[sec.key] !== false}
+                    onChange={(e) => setReportInclude((p) => ({ ...p, [sec.key]: e.target.checked }))}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold text-slate-800">{sec.label}</span>
+                    <span className="block text-[11px] text-slate-400">{sec.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+              <button onClick={() => setReportPick(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => void buildReport()} disabled={reportBusy} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50">
+                {reportBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Build the report
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
       {showReport && project && (
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
           fileName={fileName([project.name, "Report"], "pdf")}
-          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} />).toBlob()}
+          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} />).toBlob()}
           onClose={() => setShowReport(false)}
         />
       )}
