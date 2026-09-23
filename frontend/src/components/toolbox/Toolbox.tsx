@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   Calculator as CalcIcon, CalendarDays, Camera, ChevronLeft, Coins, FileStack, FolderOpen, Image as ImageIcon,
-  Pencil, Percent, Ruler, Sparkles, StickyNote, Timer, ToolCase, Type, X,
+  GripVertical, Pencil, Percent, Ruler, Sparkles, StickyNote, Timer, ToolCase, Type, X,
 } from "lucide-react";
 import { useCapturing, type CaptureKind } from "./capture";
 import { useSnip } from "./SnipTool";
@@ -53,6 +53,19 @@ const GROUPS: Array<{ title: string; tools: Tool[] }> = [
 ];
 const ALL = GROUPS.flatMap((g) => g.tools);
 const LS_KEY = "gt-toolbox-last";
+const POS_KEY = "gt-toolbox-pos";
+
+/**
+ * CR 283 (2026-09-23): the toolbox floats. It used to hang off the Tools button in the top bar,
+ * which a pop-up or a preview covered, so the calculator or the converter was out of reach exactly
+ * when it was needed - while reading a document. It now rides above everything on its own layer,
+ * as a bubble that can be dragged anywhere and remembers where it was left.
+ */
+const BUBBLE = 48;
+const clampPos = (x: number, y: number) => ({
+  x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - BUBBLE - 8)),
+  y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - BUBBLE - 8)),
+});
 
 export default function Toolbox() {
   const [open, setOpen] = useState(false);
@@ -72,12 +85,53 @@ export default function Toolbox() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (e.key !== "Escape" || drawing || document.querySelector("[data-toolbox-modal]")) return;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && t.closest("[data-toolbox-panel]") == null) return;
+      // The panel now floats over the page, so Escape belongs to whatever the person is working in:
+      // it only closes the toolbox when the toolbox itself has the keyboard.
+      if (!t || !t.closest("[data-toolbox-panel]")) return;
       setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, drawing]);
+
+  // Where the bubble sits, kept between visits and always inside the window.
+  const [pos, setPos] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(POS_KEY) || "null");
+      if (s && typeof s.x === "number" && typeof s.y === "number") return clampPos(s.x, s.y);
+    } catch { /* ignore */ }
+    return clampPos(window.innerWidth - BUBBLE - 20, window.innerHeight - BUBBLE - 96);
+  });
+  const drag = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
+  useEffect(() => {
+    const on = () => setPos((p) => clampPos(p.x, p.y));
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const startDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, moved: false };
+  };
+  const moveDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const next = clampPos(e.clientX - d.dx, e.clientY - d.dy);
+    if (Math.abs(next.x - pos.x) > 3 || Math.abs(next.y - pos.y) > 3) d.moved = true;
+    setPos(next);
+  };
+  const endDrag = (toggle: boolean) => {
+    const moved = drag.current?.moved;
+    drag.current = null;
+    try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
+    // A drag moves the bubble; a plain press opens or closes the panel.
+    if (toggle && !moved) setOpen((v) => !v);
+  };
+
+  // The panel hangs off the bubble, on whichever side has room.
+  const panelW = Math.min(416, window.innerWidth - 16);
+  const panelH = Math.min(560, window.innerHeight - 32);
+  const panelLeft = pos.x + BUBBLE + 8 + panelW > window.innerWidth ? Math.max(8, pos.x - panelW - 8) : pos.x + BUBBLE + 8;
+  const panelTop = Math.min(Math.max(8, pos.y), Math.max(8, window.innerHeight - panelH - 8));
 
   const pick = (k: ToolKey) => {
     if (k === "draw") { setDrawing(true); setOpen(false); return; }
@@ -128,10 +182,21 @@ export default function Toolbox() {
       {open && createPortal(
         <div
           data-toolbox-panel
-          className="fixed right-2 top-[4.5rem] z-[190] flex max-h-[calc(100vh-5.5rem)] w-[min(26rem,calc(100vw-1rem))] flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl sm:right-6 sm:top-[5.25rem]"
-          style={{ visibility: capturing ? "hidden" : "visible" }}
+          className="fixed z-[1200] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          style={{ visibility: capturing ? "hidden" : "visible", left: panelLeft, top: panelTop, width: panelW, maxHeight: panelH }}
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
+            {/* Drag the panel by its bar, the same as dragging the bubble. */}
+            <span
+              onPointerDown={startDrag}
+              onPointerMove={moveDrag}
+              onPointerUp={() => endDrag(false)}
+              onPointerCancel={() => endDrag(false)}
+              title="Drag to move the toolbox"
+              className="-ml-1 cursor-grab touch-none rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
+            >
+              <GripVertical size={14} />
+            </span>
             {current ? (
               <button type="button" onClick={() => setTool(null)} className="flex min-w-0 items-center gap-1 rounded-lg px-1 py-0.5 text-sm font-bold text-slate-800 hover:bg-slate-100">
                 <ChevronLeft size={16} className="shrink-0 text-slate-400" />
@@ -167,6 +232,30 @@ export default function Toolbox() {
             )}
           </div>
         </div>,
+        document.body,
+      )}
+
+      {/* The floating bubble: the way into the toolbox from anywhere, including over a pop-up or a
+          document preview. It hides itself while a screenshot is being taken. */}
+      {createPortal(
+        <button
+          type="button"
+          data-toolbox-bubble
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={() => endDrag(true)}
+          onPointerCancel={() => endDrag(false)}
+          aria-label="Toolbox, floating"
+          aria-expanded={open}
+          title="Toolbox - press to open, drag to move"
+          className={`fixed z-[1200] flex touch-none items-center justify-center rounded-full border shadow-xl transition-colors active:cursor-grabbing ${
+            open ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-primary hover:text-primary"
+          }`}
+          style={{ left: pos.x, top: pos.y, width: BUBBLE, height: BUBBLE, visibility: capturing ? "hidden" : "visible" }}
+        >
+          <ToolCase size={20} />
+          {clockRunning && <span className="absolute right-1 top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 ring-2 ring-white" title="A timer is running" />}
+        </button>,
         document.body,
       )}
 

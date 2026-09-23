@@ -170,7 +170,7 @@ export function AttachDialog({ getFile, onClose, defaultProjectId }: { getFile: 
   const field = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 focus:border-primary focus:outline-none";
   const groups = Array.from(new Set(ATTACH_SECTIONS.map((s) => s.group)));
   return createPortal(
-    <div data-toolbox-modal data-toolbox-attach className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div data-toolbox-modal data-toolbox-attach className="fixed inset-0 z-[1250] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <h3 className="font-display text-base font-bold text-slate-900">Attach to project</h3>

@@ -35,7 +35,7 @@ export default function DrawOverlay({ onClose, onScreenshot }: { onClose: () => 
 
   const small = "inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-bold";
   return createPortal(
-    <div className="fixed inset-0 z-[240]" style={{ pointerEvents: paused ? "none" : "auto" }}>
+    <div className="fixed inset-0 z-[1300]" style={{ pointerEvents: paused ? "none" : "auto" }}>
       <AnnotationLayer
         shapes={hist.shapes} onChange={hist.setShapes} tool={tool} color={color} width={width}
         contentW={size.w} contentH={size.h} pixelRatio={window.devicePixelRatio || 1}

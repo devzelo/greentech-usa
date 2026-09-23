@@ -155,7 +155,7 @@ export default function ImageEditor({ source, name = "image", title = "Edit imag
   const input = "w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-primary focus:outline-none";
 
   return createPortal(
-    <div data-toolbox-modal className="fixed inset-0 z-[245] flex flex-col bg-slate-900/70 p-2 sm:p-4">
+    <div data-toolbox-modal className="fixed inset-0 z-[1400] flex flex-col bg-slate-900/70 p-2 sm:p-4">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
           <h3 className="font-display text-base font-bold text-slate-900">{title}</h3>

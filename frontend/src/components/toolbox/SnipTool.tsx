@@ -101,7 +101,7 @@ function AreaSelector({ blob, onDone, onCancel }: { blob: Blob; onDone: (b: Blob
   const vh = img ? img.naturalHeight * fit : 0;
 
   return createPortal(
-    <div data-toolbox-modal className="fixed inset-0 z-[244] flex items-center justify-center bg-slate-950">
+    <div data-toolbox-modal className="fixed inset-0 z-[1350] flex items-center justify-center bg-slate-950">
       <div className="relative" style={{ width: vw, height: vh }}>
         <img src={url} alt="" className="absolute inset-0 h-full w-full select-none" draggable={false} onLoad={(e) => setImg(e.currentTarget)} />
         {img && (
