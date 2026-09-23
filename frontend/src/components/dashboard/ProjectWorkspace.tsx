@@ -3900,10 +3900,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <span className="text-xs font-bold text-slate-300">·</span>
                   </>
                 )}
-                {projectCategories(project).length > 0 && (
+                {/* CR 290 - the solicitation number rides here, where the categories used to. The
+                    categories are already on the Project Info tab, under About This Project. */}
+                {!!project.solicitationNo?.trim() && (
                   <>
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-                      <Building2 size={11} /> {projectCategories(project).join(", ")}
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400" title="The solicitation this project was bid under">
+                      <FileText size={11} /> Solicitation #: {project.solicitationNo}
                     </span>
                     <span className="text-xs font-bold text-slate-300">·</span>
                   </>
