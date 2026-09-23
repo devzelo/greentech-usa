@@ -650,10 +650,13 @@ export default function Documents() {
         const gateOn = !!(clsAccess?.enabled && clsAccess?.hasPin);
         return (
           <div className="space-y-5">
-            {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
-            {(clsUnlocked || !gateOn)
-              ? <ClassifiedDocs />
-              : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
+            {(clsUnlocked || !gateOn) ? (
+              <>
+                {/* CR 291 - the PIN control lives in here, behind the lock, not above it. */}
+                {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
+                <ClassifiedDocs />
+              </>
+            ) : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
           </div>
         );
       })()}
