@@ -38,7 +38,7 @@ const VIEWS: Array<[View, string]> = [["all", "All milestones"], ["active", "In 
 // CR 268 - the toolbar's actions live in two menus instead of a row of ten buttons.
 const MENU_ITEM = "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40";
 function ToolMenu({ label, icon, tone = "plain", align = "right", children }: {
-  label: string; icon: ReactNode; tone?: "plain" | "primary"; align?: "left" | "right"; children: ReactNode;
+  label: string; icon: ReactNode; tone?: "plain" | "primary" | "solid"; align?: "left" | "right"; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -50,13 +50,16 @@ function ToolMenu({ label, icon, tone = "plain", align = "right", children }: {
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
+  // "solid" is a button in its own right (the blue Add), "primary" the caret half of a split button.
   const trigger = tone === "primary"
     ? "inline-flex items-center self-stretch rounded-r-lg px-2 text-xs font-bold text-white transition-colors hover:bg-blue-700"
-    : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary";
+    : tone === "solid"
+      ? "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+      : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary";
   return (
     <div ref={box} className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)} className={trigger} aria-haspopup="menu" aria-expanded={open} title={label}>
-        {icon}{tone === "primary" ? "" : label}<ChevronDown size={12} className={tone === "primary" ? "" : "text-slate-400"} />
+        {icon}{tone === "primary" ? "" : label}<ChevronDown size={12} className={tone === "plain" ? "text-slate-400" : ""} />
       </button>
       {open && (
         <div role="menu" onClick={() => setOpen(false)} className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-1 shadow-xl`}>
@@ -452,11 +455,20 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const [creating, setCreating] = useState(false);
   const started = rows.length > 0 || catList.length > 0 || creating || !!loadedFrom;
   const startCreate = () => { setCreating(true); setPickerOpen(true); };
+  // CR 285 - the schedule is weeks of work, so clearing it asks twice: what it does, then one last
+  // check with the count spelled out again.
   const clearSchedule = async () => {
+    const n = `${rows.length} task${rows.length === 1 ? "" : "s"}`;
     if (!(await confirm({
       title: "Clear the whole schedule?",
-      message: `All ${rows.length} task${rows.length === 1 ? "" : "s"} are taken off this schedule. Nothing changes until you Save, and every saved revision is kept.`,
-      confirmLabel: "Clear schedule",
+      message: `All ${n} are taken off this schedule, categories included. Nothing changes until you Save, and every saved revision is kept.`,
+      confirmLabel: "Continue",
+      danger: true,
+    }))) return;
+    if (!(await confirm({
+      title: "Last check",
+      message: `This empties the schedule: ${n} gone from the table and the chart. Save afterwards and it is the version people see. Load an earlier version from Versions to get it back.`,
+      confirmLabel: `Yes, clear all ${rows.length}`,
       danger: true,
     }))) return;
     setRows([]); setCreating(true); setPickerOpen(true);
@@ -637,28 +649,32 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} className={MENU_ITEM} />
             </ToolMenu>
 
-            {/* The main action, with the rest of the building blocks behind its caret. */}
+            {/* CR 285 - one blue Add holding every way of putting something on the schedule,
+                milestone first. Clearing the schedule is not one of them: it undoes the lot, so it
+                stands apart, in red, and asks twice. */}
             {canEdit && (
-              <span className="inline-flex items-stretch rounded-lg bg-blue-600 shadow-sm">
-                <button type="button" onClick={addMilestone} className="inline-flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-700">
-                  <Plus size={13} /> Add milestone
-                </button>
-                <span aria-hidden className="my-1.5 w-px bg-white/30" />
-                <ToolMenu label="More ways to add" icon={<></>} tone="primary">
+              <>
+                <ToolMenu label="Add" icon={<Plus size={13} />} tone="solid">
+                  <button type="button" onClick={addMilestone} className={MENU_ITEM}><Flag size={13} /> Add milestone</button>
                   <button type="button" onClick={() => void addCategory()} className={MENU_ITEM}><FolderPlus size={13} /> Add category</button>
+                  <div className="my-1 border-t border-slate-100" />
                   <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={MENU_ITEM}>
                     {busy === "import" ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} Import from Excel
                   </button>
                   <button type="button" onClick={() => setImportOpen(true)} className={MENU_ITEM}><Import size={13} /> Import from another project</button>
                   <button type="button" onClick={() => void downloadTemplate()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Excel template</button>
-                  {rows.length > 0 && (
-                    <>
-                      <div className="my-1 border-t border-slate-100" />
-                      <button type="button" onClick={() => void clearSchedule()} className={`${MENU_ITEM} hover:bg-red-50 hover:text-red-600`}><Eraser size={13} /> Clear the schedule</button>
-                    </>
-                  )}
                 </ToolMenu>
-              </span>
+                {rows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void clearSchedule()}
+                    title="Take every phase and milestone off this schedule"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-600 transition-colors hover:border-red-400 hover:bg-red-100"
+                  >
+                    <Eraser size={13} /> Clear schedule
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
