@@ -71,13 +71,21 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
      * The classified area is deliberately left out: it sits behind a PIN, and listing the names of
      * those files in a search box would walk straight past it.
      */
-    const isGuest = req.user!.role === "subcontractor";
-    const companyDocs = isGuest ? [] : await (async () => {
-      const [files, tabs] = await Promise.all([
-        CompanyFile.find({ kind: "company", archived: { $ne: true } }).sort({ createdAt: -1 }).lean(),
-        CompanyTab.find({ kind: { $ne: "classified" } }).lean(),
-      ]);
-      const byId = new Map(tabs.map((t) => [String(t._id), t]));
+    // Company documents are internal: the same allowlist the company routes enforce with
+    // blockGuests. Named roles, not "everyone except a guest", so a role added later has to be
+    // let in deliberately rather than inheriting access.
+    const isInternal = req.user!.role === "admin" || req.user!.role === "employee";
+    const companyDocs = !isInternal ? [] : await (async () => {
+      // Scoped to the tabs of the company area, not to the file's own `kind`: a file is uploaded
+      // with the kind its caller names, so a file marked "company" could still be sitting in a
+      // classified tab. Reading the tab tree first means classified tabs cannot be listed here at
+      // all, whatever a file claims to be.
+      const tabs = await CompanyTab.find({ kind: { $ne: "classified" } }).lean();
+      const allowedTabIds = tabs.map((t) => String(t.tabId));
+      const files = allowedTabIds.length
+        ? await CompanyFile.find({ kind: "company", archived: { $ne: true }, tabId: { $in: allowedTabIds } }).sort({ createdAt: -1 }).lean()
+        : [];
+      const byId = new Map(tabs.map((t) => [String(t.tabId), t]));
       const labelFor = (tabId: string): string => {
         const tab = byId.get(String(tabId));
         if (!tab) return "Company Documents";
