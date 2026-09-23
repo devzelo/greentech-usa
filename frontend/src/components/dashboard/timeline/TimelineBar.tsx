@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CalendarDays, Check, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Check, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
 import type { ApiExtension, ApiProject } from "../../../lib/api";
 import {
   DAY, MILESTONE_STATE_LABEL, daysBetween, effectiveEndDate, fmtDay, fmtShort, humanGap, isMilestonePoint, milestoneFocus, parseDate, phaseColor, phasePercent, planSchedule,
@@ -64,6 +64,19 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
   const remaining = deadline ? (overdue ? `${humanGap(deadline, today)} overdue` : humanGap(today, deadline)) : "";
   const remainingDays = deadline ? Math.abs(daysBetween(today, deadline)) : 0;
 
+  /**
+   * CR 287 (2026-09-23): how long the contract runs, all told. Counted the same way a phase's
+   * duration is counted on the schedule (start to end), so the two agree. When time has been
+   * granted, both numbers are shown: what was signed, and what it now runs to.
+   */
+  const totalDays = contractStart && deadline ? Math.max(0, daysBetween(contractStart, deadline)) : null;
+  const origDays = contractStart && origEnd ? Math.max(0, daysBetween(contractStart, origEnd)) : null;
+  const addedDays = extended && totalDays !== null && origDays !== null ? totalDays - origDays : 0;
+  const durationTitle = totalDays === null ? ""
+    : extended && origDays !== null
+      ? `Total contract duration: ${origDays} days as signed, ${totalDays} days with ${addedDays} day${addedDays === 1 ? "" : "s"} of extension.`
+      : `Total contract duration: ${totalDays} days, start to end.`;
+
   const dots: PlannedMilestone[] = plan.milestones.filter((m) => m.start).sort((a, b) => a.start!.getTime() - b.start!.getTime());
   const undated = plan.milestones.filter((m) => !m.start).length;
 
@@ -108,6 +121,18 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           {nowPct !== null && today <= (dl as Date) && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${nowPct}%` }} title={`Today, ${fmtDay(today)}`} />}
         </div>
         {extensions}
+        {totalDays !== null && (
+          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-slate-700" title={durationTitle}>
+            <span className="text-[9px] uppercase tracking-widest text-slate-400">Duration</span>
+            {extended && origDays !== null ? (
+              <>
+                <span className="text-slate-400 line-through">{origDays}</span>
+                <span className="text-violet-700">{totalDays} days</span>
+                <span className="text-[10px] font-semibold text-violet-500">(+{addedDays})</span>
+              </>
+            ) : `${totalDays} days`}
+          </span>
+        )}
         <span className={`shrink-0 text-[11px] font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
           {deadline ? (overdue ? remaining : `${remaining} left`) : "No deadline"}
           {deadline && <span className="ml-1 font-semibold text-slate-400">({remainingDays}d{elapsedPct !== null ? `, ${Math.round(elapsedPct)}% elapsed` : ""})</span>}
@@ -189,6 +214,23 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
             <p className="truncate text-sm font-bold text-slate-900">{contractStart ? fmtDay(contractStart) : "Not set"}</p>
           </div>
         </div>
+        {/* CR 287 - the whole contract in days, beside the days left. */}
+        {totalDays !== null && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarRange size={15} /></span>
+            <div className="min-w-0" title={durationTitle}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Total duration (extended)" : "Total duration"}</p>
+              <p className={`truncate text-sm font-bold ${extended ? "text-violet-700" : "text-slate-900"}`}>
+                {totalDays} days
+                {extended && origDays !== null && (
+                  <span className="ml-1.5 text-[11px] font-semibold text-slate-400">
+                    (<span className="line-through">{origDays}</span> +{addedDays})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Clock size={18} className={overdue ? "text-red-500" : "text-emerald-500"} />
           <div>
