@@ -2177,6 +2177,8 @@ export interface ApiShipment {
   // CR 281 - one shipment can hold a container, two crates and three pallets: each kind of thing
   // is its own row. Old shipments carry their containerType/Size folded into a single row.
   cargo?: ApiShipmentCargo[];
+  // CR 282 - how the shipment travels (a key from TRANSPORT_MODES) and the typed name for "custom".
+  transportMode?: string; transportModeOther?: string;
   goods?: Array<{ description: string; qty: string; unit: string }>;
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
   /** CR 220 - shown prominently on the shipment card. */
@@ -2191,7 +2193,7 @@ export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
   "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
-  "cargo" | "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
+  "cargo" | "transportMode" | "transportModeOther" | "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }

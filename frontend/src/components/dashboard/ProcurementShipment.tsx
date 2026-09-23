@@ -14,6 +14,7 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import FormSection from "./FormSection";
+import { TRANSPORT_MODES, transportLabel } from "../../lib/shipmentModes";
 import CargoEditor, { blankCargo, cargoFromLegacy, cargoLine, cargoSizeLabel, cargoTypeLabel, cargoWeightLabel, type CargoItem } from "./ShipmentCargo";
 
 // The demurrage row is special: pinned to the top of the list and rendered dulled/grey. The
@@ -132,6 +133,7 @@ type ShipDraft = {
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
   trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
   cargo: CargoItem[];
+  transportMode: string; transportModeOther: string;
   goods: Array<{ description: string; qty: string; unit: string }>;
   agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
 };
@@ -139,7 +141,7 @@ const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
-  cargo: [],
+  cargo: [], transportMode: "", transportModeOther: "",
   goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
 
@@ -296,6 +298,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       // An old shipment carried the flag beside the type; it becomes the type itself (CR 278).
       // An old shipment still on containerType / containerSize is read as one cargo row.
       cargo: (s.cargo || []).length ? s.cargo!.map((c) => ({ ...blankCargo(), ...c })) : cargoFromLegacy(s.containerType || (s.openBed ? "Flat rack / open bed" : ""), s.containerSize, s.trackingNo),
+      transportMode: s.transportMode || "", transportModeOther: s.transportModeOther || "",
       goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
     setPopup({ mode: "edit", sid: s._id });
@@ -310,6 +313,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
       cargo: draft.cargo, openBed: false,
+      transportMode: draft.transportMode, transportModeOther: draft.transportModeOther,
       goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
       agencyWebsite: draft.agencyWebsite, agencyCountry: draft.agencyCountry,
     };
@@ -483,6 +487,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                 <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-[11px]">
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Tracking / Container #</p><p className="font-bold text-slate-800 break-all">{active.trackingNo || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Carrier</p><p className="font-bold text-slate-800">{active.carrier || "—"}</p></div>
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Mode of transport</p><p className="font-bold text-slate-800">{transportLabel(active.transportMode, active.transportModeOther) || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Current location</p><p className="font-bold text-slate-800">{active.currentLocation || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</p><p className="font-bold text-slate-800">{active.etaDate || "—"}{active.etaDate && etaCountdown(active.etaDate) && <span className="text-primary"> ({etaCountdown(active.etaDate)})</span>}</p></div>
                   {/* CR 281 - the whole cargo on one line: "1 x Shipping Container - 40 ft (High Cube) · 3 x Pallet(s)". */}
@@ -490,7 +495,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   {(() => {
                     const url = carrierTrackingUrl(active.carrier, active.trackingNo, active.trackingUrl);
                     return url ? (
-                      <div className="col-span-2 sm:col-span-3 flex items-end">
+                      <div className="col-span-2 flex items-end">
                         <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-bold hover:underline">
                           <ExternalLink size={11} /> Track live on {active.carrier ? `${active.carrier} site` : "carrier site"}
                         </a>
@@ -863,6 +868,16 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               {/* CR 217 - each part of the form is its own section, with its own colour. */}
               <FormSection tone="blue" icon={<Ship size={11} />} title="Tracking & carrier">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* CR 282 - how it travels. A road shipment and an ocean one are chased differently. */}
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mode of transport
+                    <select className={`${inp} mt-1 font-bold`} value={draft.transportMode} onChange={(e) => setDraft({ ...draft, transportMode: e.target.value })}>
+                      <option value="">Not specified</option>
+                      {TRANSPORT_MODES.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+                    </select></label>
+                  {draft.transportMode === "custom" && (
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Describe the mode
+                      <input className={`${inp} mt-1`} value={draft.transportModeOther} onChange={(e) => setDraft({ ...draft, transportModeOther: e.target.value })} placeholder="e.g. Barge + road" /></label>
+                  )}
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
                     <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier

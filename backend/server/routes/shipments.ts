@@ -244,6 +244,8 @@ const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadl
   "costFreight", "costCustoms", "costDemurrage", "costOther",
   // Tracking header + container details + agency (CR-PR-08/09).
   "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
+  // CR 282 - the mode of transport, with the typed name when it is "custom".
+  "transportMode", "transportModeOther",
   "agencyName", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;
 
 // CR 281 - the cargo rows. Everything is kept as text (like the rest of the shipment) so a
@@ -286,6 +288,9 @@ const legacyCargo = (containerType?: string, containerSize?: string, trackingNo?
   }];
 };
 
+// CR 282 - the modes a shipment can travel by; anything else is not stored.
+const TRANSPORT_KEYS = ["ocean", "air", "road", "rail", "ocean_road", "air_road", "custom"];
+
 const cleanGoods = (v: unknown) => Array.isArray(v)
   ? v.map((g) => ({ description: String((g as { description?: unknown })?.description ?? "").slice(0, 300), qty: String((g as { qty?: unknown })?.qty ?? "").slice(0, 40), unit: String((g as { unit?: unknown })?.unit ?? "").slice(0, 40) })).filter((g) => g.description || g.qty).slice(0, 200)
   : [];
@@ -312,6 +317,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       deadline: String(body.deadline || "").slice(0, 300),
       poIds: Array.isArray(body.poIds) ? body.poIds.map(String).slice(0, 100) : [],
       cargo: cleanCargo(body.cargo),
+      transportMode: TRANSPORT_KEYS.includes(String(body.transportMode || "")) ? String(body.transportMode) : "",
+      transportModeOther: String(body.transportModeOther || "").slice(0, 120),
       // Costs are captured in the same popup as everything else — accept them on create too,
       // not only on the later PATCH.
       costFreight: String(body.costFreight || "").slice(0, 60),
@@ -331,6 +338,7 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const patch: Record<string, unknown> = {};
     for (const f of META_FIELDS) if (typeof body[f] === "string") patch[f] = body[f].slice(0, f === "description" ? 2000 : 300);
     if (typeof body.openBed === "boolean") patch.openBed = body.openBed;
+    if ("transportMode" in patch && !TRANSPORT_KEYS.includes(String(patch.transportMode))) patch.transportMode = "";
     if (Array.isArray(body.cargo)) patch.cargo = cleanCargo(body.cargo);
     if (Array.isArray(body.goods)) patch.goods = cleanGoods(body.goods);
     if (Array.isArray(body.poIds)) patch.poIds = body.poIds.map(String).slice(0, 100);

@@ -26,6 +26,9 @@ export interface IShipment extends Document {
   currentLocation: string; // last known location (e.g. Istanbul Port)
   etaDate: string;        // current anticipated date of arrival (date string) — countdown derives from this
   trackingUrl: string;    // link to the carrier's tracking page
+  // CR 282 - how it travels: ocean, air, road, rail or a multimodal combination.
+  transportMode: string;      // key: ocean | air | road | rail | ocean_road | air_road | custom
+  transportModeOther: string; // the name typed when the mode is "custom"
   // CR 219 - the tracking trail: pulled daily from the carrier aggregator when one is configured,
   // otherwise logged by hand each week. Newest first.
   trackingEvents: Array<{ date: string; location: string; description: string; status: string; source: string; addedBy: string }>;
@@ -96,6 +99,8 @@ const ShipmentSchema = new Schema<IShipment>(
     currentLocation: { type: String, default: "" },
     etaDate: { type: String, default: "" },
     trackingUrl: { type: String, default: "" },
+    transportMode: { type: String, default: "" },
+    transportModeOther: { type: String, default: "" },
     trackingEvents: {
       type: [{
         date: { type: String, default: "" },
