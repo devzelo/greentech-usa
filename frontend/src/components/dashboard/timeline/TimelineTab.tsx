@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
@@ -21,6 +21,7 @@ import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
+import { dependentsOf, lagLabel, overrunsDeadline, relinkAll, suggestNext, type LinkType } from "../../../lib/scheduleLinks";
 import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -156,14 +157,17 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const usedKeys = rows.map((r) => r.key || "").filter((k) => k && k !== CUSTOM_KEY);
 
   // ── Editing ──
-  const update = (id: string, patch: Partial<ApiMilestone>) => setRows((p) => p.map((r) => {
+  const update = (id: string, patch: Partial<ApiMilestone>) => setRows((p) => {
+    const edited = p.map((r) => {
     if (r.id !== id) return r;
     const next = { ...r, ...patch };
     // A phase entered by duration keeps its length when the start moves.
-    if ("plannedStart" in patch && next.durationValue && next.plannedStart) {
+    if (("plannedStart" in patch || "durationValue" in patch || "durationUnit" in patch) && next.durationValue && next.plannedStart) {
       next.plannedEnd = toIso(addDuration(parseDate(next.plannedStart)!, next.durationValue, (next.durationUnit || "days") as DurationUnit));
     }
     if ("plannedEnd" in patch) next.durationValue = 0;
+    // CR 294 - a milestone is a marker: no length, so its finish is its start.
+    if (next.isMilestone) { next.durationValue = 0; next.plannedEnd = next.plannedStart || next.plannedEnd; }
     if ("status" in patch && patch.status === "completed") next.percent = 100;
     if ("percent" in patch) {
       if ((patch.percent ?? 0) >= 100 && next.status !== "cancelled") next.status = "completed";
@@ -173,14 +177,35 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if ("actualEnd" in patch && patch.actualEnd && next.status !== "cancelled") { next.status = "completed"; next.percent = 100; }
     if ("actualStart" in patch && patch.actualStart && next.status === "not_started") next.status = "in_progress";
     return next;
-  }));
+    });
+    /**
+     * CR 294 - the schedule is a chain: when a task's planned dates, length or link change, every
+     * task hanging off it is worked out again, and so on down the line. Actuals, status and the
+     * rest do not move anything, so the chain is only walked when it has to be.
+     */
+    const movesTheChain = ["plannedStart", "plannedEnd", "durationValue", "durationUnit", "dependsOn", "linkType", "lagDays", "isMilestone"]
+      .some((k) => k in patch);
+    if (!movesTheChain) return edited;
+    const next = relinkAll(edited);
+    // Say so once when a change pushes work past the contract deadline; it is allowed, but not quietly.
+    const moved = [id, ...dependentsOf(next, id)];
+    const over = next.filter((m) => moved.includes(m.id) && overrunsDeadline(m, deadline) > 0);
+    if (over.length) {
+      const worst = Math.max(...over.map((m) => overrunsDeadline(m, deadline)));
+      toast(`${over.length === 1 ? `"${over[0].name}" runs` : `${over.length} tasks run`} past the contract deadline, by up to ${worst} day${worst === 1 ? "" : "s"}. Extend the contract time or shorten the work.`, "error");
+    }
+    return next;
+  });
   const applyEditor = (m: ApiMilestone) => {
-    setRows((p) => (p.some((r) => r.id === m.id) ? p.map((r) => (r.id === m.id ? m : r)) : [...p, m]));
+    // CR 294 - a task saved from the editor carries the chain with it, the same as an edit in the
+    // table: anything waiting on it is worked out again.
+    setRows((p) => relinkAll(p.some((r) => r.id === m.id) ? p.map((r) => (r.id === m.id ? m : r)) : [...p, m]));
     setEditing(null);
   };
   const remove = async (m: ApiMilestone) => {
     if (hasData(m) && !(await confirm({ title: `Remove "${m.name}"?`, message: "Its dates, progress and notes are removed from this timeline when you save.", confirmLabel: "Remove", danger: true }))) return;
-    setRows((p) => p.filter((r) => r.id !== m.id));
+    // A task that followed the removed one stands alone rather than hanging off a ghost.
+    setRows((p) => relinkAll(p.filter((r) => r.id !== m.id).map((r) => (r.dependsOn === m.id ? { ...r, dependsOn: "" } : r))));
   };
   const move = (from: number, to: number) => setRows((p) => {
     if (to < 0 || to >= p.length || from === to) return p;
@@ -199,9 +224,15 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     else { setRows((p) => [...p, blank(key, name, catFor(key, name))]); setCreating(true); }
   };
   const addCustom = () => setEditing(blank(CUSTOM_KEY, "", addTo));
+  /**
+   * CR 294 - a new task opens where the one before it leaves off: tied to it, starting the day
+   * after it finishes. The dates are a suggestion like any other and can be typed over, and the
+   * link can be removed in the editor.
+   */
   const addMilestone = () => {
     const next = MASTER_PHASES.find((p) => !usedKeys.includes(p.key));
-    setEditing(next ? blank(next.key, next.name, catFor(next.key, next.name)) : blank(CUSTOM_KEY, "", addTo));
+    const base = next ? blank(next.key, next.name, catFor(next.key, next.name)) : blank(CUSTOM_KEY, "", addTo);
+    setEditing({ ...base, ...suggestNext(rows[rows.length - 1], contractStart) });
   };
 
   // ── Categories, like BOQ sections: add, rename, order, delete, and add a milestone inside one ──
@@ -853,6 +884,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                                 {m.responsible?.length ? (
                                   <span className="block max-w-[16rem] truncate text-[10px] text-slate-400">{m.responsible.join(", ")}</span>
                                 ) : null}
+                                {/* CR 294 - a chained task says what it waits on, so a date that moved on its own makes sense. */}
+                                {(() => {
+                                  const pred = m.dependsOn ? rows.find((x) => x.id === m.dependsOn) : null;
+                                  if (!pred) return null;
+                                  return (
+                                    <span className="mt-0.5 flex max-w-[16rem] items-center gap-1 truncate text-[10px] font-bold text-indigo-500" title={`This task ${lagLabel((m.linkType as LinkType) || "FS", m.lagDays || 0, pred.name)}.`}>
+                                      <Link2 size={10} className="shrink-0" /> follows {pred.name}
+                                    </span>
+                                  );
+                                })()}
                               </span>
                             </button>
                           </td>
@@ -861,7 +902,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                             {moved && m.baselineStart !== m.plannedStart && <span className="block px-1 text-[10px] text-slate-400" title="Baseline start">was {fmtDay(m.baselineStart)}</span>}
                           </td>
                           <td className={cell}>
-                            <input type="date" disabled={!canEdit} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={dateInp} />
+                            <input type="date" disabled={!canEdit} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={`${dateInp} ${overrunsDeadline(m, deadline) > 0 ? "!text-red-600 font-bold" : ""}`} title={overrunsDeadline(m, deadline) > 0 ? `${overrunsDeadline(m, deadline)} days past the contract deadline` : undefined} />
                             {moved && m.baselineEnd !== m.plannedEnd && <span className="block px-1 text-[10px] text-slate-400" title="Baseline end">was {fmtDay(m.baselineEnd)}</span>}
                           </td>
                           <td className={`${cell} border-l border-sky-100 bg-sky-50/50`}>
@@ -1003,7 +1044,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>
       )}
 
-      {editing && <PhaseEditor initial={editing} isNew={!rows.some((r) => r.id === editing.id)} usedKeys={usedKeys} canEdit={canEdit} categories={catList} onSave={applyEditor} onClose={() => setEditing(null)} />}
+      {editing && <PhaseEditor initial={editing} isNew={!rows.some((r) => r.id === editing.id)} usedKeys={usedKeys} canEdit={canEdit} categories={catList} others={rows} deadline={deadline} onSave={applyEditor} onClose={() => setEditing(null)} />}
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}

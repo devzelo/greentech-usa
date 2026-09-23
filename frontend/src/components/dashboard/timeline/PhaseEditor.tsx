@@ -5,14 +5,19 @@ import { fetchEmployees, type ApiMilestone, type MilestoneStatus } from "../../.
 import {
   CUSTOM_KEY, MASTER_PHASES, SCHEDULE_CATEGORIES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
+import { lagLabel, overrunsDeadline, startFromLink, wouldCycle, type LinkType } from "../../../lib/scheduleLinks";
 
 /**
  * One phase / milestone, every field: name (a master-list phase or a custom one with its own
  * description), planned start and end or a duration, actual dates, status, % complete, the people
  * responsible and notes. The baseline (first planned dates) is shown, and can be reset on purpose.
  */
-export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdit, isNew = false, categories }: {
+export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdit, isNew = false, categories, others = [], deadline }: {
   initial: ApiMilestone;
+  /** CR 294 - the other tasks in this schedule, so this one can be tied to one of them. */
+  others?: ApiMilestone[];
+  /** The contract deadline, so work planned past it is called out before it is saved. */
+  deadline?: string;
   /** The open schedule's categories, offered first in the Category list. */
   categories?: string[];
   isNew?: boolean;
@@ -43,6 +48,27 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
     if (end !== m.plannedEnd) set({ plannedEnd: end });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, m.plannedStart, m.durationValue, m.durationUnit]);
+
+  /**
+   * CR 294 - a milestone is a marker, so it has no length: its finish follows its start.
+   */
+  useEffect(() => {
+    if (!m.isMilestone) return;
+    if (m.durationValue) set({ durationValue: 0 });
+    if (m.plannedStart && m.plannedEnd !== m.plannedStart) set({ plannedEnd: m.plannedStart });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.isMilestone, m.plannedStart]);
+
+  /** A task that follows another takes its start from it, whenever the link or that task moves. */
+  const pred = others.find((o) => o.id === m.dependsOn);
+  useEffect(() => {
+    if (!pred) return;
+    const start = startFromLink(pred, (m.linkType as LinkType) || "FS", m.lagDays || 0);
+    if (start && toIso(start) !== m.plannedStart) set({ plannedStart: toIso(start) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.dependsOn, m.linkType, m.lagDays, pred?.plannedStart, pred?.plannedEnd]);
+
+  const overrun = overrunsDeadline(m, deadline);
 
   const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
   const badOrder = ps && pe && pe < ps;
@@ -142,6 +168,49 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
                 : ps && pe ? <>{fmtDay(ps)} to {fmtDay(pe)} · <b>{daysBetween(ps, pe)} days</b>{daysBetween(ps, pe) >= 30 ? ` (${humanGap(ps, pe)})` : ""}{daysBetween(ps, pe) === 0 ? " · a milestone (zero duration)" : ""}</>
                 : "Same start and end date makes it a milestone (a flag on the chart)."}
             </p>
+            {/* CR 294 - what this task waits on, and how. */}
+            <div className="mt-3 border-t border-slate-200/70 pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-bold text-slate-700">Follows</p>
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                  <input type="checkbox" checked={!!m.isMilestone} onChange={(e) => set({ isMilestone: e.target.checked })} className="accent-emerald-500" />
+                  This is a milestone (no duration)
+                </label>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <label className="sm:col-span-1">
+                  <span className={lbl}>Task</span>
+                  <select value={m.dependsOn || ""} onChange={(e) => set({ dependsOn: e.target.value })} className={inp}>
+                    <option value="">Nothing - it stands alone</option>
+                    {others.filter((o) => o.id !== m.id && !wouldCycle([...others, m], m.id, o.id)).map((o) => (
+                      <option key={o.id} value={o.id}>{o.name || "Untitled"}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className={lbl}>Relation</span>
+                  <select value={m.linkType || "FS"} disabled={!m.dependsOn} onChange={(e) => set({ linkType: e.target.value as LinkType })} className={`${inp} disabled:opacity-50`}>
+                    <option value="FS">After it finishes</option>
+                    <option value="SS">Alongside its start</option>
+                  </select>
+                </label>
+                <label>
+                  <span className={lbl}>Wait / overlap (days)</span>
+                  <input type="number" step={1} value={m.lagDays ?? 0} disabled={!m.dependsOn} onChange={(e) => set({ lagDays: Math.round(Number(e.target.value) || 0) })} className={`${inp} disabled:opacity-50`} />
+                </label>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {pred
+                  ? <>This task <b>{lagLabel((m.linkType as LinkType) || "FS", m.lagDays || 0, pred.name || "the task above")}</b>. Move that task and this one follows.</>
+                  : "Tie this task to another one and its start is worked out for you. A negative number overlaps them."}
+              </p>
+              {overrun > 0 && (
+                <p className="mt-1.5 rounded-lg bg-red-50 px-2 py-1.5 text-[11px] font-bold text-red-600">
+                  This finishes {overrun} day{overrun === 1 ? "" : "s"} past the contract deadline ({fmtDay(parseDate(deadline))}). Extend the contract time or shorten the work.
+                </p>
+              )}
+            </div>
+
             {(m.baselineStart || m.baselineEnd) && (
               <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                 <History size={12} className="text-slate-400" />

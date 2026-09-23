@@ -1097,6 +1097,12 @@ export interface ApiMilestone {
   responsible?: string[];
   notes?: string;
   category?: string;       // CR 238 - the group the task sits in (Design, Procurement, Construction...)
+  // CR 294 - the schedule as a chain. `dependsOn` is another milestone's id; the dates of a linked
+  // task are worked out from it, so moving an early task carries the rest along.
+  dependsOn?: string;
+  linkType?: "FS" | "SS";  // after the other task finishes, or alongside its start
+  lagDays?: number;        // + waits that many days, - overlaps
+  isMilestone?: boolean;   // a marker with no length: start and finish are the same day
   // The older chained schedule (read only).
   duration?: number;
   unit?: "days" | "weeks" | "months";

@@ -41,13 +41,21 @@ function cleanMilestones(input: unknown): MilestoneRecord[] {
       responsible: Array.isArray(m.responsible) ? m.responsible.map((r) => str(r, 120).trim()).filter(Boolean).slice(0, 30) : [],
       notes: str(m.notes, 4000),
       category: str(m.category, 80).trim(),
+      // CR 294 - the chain: what this task follows, how, and by how much.
+      dependsOn: str(m.dependsOn, 40),
+      linkType: (String(m.linkType) === "SS" ? "SS" : "FS") as MilestoneRecord["linkType"],
+      lagDays: Math.max(-3650, Math.min(3650, Math.round(Number(m.lagDays) || 0))),
+      isMilestone: m.isMilestone === true,
       duration: 0, unit: "days" as const, doneAt: "", doneBy: "",
     };
-  }).map((m) => ({
+  }).map((m, _i, all) => ({
     ...m,
     // The first planned dates become the baseline and are kept from then on.
     baselineStart: m.baselineStart || m.plannedStart,
     baselineEnd: m.baselineEnd || m.plannedEnd,
+    // A link only counts if the task it names is really in this schedule, and nothing follows
+    // itself: a dangling or self-referential link would have the chain chasing its own tail.
+    dependsOn: m.dependsOn && m.dependsOn !== m.id && all.some((x) => x.id === m.dependsOn) ? m.dependsOn : "",
   }));
 }
 

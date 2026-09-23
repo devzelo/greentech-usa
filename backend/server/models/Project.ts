@@ -10,6 +10,11 @@ export interface MilestoneRecord {
   durationValue: number; durationUnit: "days" | "weeks" | "months";
   status: string; percent: number; responsible: string[]; notes: string;
   category: string;   // CR 238 - the group a task sits in (Design, Procurement, Construction...)
+  // CR 294 - the schedule as a chain: what this task waits on, how, and by how much.
+  dependsOn: string;                 // the id of the task it follows ("" = it stands alone)
+  linkType: "FS" | "SS";             // after that task finishes, or alongside its start
+  lagDays: number;                   // + waits, - overlaps
+  isMilestone: boolean;              // no length: start and finish are the same day
   duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string;
 }
 
@@ -199,6 +204,10 @@ const MilestoneSchema = new Schema({
   responsible: { type: [String], default: [] },
   notes: { type: String, default: "" },
   category: { type: String, default: "" },      // CR 238 - Award / NTP, Design, Procurement, Construction...
+  dependsOn: { type: String, default: "" },
+  linkType: { type: String, enum: ["FS", "SS"], default: "FS" },
+  lagDays: { type: Number, default: 0 },
+  isMilestone: { type: Boolean, default: false },
   // Older chained schedule
   duration: { type: Number, default: 0, min: 0 },
   unit: { type: String, enum: ["days", "weeks", "months"], default: "days" },
