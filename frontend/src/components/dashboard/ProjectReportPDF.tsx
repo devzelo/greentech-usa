@@ -257,6 +257,7 @@ export default function ProjectReportPDF({ project, financials, include, client,
               </View>
               <View style={s.col}>
                 {kv("CONTRACT NO.", project.contractNo)}
+                {kv("SOLICITATION #", project.solicitationNo)}
                 {kv("CONTRACT TYPE", project.contractType)}
                 {kv("START", project.startDate)}
                 {kv("TARGET END", effectiveEndDate(project))}

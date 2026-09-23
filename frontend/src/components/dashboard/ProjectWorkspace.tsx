@@ -82,6 +82,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import TimelineBar from "./timeline/TimelineBar";
 import TimelineTab from "./timeline/TimelineTab";
 import ClientInfoCard from "./ClientInfoCard";
+import ClientPicker from "./ClientPicker";
 import DocTabs from "./DocTabs";
 import ExpenseLog from "./ExpenseLog";
 import ProcurementInvoices from "./ProcurementInvoices";
@@ -1608,12 +1609,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     description: string; reportNotes: string; fiscal: string; compliance: string; value: string;
     startDate: string; endDate: string; progress: number;
     disciplines: string; contractNo: string; contractYear: string; contractDate: string;
+    // CR 289 - the solicitation number, and the Directory company the client was picked from.
+    solicitationNo: string; clientCompanyId: string;
   };
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState<IdentityForm>({
     name: "", clientName: "", status: "Planning", category: "", categories: [], contractType: "", cpars: "", siteAddress: EMPTY_SITE_ADDRESS,
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
     startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
+    solicitationNo: "", clientCompanyId: "",
   });
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
@@ -1641,6 +1645,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setIdentityForm({
       name: project.name || "",
       clientName: project.clientInfo?.name || "",
+      solicitationNo: project.solicitationNo || "",
+      clientCompanyId: project.clientInfo?.companyId || "",
       status: project.status || "Planning",
       category: project.category || "",
       categories: projectCategories(project),
@@ -1686,7 +1692,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       const updated = await updateProject(id, {
         name: identityForm.name,
         // A renamed client is no longer the Directory company it was picked from (CR-P 127).
-        clientInfo: { ...project.clientInfo, name: identityForm.clientName, companyId: identityForm.clientName === project.clientInfo?.name ? project.clientInfo?.companyId || "" : "" },
+        clientInfo: { ...project.clientInfo, name: identityForm.clientName, companyId: identityForm.clientCompanyId },
+        solicitationNo: identityForm.solicitationNo,
         status: identityForm.status as ApiProject["status"],
         category: identityForm.categories[0] || "",
         categories: identityForm.categories,
@@ -1710,7 +1717,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         jointVenture: jvInfo, // §M — JV now lives in Project Identity
       });
       setProject(updated);
-      setClientInfo((prev) => ({ ...prev, name: identityForm.clientName, companyId: identityForm.clientName === prev.name ? prev.companyId : "" }));
+      setClientInfo((prev) => ({ ...prev, name: identityForm.clientName, companyId: identityForm.clientCompanyId }));
       toast("Project identity updated.", "success");
       jvSnapshot.current = null; // saved — nothing to revert to
       setShowEditIdentity(false);
@@ -3238,6 +3245,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             ))}
             {aboutField("Contract Type", project.contractType)}
             {aboutField("Contract No.", project.contractNo)}
+            {aboutField("Solicitation #", project.solicitationNo)}
             {aboutField("Status", project.status)}
           </div>
 
@@ -7090,17 +7098,48 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
+                {/* CR 289 - the client comes from the Directory here too, not typed twice. Picking one
+                    fills the project's Client Information from that company's record. */}
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Name</label>
+                  {isOwner ? (
+                    <ClientPicker
+                      label="Client Name"
+                      value={identityForm.clientName}
+                      onNameChange={(v) => setIdentityForm((p) => ({ ...p, clientName: v, clientCompanyId: v.trim() === (project?.clientInfo?.name || "").trim() ? project?.clientInfo?.companyId || "" : "" }))}
+                      onSelectCompany={(c) => {
+                        setIdentityForm((p) => ({ ...p, clientName: c.name || "", clientCompanyId: c._id }));
+                        const contact = c.contactPersons?.[0];
+                        setClientInfo((prev) => ({
+                          ...prev,
+                          name: c.name || prev.name,
+                          companyId: c._id,
+                          contactName: contact?.name || prev.contactName,
+                          email: c.email || contact?.email || prev.email,
+                          phone: c.phone || contact?.phone || prev.phone,
+                          address: c.address || prev.address,
+                        }));
+                      }}
+                      placeholder="e.g. USAID Ghana"
+                      hint="Pick the client from the Directory, or type a new name and add it. Their details fill the project's Client Information."
+                    />
+                  ) : (
+                    <>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Name</label>
+                      <input type="text" value={identityForm.clientName} disabled className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none disabled:opacity-70" />
+                    </>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitation #</label>
                   <input
                     type="text"
-                    value={identityForm.clientName}
-                    onChange={(e) => setIdentityForm({ ...identityForm, clientName: e.target.value })}
-                    placeholder="e.g. USAID Ghana"
+                    value={identityForm.solicitationNo}
+                    onChange={(e) => setIdentityForm({ ...identityForm, solicitationNo: e.target.value })}
+                    placeholder="e.g. 19GH5024R0007"
                     disabled={!isOwner}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
-                  <p className="text-[10px] text-slate-400">Saved to the project's Client Information.</p>
+                  <p className="text-[10px] text-slate-400">The solicitation or RFP number this project was bid under.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>

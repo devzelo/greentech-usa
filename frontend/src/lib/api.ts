@@ -171,6 +171,8 @@ export interface ApiProject {
   contractType?: string;
   cpars?: string;          // "Yes" | "No" | "Pending" | ""
   contractNo: string;
+  /** CR 289 - the client's solicitation / RFP number this project was bid under. */
+  solicitationNo?: string;
   contractYear: string;
   contractDate?: string;
   contractFile?: { name: string; filePath: string; fileType: string; size: string } | null;

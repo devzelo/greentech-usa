@@ -175,6 +175,8 @@ export default function NewProjectForm() {
   const [title, setTitle] = useState("");
   const [categories, setCategories] = useState<string[]>([]);   // item 101 - multi-select
   const [contractNo, setContractNo] = useState("");
+  // CR 289 - the solicitation number the job was bid under; it follows the project about.
+  const [solicitationNo, setSolicitationNo] = useState("");
   const [contractYear, setContractYear] = useState(String(new Date().getFullYear()));
   const [contractDate, setContractDate] = useState("");
   const [status, setStatus] = useState("Proposal");
@@ -344,6 +346,7 @@ export default function NewProjectForm() {
         category: categories[0] || "",
         categories,
         contractNo,
+        solicitationNo,
         contractYear,
         contractDate,
         status: (asDraft ? "Draft" : status) as ApiProject["status"],
@@ -526,6 +529,17 @@ export default function NewProjectForm() {
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">The client's contract number. Your internal project number (e.g. {new Date().getFullYear()}-01) is assigned automatically.</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitation #</label>
+            <input
+              type="text"
+              value={solicitationNo}
+              onChange={(e) => setSolicitationNo(e.target.value)}
+              placeholder="e.g. 19GH5024R0007"
+              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+            />
+            <p className="text-[10px] text-slate-400">The solicitation or RFP number this was bid under, if there was one.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year Started</label>

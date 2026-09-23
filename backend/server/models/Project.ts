@@ -22,7 +22,9 @@ export interface IProject extends Document {
   categories: string[];  // item 101 - a project can cover several services (WTP, HVAC, piping); `category` mirrors the first
   contractType: string;  // proposal data sheets: FFP, IDIQ task order, T&M, ...
   cpars: string;         // "Yes" | "No" | "Pending" | "" - a CPARS / Government evaluation is on file
-  contractNo: string;    // the contract number — shown in place of a project number
+  contractNo: string;
+  // CR 289 - the solicitation the project was bid under, beside the contract number.
+  solicitationNo: string;    // the contract number — shown in place of a project number
   contractYear: string;  // the year the project started (shown as the table's Year column)
   contractDate: string;  // the exact contract date (ISO yyyy-mm-dd), parallel to contractYear
   // The signed contract document itself — uploaded on the project identity and previewable
@@ -218,6 +220,7 @@ const ProjectSchema = new Schema<IProject>(
     contractType: { type: String, default: "" },
     cpars: { type: String, default: "" },
     contractNo: { type: String, default: "" },
+    solicitationNo: { type: String, default: "" },
     contractYear: { type: String, default: "" },
     contractDate: { type: String, default: "" },   // exact contract date (parallel to contractYear)
     contractFile: { type: { name: String, filePath: String, fileType: String, size: String }, default: null },

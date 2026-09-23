@@ -365,7 +365,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 
 // Fields that only the owner is allowed to change.
 const IDENTITY_FIELDS = new Set([
-  "name", "status", "category", "categories", "contractType", "cpars", "contractNo", "contractYear", "contractDate", "contractFile", "location", "siteAddress", "description",
+  "name", "status", "category", "categories", "contractType", "cpars", "contractNo", "solicitationNo", "contractYear", "contractDate", "contractFile", "location", "siteAddress", "description",
   "owner", "ownerId", "image", "published", "progress",
   "startDate", "endDate", "fiscal", "compliance", "value", "disciplines", "scopeOfWork",
   "projectNature", "clientInfo", "timeline",
