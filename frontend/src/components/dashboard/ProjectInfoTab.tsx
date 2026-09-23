@@ -22,7 +22,7 @@ const SUBTAB_KEY = "project-info-subtabs";
 type SubTab = { k: string; label: string; section: string; hint: string; special?: "amendments" | "communications" };
 const BUILTINS: Record<TopTab, SubTab[]> = {
   rfp: [
-    { k: "solicitation", label: "Solicitation Documents", section: "project-info-rfp", hint: "The RFP / solicitation package received from the client." },
+    { k: "solicitation", label: "RFP", section: "project-info-rfp", hint: "The RFP / solicitation package received from the client." },
     { k: "drawings", label: "Drawings & Specifications", section: "project-info-specifications", hint: "Client drawings and specifications for the bid." },
     { k: "prebid", label: "Pre-Bid & Site Visit", section: "project-info-prebid", hint: "Pre-bid meeting minutes, site-visit notes and photos." },
     { k: "qa", label: "Questions & Answers", section: "project-info-qa", hint: "Bidder questions and the client's answers." },
@@ -92,7 +92,7 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
       {header}
       <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-sm border border-slate-100 w-max">
-          {topBtn("rfp", "RFP", FileText)}
+          {topBtn("rfp", "Solicitation Docs", FileText)}
           {topBtn("award", "Award Docs", Award)}
           {topBtn("postaward", "Post Award Docs", FolderOpen)}
           {topBtn("ntp", "NTPs", FileCheck2)}

@@ -13,10 +13,10 @@ export type DocPath = {
 // Static, well-known section ids → their leaf label (within a tab).
 const STATIC: Record<string, { tabId: string; tab: string; section: string; subtab?: string }> = {
   // Project Info
-  "project-info-rfp": { tabId: "project-info", tab: "Project Info", subtab: "RFP", section: "Solicitation Documents" },
-  "project-info-prebid": { tabId: "project-info", tab: "Project Info", subtab: "RFP", section: "Pre-Bid & Site Visit" },
-  "project-info-qa": { tabId: "project-info", tab: "Project Info", subtab: "RFP", section: "Questions & Answers" },
-  "project-info-communications": { tabId: "project-info", tab: "Project Info", subtab: "RFP", section: "Client Communications" },
+  "project-info-rfp": { tabId: "project-info", tab: "Project Info", subtab: "Solicitation Docs", section: "RFP" },
+  "project-info-prebid": { tabId: "project-info", tab: "Project Info", subtab: "Solicitation Docs", section: "Pre-Bid & Site Visit" },
+  "project-info-qa": { tabId: "project-info", tab: "Project Info", subtab: "Solicitation Docs", section: "Questions & Answers" },
+  "project-info-communications": { tabId: "project-info", tab: "Project Info", subtab: "Solicitation Docs", section: "Client Communications" },
   "project-info-award": { tabId: "project-info", tab: "Project Info", section: "Award Documents" },
   "project-info-ntp": { tabId: "project-info", tab: "Project Info", section: "NTPs" },
   "project-info-scope": { tabId: "project-info", tab: "Project Info", section: "Scope of Work" },
