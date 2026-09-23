@@ -78,7 +78,12 @@ import { PromptDialog, ConfirmDialog } from "./Dialogs";
 import { toast } from "../../lib/toast";
 import { useTableSort, SortTh } from "../../lib/useTableSort";
 
-export default function CompanyDocs({ kind = "company", banner }: { kind?: "company" | "classified"; banner?: ReactNode } = {}) {
+export default function CompanyDocs({ kind = "company", banner, focus }: {
+  kind?: "company" | "classified";
+  banner?: ReactNode;
+  /** CR 292 - a file the global search sent us to: open its tab and flash its row. */
+  focus?: { fileId: string; tabId: string } | null;
+} = {}) {
   // CR 263 - the website credentials sit beside the sub-tabs, on the classified page only.
   const [vaultOpen, setVaultOpen] = useState(kind === "classified");
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
@@ -125,6 +130,23 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
   };
 
   useEffect(() => { loadTabs(); }, []);
+
+  // CR 292 - arriving from the search: select the tab the file is filed under, then mark the row.
+  const [flashId, setFlashId] = useState("");
+  useEffect(() => {
+    if (!focus?.tabId || !tabs.length) return;
+    const tab = tabs.find((t) => t.tabId === focus.tabId);
+    if (!tab) return;
+    if (tab.parentId) { setActiveMain(tab.parentId); setActiveSub(tab.tabId); }
+    else { setActiveMain(tab.tabId); }
+  }, [focus?.tabId, tabs]);
+  useEffect(() => {
+    if (!focus?.fileId || !files.some((f) => f._id === focus.fileId)) return;
+    setFlashId(focus.fileId);
+    const t1 = setTimeout(() => document.getElementById(`cfile-${focus.fileId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    const t2 = setTimeout(() => setFlashId(""), 3000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [focus?.fileId, files]);
 
   // When the active main changes, auto-select its first sub-tab (if any).
   useEffect(() => {
@@ -326,7 +348,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
           {files.map((f) => {
             const isImage = classifyForFilter(f.fileType) === "image";
             return (
-              <div key={f._id} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col group">
+              <div key={f._id} id={`cfile-${f._id}`} className={`bg-white rounded-2xl border shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col group ${flashId === f._id ? "border-amber-300 ring-2 ring-amber-300" : "border-slate-100"}`}>
                 <button onClick={() => openPreview(f)} className="aspect-[16/9] bg-slate-50 flex items-center justify-center overflow-hidden">
                   {isImage ? (
                     <img src={companyFileUrl(f)} alt={f.name} className="w-full h-full object-contain p-5 group-hover:scale-105 transition-transform duration-500" />
@@ -374,7 +396,7 @@ export default function CompanyDocs({ kind = "company", banner }: { kind?: "comp
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {sort.rows.map((f, i) => (
-                  <tr key={f._id} className="group hover:bg-slate-50/50 transition-colors">
+                  <tr key={f._id} id={`cfile-${f._id}`} className={`group transition-colors ${flashId === f._id ? "bg-amber-50 ring-2 ring-amber-300" : "hover:bg-slate-50/50"}`}>
                     <td className="px-6 py-4 text-xs font-bold text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3 min-w-0">

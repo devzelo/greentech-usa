@@ -1721,6 +1721,13 @@ export async function fetchDocuments(projectId: string, section?: string, archiv
 
 export interface ApiGlobalDocument extends ApiDocument {
   projectName: string;
+  /** CR 292 - where the file lives: a project's documents, or the Company Documents area. */
+  scope?: "project" | "company";
+  /** Company files only: the tab they are filed under, e.g. "Legal Docs > SAM Registration". */
+  tabId?: string;
+  tabLabel?: string;
+  /** Company files only: a seeded file's direct link. */
+  url?: string;
 }
 
 export async function fetchAllDocuments(): Promise<ApiGlobalDocument[]> {

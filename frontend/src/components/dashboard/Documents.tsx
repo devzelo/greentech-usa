@@ -159,6 +159,20 @@ export default function Documents() {
     { label: "Company Profile", href: "/downloads/greentech-profile.pdf", file: "greentech-profile.pdf" },
   ];
 
+  /**
+   * CR 292 - a company document arrives as ?tab=company&focus=<fileId>&ctab=<tabId>: switch to the
+   * Company Documents tab and hand the file down, so it opens where it is filed.
+   */
+  const [companyFocus, setCompanyFocus] = useState<{ fileId: string; tabId: string } | null>(null);
+  useEffect(() => {
+    if (searchParams.get("tab") !== "company") return;
+    const fileId = searchParams.get("focus") || "";
+    setTab("company");
+    if (fileId) setCompanyFocus({ fileId, tabId: searchParams.get("ctab") || "" });
+    ["tab", "focus", "ctab"].forEach((k) => searchParams.delete(k));
+    setSearchParams(searchParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Deep-link from global search: ?focus=<docId> opens the document and flashes its row.
   useEffect(() => {
     const focus = searchParams.get("focus");
@@ -640,7 +654,7 @@ export default function Documents() {
           </div>
 
           {/* Company files — tabbed, user-managed */}
-          <CompanyDocs />
+          <CompanyDocs focus={companyFocus} />
         </>
       )}
 

@@ -1,5 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import ProjectDocument from "../models/ProjectDocument";
+import CompanyFile from "../models/CompanyFile";
+import CompanyTab from "../models/CompanyTab";
 import Project from "../models/Project";
 import User from "../models/User";
 import FolderNote from "../models/FolderNote";
@@ -60,7 +62,49 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
         uploadedAt: d.uploadedAt,
       }));
 
-    res.json(enriched);
+    /**
+     * CR 292 (2026-09-23): the search could not find a company document - it only ever looked at
+     * project documents, so a file in Company Documents > Legal Docs was invisible to it. The
+     * company files join the list here, carrying the tab they are filed under so the search can
+     * say where they live and jump to them.
+     *
+     * The classified area is deliberately left out: it sits behind a PIN, and listing the names of
+     * those files in a search box would walk straight past it.
+     */
+    const isGuest = req.user!.role === "subcontractor";
+    const companyDocs = isGuest ? [] : await (async () => {
+      const [files, tabs] = await Promise.all([
+        CompanyFile.find({ kind: "company", archived: { $ne: true } }).sort({ createdAt: -1 }).lean(),
+        CompanyTab.find({ kind: { $ne: "classified" } }).lean(),
+      ]);
+      const byId = new Map(tabs.map((t) => [String(t._id), t]));
+      const labelFor = (tabId: string): string => {
+        const tab = byId.get(String(tabId));
+        if (!tab) return "Company Documents";
+        const parentId = (tab as { parentId?: string }).parentId || "";
+        const parent = parentId ? byId.get(String(parentId)) : null;
+        return parent ? `${parent.label} > ${tab.label}` : tab.label;
+      };
+      return files.map((f) => ({
+        _id: String(f._id),
+        projectId: "",
+        projectName: labelFor(String(f.tabId)),
+        scope: "company" as const,
+        tabId: String(f.tabId || ""),
+        tabLabel: labelFor(String(f.tabId)),
+        section: "",
+        name: f.name,
+        description: f.description || "",
+        fileType: f.fileType || "",
+        size: f.size || "",
+        // A seeded file has a plain url instead of an upload path; either opens the same way.
+        filePath: f.filePath || f.url || "",
+        url: f.url || "",
+        uploadedAt: (f as { createdAt?: Date }).createdAt || new Date(),
+      }));
+    })();
+
+    res.json([...enriched.map((d) => ({ ...d, scope: "project" as const })), ...companyDocs]);
   } catch (err) {
     next(err);
   }

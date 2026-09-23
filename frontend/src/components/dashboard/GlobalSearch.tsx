@@ -99,9 +99,22 @@ export default function GlobalSearch() {
       }
     }
     for (const d of docs) {
-      if (d.name.toLowerCase().includes(needle) || d.projectName.toLowerCase().includes(needle)) {
+      // CR 292 - the description counts too: "SAM.gov registration, current" finds the file even
+      // when the name is spelled differently.
+      const hay = `${d.name} ${d.projectName} ${d.description || ""}`.toLowerCase();
+      if (hay.includes(needle)) {
         const y = new Date(d.uploadedAt).getFullYear();
-        hits.push({ group: "Documents", label: d.name, sub: d.projectName, to: `/dashboard/documents?focus=${d._id}`, icon: FileText, projectId: d.projectId, year: isNaN(y) ? undefined : String(y), doc: d });
+        const company = d.scope === "company";
+        hits.push({
+          group: "Documents",
+          label: d.name,
+          sub: company ? `Company Documents · ${d.tabLabel || ""}`.trim() : d.projectName,
+          to: company ? `/dashboard/documents?tab=company&focus=${d._id}&ctab=${d.tabId || ""}` : `/dashboard/documents?focus=${d._id}`,
+          icon: FileText,
+          projectId: d.projectId,
+          year: isNaN(y) ? undefined : String(y),
+          doc: d,
+        });
       }
     }
     for (const e of employees) {
@@ -202,7 +215,7 @@ export default function GlobalSearch() {
                   // Documents get two actions: preview in-app (right there) or jump to the file's
                   // location in the Documents module. Everything else is a single navigate.
                   if (h.doc) {
-                    const openPreview = () => { setPreview({ name: h.doc!.name, url: documentUrl(h.doc!), fileType: h.doc!.fileType || h.doc!.name.split(".").pop() || "" }); setOpen(false); };
+                    const openPreview = () => { setPreview({ name: h.doc!.name, url: h.doc!.url || documentUrl(h.doc!), fileType: h.doc!.fileType || h.doc!.name.split(".").pop() || "" }); setOpen(false); };
                     return (
                       <div key={`${group}-${i}`} className="w-full flex items-center gap-2 px-2 pr-3 py-1 hover:bg-slate-50 transition-colors group/row">
                         <button onClick={openPreview} className="min-w-0 flex-grow flex items-center gap-3 px-2 py-1.5 text-left" title="Preview here">
