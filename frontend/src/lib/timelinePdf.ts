@@ -12,8 +12,18 @@ import {
  * US Letter, landscape, so the chart has room.
  */
 
-// CR 245 / 246 - the schedule prints on 18" x 24" landscape with narrow margins (they pin it on the wall).
-const PAGE = WIDE_LANDSCAPE;
+/**
+ * CR 245 / 246 - the schedule prints on 18" x 24" landscape with narrow margins (they pin it on
+ * the wall). CR 288 - a weekly chart of a long job needs more room than that, so the bigger
+ * drawing sheets are offered too, both landscape.
+ */
+export const TIMELINE_PAPERS = {
+  wide: { label: '24" x 18"', hint: "the usual sheet", size: WIDE_LANDSCAPE },
+  ansie: { label: 'ANSI E, 44" x 34"', hint: "the largest", size: { w: 3168, h: 2448 } },
+  a2: { label: "A2, 594 x 420 mm", hint: "metric", size: { w: 1683.78, h: 1190.55 } },
+} as const;
+export type TimelinePaper = keyof typeof TIMELINE_PAPERS;
+const paperSize = (p?: TimelinePaper) => TIMELINE_PAPERS[p || "wide"].size;
 const RED = rgb(0.86, 0.15, 0.15);
 // CR 273 - the status colours the screen uses, so the print reads the same.
 const STATUS_INK: Record<string, [number, number, number]> = {
@@ -47,11 +57,44 @@ export interface TimelinePdfInput {
   remarks?: boolean;
   /** CR 273 - the chart prints at the zoom picked on screen, across the whole timeline. */
   zoom?: "month" | "week" | "day";
+  /** CR 288 - the Actual start and end columns, printed unless they are left out. */
+  actual?: boolean;
+  /** CR 288 - which sheet to print on; a weekly chart of a long job may need a bigger one. */
+  paper?: TimelinePaper;
+}
+
+/**
+ * CR 288 - the calendar the chart has to cover, so the number of sheets can be worked out before
+ * anything is drawn (the print options say whether it fits on one).
+ */
+export function chartRange(o: Pick<TimelinePdfInput, "milestones" | "contractStart" | "deadline" | "originalDeadline">) {
+  const dates: Date[] = [];
+  for (const m of o.milestones.filter((x) => x.status !== "cancelled")) {
+    for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd]) { const d = parseDate(v); if (d) dates.push(d); }
+  }
+  for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }
+  if (!dates.length) return null;
+  const min = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const max = new Date(Math.max(...dates.map((d) => d.getTime())));
+  const from = startOfWeekPdf(new Date(min.getFullYear(), min.getMonth(), min.getDate() - 3));
+  const to = new Date(max.getFullYear(), max.getMonth(), max.getDate() + 7);
+  return { from, to, days: Math.max(1, Math.round((to.getTime() - from.getTime()) / DAY)) };
+}
+
+/** How many sheets the chart needs at this zoom on this paper. 0 when there is nothing to draw. */
+export function chartSheets(o: Pick<TimelinePdfInput, "milestones" | "contractStart" | "deadline" | "originalDeadline" | "zoom" | "paper">): number {
+  const range = chartRange(o);
+  if (!range) return 0;
+  const size = paperSize(o.paper);
+  const chartW = size.w - NARROW * 2 - GANTT_LABEL;
+  const daysPerSheet = Math.max(7, Math.floor(chartW / PDF_PX_PER_DAY[o.zoom || "month"]));
+  return Math.max(1, Math.ceil(range.days / daysPerSheet));
 }
 
 export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
+  const PAGE = paperSize(o.paper);
   const X = NARROW, W = PAGE.w - NARROW * 2;
   const note = [o.scheduleName || "Project timeline", o.projectName, o.version].filter(Boolean).join("  ·  ");
   const newPage = (): Flow => brandPage(doc, b, PAGE, note);
@@ -86,36 +129,48 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   // CR 273 - the same columns the screen shows, in the same order, with the same colours: no
   // baseline, no description, and the remark only when it was asked for before printing.
   f.y = sectionHeading(f.page, b, "Phases & milestones", X, f.y, W);
+  // CR 288 - the # column counts down the table as it is printed (1, 2, 3...), not the order the
+  // rows happen to be held in, which jumps about once they are grouped under their categories.
+  const hasCats = rows.some((m) => (m.category || "").trim());
+  const displayOrder = hasCats
+    ? groupByCategory(rows.map((m) => ({ m })), o.categories).flatMap((g) => g.items.map((z) => z.m))
+    : rows;
+  const numberOf = new Map<ApiMilestone, number>(displayOrder.map((m, i) => [m, i + 1]));
+  const showActual = o.actual !== false;
   const tableRows: TableRow[] = rows.map((m, i) => {
     const lateBy = delayDays(m, today);
     const pct = phasePercent(m);
     const ed = effectiveDays(m);
     const actualEnd = m.actualEnd ? fmtDay(m.actualEnd) : m.actualStart ? "ongoing" : "-";
     const cells = [
-      String(i + 1),
+      String(numberOf.get(m) ?? i + 1),
       m.name + (m.responsible?.length ? `\n${m.responsible.join(", ")}` : ""),
       fmtDay(m.plannedStart) || "-",
       fmtDay(m.plannedEnd) || "-",
-      fmtDay(m.actualStart) || "-",
-      actualEnd + (lateBy && m.actualEnd ? `\n${lateBy} days late` : ""),
+      ...(showActual ? [
+        fmtDay(m.actualStart) || "-",
+        actualEnd + (lateBy && m.actualEnd ? `\n${lateBy} days late` : ""),
+      ] : []),
       ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? " (actual)" : ""}`,
       STATUS_META[m.status || "not_started"].label,
       `${pct}%`,
       ...(o.remarks ? [m.notes || ""] : []),
     ];
+    // The columns shift left by two when the Actual pair is left out.
+    const shift = showActual ? 0 : 2;
     const cellColors: Array<ReturnType<typeof rgb> | undefined> = [];
-    cellColors[5] = lateBy && m.actualEnd ? RED : undefined;          // a late finish, red as on screen
-    cellColors[7] = statusInk(m.status);                              // the status chip's colour
+    if (showActual) cellColors[5] = lateBy && m.actualEnd ? RED : undefined;   // a late finish, red as on screen
+    cellColors[7 - shift] = statusInk(m.status);                               // the status chip's colour
     return {
       cells,
       cellColors,
-      bar: { col: 8, pct, color: pct >= 100 ? EMERALD : BLUE },
+      bar: { col: 8 - shift, pct, color: pct >= 100 ? EMERALD : BLUE },
       color: lateBy && !m.actualEnd ? RED : undefined,
     };
   });
   // CR 238 - grouped under their categories when the schedule has them, each group with a heading
   // row; a flat list otherwise.
-  const grouped: TableRow[] = rows.some((m) => (m.category || "").trim())
+  const grouped: TableRow[] = hasCats
     ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] })), o.categories).flatMap((g) => [{ group: `${g.category}  (${g.items.length})` }, ...g.items.map((x) => x.row)])
     : tableRows;
   const fixed: TableCol[] = [
@@ -123,8 +178,11 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     { label: "Phase / milestone", w: 200, wrap: true },
     { label: "Start", w: 74, band: "Planned" },
     { label: "End", w: 74, band: "Planned" },
-    { label: "Start", w: 74, band: "Actual", tint: SKY },
-    { label: "End", w: 74, band: "Actual", tint: SKY, wrap: true },
+    // CR 288 - the actual dates are the site's record; they print unless they were left out.
+    ...(showActual ? [
+      { label: "Start", w: 74, band: "Actual", tint: SKY },
+      { label: "End", w: 74, band: "Actual", tint: SKY, wrap: true },
+    ] as TableCol[] : []),
     { label: "Duration", w: 74, align: "right" as const },
     { label: "Status", w: 80 },
     { label: "% complete", w: 62 },
@@ -136,7 +194,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   f = drawTable(b, f, X, cols, grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.8, maxLines: 4 });
 
   // ── Gantt ──
-  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today);
+  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE);
 
 
   stampPageNumbers(doc, b);
@@ -164,9 +222,11 @@ const weekNoPdf = (d: Date) => {
 // Points per day on paper, per zoom. Monthly keeps a two-year job on one sheet; daily is readable
 // day by day and simply runs onto more sheets.
 const PDF_PX_PER_DAY = { month: 2.3, week: 8, day: 12 } as const;
+/** The phase column beside the chart; the calendar gets whatever is left of the sheet. */
+const GANTT_LABEL = 250;
 
-function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date): Flow {
-  const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = 250, CH = W - LABEL, ROW = 15, BOTTOM = 74;
+function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date, PAGE: { w: number; h: number }): Flow {
+  const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = GANTT_LABEL, CH = W - LABEL, ROW = 15, BOTTOM = 74;
   const zoom = o.zoom || "month";
   const pxPerDay = PDF_PX_PER_DAY[zoom];
   const unit: "week" | "day" = zoom === "month" ? "week" : "day";
@@ -184,15 +244,9 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
     rows.forEach((m, n) => lines.push({ kind: "row", m, index: n }));
   }
 
-  const dates: Date[] = [];
-  for (const m of rows) for (const v of [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd]) { const d = parseDate(v); if (d) dates.push(d); }
-  for (const v of [o.contractStart, o.deadline, o.originalDeadline]) { const d = parseDate(v); if (d) dates.push(d); }
-  if (!dates.length) return flow;
-  const min = new Date(Math.min(...dates.map((d) => d.getTime())));
-  const max = new Date(Math.max(...dates.map((d) => d.getTime())));
-  const from = startOfWeekPdf(new Date(min.getFullYear(), min.getMonth(), min.getDate() - 3));
-  const to = new Date(max.getFullYear(), max.getMonth(), max.getDate() + 7);
-  const totalDays = Math.max(1, Math.round((to.getTime() - from.getTime()) / DAY_MS));
+  const range = chartRange({ milestones: rows, contractStart: o.contractStart, deadline: o.deadline, originalDeadline: o.originalDeadline });
+  if (!range) return flow;
+  const { from, to, days: totalDays } = range;
 
   // How much of the calendar fits on one sheet at this zoom, and therefore how many sheets.
   const daysPerSheet = Math.max(7, Math.floor(CH / pxPerDay));

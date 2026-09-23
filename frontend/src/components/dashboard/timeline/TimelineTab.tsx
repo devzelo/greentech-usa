@@ -21,6 +21,7 @@ import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
+import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
 import PdfPreviewModal from "../PdfPreviewModal";
 
@@ -346,7 +347,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName, remarks: printRemarks,
-    zoom,
+    zoom, actual: printActual, paper,
   });
   const versionLabel = dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
   const buildPdf = async () => {
@@ -354,11 +355,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     return buildTimelinePdf(pdfInput(versionLabel));
   };
   const fileName = `${project.name.replace(/[\\/:*?"<>|]/g, "_")} - ${scheduleName} ${toIso(today)}.pdf`;
-  const downloadPdf = async (withRemarks = printRemarks) => {
+  const downloadPdf = async () => {
     setBusy("pdf");
     try {
       const { buildTimelinePdf } = await import("../../../lib/timelinePdf");
-      const blob = await buildTimelinePdf({ ...pdfInput(versionLabel), remarks: withRemarks });
+      const blob = await buildTimelinePdf(pdfInput(versionLabel));
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = fileName; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -370,16 +371,41 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const [previewOpen, setPreviewOpen] = useState(false);
   // CR 273 - the remark is an internal note, so printing it is decided before anything is built:
   // Preview and Download both ask first, then carry the answer into the document.
+  const [zoom, setZoom] = useState<GanttZoom>("month");
   const [askRemarks, setAskRemarks] = useState<null | "preview" | "download">(null);
+  /**
+   * CR 288 - two more answers before anything is built: whether the Actual dates go in (they are
+   * the site's record, not always for the reader), and which sheet to print on. A weekly chart of
+   * a long job runs over several 24" x 18" sheets; the bigger drawing sizes fit it on one, so the
+   * number of sheets each one needs is worked out and shown beside it.
+   */
+  const [printActual, setPrintActual] = useState(true);
+  const [paper, setPaper] = useState<TimelinePaper>("wide");
+  const [sheetCounts, setSheetCounts] = useState<Record<TimelinePaper, number> | null>(null);
+  useEffect(() => {
+    if (!askRemarks) return;
+    let alive = true;
+    void (async () => {
+      const { chartSheets } = await import("../../../lib/timelinePdf");
+      const base = { milestones: rows, contractStart, deadline, originalDeadline: project.endDate, zoom };
+      const next = {
+        wide: chartSheets({ ...base, paper: "wide" }),
+        ansie: chartSheets({ ...base, paper: "ansie" }),
+        a2: chartSheets({ ...base, paper: "a2" }),
+      };
+      if (alive) setSheetCounts(next);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askRemarks, rows, zoom, contractStart, deadline]);
   const printPdf = () => setAskRemarks("preview");
   const startDownload = () => setAskRemarks("download");
-  const goAhead = (withRemarks: boolean) => {
+  const goAhead = () => {
     const next = askRemarks;
-    setPrintRemarks(withRemarks);
     setAskRemarks(null);
-    // The state lands on the next render, so hand the choice to the builder directly.
+    // The answers are already in state: the boxes and the paper size were set in the dialog.
     if (next === "preview") setPreviewOpen(true);
-    else if (next === "download") void downloadPdf(withRemarks);
+    else if (next === "download") void downloadPdf();
   };
   // Sharing files the PDF under Project Management > Schedules, then shares that copy.
   const sharePdf = async () => {
@@ -504,7 +530,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   };
 
   // CR 269 - how tightly the chart's time axis is packed.
-  const [zoom, setZoom] = useState<GanttZoom>("month");
   // CR 270 - the remarks are internal notes, so printing them is a choice made at the preview.
   const [printRemarks, setPrintRemarks] = useState(false);
 
@@ -526,6 +551,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // schedule has any; a flat list otherwise.
   const hasCategories = catList.length > 0;
   const groups = hasCategories ? groupByCategory(shown, catList, view === "all") : [{ category: "", items: shown }];
+  // CR 288 - the # column runs 1, 2, 3 down the table as it is shown. `index` is where the row
+  // sits in the underlying list (the move buttons need that) and jumps about once grouped.
+  const rowNumber = new Map<string, number>();
+  groups.forEach((g) => g.items.forEach(({ m }) => rowNumber.set(m.id, rowNumber.size + 1)));
   // The header bar is the project's: it follows the master schedule only.
   const previewProject: ApiProject = sub ? project : { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
@@ -815,7 +844,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           className={`border-t border-slate-100 ${dragOver === index ? "bg-blue-50" : "hover:bg-slate-50/60"}`}
                         >
                           <td className="pl-2 text-slate-300">{canEdit && view === "all" && <GripVertical size={14} className="cursor-grab" />}</td>
-                          <td className={`${cell} text-slate-400`}>{index + 1}</td>
+                          <td className={`${cell} text-slate-400`}>{rowNumber.get(m.id) ?? index + 1}</td>
                           <td className={`${cell} min-w-[13rem]`}>
                             <button type="button" onClick={() => setEditing(m)} className="flex items-start gap-2 text-left">
                               {isMilestonePoint(m) ? <Flag size={13} className="mt-0.5 shrink-0" style={{ color }} /> : <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />}
@@ -1047,15 +1076,47 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <button onClick={() => setAskRemarks(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
             </div>
             <div className="space-y-3 p-5">
-              <p className="text-xs text-slate-600">Print each row's remark beside it? Remarks are the project manager's internal notes, so they are left out unless you ask for them.</p>
+              <p className="text-xs text-slate-600">What goes on the printed schedule?</p>
               <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary">
                 <input type="checkbox" checked={printRemarks} onChange={(e) => setPrintRemarks(e.target.checked)} className="accent-emerald-600" />
-                Include the remarks column
+                <span>Remarks column<span className="block text-[10px] font-medium text-slate-400">The project manager's internal notes.</span></span>
               </label>
-              <p className="text-[10px] text-slate-400">The chart prints at the zoom you have chosen: {GANTT_ZOOMS.find(([k]) => k === zoom)?.[1].toLowerCase()}, across the whole timeline.</p>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary">
+                <input type="checkbox" checked={printActual} onChange={(e) => setPrintActual(e.target.checked)} className="accent-emerald-600" />
+                <span>Actual start and end dates<span className="block text-[10px] font-medium text-slate-400">What really happened, beside the planned dates.</span></span>
+              </label>
+
+              {/* CR 288 - the sheet, with what the chart costs on each at the chosen zoom. */}
+              <div>
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Paper size (landscape)</p>
+                <div className="space-y-1">
+                  {(Object.keys(TIMELINE_PAPERS) as TimelinePaper[]).map((k) => {
+                    const n = sheetCounts?.[k];
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setPaper(k)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold transition-colors ${paper === k ? "border-primary bg-emerald-50/60 text-slate-800" : "border-slate-200 text-slate-600 hover:border-primary"}`}
+                      >
+                        <span>{TIMELINE_PAPERS[k].label}<span className="ml-1.5 text-[10px] font-medium text-slate-400">{TIMELINE_PAPERS[k].hint}</span></span>
+                        {n !== undefined && (
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${n <= 1 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                            {n <= 1 ? "chart fits on one" : `${n} sheets`}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                The chart prints at the zoom you have chosen: {GANTT_ZOOMS.find(([k]) => k === zoom)?.[1].toLowerCase()}, across the whole timeline.
+                {sheetCounts && sheetCounts[paper] > 1 && ` It needs ${sheetCounts[paper]} sheets at this size; a larger sheet above holds it on one.`}
+              </p>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setAskRemarks(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
-                <button onClick={() => goAhead(printRemarks)} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">
+                <button onClick={() => goAhead()} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">
                   {askRemarks === "preview" ? <><Printer size={13} /> Open the preview</> : <><Download size={13} /> Download</>}
                 </button>
               </div>
