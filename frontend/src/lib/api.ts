@@ -2159,6 +2159,13 @@ export async function deleteRfqDocument(projectId: string, rid: string): Promise
 export type ShipmentStatus = "Preparing" | "Fabrication" | "Transit" | "Clearance" | "Warehouse" | "Delivered";
 export interface ApiShipmentFile { _id: string; name: string; filePath: string; fileType: string; size: string }
 export interface ApiShipmentRow { _id: string; docType: string; remarks?: string; files: ApiShipmentFile[] }
+/** One kind of thing in a shipment: a container, a pallet stack, a crate (CR 281). */
+export interface ApiShipmentCargo {
+  type: string; customType: string; qty: string; size: string;
+  dimL: string; dimW: string; dimH: string; dimUnit: string;
+  weight: string; weightUnit: string; ref: string;
+}
+
 export interface ApiShipment {
   _id: string; projectId: string; name: string; order: number;
   description?: string; fromLocation?: string; toLocation?: string;
@@ -2167,6 +2174,9 @@ export interface ApiShipment {
   // Tracking header + container details + goods/agency (CR-PR-08/09).
   trackingNo?: string; carrier?: string; currentLocation?: string; etaDate?: string; trackingUrl?: string;
   containerType?: string; containerSize?: string; openBed?: boolean;
+  // CR 281 - one shipment can hold a container, two crates and three pallets: each kind of thing
+  // is its own row. Old shipments carry their containerType/Size folded into a single row.
+  cargo?: ApiShipmentCargo[];
   goods?: Array<{ description: string; qty: string; unit: string }>;
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
   /** CR 220 - shown prominently on the shipment card. */
@@ -2181,7 +2191,7 @@ export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
   "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
-  "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
+  "cargo" | "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }

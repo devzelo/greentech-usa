@@ -50,6 +50,13 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
         s.openBed = false;
         changed = true;
       }
+      // CR 281 (2026-09-23) - the cargo used to be one container type and one size on the
+      // shipment itself. Read it as a single cargo row once, so an old shipment opens with its
+      // cargo already listed and the editor has something to build on.
+      if (!(s.cargo || []).length && (String(s.containerType || "").trim() || String(s.containerSize || "").trim())) {
+        s.cargo = legacyCargo(s.containerType, s.containerSize, s.trackingNo);
+        changed = true;
+      }
       if (changed) { try { await s.save(); } catch { /* best-effort backfill */ } }
     }
     res.json(docs);
@@ -239,6 +246,46 @@ const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadl
   "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
   "agencyName", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;
 
+// CR 281 - the cargo rows. Everything is kept as text (like the rest of the shipment) so a
+// quantity of "2" and a weight of "12.5" travel the same way; the UI does the arithmetic.
+const CARGO_KEYS = ["container", "opentop", "reefer", "flatrack", "openbed", "tanker", "pallet", "crate", "loose", "custom"];
+const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
+const cleanCargo = (v: unknown) => Array.isArray(v)
+  ? v.map((raw) => {
+      const c = (raw || {}) as Record<string, unknown>;
+      const type = String(c.type ?? "container");
+      return {
+        type: CARGO_KEYS.includes(type) ? type : "custom",
+        customType: str(c.customType, 200),
+        qty: str(c.qty, 10),
+        size: str(c.size, 120),
+        dimL: str(c.dimL, 20), dimW: str(c.dimW, 20), dimH: str(c.dimH, 20), dimUnit: str(c.dimUnit, 10),
+        weight: str(c.weight, 20), weightUnit: str(c.weightUnit, 10),
+        ref: str(c.ref, 120),
+      };
+    }).slice(0, 100)
+  : [];
+
+/** An old shipment's single container type / size, read as one cargo row. */
+const legacyCargo = (containerType?: string, containerSize?: string, trackingNo?: string) => {
+  const t = String(containerType || "").trim();
+  const size = String(containerSize || "").trim();
+  if (!t && !size) return [];
+  const match = ([
+    ["opentop", /open ?top/i], ["reefer", /reefer|refrigerat/i], ["flatrack", /flat ?rack/i],
+    ["openbed", /open ?bed|flat ?bed/i], ["tanker", /tank/i], ["pallet", /pallet/i],
+    ["crate", /crate/i], ["loose", /break ?bulk|loose|lcl/i],
+  ] as Array<[string, RegExp]>).find(([, re]) => re.test(t));
+  return [{
+    type: match ? match[0] : t ? "custom" : "container",
+    customType: match ? "" : t,
+    qty: "1", size,
+    dimL: "", dimW: "", dimH: "", dimUnit: "ft",
+    weight: "", weightUnit: "Ton",
+    ref: String(trackingNo || "").trim().slice(0, 120),
+  }];
+};
+
 const cleanGoods = (v: unknown) => Array.isArray(v)
   ? v.map((g) => ({ description: String((g as { description?: unknown })?.description ?? "").slice(0, 300), qty: String((g as { qty?: unknown })?.qty ?? "").slice(0, 40), unit: String((g as { unit?: unknown })?.unit ?? "").slice(0, 40) })).filter((g) => g.description || g.qty).slice(0, 200)
   : [];
@@ -264,6 +311,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       status: STATUSES.includes(body.status) ? body.status : "Preparing",
       deadline: String(body.deadline || "").slice(0, 300),
       poIds: Array.isArray(body.poIds) ? body.poIds.map(String).slice(0, 100) : [],
+      cargo: cleanCargo(body.cargo),
       // Costs are captured in the same popup as everything else — accept them on create too,
       // not only on the later PATCH.
       costFreight: String(body.costFreight || "").slice(0, 60),
@@ -283,6 +331,7 @@ router.patch("/:sid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const patch: Record<string, unknown> = {};
     for (const f of META_FIELDS) if (typeof body[f] === "string") patch[f] = body[f].slice(0, f === "description" ? 2000 : 300);
     if (typeof body.openBed === "boolean") patch.openBed = body.openBed;
+    if (Array.isArray(body.cargo)) patch.cargo = cleanCargo(body.cargo);
     if (Array.isArray(body.goods)) patch.goods = cleanGoods(body.goods);
     if (Array.isArray(body.poIds)) patch.poIds = body.poIds.map(String).slice(0, 100);
     if (typeof body.status === "string" && STATUSES.includes(body.status as ShipmentStatus)) patch.status = body.status;

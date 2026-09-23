@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fileName } from "../../lib/fileNames";
-import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Container, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
   addShipmentRow, renameShipmentRow, updateShipmentRow, deleteShipmentRow, uploadShipmentFile, deleteShipmentFile,
@@ -14,6 +14,7 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import FormSection from "./FormSection";
+import CargoEditor, { blankCargo, cargoFromLegacy, cargoLine, cargoSizeLabel, cargoTypeLabel, cargoWeightLabel, type CargoItem } from "./ShipmentCargo";
 
 // The demurrage row is special: pinned to the top of the list and rendered dulled/grey. The
 // shipping contract row is mandatory too (kept just under it) but renders normally.
@@ -81,23 +82,16 @@ const STATUSES = Object.keys(STATUS_META) as ShipmentStatus[];
 // Journey progress by status — drives the route visual (CR-PR-08).
 const STATUS_PCT: Record<ShipmentStatus, number> = { Preparing: 0, Fabrication: 12, Transit: 55, Clearance: 80, Warehouse: 92, Delivered: 100 };
 
-const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
+/**
+ * CR 281 - the cargo rows of a shipment, reading an old record's single container type / size as
+ * one row so nothing vanishes from a shipment saved before the change.
+ */
+const shipmentCargo = (s: ApiShipment): CargoItem[] =>
+  (s.cargo || []).length
+    ? s.cargo!.map((c) => ({ ...blankCargo(), ...c }))
+    : cargoFromLegacy(s.containerType || (s.openBed ? "Flat rack / open bed" : ""), s.containerSize, s.trackingNo);
 
-// CR 278 (2026-09-23): an open bed / flat rack is a kind of container, not a flag beside the type.
-// These are suggestions, not a closed list: the field still takes anything typed.
-const CONTAINER_TYPES = [
-  "DV (dry van)",
-  "HC (high cube)",
-  "Flat rack / open bed",
-  "Open top",
-  "Reefer (refrigerated)",
-  "Tank",
-  "Platform",
-  "LCL (part container)",
-  "Breakbulk",
-  "Air freight",
-  "Truck / road",
-];
+const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
 // CR-PR-08 — derive a live carrier tracking deep-link from the carrier name + tracking/container #,
 // so "Track on carrier site" opens the carrier's own live status page in one click without the user
@@ -137,7 +131,7 @@ type ShipDraft = {
   status: ShipmentStatus; deadline: string; poIds: string[];
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
   trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
-  containerType: string; containerSize: string;
+  cargo: CargoItem[];
   goods: Array<{ description: string; qty: string; unit: string }>;
   agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
 };
@@ -145,7 +139,7 @@ const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
-  containerType: "", containerSize: "",
+  cargo: [],
   goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
 
@@ -186,7 +180,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const [editRow, setEditRow] = useState<string | null>(null);
   const [editRowVal, setEditRowVal] = useState("");
   const [justAdded, setJustAdded] = useState("");
-  const [listPopup, setListPopup] = useState<null | "items" | "pos">(null);   // CR 220 - items / POs pop-up   // CR 218 - the line just created
+  const [listPopup, setListPopup] = useState<null | "cargo" | "items" | "pos">(null);   // CR 220 - items / POs pop-up   // CR 218 - the line just created
   // Creation / edit popup — everything about the shipment is editable here (CRUD).
   const [popup, setPopup] = useState<{ mode: "create" | "edit"; sid?: string } | null>(null);
   const [draft, setDraft] = useState<ShipDraft>(BLANK_DRAFT);
@@ -291,7 +285,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   // Demurrage Cost pinned on top; everything else keeps its stored order.
   const orderedRows = (s: ApiShipment) => [...s.rows.filter((r) => isDemurrage(r.docType)), ...s.rows.filter((r) => !isDemurrage(r.docType))];
 
-  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}` }); setPopup({ mode: "create" }); };
+  // A new shipment opens with one cargo row ready to fill in - most have at least one thing in them.
+  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}`, cargo: [blankCargo()] }); setPopup({ mode: "create" }); };
   const openEdit = (s: ApiShipment) => {
     setDraft({
       name: s.name, fromLocation: s.fromLocation || "", toLocation: s.toLocation || "", description: s.description || "",
@@ -299,7 +294,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
       trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
       // An old shipment carried the flag beside the type; it becomes the type itself (CR 278).
-      containerType: s.containerType || (s.openBed ? "Flat rack / open bed" : ""), containerSize: s.containerSize || "",
+      // An old shipment still on containerType / containerSize is read as one cargo row.
+      cargo: (s.cargo || []).length ? s.cargo!.map((c) => ({ ...blankCargo(), ...c })) : cargoFromLegacy(s.containerType || (s.openBed ? "Flat rack / open bed" : ""), s.containerSize, s.trackingNo),
       goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
     setPopup({ mode: "edit", sid: s._id });
@@ -313,7 +309,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       description: draft.description, status: draft.status, deadline: draft.deadline, poIds: draft.poIds,
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
-      containerType: draft.containerType, containerSize: draft.containerSize, openBed: false,
+      cargo: draft.cargo, openBed: false,
       goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
       agencyWebsite: draft.agencyWebsite, agencyCountry: draft.agencyCountry,
     };
@@ -489,7 +485,8 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Carrier</p><p className="font-bold text-slate-800">{active.carrier || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Current location</p><p className="font-bold text-slate-800">{active.currentLocation || "—"}</p></div>
                   <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Anticipated arrival</p><p className="font-bold text-slate-800">{active.etaDate || "—"}{active.etaDate && etaCountdown(active.etaDate) && <span className="text-primary"> ({etaCountdown(active.etaDate)})</span>}</p></div>
-                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Container</p><p className="font-bold text-slate-800">{[active.containerType || (active.openBed ? "Flat rack / open bed" : ""), active.containerSize].filter(Boolean).join(" · ") || "—"}</p></div>
+                  {/* CR 281 - the whole cargo on one line: "1 x Shipping Container - 40 ft (High Cube) · 3 x Pallet(s)". */}
+                  <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Cargo</p><p className="font-bold text-slate-800">{shipmentCargo(active).map(cargoLine).join(" · ") || "—"}</p></div>
                   {(() => {
                     const url = carrierTrackingUrl(active.carrier, active.trackingNo, active.trackingUrl);
                     return url ? (
@@ -573,6 +570,9 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                           <span className="font-bold text-slate-400">Deadline:</span>
                           <span className={`font-bold ${active.deadline && active.deadline < new Date().toISOString().slice(0, 10) && active.status !== "Delivered" ? "text-red-600" : "text-slate-700"}`}>{active.deadline || "—"}</span>
                         </span>
+                        <button onClick={() => setListPopup("cargo")} className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline">
+                          <Container size={12} /> Cargo ({shipmentCargo(active).length})
+                        </button>
                         <button onClick={() => setListPopup("items")} className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline">
                           <Package size={12} /> See items ({active.goods?.length || 0})
                         </button>
@@ -717,6 +717,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               shipment: reportFor,
               pos: pos.map((p) => ({ _id: p._id, poNo: p.poNo, vendorName: p.vendorName, total: p.total, invoiceAmount: p.invoiceAmount })),
               goodsCost: goodsCost(reportFor.poIds, pos),
+              cargo: shipmentCargo(reportFor),
             });
           }}
         />
@@ -773,13 +774,32 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
           <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
               <p className="text-sm font-bold text-slate-900">
-                {listPopup === "items" ? `Items in ${active.name}` : `Purchase orders on ${active.name}`}
-                <span className="ml-2 text-[11px] font-bold text-slate-400">{listPopup === "items" ? (active.goods?.length || 0) : (active.poIds || []).length}</span>
+                {listPopup === "cargo" ? `Cargo in ${active.name}` : listPopup === "items" ? `Items in ${active.name}` : `Purchase orders on ${active.name}`}
+                <span className="ml-2 text-[11px] font-bold text-slate-400">{listPopup === "cargo" ? shipmentCargo(active).length : listPopup === "items" ? (active.goods?.length || 0) : (active.poIds || []).length}</span>
               </p>
               <button onClick={() => setListPopup(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
             </div>
             <div className="max-h-[60vh] overflow-y-auto p-5">
-              {listPopup === "items" ? (
+              {listPopup === "cargo" ? (
+                shipmentCargo(active).length === 0
+                  ? <p className="py-6 text-center text-sm italic text-slate-400">No cargo listed on this shipment.</p>
+                  : (
+                    <table className="w-full text-left text-xs">
+                      <thead><tr className="border-b border-slate-100 text-[10px] uppercase tracking-widest text-slate-400"><th className="w-12 py-2">Qty</th><th className="py-2">Type</th><th className="py-2">Size / dimensions</th><th className="w-20 py-2">Weight</th><th className="py-2">Reference</th></tr></thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {shipmentCargo(active).map((c, i) => (
+                          <tr key={i}>
+                            <td className="py-2 font-bold text-slate-700">{c.qty || "1"}</td>
+                            <td className="py-2 font-medium text-slate-700">{cargoTypeLabel(c)}</td>
+                            <td className="py-2 text-slate-500">{cargoSizeLabel(c) || "—"}</td>
+                            <td className="py-2 text-slate-500">{cargoWeightLabel(c) || "—"}</td>
+                            <td className="py-2 text-slate-500 break-all">{c.ref || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+              ) : listPopup === "items" ? (
                 (active.goods?.length || 0) === 0
                   ? <p className="py-6 text-center text-sm italic text-slate-400">No items listed on this shipment.</p>
                   : (
@@ -841,7 +861,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
 
               {/* CR-PR-08/09 — tracking header + container details (entered/pasted manually). */}
               {/* CR 217 - each part of the form is its own section, with its own colour. */}
-              <FormSection tone="blue" icon={<Ship size={11} />} title="Tracking & container">
+              <FormSection tone="blue" icon={<Ship size={11} />} title="Tracking & carrier">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
                     <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
@@ -851,24 +871,29 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                     <input className={`${inp} mt-1`} value={draft.currentLocation} onChange={(e) => setDraft({ ...draft, currentLocation: e.target.value })} placeholder="e.g. Istanbul Port" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Anticipated arrival
                     <input type="date" className={`${inp} mt-1`} value={draft.etaDate} onChange={(e) => setDraft({ ...draft, etaDate: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container type
-                    <input list="gt-container-types" className={`${inp} mt-1`} value={draft.containerType} onChange={(e) => setDraft({ ...draft, containerType: e.target.value })} placeholder="e.g. HC (high cube), Flat rack / open bed" />
-                    <datalist id="gt-container-types">
-                      {CONTAINER_TYPES.map((t) => <option key={t} value={t} />)}
-                    </datalist>
-                  </label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Container size
-                    <input className={`${inp} mt-1`} value={draft.containerSize} onChange={(e) => setDraft({ ...draft, containerSize: e.target.value })} placeholder="e.g. 40 ft" /></label>
-                  <label className="sm:col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional, auto-derived)</span>
+                  <label className="sm:col-span-2 lg:col-span-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier tracking link <span className="normal-case text-slate-300">(optional, auto-derived)</span>
                     <input className={`${inp} mt-1`} value={draft.trackingUrl} onChange={(e) => setDraft({ ...draft, trackingUrl: e.target.value })} placeholder="Leave blank to auto-link from carrier + number" /></label>
                 </div>
               </FormSection>
 
-              {/* CR-PR-09 — goods in the shipment. */}
+              {/* CR 281 — the cargo: a row per kind of thing, since one shipment can be a
+                  container, two crates and three pallets at once. */}
+              <FormSection
+                tone="violet"
+                icon={<Container size={11} />}
+                title="Cargo items"
+                hint="One row per kind of thing being shipped. The type sets which sizes are offered."
+                right={<span className="text-[10px] font-bold text-slate-400">{draft.cargo.length ? `${draft.cargo.length} ${draft.cargo.length === 1 ? "row" : "rows"}` : ""}</span>}
+              >
+                <CargoEditor cargo={draft.cargo} onChange={(cargo) => setDraft({ ...draft, cargo })} />
+              </FormSection>
+
+              {/* CR-PR-09 — goods in the shipment: what is inside the cargo above. */}
               <FormSection
                 tone="emerald"
                 icon={<Package size={11} />}
                 title="Items in this shipment"
+                hint="The contents - what the containers, crates and pallets above are carrying."
                 right={<button onClick={() => setDraft({ ...draft, goods: [...draft.goods, { description: "", qty: "", unit: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add item</button>}
               >
                 {draft.goods.length === 0 && <p className="text-[11px] text-slate-400 italic">No items listed.</p>}

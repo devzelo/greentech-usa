@@ -1,5 +1,5 @@
 import { PDFDocument } from "pdf-lib";
-import type { ApiShipment } from "./api";
+import type { ApiShipment, ApiShipmentCargo } from "./api";
 import { C, GUTTER, LETTER, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 
 /**
@@ -31,7 +31,31 @@ export interface ShipmentPdfInput {
   pos?: Array<{ _id: string; poNo?: string; vendorName?: string; total?: string; invoiceAmount?: string }>;
   /** Sum of the linked POs' invoice amounts. */
   goodsCost?: number;
+  /** CR 281 - the cargo rows, already read off the shipment (old records included). */
+  cargo?: ApiShipmentCargo[];
 }
+
+// CR 281 - the same labels the screen uses, so the report reads like the shipment tab.
+const CARGO_LABELS: Record<string, string> = {
+  container: "Shipping Container", opentop: "Open Top Container", reefer: "Reefer Container (Refrigerated)",
+  flatrack: "Flat Rack", openbed: "Open Bed / Flatbed", tanker: "Tanker",
+  pallet: "Pallet(s)", crate: "Crate(s)", loose: "Loose Cargo / Break Bulk", custom: "Custom",
+};
+const cargoType = (c: ApiShipmentCargo) =>
+  (c.type === "custom" ? (c.customType || "").trim() : "") || CARGO_LABELS[c.type] || c.type || "-";
+const cargoSize = (c: ApiShipmentCargo) => {
+  if (c.size !== "custom") return c.size || "-";
+  const dims = [c.dimL, c.dimW, c.dimH].filter((d) => String(d || "").trim());
+  return dims.length ? `${dims.join(" x ")} ${c.dimUnit || ""}`.trim() : "-";
+};
+const cargoWeight = (c: ApiShipmentCargo) =>
+  String(c.weight || "").trim() ? `${String(c.weight).trim()} ${c.weightUnit || ""}`.trim() : "";
+/** The whole cargo on one line, for the shipment summary table. */
+const cargoLine = (cargo?: ApiShipmentCargo[]) => (cargo || []).map((c) => {
+  const qty = String(c.qty || "").trim();
+  const size = cargoSize(c);
+  return `${qty && qty !== "1" ? `${qty} x ` : ""}${cargoType(c)}${size && size !== "-" ? ` - ${size}` : ""}`;
+}).join(" · ");
 
 export async function buildShipmentPdf(o: ShipmentPdfInput): Promise<Blob> {
   const s = o.shipment;
@@ -79,7 +103,7 @@ export async function buildShipmentPdf(o: ShipmentPdfInput): Promise<Blob> {
     { cells: ["To", dash(s.toLocation)] },
     { cells: ["Carrier", dash(s.carrier)] },
     { cells: ["Tracking / container #", dash(s.trackingNo)] },
-    { cells: ["Container", dash([s.containerType, s.containerSize].filter(Boolean).join(" · "))] },
+    { cells: ["Cargo", dash(cargoLine(o.cargo))] },
     { cells: ["Last location update", s.trackingCheckedAt ? `${s.trackingCheckedAt.slice(0, 10)}${s.trackingSource ? ` (${s.trackingSource})` : ""}` : "not updated yet"] },
   ];
   f = drawTable(b, f, X, twoCol, journey, { newPage, size: 8.5, maxLines: 4 });
@@ -98,6 +122,25 @@ export async function buildShipmentPdf(o: ShipmentPdfInput): Promise<Blob> {
   ];
   f = drawTable(b, f, X, twoCol, agency, { newPage, size: 8.5, maxLines: 3 });
   f.y -= 10;
+
+  // ── The cargo (CR 281) ──
+  const cargo = o.cargo || [];
+  if (cargo.length) {
+    keepTogether(2);
+    f.y = sectionHeading(f.page, b, `Cargo (${cargo.length})`, X, f.y, W);
+    const cargoCols: TableCol[] = [
+      { label: "Qty", w: 40, align: "right" },
+      { label: "Type", w: 150, wrap: true },
+      { label: "Size / dimensions", w: 130, wrap: true },
+      { label: "Weight", w: 70 },
+      { label: "Reference", w: W - 390, wrap: true },
+    ];
+    const cargoRows: TableRow[] = cargo.map((c) => ({
+      cells: [c.qty || "1", cargoType(c), cargoSize(c), cargoWeight(c) || "-", c.ref || "-"],
+    }));
+    f = drawTable(b, f, X, cargoCols, cargoRows, { newPage, size: 8, maxLines: 3 });
+    f.y -= 10;
+  }
 
   // ── What it carries ──
   keepTogether(2);

@@ -34,7 +34,10 @@ export interface IShipment extends Document {
   // Container details (client CR-PR-09).
   containerType: string;  // e.g. 40' HC, 20' DV, Flat Rack
   containerSize: string;
-  openBed: boolean;       // open-bed / flat-rack shipment?
+  openBed: boolean;       // open-bed / flat-rack shipment? (legacy, folded into cargo)
+  // CR 281 - what is actually being moved, a row per kind of thing: 1 container, 2 crates,
+  // 3 pallets. `type` is a key (container, pallet, crate...) with `customType` for "Custom".
+  cargo: IShipmentCargo[];
   // Goods in the shipment + the forwarder/agency contact (client CR-PR-09).
   goods: Array<{ description: string; qty: string; unit: string }>;
   agencyName: string;
@@ -52,6 +55,28 @@ export interface IShipment extends Document {
   costOther: string;
   rows: IShipmentRow[];
 }
+
+export interface IShipmentCargo {
+  type: string; customType: string; qty: string; size: string;
+  dimL: string; dimW: string; dimH: string; dimUnit: string;
+  weight: string; weightUnit: string; ref: string;
+}
+
+// A field literally called "type" needs its own schema here, or Mongoose reads the row as a
+// type declaration instead of a document.
+const CargoSchema = new Schema<IShipmentCargo>({
+  type: { type: String, default: "container" },
+  customType: { type: String, default: "" },
+  qty: { type: String, default: "1" },
+  size: { type: String, default: "" },
+  dimL: { type: String, default: "" },
+  dimW: { type: String, default: "" },
+  dimH: { type: String, default: "" },
+  dimUnit: { type: String, default: "" },
+  weight: { type: String, default: "" },
+  weightUnit: { type: String, default: "" },
+  ref: { type: String, default: "" },
+}, { _id: false });
 
 const FileSchema = new Schema<IShipmentFile>({ name: String, filePath: String, fileType: String, size: String }, { _id: true });
 const RowSchema = new Schema<IShipmentRow>({ docType: { type: String, default: "" }, remarks: { type: String, default: "" }, files: { type: [FileSchema], default: [] } }, { _id: true });
@@ -88,6 +113,7 @@ const ShipmentSchema = new Schema<IShipment>(
     containerType: { type: String, default: "" },
     containerSize: { type: String, default: "" },
     openBed: { type: Boolean, default: false },
+    cargo: { type: [CargoSchema], default: [] },
     goods: { type: [{ description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" } }], default: [] },
     agencyName: { type: String, default: "" },
     agencyContact: { type: String, default: "" },
