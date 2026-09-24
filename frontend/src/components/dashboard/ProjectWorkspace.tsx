@@ -3851,11 +3851,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="flex items-center gap-5">
-            {/* CR 295 - the GT project number, whole: four digits (year, then its place in that
-                year). Numbers issued under the old <year>-NN scheme still read in full, smaller. */}
+            {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
+                that year). The number sets the width, so four digits sit in a square and a longer
+                number issued under the old scheme widens the chip instead of wrapping inside it. */}
             <div
               title="GT project number"
-              className={`w-14 h-14 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-primary font-bold flex-shrink-0 ${project.id.length > 5 ? "text-[11px]" : "text-lg"}`}
+              className={`h-14 min-w-14 px-3 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-primary font-bold flex-shrink-0 whitespace-nowrap tabular-nums tracking-tight ${
+                project.id.length > 7 ? "text-sm" : project.id.length > 4 ? "text-base" : "text-lg"
+              }`}
             >
               {project.id}
             </div>
