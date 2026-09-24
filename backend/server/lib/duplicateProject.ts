@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import mongoose from "mongoose";
 import Project from "../models/Project";
+import { nextProjectNumber } from "./projectNumber";
 import Expense from "../models/Expense";
 import Invoice from "../models/Invoice";
 import SubInvoice from "../models/SubInvoice";
@@ -84,11 +85,8 @@ export async function duplicateProject(oldPid: string, opts: { ownerId: string; 
   const src: any = await Project.findOne({ projectId: oldPid }).lean();
   if (!src) throw new Error("Project not found");
 
-  // New internal number (<year>-NN), same scheme as create.
-  const year = /^[0-9]{4}$/.test(String(src.contractYear || "")) ? String(src.contractYear) : String(new Date().getFullYear());
-  const existing = await Project.find({ projectId: new RegExp("^" + year + "-[0-9]+$") }).select("projectId").lean();
-  const highest = existing.reduce((m, p) => { const n = parseInt(String(p.projectId).split("-")[1] || "0", 10); return isFinite(n) && n > m ? n : m; }, 0);
-  const newPid = `${year}-${String(highest + 1).padStart(2, "0")}`;
+  // CR 295 - the same four-digit number the create route issues.
+  const newPid = await nextProjectNumber(src.contractDate, src.contractYear);
 
   // Copy the whole uploads/<oldPid> tree so every file has its own physical copy.
   try {

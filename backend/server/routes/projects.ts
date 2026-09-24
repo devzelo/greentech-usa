@@ -8,6 +8,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { nextProjectNumber } from "../lib/projectNumber";
 import { getProjectAccess, isProjectGuest, canSeeFigures } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
@@ -321,23 +322,9 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (req.user!.role === "subcontractor") {
       return res.status(403).json({ error: "Guests cannot create projects." });
     }
-    // Internal project number: <year>-<NN>, restarting at 01 each year (2026-01, 2026-02 …).
-    // Derived from the highest existing number for that year — not a count — so deleting a
-    // project can never mint a duplicate.
-    const nextNumber = async (): Promise<string> => {
-      // Only a real 4-digit year is accepted; anything else falls back to the current one, so a
-      // typo like "26" can't mint a permanently malformed id (it also goes into a RegExp below).
-      const raw = String(req.body.contractYear ?? "").trim();
-      const year = /^[0-9]{4}$/.test(raw) ? raw : String(new Date().getFullYear());
-      // [0-9] rather than \d — the year is interpolated, and this stays correct through any
-      // tooling that mangles backslashes.
-      const existing = await Project.find({ projectId: new RegExp("^" + year + "-[0-9]+$") }).select("projectId").lean();
-      const highest = existing.reduce((max, p) => {
-        const n = parseInt(String(p.projectId).split("-")[1] || "0", 10);
-        return isFinite(n) && n > max ? n : max;
-      }, 0);
-      return `${year}-${String(highest + 1).padStart(2, "0")}`;
-    };
+    // CR 295 - the internal number is four plain digits: the contract year's last two, then the
+    // project's place in that year (2601, 2602 ...). See lib/projectNumber.
+    const nextNumber = () => nextProjectNumber(req.body.contractDate, req.body.contractYear);
 
     // Stamp owner from the authenticated user
     req.body.ownerId = req.user!.userId;

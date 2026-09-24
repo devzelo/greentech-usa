@@ -528,7 +528,7 @@ export default function NewProjectForm() {
               placeholder="e.g. 72067421C00012"
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
-            <p className="text-[10px] text-slate-400">The client's contract number. Your internal project number (e.g. {new Date().getFullYear()}-01) is assigned automatically.</p>
+            <p className="text-[10px] text-slate-400">The client's contract number. Your GT project number (e.g. {String(new Date().getFullYear()).slice(-2)}01) is assigned automatically.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitation #</label>
@@ -550,14 +550,18 @@ export default function NewProjectForm() {
               placeholder={String(new Date().getFullYear())}
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
-            <p className="text-[10px] text-slate-400">Also sets the year in the internal project number.</p>
+            <p className="text-[10px] text-slate-400">Taken from the contract date. The GT project number starts with its last two digits.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>
             <input
               type="date"
               value={contractDate}
-              onChange={(e) => setContractDate(e.target.value)}
+              onChange={(e) => {
+                setContractDate(e.target.value);
+                const year = /^([0-9]{4})-/.exec(e.target.value)?.[1];
+                if (year) setContractYear(year);
+              }}
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">The exact date the contract was signed / awarded.</p>

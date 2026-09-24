@@ -3851,8 +3851,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="flex items-center gap-5">
-            <div className="w-14 h-14 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-primary font-bold text-lg flex-shrink-0">
-              {project.id.split("-")[1]}
+            {/* CR 295 - the GT project number, whole: four digits (year, then its place in that
+                year). Numbers issued under the old <year>-NN scheme still read in full, smaller. */}
+            <div
+              title="GT project number"
+              className={`w-14 h-14 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-primary font-bold flex-shrink-0 ${project.id.length > 5 ? "text-[11px]" : "text-lg"}`}
+            >
+              {project.id}
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
@@ -3917,9 +3922,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   timeZone={projectTimeZone(project.siteAddress, project.location)}
                   place={shortLocation(project.siteAddress, project.location)}
                 />
-                <span className="text-xs font-bold text-slate-300">·</span>
-                {/* Two numbers: our internal project number, and the client's contract number. */}
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" title="Internal project number">Project No: {id}</span>
+                {/* CR 295 - the GT number is the badge beside the title, so it is not repeated
+                    here. This line carries the client's numbers. */}
                 {project.contractNo && (
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
@@ -7171,7 +7175,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     disabled={!isOwner}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
-                  <p className="text-[10px] text-slate-400">The client's contract number (usually 9–10 characters or more). Shown alongside the internal project number.</p>
+                  <p className="text-[10px] text-slate-400">The client's contract number (usually 9–10 characters or more). Shown beside the GT project number.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year Started</label>
@@ -7184,14 +7188,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     disabled={!isOwner}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
-                  <p className="text-[10px] text-slate-400">Drives the Year column on My Projects / All Projects.</p>
+                  <p className="text-[10px] text-slate-400">Follows the contract date. Drives the Year column on My Projects / All Projects; the GT number keeps the year it was issued under.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>
                   <input
                     type="date"
                     value={identityForm.contractDate}
-                    onChange={(e) => setIdentityForm({ ...identityForm, contractDate: e.target.value })}
+                    onChange={(e) => {
+                      const year = /^([0-9]{4})-/.exec(e.target.value)?.[1];
+                      setIdentityForm({ ...identityForm, contractDate: e.target.value, ...(year ? { contractYear: year } : {}) });
+                    }}
                     disabled={!isOwner}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
