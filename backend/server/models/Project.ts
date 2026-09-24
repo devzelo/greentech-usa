@@ -20,6 +20,8 @@ export interface MilestoneRecord {
 
 export interface IProject extends Document {
   projectId: string;
+  /** CR 297 - numbers this project carried before, so an old link or bookmark still opens it. */
+  previousIds: string[];
   name: string;
   status: "Ongoing" | "Pending" | "Completed" | "Draft" | "Planning"
     | "Proposal" | "BidSubmitted" | "Active" | "Warranty" | "Closed" | "Lost" | "OnHold";
@@ -218,6 +220,7 @@ const MilestoneSchema = new Schema({
 const ProjectSchema = new Schema<IProject>(
   {
     projectId: { type: String, required: true, unique: true },
+    previousIds: { type: [String], default: [], index: true },
     name: { type: String, required: true },
     status: {
       type: String,

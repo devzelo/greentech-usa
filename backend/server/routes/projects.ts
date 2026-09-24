@@ -279,7 +279,10 @@ router.get("/:id/proposal-sections", async (req: AuthedRequest, res: Response, n
 // GET /api/projects/:id
 router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const project = await Project.findOne({ projectId: req.params.id });
+    // CR 297 - renumbered projects answer to the number they used to carry, so a link saved
+    // before the change still opens the project rather than a "not found".
+    const project = await Project.findOne({ projectId: req.params.id })
+      || await Project.findOne({ previousIds: req.params.id });
     if (!project) return res.status(404).json({ error: "Project not found" });
     // A subcontractor (global role) may only open a project they're a guest on; a staff member
     // granted scoped guest access is likewise treated as a guest here (unified access, CR-P-12).
