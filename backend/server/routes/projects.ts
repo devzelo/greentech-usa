@@ -227,6 +227,20 @@ type VolContent = { sections?: Array<Record<string, unknown>>; layout?: unknown[
 const sectionWords = (v?: VolContent) =>
   (v?.sections || []).reduce((n, s) => n + String((s as { body?: string }).body || "").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length, 0);
 
+/**
+ * CR 298 - GET /api/projects/next-number?contractDate=YYYY-MM-DD: the four-digit number a project
+ * created now would be given, so the New Project form can show it while it is being filled in.
+ * A preview only - the number is allocated when the project is actually created, so two people
+ * filling the form at once are not handed the same one. (Before "/:id" so it is not read as an id.)
+ */
+router.get("/next-number", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
+    const number = await nextProjectNumber(String(req.query.contractDate || ""), String(req.query.contractYear || ""));
+    res.json({ number });
+  } catch (err) { next(err); }
+});
+
 // GET /api/projects/proposal-sources — which projects have proposal text worth copying.
 // (Before "/:id" so it isn't read as a project id.)
 router.get("/proposal-sources", async (req: AuthedRequest, res: Response, next: NextFunction) => {

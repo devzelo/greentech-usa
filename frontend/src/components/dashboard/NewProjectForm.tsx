@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useRef, type ChangeEvent } from "react";
+import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createProject, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, withFileToken, type ApiProject, type ApiCompany } from "../../lib/api";
+import { createProject, fetchNextProjectNumber, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, withFileToken, type ApiProject, type ApiCompany } from "../../lib/api";
 import ClientPicker from "./ClientPicker";
 import CompanyPicker from "./CompanyPicker";
 import YesNo from "./YesNo";
@@ -177,6 +177,12 @@ export default function NewProjectForm() {
   const [contractNo, setContractNo] = useState("");
   // CR 289 - the solicitation number the job was bid under; it follows the project about.
   const [solicitationNo, setSolicitationNo] = useState("");
+  /**
+   * CR 298 - the GT project number, shown while the form is filled in. It follows the contract
+   * date's year and is worked out by the server, which is what will issue it. A preview: if
+   * someone else creates a project first, the next free number is used instead.
+   */
+  const [gtNumber, setGtNumber] = useState("");
   const [contractYear, setContractYear] = useState(String(new Date().getFullYear()));
   const [contractDate, setContractDate] = useState("");
   const [status, setStatus] = useState("Proposal");
@@ -269,6 +275,12 @@ export default function NewProjectForm() {
   const [clientAddress, setClientAddress] = useState("");
   const [clientNotes, setClientNotes] = useState("");
   // Fill the client fields from a Directory client company (picked or newly created).
+  useEffect(() => {
+    let alive = true;
+    fetchNextProjectNumber(contractDate, contractYear).then((n) => { if (alive) setGtNumber(n); }).catch(() => { if (alive) setGtNumber(""); });
+    return () => { alive = false; };
+  }, [contractDate, contractYear]);
+
   const applyClientCompany = (c: ApiCompany) => {
     setClientName(c.name || "");
     const contact = c.contactPersons?.[0];
@@ -519,16 +531,29 @@ export default function NewProjectForm() {
               {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}
             </select>
           </div>
+          {/* CR 298 - the three numbers a project is known by, together: ours, the client's
+              contract, and the solicitation it was bid under. */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Number</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">GT Project #</label>
+            <div className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4">
+              <span className="text-lg font-bold tabular-nums text-primary">{gtNumber || "----"}</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Assigned automatically</span>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              The year from the contract date, then this project's place in that year. It is issued when the project is created,
+              so it may differ if someone else creates one first.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract #</label>
             <input
               type="text"
               value={contractNo}
               onChange={(e) => setContractNo(e.target.value)}
-              placeholder="e.g. 72067421C00012"
+              placeholder="e.g. 24GE5087360003"
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
-            <p className="text-[10px] text-slate-400">The client's contract number. Your GT project number (e.g. {String(new Date().getFullYear()).slice(-2)}01) is assigned automatically.</p>
+            <p className="text-[10px] text-slate-400">From the original contract.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitation #</label>
@@ -536,10 +561,10 @@ export default function NewProjectForm() {
               type="text"
               value={solicitationNo}
               onChange={(e) => setSolicitationNo(e.target.value)}
-              placeholder="e.g. 19GH5024R0007"
+              placeholder="e.g. 19GE058473008"
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
-            <p className="text-[10px] text-slate-400">The solicitation or RFP number this was bid under, if there was one.</p>
+            <p className="text-[10px] text-slate-400">From the original RFP, if there was one.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year Started</label>
