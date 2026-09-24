@@ -378,7 +378,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: rows, categories: catList, version: label, scheduleName, remarks: printRemarks,
-    zoom, actual: printActual, paper,
+    zoom, actual: printActual, paper, overview: printOverview,
   });
   const versionLabel = dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
   const buildPdf = async () => {
@@ -411,6 +411,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
    * number of sheets each one needs is worked out and shown beside it.
    */
   const [printActual, setPrintActual] = useState(true);
+  // CR 299 - the overview strip from the top of the schedule, printed after the chart.
+  const [printOverview, setPrintOverview] = useState(true);
   const [paper, setPaper] = useState<TimelinePaper>("wide");
   const [sheetCounts, setSheetCounts] = useState<Record<TimelinePaper, number> | null>(null);
   useEffect(() => {
@@ -1125,6 +1127,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary">
                 <input type="checkbox" checked={printActual} onChange={(e) => setPrintActual(e.target.checked)} className="accent-emerald-600" />
                 <span>Actual start and end dates<span className="block text-[10px] font-medium text-slate-400">What really happened, beside the planned dates.</span></span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary">
+                <input type="checkbox" checked={printOverview} onChange={(e) => setPrintOverview(e.target.checked)} className="accent-emerald-600" />
+                <span>Timeline overview<span className="block text-[10px] font-medium text-slate-400">The dates, time left and phases, as at the top of the schedule. Printed after the chart.</span></span>
               </label>
 
               {/* CR 288 - the sheet, with what the chart costs on each at the chosen zoom. */}

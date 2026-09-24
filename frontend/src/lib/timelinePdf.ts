@@ -1,9 +1,9 @@
-import { PDFDocument, rgb, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type Color, type PDFPage } from "pdf-lib";
 import type { ApiMilestone } from "./api";
 import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
-  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
+  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, fmtShort, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule,
 } from "./projectSchedule";
 
 /**
@@ -61,6 +61,8 @@ export interface TimelinePdfInput {
   actual?: boolean;
   /** CR 288 - which sheet to print on; a weekly chart of a long job may need a bigger one. */
   paper?: TimelinePaper;
+  /** CR 299 - the overview strip from the top of the schedule, printed after the chart. */
+  overview?: boolean;
 }
 
 /**
@@ -195,6 +197,9 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
 
   // ── Gantt ──
   if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE);
+
+  // CR 299 - the overview strip, as it reads at the top of the schedule, when it was asked for.
+  if (o.overview) f = drawOverview(b, newPage, f, rows, o, today, PAGE);
 
 
   stampPageNumbers(doc, b);
@@ -452,4 +457,151 @@ function legend(page: PDFPage, b: Brand, x: number, y: number) {
     page.drawText(label, { x: px + 22, y: y, size: 6.8, font: b.regular, color: C.s500 });
     px += 30 + b.regular.widthOfTextAtSize(label, 6.8);
   }
+}
+
+/**
+ * CR 299 (2026-09-24) - the timeline overview from the top of the schedule, printed the way it
+ * reads there: the contract dates and the time left on one line, the track with the time elapsed,
+ * any extension and today, and the phases in date order underneath, each with its date above and
+ * its name below. Phases that do not fit across the sheet carry on in a second row.
+ */
+function drawOverview(b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date, PAGE: { w: number; h: number }): Flow {
+  const X = NARROW, W = PAGE.w - NARROW * 2, BOTTOM = 74;
+  const plan = planSchedule(rows, o.contractStart, today, o.deadline);
+  const start = parseDate(o.contractStart), end = parseDate(o.deadline), origEnd = parseDate(o.originalDeadline);
+  const extended = !!(end && origEnd && end > origEnd);
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dots = plan.milestones.filter((m) => m.start).sort((a, z) => a.start!.getTime() - z.start!.getTime());
+
+  // Same column width as the screen's milestone list, so the two read alike.
+  const COL = 84, ROW_H = 44;
+  const perRow = Math.max(1, Math.floor(W / COL));
+  const dotRows = Math.max(1, Math.ceil(dots.length / perRow));
+  const need = 26 + 22 + 30 + dotRows * ROW_H + 16;
+
+  let f = flow;
+  if (f.y - need < BOTTOM) f = newPage();
+  const page = f.page;
+  let y = sectionHeading(page, b, "Timeline overview", X, f.y - 10, W);
+
+  const VIOLET = rgb(0.43, 0.16, 0.85), SLATE100 = rgb(0.945, 0.961, 0.976), VIOLET100 = rgb(0.929, 0.914, 0.996), BLUE600 = rgb(0.145, 0.388, 0.922);
+  const AMBER = rgb(0.96, 0.62, 0.04), EMERALD600 = rgb(0.02, 0.59, 0.41);
+
+  // ── one line of figures, as in the card's header ──
+  const totalDays = start && end ? Math.max(0, daysBetween(start, end)) : null;
+  const origDays = start && origEnd ? Math.max(0, daysBetween(start, origEnd)) : null;
+  const overdue = !!(end && t0 > end && plan.progress < 100);
+  const remaining = end ? (overdue ? `${humanGap(end, t0)} overdue` : `${humanGap(t0, end)} left`) : "No deadline";
+  const elapsed = start && end && end > start ? Math.max(0, Math.min(100, Math.round((daysBetween(start, t0) / daysBetween(start, end)) * 100))) : null;
+  const facts: Array<{ label: string; value: string; color: Color }> = [
+    { label: "START", value: start ? fmtDay(start) : "Not set", color: C.slate },
+    {
+      label: extended ? "DURATION (EXTENDED)" : "DURATION",
+      value: totalDays === null ? "-" : extended && origDays !== null ? `${totalDays} days (was ${origDays}, +${totalDays - origDays})` : `${totalDays} days`,
+      color: extended ? VIOLET : C.slate,
+    },
+    {
+      label: overdue ? "PAST THE DEADLINE" : "TIME REMAINING",
+      value: end ? `${remaining} (${Math.abs(daysBetween(t0, end))}d${elapsed !== null ? `, ${elapsed}% elapsed` : ""})` : remaining,
+      color: overdue ? RED : EMERALD600,
+    },
+    {
+      label: extended ? "END (EXTENDED)" : "END",
+      value: end ? fmtDay(end) + (extended && origEnd ? `  (original ${fmtDay(origEnd)})` : "") : "Not set",
+      color: extended ? VIOLET : C.slate,
+    },
+    {
+      label: "WORK COMPLETE",
+      value: `${plan.progress}%${plan.milestones.length ? ` (${plan.milestones.filter((m) => m.state === "done").length} of ${plan.milestones.length} phases)` : ""}`,
+      color: BLUE600,
+    },
+  ];
+  const factW = W / facts.length;
+  facts.forEach((fct, i) => {
+    const fx = X + i * factW;
+    page.drawText(fct.label, { x: fx, y, size: 6.4, font: b.bold, color: C.s400 });
+    page.drawText(fitOneLine(b.bold, fct.value, 8.6, factW - 10), { x: fx, y: y - 11, size: 8.6, font: b.bold, color: fct.color });
+  });
+  y -= 30;
+
+  // ── the track ──
+  const ts = plan.start || start, te = plan.finish || end;
+  const span = ts && te ? Math.max(DAY, te.getTime() - ts.getTime()) : 0;
+  const px = (d: Date) => (ts && span ? X + Math.max(0, Math.min(1, (d.getTime() - ts.getTime()) / span)) * W : X);
+  const TH = 4.5, ty = y - 10;
+  if (ts && span && t0 >= ts && t0 <= te!) {
+    const tx = px(t0);
+    const lab = "TODAY";
+    page.drawText(lab, { x: tx - b.bold.widthOfTextAtSize(lab, 5.6) / 2, y: ty + TH + 4, size: 5.6, font: b.bold, color: C.s400 });
+  }
+  page.drawRectangle({ x: X, y: ty, width: W, height: TH, color: SLATE100 });
+  if (start && end && span) {
+    if (extended && origEnd) page.drawRectangle({ x: px(origEnd), y: ty, width: Math.max(0, px(end) - px(origEnd)), height: TH, color: VIOLET100 });
+    const fillTo = t0 > end ? end : t0;
+    const w = Math.max(0, px(fillTo) - px(start));
+    if (w > 0) page.drawRectangle({ x: px(start), y: ty, width: w, height: TH, color: overdue ? RED : EMERALD });
+  }
+  for (const m of dots) {
+    page.drawLine({ start: { x: px(m.start!), y: ty - 2 }, end: { x: px(m.start!), y: ty + TH + 2 }, thickness: 1, color: hex(phaseColor(m)) });
+  }
+  if (ts && span && t0 >= ts && t0 <= te!) {
+    page.drawLine({ start: { x: px(t0), y: ty - 3 }, end: { x: px(t0), y: ty + TH + 3 }, thickness: 1.4, color: BLUE600 });
+  }
+  y = ty - 16;
+
+  // ── the phases in date order ──
+  if (!dots.length) {
+    page.drawText(rows.length ? "Add planned dates to the phases to place them on the timeline." : "No phases yet.", { x: X, y, size: 7, font: b.regular, color: C.s400 });
+    y -= 14;
+  }
+  const wrap2 = (text: string, size: number, maxW: number): string[] => {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (b.regular.widthOfTextAtSize(next, size) <= maxW) cur = next;
+      else { if (cur) lines.push(cur); cur = w; }
+      if (lines.length === 2) break;
+    }
+    if (lines.length < 2 && cur) lines.push(cur);
+    if (lines.length === 2 && words.join(" ") !== lines.join(" ")) lines[1] = fitOneLine(b.regular, lines[1] + " ...", size, maxW);
+    return lines.slice(0, 2).map((l) => fitOneLine(b.regular, l, size, maxW));
+  };
+  dots.forEach((m, i) => {
+    const row = Math.floor(i / perRow), col = i % perRow;
+    const cx = X + col * COL + COL / 2;
+    const top = y - row * ROW_H;
+    const cy = top - 13;
+    const color = hex(phaseColor(m));
+    const ring = m.state === "overdue" ? AMBER : color;
+    const done = m.state === "done";
+    const lastInRow = col === perRow - 1 || i === dots.length - 1;
+    // the thin line the screen runs between the rings
+    if (!lastInRow) page.drawLine({ start: { x: cx, y: cy }, end: { x: cx + COL, y: cy }, thickness: 0.6, color: C.border });
+    // date above
+    const date = fmtShort(m.start!);
+    page.drawText(date, { x: cx - b.bold.widthOfTextAtSize(date, 6.4) / 2, y: top - 4, size: 6.4, font: b.bold, color: C.s500 });
+    // the ring
+    page.drawCircle({ x: cx, y: cy, size: 4.6, color: done ? color : C.white, borderColor: ring, borderWidth: 1.4 });
+    if (isMilestonePoint(m)) {
+      // a small flag, as on screen
+      const ink = done ? C.white : color;
+      page.drawLine({ start: { x: cx - 1.4, y: cy - 2.4 }, end: { x: cx - 1.4, y: cy + 2.4 }, thickness: 0.8, color: ink });
+      page.drawSvgPath("M -1.4 -2.4 L 2.2 -1.3 L -1.4 -0.2 Z", { x: cx, y: cy, color: ink, borderWidth: 0 });
+    } else if (done) {
+      page.drawLine({ start: { x: cx - 2, y: cy }, end: { x: cx - 0.5, y: cy - 1.6 }, thickness: 0.9, color: C.white });
+      page.drawLine({ start: { x: cx - 0.5, y: cy - 1.6 }, end: { x: cx + 2.2, y: cy + 1.6 }, thickness: 0.9, color: C.white });
+    } else {
+      page.drawCircle({ x: cx, y: cy, size: 1.2, color: ring });
+    }
+    // name below, up to two lines
+    wrap2(m.name, 6.4, COL - 8).forEach((line, k) => {
+      page.drawText(line, { x: cx - b.regular.widthOfTextAtSize(line, 6.4) / 2, y: cy - 11 - k * 7.6, size: 6.4, font: b.regular, color: C.s700 });
+    });
+  });
+  y -= dotRows * ROW_H;
+
+  page.drawText("Time elapsed is calendar time; work complete comes from the phases.", { x: X, y, size: 6.4, font: b.regular, color: C.s400 });
+  return { page, y: y - 14 };
 }

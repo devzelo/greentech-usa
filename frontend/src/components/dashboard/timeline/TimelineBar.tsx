@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Check, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, ChevronRight, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
 import type { ApiExtension, ApiProject } from "../../../lib/api";
 import {
   DAY, MILESTONE_STATE_LABEL, daysBetween, effectiveEndDate, fmtDay, fmtShort, humanGap, isMilestonePoint, milestoneFocus, parseDate, phaseColor, phasePercent, planSchedule,
@@ -29,6 +29,14 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 }) {
   const [extOpen, setExtOpen] = useState(false);
   const extRef = useRef<HTMLDivElement>(null);
+  /**
+   * CR 299 (2026-09-24): the overview card folds down to one line. It took a lot of the page for
+   * something read at a glance, so the dates and time left stay in the header and the track and
+   * the phases open under it. Remembered, so it stays the way it was left.
+   */
+  const OPEN_KEY = "gt-timeline-overview-open";
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(OPEN_KEY) !== "0"; } catch { return true; } });
+  const toggleOpen = () => setOpen((v) => { try { localStorage.setItem(OPEN_KEY, v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   useEffect(() => {
     if (!extOpen) return;
     const onDown = (e: MouseEvent) => { if (extRef.current && !extRef.current.contains(e.target as Node) && !(e.target as HTMLElement).closest?.("[role=dialog], .fixed")) setExtOpen(false); };
@@ -81,15 +89,13 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
   const undated = plan.milestones.filter((m) => !m.start).length;
 
   const extensions = (
-    <div ref={extRef} className={`relative min-w-0 ${variant === "time" ? "shrink-0" : ""}`}>
-      {variant !== "time" && <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "End date (extended)" : "End date"}</p>}
-      <button type="button" onClick={() => setExtOpen((v) => !v)} className={`inline-flex items-center gap-1 truncate font-bold hover:underline ${variant === "time" ? "text-[11px]" : "text-sm"} ${extended ? "text-violet-700" : "text-slate-900"}`} title={variant === "time" ? `${extended ? `End date, extended from ${origEnd ? fmtDay(origEnd) : "the original end date"}` : "End date"}. Click for extensions of time.` : "Extensions of time"}>
-        {variant === "time" && <span className="font-bold uppercase tracking-widest text-[9px] text-slate-400">End</span>}
+    <div ref={extRef} className="relative min-w-0 shrink-0">
+      <button type="button" onClick={() => setExtOpen((v) => !v)} className={`inline-flex items-center gap-1 truncate text-[11px] font-bold hover:underline ${extended ? "text-violet-700" : "text-slate-900"}`} title={`${extended ? `End date, extended from ${origEnd ? fmtDay(origEnd) : "the original end date"}` : "End date"}. Click for extensions of time.`}>
+        <span className="font-bold uppercase tracking-widest text-[9px] text-slate-400">End</span>
         {deadline ? fmtDay(deadline) : "Not set"}
         {extended && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">Extended</span>}
-        {extended && origEnd && variant === "time" && <span className="text-[10px] font-semibold text-slate-400">(original <span className="line-through">{fmtDay(origEnd)}</span>)</span>}
+        {extended && origEnd && <span className="text-[10px] font-semibold text-slate-400">(original <span className="line-through">{fmtDay(origEnd)}</span>)</span>}
       </button>
-      {extended && origEnd && variant !== "time" && <p className="text-[10px] text-slate-400 line-through">{fmtDay(origEnd)}</p>}
       {extOpen && (
         <div className="absolute right-0 top-full z-[70] mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-slate-100 bg-white p-4 shadow-2xl">
           <ExtensionsPanel endDate={project.endDate} extensions={project.schedule?.extensions} canEdit={canEdit} onSave={onSaveExtensions} userName={userName} />
@@ -206,101 +212,97 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
 
   return (
     <div className={`rounded-2xl border border-slate-100 bg-white shadow-sm ${className}`}>
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{startLabel}</p>
-            <p className="truncate text-sm font-bold text-slate-900">{contractStart ? fmtDay(contractStart) : "Not set"}</p>
-          </div>
-        </div>
-        {/* CR 287 - the whole contract in days, beside the days left. */}
+      {/* CR 299 - one line: the dates and the time left, with the card folding under it. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
+        <button
+          type="button"
+          onClick={toggleOpen}
+          aria-expanded={open}
+          title={open ? "Fold the timeline" : "Show the timeline"}
+          className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:bg-slate-50 hover:text-primary"
+        >
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <CalendarClock size={12} className={overdue ? "text-red-500" : "text-emerald-500"} /> Timeline
+        </button>
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800" title={startIsContractDate ? "No start date is set on the project, so the contract date is used." : "Start date"}>
+          <span className={`text-[9px] uppercase tracking-widest ${startIsContractDate ? "text-amber-600" : "text-slate-400"}`}>{startIsContractDate ? "Contract" : "Start"}</span>
+          {contractStart ? fmtDay(contractStart) : "Not set"}
+        </span>
         {totalDays !== null && (
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarRange size={15} /></span>
-            <div className="min-w-0" title={durationTitle}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{extended ? "Total duration (extended)" : "Total duration"}</p>
-              <p className={`truncate text-sm font-bold ${extended ? "text-violet-700" : "text-slate-900"}`}>
-                {totalDays} days
-                {extended && origDays !== null && (
-                  <span className="ml-1.5 text-[11px] font-semibold text-slate-400">
-                    (<span className="line-through">{origDays}</span> +{addedDays})
-                  </span>
-                )}
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800" title={durationTitle}>
+            <span className="text-[9px] uppercase tracking-widest text-slate-400">Duration</span>
+            {extended && origDays !== null ? (
+              <>
+                <span className="text-slate-400 line-through">{origDays}</span>
+                <span className="text-violet-700">{totalDays} days</span>
+                <span className="text-[10px] font-semibold text-violet-500">(+{addedDays})</span>
+              </>
+            ) : `${totalDays} days`}
+          </span>
+        )}
+        <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
+          <Clock size={11} />
+          {deadline ? (overdue ? remaining : `${remaining} left`) : "No deadline"}
+          {deadline && <span className="font-semibold text-slate-400">({remainingDays}d{elapsedPct !== null ? `, ${Math.round(elapsedPct)}% elapsed` : ""})</span>}
+        </span>
+        {extensions}
+        <span className="ml-auto inline-flex items-center gap-2 text-[10px] font-bold">
+          {focus.overdue.length > 0 && <span className="inline-flex items-center gap-1 text-amber-600"><AlertTriangle size={10} /> {focus.overdue.length} late</span>}
+          <span className="text-blue-600">Work {workPct}%{hasMs ? ` · ${focus.done}/${focus.total}` : ""}</span>
+        </span>
+      </div>
+
+      {open && (
+        <>
+          {/* The track */}
+          <div className="px-3">
+            <div className="relative h-4">
+              {todayPct !== null && (
+                <div className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: `${todayPct}%` }}>
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Today</span>
+                </div>
+              )}
+            </div>
+            <div className="relative h-1.5 rounded-full bg-slate-100">
+              {contractStart && deadline && (
+                <>
+                  {extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${pos(origEnd)}%`, right: `${100 - pos(deadline)}%` }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(deadline)}`} />}
+                  <div className={`absolute inset-y-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ left: `${pos(contractStart)}%`, width: `${Math.max(0, pos(today > deadline ? deadline : today) - pos(contractStart))}%` }} />
+                </>
+              )}
+              {/* Phase start markers, by date */}
+              {dots.map((m) => (
+                <span key={m.id} className="absolute top-1/2 h-2.5 w-0.5 -translate-y-1/2 rounded bg-white/90 ring-1" style={{ left: `${pos(m.start!)}%`, ["--tw-ring-color" as string]: phaseColor(m) }} title={`${m.name}: ${fmtDay(m.start)}`} />
+              ))}
+              {todayPct !== null && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${todayPct}%` }} />}
+            </div>
+          </div>
+
+          {/* Phases in date order */}
+          <div className="px-1 pb-2 pt-2">
+            {dots.length ? (
+              <div className="overflow-x-auto">
+                <ol className="flex min-w-max items-start px-2">
+                  {dots.map((m, i) => <Fragment key={m.id}><Dot m={m} first={i === 0} last={i === dots.length - 1} /></Fragment>)}
+                </ol>
+              </div>
+            ) : (
+              <p className="px-2 text-[10px] text-slate-400">{hasMs ? "Add planned dates to the phases to place them on the timeline." : "No phases yet."}</p>
+            )}
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 px-2">
+              <p className="text-[9px] text-slate-400">
+                {undated > 0 && `${undated} phase${undated === 1 ? "" : "s"} without dates. `}
+                Time elapsed is calendar time; work complete comes from the phases.
               </p>
+              {onOpenTimeline && (
+                <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+                  <GanttChart size={11} /> {canEdit ? "Edit timeline" : "Open timeline"}
+                </button>
+              )}
             </div>
           </div>
-        )}
-        <div className="flex items-center gap-2">
-          <Clock size={18} className={overdue ? "text-red-500" : "text-emerald-500"} />
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{overdue ? "Past the deadline" : "Time remaining"}</p>
-            <p className={`text-base font-bold ${overdue ? "text-red-600" : "text-emerald-600"}`}>
-              {deadline ? remaining : "No deadline"}
-              {deadline && <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({remainingDays} day{remainingDays === 1 ? "" : "s"})</span>}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><CalendarDays size={15} /></span>
-          {extensions}
-        </div>
-      </div>
-
-      {/* The track */}
-      <div className="px-4 pt-3">
-        <div className="relative h-7">
-          {todayPct !== null && (
-            <div className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: `${todayPct}%` }}>
-              <span className="text-[9px] font-bold text-slate-500">Today</span>
-            </div>
-          )}
-        </div>
-        <div className="relative h-2.5 rounded-full bg-slate-100">
-          {contractStart && deadline && (
-            <>
-              {extended && origEnd && <div className="absolute inset-y-0 rounded-r-full bg-violet-100" style={{ left: `${pos(origEnd)}%`, right: `${100 - pos(deadline)}%` }} title={`Extension: ${fmtDay(origEnd)} to ${fmtDay(deadline)}`} />}
-              <div className={`absolute inset-y-0 rounded-full ${overdue ? "bg-red-500" : "bg-emerald-500"}`} style={{ left: `${pos(contractStart)}%`, width: `${Math.max(0, pos(today > deadline ? deadline : today) - pos(contractStart))}%` }} />
-            </>
-          )}
-          {/* Phase start markers, by date */}
-          {dots.map((m) => (
-            <span key={m.id} className="absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded bg-white/90 ring-1" style={{ left: `${pos(m.start!)}%`, ["--tw-ring-color" as string]: phaseColor(m) }} title={`${m.name}: ${fmtDay(m.start)}`} />
-          ))}
-          {todayPct !== null && <span className="absolute -top-1.5 -bottom-1.5 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${todayPct}%` }} />}
-          {elapsedPct !== null && (
-            <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-bold text-emerald-700 shadow-sm" style={{ left: `${Math.max(6, Math.min(94, pos(contractStart!) + (pos(today > deadline! ? deadline! : today) - pos(contractStart!)) / 2))}%` }}>
-              {Math.round(elapsedPct)}% elapsed
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Phases in date order */}
-      <div className="px-2 pb-3 pt-4">
-        {dots.length ? (
-          <div className="overflow-x-auto">
-            <ol className="flex min-w-max items-start px-2">
-              {dots.map((m, i) => <Fragment key={m.id}><Dot m={m} first={i === 0} last={i === dots.length - 1} /></Fragment>)}
-            </ol>
-          </div>
-        ) : (
-          <p className="px-2 text-[11px] text-slate-400">{hasMs ? "Add planned dates to the phases to place them on the timeline." : "No phases yet."}</p>
-        )}
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2">
-          <p className="text-[10px] text-slate-400">
-            {focus.overdue.length > 0 && <span className="mr-2 inline-flex items-center gap-1 font-bold text-amber-600"><AlertTriangle size={11} /> {focus.overdue.length} past planned end</span>}
-            <span className="mr-2 font-bold text-blue-600">Work complete {workPct}%{hasMs ? ` (${focus.done} of ${focus.total} phases)` : ""}</span>
-            {undated > 0 && `${undated} phase${undated === 1 ? "" : "s"} without dates. `}
-            Time elapsed is calendar time; work complete comes from the phases.
-          </p>
-          {onOpenTimeline && (
-            <button type="button" onClick={onOpenTimeline} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
-              <GanttChart size={13} /> {canEdit ? "Edit timeline" : "Open timeline"}
-            </button>
-          )}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
@@ -310,20 +312,20 @@ function Dot({ m, first, last }: { m: PlannedMilestone; first: boolean; last: bo
   const point = isMilestonePoint(m);
   const done = m.state === "done";
   return (
-    <li className="relative flex w-28 shrink-0 flex-col items-center text-center">
-      <span className="mb-1 text-[10px] font-bold text-slate-600">{m.start ? fmtShort(m.start) : ""}</span>
+    <li className="relative flex w-20 shrink-0 flex-col items-center text-center">
+      <span className="mb-0.5 text-[9px] font-bold text-slate-500">{m.start ? fmtShort(m.start) : ""}</span>
       <div className="relative flex w-full items-center justify-center">
         {!first && <span className="absolute left-0 right-1/2 top-1/2 h-px bg-slate-200" />}
         {!last && <span className="absolute left-1/2 right-0 top-1/2 h-px bg-slate-200" />}
         <span
-          className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-[3px] bg-white"
+          className="relative z-10 flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white"
           style={{ borderColor: m.state === "overdue" ? "#f59e0b" : color, background: done ? color : "#fff" }}
           title={`${m.name}${m.start ? `: ${fmtDay(m.start)}` : ""}${m.end && !point ? ` to ${fmtDay(m.end)}` : ""}`}
         >
-          {point ? <Flag size={11} style={{ color: done ? "#fff" : color }} /> : done ? <Check size={11} className="text-white" strokeWidth={3} /> : <span className="h-1.5 w-1.5 rounded-full" style={{ background: m.state === "overdue" ? "#f59e0b" : color }} />}
+          {point ? <Flag size={8} style={{ color: done ? "#fff" : color }} /> : done ? <Check size={8} className="text-white" strokeWidth={3.5} /> : <span className="h-1 w-1 rounded-full" style={{ background: m.state === "overdue" ? "#f59e0b" : color }} />}
         </span>
       </div>
-      <span className="mt-1 line-clamp-2 px-1 text-[10px] font-semibold leading-tight text-slate-700">{m.name}</span>
+      <span className="mt-0.5 line-clamp-2 px-0.5 text-[9px] font-semibold leading-tight text-slate-600">{m.name}</span>
     </li>
   );
 }
