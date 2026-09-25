@@ -202,6 +202,24 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setRows((p) => relinkAll(p.some((r) => r.id === m.id) ? p.map((r) => (r.id === m.id ? m : r)) : [...p, m]));
     setEditing(null);
   };
+  /**
+   * CR 300 - bars dragged on the chart. A task tied to others starts where its links put it, so
+   * moving it changes the links' lag instead; a free task simply takes new dates. Either way the
+   * chain after it follows, the same as an edit in the table.
+   */
+  const shiftDate = (v: string | undefined, days: number) => { const d = parseDate(v); return d ? toIso(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days)) : v; };
+  const dragMove = (m: ApiMilestone, days: number) => {
+    const preds = predsOf(m);
+    if (preds.length) update(m.id, { predecessors: preds.map((p) => ({ ...p, lag: p.lag + days })), dependsOn: "", linkType: "FS", lagDays: 0 });
+    else if (m.durationValue) update(m.id, { plannedStart: shiftDate(m.plannedStart, days) });
+    else update(m.id, { plannedStart: shiftDate(m.plannedStart, days), plannedEnd: shiftDate(m.plannedEnd || m.plannedStart, days) });
+  };
+  const dragResize = (m: ApiMilestone, days: number) => {
+    const s = parseDate(m.plannedStart), e = parseDate(m.plannedEnd) || s;
+    if (!s || !e) return;
+    const end = new Date(e.getFullYear(), e.getMonth(), e.getDate() + days);
+    update(m.id, { plannedEnd: toIso(end < s ? s : end) });
+  };
   const remove = async (m: ApiMilestone) => {
     if (hasData(m) && !(await confirm({ title: `Remove "${m.name}"?`, message: "Its dates, progress and notes are removed from this timeline when you save.", confirmLabel: "Remove", danger: true }))) return;
     // A task that followed the removed one stands alone rather than hanging off a ghost.
@@ -1112,14 +1130,19 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               );
             })()}
           </div>
-          {/* CR 238 - the chart follows the table's grouping, folded categories left out. */}
+          {/* CR 238 - the chart follows the table's grouping. CR 300 - a folded phase keeps its summary bar. */}
           <GanttChart
             rows={groups.flatMap((g) => (collapsed.has(g.category) ? [] : g.items.map((s) => s.m)))}
-            sections={hasCategories ? groups.filter((g) => !collapsed.has(g.category)).map((g) => ({ category: g.category, items: g.items.map((s) => s.m) })) : undefined}
+            sections={hasCategories ? groups.map((g) => ({ category: g.category, items: g.items.map((s) => s.m), folded: collapsed.has(g.category), number: wbs.phase.get(g.category) })) : undefined}
             contractStart={contractStart}
             deadline={deadline}
             originalDeadline={project.endDate}
             zoom={zoom}
+            cpm={cpm}
+            showCritical={showCritical}
+            numbers={wbs.task}
+            onMove={canEdit ? dragMove : undefined}
+            onResize={canEdit ? dragResize : undefined}
           />
           <GanttLegend />
         </div>
