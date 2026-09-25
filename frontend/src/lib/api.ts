@@ -1110,8 +1110,13 @@ export interface ApiMilestone {
   // CR 294 - the schedule as a chain. `dependsOn` is another milestone's id; the dates of a linked
   // task are worked out from it, so moving an early task carries the rest along.
   dependsOn?: string;
-  linkType?: "FS" | "SS";  // after the other task finishes, or alongside its start
+  linkType?: "FS" | "SS" | "FF" | "SF";
   lagDays?: number;        // + waits that many days, - overlaps
+  /**
+   * CR 300 - every task this one waits on, each with its link type and lag. The single link above
+   * is the older form: it is read into this list and cleared when the task is next edited.
+   */
+  predecessors?: Array<{ id: string; type: "FS" | "SS" | "FF" | "SF"; lag: number }>;
   isMilestone?: boolean;   // a marker with no length: start and finish are the same day
   // The older chained schedule (read only).
   duration?: number;

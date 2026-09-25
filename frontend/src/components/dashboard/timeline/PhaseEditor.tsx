@@ -5,7 +5,8 @@ import { fetchEmployees, type ApiMilestone, type MilestoneStatus } from "../../.
 import {
   CUSTOM_KEY, MASTER_PHASES, SCHEDULE_CATEGORIES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
-import { lagLabel, overrunsDeadline, startFromLink, wouldCycle, type LinkType } from "../../../lib/scheduleLinks";
+import { LINK_TYPES, lagLabel, overrunsDeadline, predsOf, startFromLink, wouldCycle, type LinkType, type Pred } from "../../../lib/scheduleLinks";
+import { wbsNumbers } from "../../../lib/projectSchedule";
 
 /**
  * One phase / milestone, every field: name (a master-list phase or a custom one with its own
@@ -59,14 +60,27 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [m.isMilestone, m.plannedStart]);
 
-  /** A task that follows another takes its start from it, whenever the link or that task moves. */
-  const pred = others.find((o) => o.id === m.dependsOn);
+  /**
+   * CR 300 - what this task waits on: any number of other tasks, each with its link type and lag.
+   * It starts at the latest date any of them allows, worked out whenever a link changes.
+   */
+  const preds = predsOf(m);
+  const setPreds = (next: Pred[]) => set({ predecessors: next, dependsOn: "", linkType: "FS", lagDays: 0 });
+  const others2 = others.filter((o) => o.id !== m.id);
+  const numbers = useMemo(() => wbsNumbers([...others2, m], categories || []).task, [others2, m, categories]);
+  const nameOf = (id: string) => { const o = others2.find((x) => x.id === id); return o ? `${numbers.get(id) ? `${numbers.get(id)} ` : ""}${o.name || "Untitled"}` : "a removed task"; };
+  const linkKey = preds.map((p) => `${p.id}:${p.type}:${p.lag}`).join("|");
+  const predDates = preds.map((p) => { const o = others2.find((x) => x.id === p.id); return `${o?.plannedStart || ""}/${o?.plannedEnd || ""}`; }).join("|");
   useEffect(() => {
-    if (!pred) return;
-    const start = startFromLink(pred, (m.linkType as LinkType) || "FS", m.lagDays || 0);
-    if (start && toIso(start) !== m.plannedStart) set({ plannedStart: toIso(start) });
+    if (!preds.length) return;
+    const starts = preds
+      .map((p) => { const o = others2.find((x) => x.id === p.id); return o ? startFromLink(o, p.type, p.lag, m) : null; })
+      .filter((d): d is Date => !!d);
+    if (!starts.length) return;
+    const start = toIso(new Date(Math.max(...starts.map((d) => d.getTime()))));
+    if (start !== m.plannedStart) set({ plannedStart: start });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [m.dependsOn, m.linkType, m.lagDays, pred?.plannedStart, pred?.plannedEnd]);
+  }, [linkKey, predDates]);
 
   const overrun = overrunsDeadline(m, deadline);
 
@@ -168,42 +182,56 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
                 : ps && pe ? <>{fmtDay(ps)} to {fmtDay(pe)} · <b>{daysBetween(ps, pe)} days</b>{daysBetween(ps, pe) >= 30 ? ` (${humanGap(ps, pe)})` : ""}{daysBetween(ps, pe) === 0 ? " · a milestone (zero duration)" : ""}</>
                 : "Same start and end date makes it a milestone (a flag on the chart)."}
             </p>
-            {/* CR 294 - what this task waits on, and how. */}
+            {/* CR 300 - what this task waits on: any number of links, each with its type and lag. */}
             <div className="mt-3 border-t border-slate-200/70 pt-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] font-bold text-slate-700">Follows</p>
+                <p className="text-[11px] font-bold text-slate-700">Predecessors</p>
                 <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-slate-600">
                   <input type="checkbox" checked={!!m.isMilestone} onChange={(e) => set({ isMilestone: e.target.checked })} className="accent-emerald-500" />
                   This is a milestone (no duration)
                 </label>
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                <label className="sm:col-span-1">
-                  <span className={lbl}>Task</span>
-                  <select value={m.dependsOn || ""} onChange={(e) => set({ dependsOn: e.target.value })} className={inp}>
-                    <option value="">Nothing - it stands alone</option>
-                    {others.filter((o) => o.id !== m.id && !wouldCycle([...others, m], m.id, o.id)).map((o) => (
-                      <option key={o.id} value={o.id}>{o.name || "Untitled"}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span className={lbl}>Relation</span>
-                  <select value={m.linkType || "FS"} disabled={!m.dependsOn} onChange={(e) => set({ linkType: e.target.value as LinkType })} className={`${inp} disabled:opacity-50`}>
-                    <option value="FS">After it finishes</option>
-                    <option value="SS">Alongside its start</option>
-                  </select>
-                </label>
-                <label>
-                  <span className={lbl}>Wait / overlap (days)</span>
-                  <input type="number" step={1} value={m.lagDays ?? 0} disabled={!m.dependsOn} onChange={(e) => set({ lagDays: Math.round(Number(e.target.value) || 0) })} className={`${inp} disabled:opacity-50`} />
-                </label>
+              {preds.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  <div className="hidden grid-cols-[1fr_10.5rem_5rem_1.75rem] gap-2 sm:grid">
+                    <span className={lbl}>Task</span><span className={lbl}>Link</span><span className={lbl}>Lag (days)</span><span />
+                  </div>
+                  {preds.map((p, k) => (
+                    <div key={`${p.id}-${k}`} className="grid grid-cols-[1fr_10.5rem_5rem_1.75rem] items-center gap-2">
+                      <select
+                        value={p.id}
+                        onChange={(e) => setPreds(preds.map((q, j) => (j === k ? { ...q, id: e.target.value } : q)))}
+                        className={`${inp} mt-0`}
+                      >
+                        {others2
+                          .filter((o) => o.id === p.id || (!preds.some((q) => q.id === o.id) && !wouldCycle([...others2, m], m.id, o.id)))
+                          .map((o) => <option key={o.id} value={o.id}>{nameOf(o.id)}</option>)}
+                      </select>
+                      <select value={p.type} onChange={(e) => setPreds(preds.map((q, j) => (j === k ? { ...q, type: e.target.value as LinkType } : q)))} className={`${inp} mt-0`} title={LINK_TYPES.find((x) => x.type === p.type)?.label}>
+                        {LINK_TYPES.map((x) => <option key={x.type} value={x.type} title={x.short}>{x.type} - {x.label}</option>)}
+                      </select>
+                      <input type="number" step={1} value={p.lag} onChange={(e) => setPreds(preds.map((q, j) => (j === k ? { ...q, lag: Math.round(Number(e.target.value) || 0) } : q)))} className={`${inp} mt-0`} />
+                      <button type="button" onClick={() => setPreds(preds.filter((_, j) => j !== k))} title="Remove this link" className="flex h-8 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(() => {
+                const free = others2.filter((o) => !preds.some((q) => q.id === o.id) && !wouldCycle([...others2, m], m.id, o.id));
+                return free.length > 0 ? (
+                  <button type="button" onClick={() => setPreds([...preds, { id: free[free.length - 1].id, type: "FS", lag: 0 }])} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+                    <Plus size={12} /> Add predecessor
+                  </button>
+                ) : null;
+              })()}
+              <div className="mt-1.5 space-y-0.5 text-[11px] text-slate-500">
+                {preds.length
+                  ? <>
+                      {preds.map((p, k) => <p key={k}>This task <b>{lagLabel(p.type, p.lag, nameOf(p.id))}</b>.</p>)}
+                      <p>{preds.length > 1 ? "It starts at the latest date these allow. " : ""}Move {preds.length > 1 ? "any of them" : "that task"} and this one follows.</p>
+                    </>
+                  : <p>Tie this task to others and its start is worked out for you: FS starts after, SS alongside, FF finishes with, SF finishes when the other starts. A negative lag overlaps them.</p>}
               </div>
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                {pred
-                  ? <>This task <b>{lagLabel((m.linkType as LinkType) || "FS", m.lagDays || 0, pred.name || "the task above")}</b>. Move that task and this one follows.</>
-                  : "Tie this task to another one and its start is worked out for you. A negative number overlaps them."}
-              </p>
               {overrun > 0 && (
                 <p className="mt-1.5 rounded-lg bg-red-50 px-2 py-1.5 text-[11px] font-bold text-red-600">
                   This finishes {overrun} day{overrun === 1 ? "" : "s"} past the contract deadline ({fmtDay(parseDate(deadline))}). Extend the contract time or shorten the work.

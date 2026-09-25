@@ -95,6 +95,27 @@ export function groupByCategory<T extends { m: ApiMilestone }>(list: T[], catego
   return order.map((category) => ({ category, items: map.get(category)! })).filter((g) => keepEmpty || g.items.length > 0);
 }
 
+/**
+ * CR 300 - the schedule's numbering, a Work Breakdown Structure: each phase (category) takes the
+ * next whole number and its tasks and milestones count under it - 1, 1.1, 1.2, 2, 2.1 - in the
+ * order the table shows them, empty phases included so a phase keeps its number while it is being
+ * filled. A schedule without phases numbers its tasks 1, 2, 3.
+ */
+export function wbsNumbers(rows: ApiMilestone[], categories: string[] = []): { task: Map<string, string>; phase: Map<string, string> } {
+  const task = new Map<string, string>(), phase = new Map<string, string>();
+  const phased = rows.some((m) => (m.category || "").trim()) || categories.some((c) => c.trim());
+  if (!phased) {
+    rows.forEach((m, i) => task.set(m.id, String(i + 1)));
+    return { task, phase };
+  }
+  groupByCategory(rows.map((m) => ({ m })), categories, true).forEach((g, gi) => {
+    const n = String(gi + 1);
+    phase.set(g.category, n);
+    g.items.forEach((it, k) => task.set(it.m.id, `${n}.${k + 1}`));
+  });
+  return { task, phase };
+}
+
 /** A schedule's categories in order: the saved list, then any a task names that the list lacks. */
 export function categoryList(saved: string[] | undefined, rows: ApiMilestone[]): string[] {
   const out: string[] = [];

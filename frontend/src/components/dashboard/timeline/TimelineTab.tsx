@@ -21,7 +21,7 @@ import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
-import { dependentsOf, lagLabel, overrunsDeadline, relinkAll, suggestNext, type LinkType } from "../../../lib/scheduleLinks";
+import { dependentsOf, lagLabel, overrunsDeadline, predsOf, relinkAll, suggestNext, withPreds } from "../../../lib/scheduleLinks";
 import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -183,7 +183,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
      * task hanging off it is worked out again, and so on down the line. Actuals, status and the
      * rest do not move anything, so the chain is only walked when it has to be.
      */
-    const movesTheChain = ["plannedStart", "plannedEnd", "durationValue", "durationUnit", "dependsOn", "linkType", "lagDays", "isMilestone"]
+    const movesTheChain = ["plannedStart", "plannedEnd", "durationValue", "durationUnit", "dependsOn", "linkType", "lagDays", "predecessors", "isMilestone"]
       .some((k) => k in patch);
     if (!movesTheChain) return edited;
     const next = relinkAll(edited);
@@ -205,7 +205,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const remove = async (m: ApiMilestone) => {
     if (hasData(m) && !(await confirm({ title: `Remove "${m.name}"?`, message: "Its dates, progress and notes are removed from this timeline when you save.", confirmLabel: "Remove", danger: true }))) return;
     // A task that followed the removed one stands alone rather than hanging off a ghost.
-    setRows((p) => relinkAll(p.filter((r) => r.id !== m.id).map((r) => (r.dependsOn === m.id ? { ...r, dependsOn: "" } : r))));
+    setRows((p) => relinkAll(p.filter((r) => r.id !== m.id).map((r) => (predsOf(r).some((q) => q.id === m.id) ? withPreds(r, predsOf(r).filter((q) => q.id !== m.id)) : r))));
   };
   const move = (from: number, to: number) => setRows((p) => {
     if (to < 0 || to >= p.length || from === to) return p;
@@ -888,11 +888,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                                 ) : null}
                                 {/* CR 294 - a chained task says what it waits on, so a date that moved on its own makes sense. */}
                                 {(() => {
-                                  const pred = m.dependsOn ? rows.find((x) => x.id === m.dependsOn) : null;
-                                  if (!pred) return null;
+                                  const links = predsOf(m).map((q) => ({ q, t: rows.find((x) => x.id === q.id) })).filter((x) => x.t);
+                                  if (!links.length) return null;
                                   return (
-                                    <span className="mt-0.5 flex max-w-[16rem] items-center gap-1 truncate text-[10px] font-bold text-indigo-500" title={`This task ${lagLabel((m.linkType as LinkType) || "FS", m.lagDays || 0, pred.name)}.`}>
-                                      <Link2 size={10} className="shrink-0" /> follows {pred.name}
+                                    <span className="mt-0.5 flex max-w-[16rem] items-center gap-1 truncate text-[10px] font-bold text-indigo-500" title={links.map((x) => `This task ${lagLabel(x.q.type, x.q.lag, x.t!.name)}.`).join(String.fromCharCode(10))}>
+                                      <Link2 size={10} className="shrink-0" /> follows {links.map((x) => x.t!.name).join(", ")}
                                     </span>
                                   );
                                 })()}

@@ -17,7 +17,12 @@ const UNITS = new Set(["days", "weeks", "months"]);
 const STATUSES = new Set(["not_started", "in_progress", "completed", "on_hold", "delayed", "cancelled"]);
 const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
-function cleanMilestones(input: unknown): MilestoneRecord[] {
+/**
+ * `known` lists the other tasks in the schedule: a single task saved on its own is checked against
+ * them, so its links to the rest of the schedule survive (CR 300 - they were being dropped, since
+ * the one row was all the check could see).
+ */
+function cleanMilestones(input: unknown, known: string[] = []): MilestoneRecord[] {
   if (!Array.isArray(input)) return [];
   // CR 240 - real schedules run to hundreds of tasks.
   return input.slice(0, 2000).map((raw) => {
@@ -43,20 +48,37 @@ function cleanMilestones(input: unknown): MilestoneRecord[] {
       category: str(m.category, 80).trim(),
       // CR 294 - the chain: what this task follows, how, and by how much.
       dependsOn: str(m.dependsOn, 40),
-      linkType: (String(m.linkType) === "SS" ? "SS" : "FS") as MilestoneRecord["linkType"],
+      linkType: (["SS", "FF", "SF"].includes(String(m.linkType)) ? String(m.linkType) : "FS") as MilestoneRecord["linkType"],
       lagDays: Math.max(-3650, Math.min(3650, Math.round(Number(m.lagDays) || 0))),
       isMilestone: m.isMilestone === true,
+      // CR 300 - the links, each checked; the older single link is read into the list.
+      predecessors: (() => {
+        const list = Array.isArray(m.predecessors) ? (m.predecessors as Array<Record<string, unknown>>) : [];
+        const out = list.slice(0, 50).map((p) => ({
+          id: str(p?.id, 40),
+          type: (["SS", "FF", "SF"].includes(String(p?.type)) ? String(p?.type) : "FS") as "FS" | "SS" | "FF" | "SF",
+          lag: Math.max(-3650, Math.min(3650, Math.round(Number(p?.lag) || 0))),
+        })).filter((p) => p.id);
+        if (!out.length && m.dependsOn) {
+          out.push({ id: str(m.dependsOn, 40), type: (["SS", "FF", "SF"].includes(String(m.linkType)) ? String(m.linkType) : "FS") as "FS" | "SS" | "FF" | "SF", lag: Math.round(Number(m.lagDays) || 0) });
+        }
+        return out;
+      })(),
       duration: 0, unit: "days" as const, doneAt: "", doneBy: "",
     };
-  }).map((m, _i, all) => ({
+  }).map((m, _i, all) => {
+    const exists = (tid: string) => known.includes(tid) || all.some((x) => x.id === tid);
+    return {
     ...m,
     // The first planned dates become the baseline and are kept from then on.
     baselineStart: m.baselineStart || m.plannedStart,
     baselineEnd: m.baselineEnd || m.plannedEnd,
     // A link only counts if the task it names is really in this schedule, and nothing follows
     // itself: a dangling or self-referential link would have the chain chasing its own tail.
-    dependsOn: m.dependsOn && m.dependsOn !== m.id && all.some((x) => x.id === m.dependsOn) ? m.dependsOn : "",
-  }));
+    dependsOn: m.dependsOn && m.dependsOn !== m.id && exists(m.dependsOn) ? m.dependsOn : "",
+    predecessors: m.predecessors.filter((p, k, arr) => p.id !== m.id && exists(p.id) && arr.findIndex((q) => q.id === p.id) === k),
+    };
+  });
 }
 
 function cleanCategories(input: unknown): string[] {
@@ -155,7 +177,7 @@ router.put("/milestones/:mid", async (req: AuthedRequest, res: Response, next: N
     const id = schedId(req);
     const target = scheduleOf(project, id);
     if (!target) return res.status(404).json(noSchedule);
-    const [row] = cleanMilestones([{ ...(req.body?.milestone || {}), id: req.params.mid }]);
+    const [row] = cleanMilestones([{ ...(req.body?.milestone || {}), id: req.params.mid }], target.milestones.map((m) => m.id));
     if (!row) return res.status(400).json({ error: "Nothing to save." });
     const current = target.milestones;
     const at = current.findIndex((m) => m.id === row.id);
