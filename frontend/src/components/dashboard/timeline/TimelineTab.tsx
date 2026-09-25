@@ -14,14 +14,14 @@ import { useDialogs } from "../../../lib/useDialogs";
 import {
   CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
   newMilestoneId, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, defaultCategoryFor, groupByCategory,
-  UNCATEGORISED, categoryList, type DurationUnit,
+  UNCATEGORISED, categoryList, wbsNumbers, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import PhaseEditor from "./PhaseEditor";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
-import { dependentsOf, lagLabel, overrunsDeadline, predsOf, relinkAll, suggestNext, withPreds } from "../../../lib/scheduleLinks";
+import { criticalPath, dependentsOf, overrunsDeadline, parsePreds, predLabel, predsOf, relinkAll, suggestNext, withPreds, wouldCycle } from "../../../lib/scheduleLinks";
 import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -584,10 +584,59 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // schedule has any; a flat list otherwise.
   const hasCategories = catList.length > 0;
   const groups = hasCategories ? groupByCategory(shown, catList, view === "all") : [{ category: "", items: shown }];
-  // CR 288 - the # column runs 1, 2, 3 down the table as it is shown. `index` is where the row
-  // sits in the underlying list (the move buttons need that) and jumps about once grouped.
-  const rowNumber = new Map<string, number>();
-  groups.forEach((g) => g.items.forEach(({ m }) => rowNumber.set(m.id, rowNumber.size + 1)));
+  /**
+   * CR 300 - the schedule's structure, as a scheduler reads it: each phase numbered 1, 2, 3 with
+   * its tasks and milestones counting under it (1.1, 1.2), worked out from the full list so a
+   * filtered view keeps every row's number; and the critical path, the tasks with no float.
+   */
+  const wbs = useMemo(() => wbsNumbers(rows, catList), [rows, catList]);
+  const cpm = useMemo(() => criticalPath(rows), [rows]);
+  const idOfNumber = (n: string) => { for (const [id, num] of wbs.task) if (num === n) return id; return undefined; };
+  const [showCritical, setShowCritical] = useState(() => { try { return localStorage.getItem("gt-schedule-critical") !== "0"; } catch { return true; } });
+  const toggleCritical = () => setShowCritical((v) => { try { localStorage.setItem("gt-schedule-critical", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
+  /** A phase's figures, rolled up from its tasks. */
+  const phaseRollup = (items: ApiMilestone[], category: string) => {
+    const starts = items.map((m) => parseDate(m.plannedStart)).filter((d): d is Date => !!d);
+    const ends = items.map((m) => parseDate(m.plannedEnd) || parseDate(m.plannedStart)).filter((d): d is Date => !!d);
+    const from = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
+    const to = ends.length ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
+    const aStarts = items.map((m) => parseDate(m.actualStart)).filter((d): d is Date => !!d);
+    const allDone = items.length > 0 && items.every((m) => parseDate(m.actualEnd));
+    const aEnds = allDone ? items.map((m) => parseDate(m.actualEnd)!) : [];
+    const floats = items.map((m) => cpm.float.get(m.id)).filter((f): f is number => f !== undefined);
+    const live = items.filter((m) => m.status !== "cancelled");
+    const done = live.filter((m) => m.status === "completed").length;
+    const started = live.some((m) => m.status === "in_progress" || m.status === "completed" || phasePercent(m) > 0);
+    // Links into the phase from elsewhere, e.g. Procurement starting after 1.3 Design Approval.
+    const inside = new Set(items.map((m) => m.id));
+    const incoming: string[] = [];
+    for (const m of items) for (const q of predsOf(m)) {
+      if (inside.has(q.id)) continue;
+      const lab = wbs.task.get(q.id);
+      if (lab && !incoming.includes(lab)) incoming.push(lab);
+    }
+    return {
+      number: wbs.phase.get(category) || "",
+      from, to,
+      days: from && to ? Math.max(0, daysBetween(from, to)) : null,
+      actualFrom: aStarts.length ? new Date(Math.min(...aStarts.map((d) => d.getTime()))) : null,
+      actualTo: aEnds.length ? new Date(Math.max(...aEnds.map((d) => d.getTime()))) : null,
+      float: floats.length ? Math.min(...floats) : null,
+      pct: items.length ? Math.round(items.reduce((a, m) => a + phasePercent(m), 0) / items.length) : 0,
+      status: (!live.length ? "not_started" : done === live.length ? "completed" : started ? "in_progress" : "not_started") as MilestoneStatus,
+      late: items.filter((m) => m.status !== "completed" && m.status !== "cancelled" && delayDays(m, today) > 0).length,
+      incoming,
+    };
+  };
+  /** Type the Predecessors cell: "1.2, 2.1SS+3d". Unknown numbers and loops are refused, not guessed. */
+  const setPredText = (m: ApiMilestone, text: string): boolean => {
+    const { preds, unknown } = parsePreds(text, idOfNumber);
+    if (unknown.length) { toast(`No task numbered ${unknown.join(", ")}. Use the numbers in the # column, e.g. 1.2 or 2.1SS+3d.`, "error"); return false; }
+    const loop = preds.find((q) => q.id === m.id || wouldCycle(rows, m.id, q.id));
+    if (loop) { toast(`${wbs.task.get(loop.id) || "That task"} already waits on this one, so it cannot come before it.`, "error"); return false; }
+    update(m.id, withPreds(m, preds));
+    return true;
+  };
   // The header bar is the project's: it follows the master schedule only.
   const previewProject: ApiProject = sub ? project : { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
@@ -693,6 +742,17 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               <History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}
             </button>
 
+            {/* CR 300 - the critical path, the tasks with no float, marked in red; off for a plain view. */}
+            <button
+              type="button"
+              onClick={toggleCritical}
+              aria-pressed={showCritical}
+              title={showCritical ? "Critical path shown in red. Click to hide it." : "Show the critical path: the tasks with no float, where any delay moves the project finish."}
+              className={`${btn} ${showCritical ? "!border-red-200 !bg-red-50 !text-red-600" : ""}`}
+            >
+              <span className={`h-2 w-3.5 rounded-sm ${showCritical ? "bg-red-500" : "bg-slate-300"}`} /> Critical path{showCritical && cpm.critical.size ? ` (${cpm.critical.size})` : ""}
+            </button>
+
             {/* CR 284 - Preview is the one people reach for on every pass over a schedule, so it sits
                 in the bar itself rather than two clicks inside Export. Print stays in the menu; it
                 opens the same preview, with the printer a click away. */}
@@ -793,15 +853,18 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </div>
             ) : (
               <div className="max-h-[72vh] overflow-auto">
-                <table className="w-full min-w-[980px] text-xs">
+                <table className="w-full min-w-[1180px] text-xs">
                   <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 shadow-[0_1px_0_#e2e8f0]">
                     <tr>
                       <th rowSpan={2} className="w-8" />
                       <th rowSpan={2} className="px-2 py-2 text-left">#</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left">Phase / milestone</th>
+                      <th rowSpan={2} className="px-2 py-2 text-left">Task name</th>
+                      <th rowSpan={2} className="px-2 py-2 text-left">Type</th>
                       <th colSpan={2} className="border-l border-slate-100 px-2 pt-2 text-center">Planned</th>
                       <th colSpan={2} className="border-l border-sky-100 bg-sky-50 px-2 pt-2 text-center text-sky-800" title="Only entered when it differs from the plan">Actual</th>
                       <th rowSpan={2} className="border-l border-slate-100 px-2 py-2 text-right">Duration</th>
+                      <th rowSpan={2} className="px-2 py-2 text-left" title="The tasks this one waits on, by number. 1.2 means it starts after 1.2 finishes; add SS, FF or SF for the other link types and +3d or -2d for a lag.">Predecessors</th>
+                      <th rowSpan={2} className="px-2 py-2 text-right" title="Float: how many days a task can slip before the project finish moves. 0 is the critical path.">Float</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">Status</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">% complete</th>
                       <th rowSpan={2} className="px-2 py-2 text-center" title="The project manager's note on this task. Internal, never printed.">Remark</th>
@@ -817,43 +880,56 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                   <tbody>
                     {groups.map((g) => {
                       const folded = collapsed.has(g.category);
-                      const starts = g.items.map(({ m }) => parseDate(m.plannedStart)).filter((d): d is Date => !!d);
-                      const ends = g.items.map(({ m }) => parseDate(m.plannedEnd)).filter((d): d is Date => !!d);
-                      const gFrom = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
-                      const gTo = ends.length ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
-                      const gPct = g.items.length ? Math.round(g.items.reduce((s2, { m }) => s2 + phasePercent(m), 0) / g.items.length) : 0;
-                      const gLate = g.items.filter(({ m }) => m.status !== "completed" && m.status !== "cancelled" && delayDays(m, today) > 0).length;
+                      const ph = phaseRollup(g.items.map(({ m }) => m), g.category);
+                      const phCritical = showCritical && ph.float !== null && ph.float <= 0;
                       return (
                       <Fragment key={g.category || "all"}>
+                        {/* CR 300 - a phase is a row of its own: numbered, typed, with its figures rolled up from its tasks. */}
                         {g.category && (
-                          <tr className="border-t border-slate-200 bg-slate-100/80">
-                            <td colSpan={12} className="px-2 py-1.5">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button type="button" onClick={() => toggleCategory(g.category)} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-left">
-                                  {folded ? <ChevronRight size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
-                                  <span className="text-[11px] font-bold uppercase tracking-widest text-slate-700">{g.category}</span>
-                                  <span className="text-[10px] font-bold text-slate-400">{g.items.length} milestone{g.items.length === 1 ? "" : "s"}</span>
-                                  {gFrom && gTo && <span className="text-[10px] text-slate-500">{fmtDay(gFrom)} to {fmtDay(gTo)}</span>}
-                                  {g.items.length > 0 && <span className="text-[10px] font-bold text-slate-500">{gPct}% complete</span>}
-                                  {gLate > 0 && <span className="text-[10px] font-bold text-red-600">{gLate} late</span>}
-                                </button>
-                                {canEdit && (
-                                  <span className="ml-2 flex shrink-0 items-center gap-0.5">
-                                    <button type="button" onClick={() => addInCategory(g.category)} title={`Add a milestone to ${g.category}`} className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[10px] font-bold text-blue-600 shadow-sm ring-1 ring-slate-200 hover:bg-blue-50"><Plus size={11} /> Milestone</button>
-                                    <button type="button" onClick={() => void renameCategory(g.category)} title="Rename this category" className="rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><Pencil size={12} /></button>
-                                    {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, -1)} disabled={catList.indexOf(g.category) <= 0} title="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>}
-                                    {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, 1)} disabled={catList.indexOf(g.category) >= catList.length - 1} title="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>}
-                                    <button type="button" onClick={() => void deleteCategory(g.category)} title="Delete this category" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
-                                  </span>
-                                )}
+                          <tr className={`border-t border-slate-200 bg-blue-50/60 ${phCritical ? "shadow-[inset_3px_0_0_#ef4444]" : ""}`}>
+                            <td className="pl-2" />
+                            <td className={`${cell} font-bold text-slate-800`}>{ph.number}</td>
+                            <td className={`${cell} min-w-[13rem]`}>
+                              <button type="button" onClick={() => toggleCategory(g.category)} className="flex items-center gap-1.5 text-left" title={folded ? "Show its tasks" : "Fold its tasks away"}>
+                                {folded ? <ChevronRight size={14} className="shrink-0 text-blue-600" /> : <ChevronDown size={14} className="shrink-0 text-blue-600" />}
+                                <span className="font-bold text-slate-900">{g.category}</span>
+                                <span className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>
+                                {ph.late > 0 && <span className="rounded-full bg-red-50 px-1.5 text-[9px] font-bold text-red-600">{ph.late} late</span>}
+                              </button>
+                            </td>
+                            <td className={cell}><span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">Phase</span></td>
+                            <td className={`${cell} border-l border-slate-50 font-bold text-slate-800`}>{ph.from ? fmtDay(ph.from) : "-"}</td>
+                            <td className={`${cell} font-bold text-slate-800`}>{ph.to ? fmtDay(ph.to) : "-"}</td>
+                            <td className={`${cell} border-l border-sky-100 bg-sky-50/40 text-slate-600`}>{ph.actualFrom ? fmtDay(ph.actualFrom) : ""}</td>
+                            <td className={`${cell} bg-sky-50/40 text-slate-600`}>{ph.actualTo ? fmtDay(ph.actualTo) : ""}</td>
+                            <td className={`${cell} border-l border-slate-50 text-right font-bold tabular-nums text-slate-800`}>{ph.days !== null ? `${ph.days} days` : "-"}</td>
+                            <td className={`${cell} text-[11px] text-slate-500`} title="Links into this phase from the tasks of other phases">{ph.incoming.length ? ph.incoming.join(", ") : "-"}</td>
+                            <td className={`${cell} text-right font-bold tabular-nums ${ph.float === null ? "text-slate-300" : ph.float <= 0 ? "text-red-600" : "text-emerald-600"}`}>{ph.float === null ? "-" : ph.float}</td>
+                            <td className={cell}><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${STATUS_META[ph.status].chip}`}>{STATUS_META[ph.status].label}</span></td>
+                            <td className={cell}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-12 text-right text-xs font-bold tabular-nums text-slate-700">{ph.pct}%</span>
+                                <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${ph.pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${ph.pct}%` }} /></span>
                               </div>
+                            </td>
+                            <td className={cell} />
+                            <td className={`${cell} text-right`}>
+                              {canEdit && (
+                                <div className="inline-flex items-center gap-0.5">
+                                  <button type="button" onClick={() => addInCategory(g.category)} title={`Add a task or milestone to ${g.category}`} className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 text-[10px] font-bold text-blue-600 shadow-sm ring-1 ring-slate-200 hover:bg-blue-50"><Plus size={11} /> Task</button>
+                                  <button type="button" onClick={() => void renameCategory(g.category)} title="Rename this phase" className="rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><Pencil size={12} /></button>
+                                  {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, -1)} disabled={catList.indexOf(g.category) <= 0} title="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>}
+                                  {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, 1)} disabled={catList.indexOf(g.category) >= catList.length - 1} title="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>}
+                                  <button type="button" onClick={() => void deleteCategory(g.category)} title="Delete this phase" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
                         {g.category && !folded && g.items.length === 0 && (
                           <tr className="border-t border-slate-100">
-                            <td colSpan={12} className="px-10 py-3 text-[11px] italic text-slate-400">
-                              No milestones in {g.category} yet.{canEdit && <> <button type="button" onClick={() => addInCategory(g.category)} className="font-bold not-italic text-blue-600 hover:underline">Add one</button>, or tick items on the left with "Add to category" set to {g.category}.</>}
+                            <td colSpan={15} className="px-10 py-3 text-[11px] italic text-slate-400">
+                              No tasks in {g.category} yet.{canEdit && <> <button type="button" onClick={() => addInCategory(g.category)} className="font-bold not-italic text-blue-600 hover:underline">Add one</button>, or tick items on the left with "Add to category" set to {g.category}.</>}
                             </td>
                           </tr>
                         )}
@@ -863,8 +939,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       const late = delayDays(m, today);
                       const slip = startSlip(m);
                       const moved = (m.baselineStart && m.baselineStart !== m.plannedStart) || (m.baselineEnd && m.baselineEnd !== m.plannedEnd);
-                      const color = phaseColor(m, index);
                       const pct = phasePercent(m);
+                      const isMs = !!m.isMilestone || isMilestonePoint(m);
+                      const fl = cpm.float.get(m.id);
+                      const crit = showCritical && fl !== undefined && fl <= 0;
+                      const predText = predsOf(m).map((q) => { const n = wbs.task.get(q.id); return n ? predLabel(q, n) : ""; }).filter(Boolean).join(", ");
                       return (
                         <tr
                           key={m.id}
@@ -874,37 +953,41 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
                           onDrop={(e) => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current, index); dragFrom.current = null; setDragOver(null); }}
                           onDragEnd={() => { dragFrom.current = null; setDragOver(null); }}
-                          className={`border-t border-slate-100 ${dragOver === index ? "bg-blue-50" : "hover:bg-slate-50/60"}`}
+                          className={`border-t border-slate-100 ${dragOver === index ? "bg-blue-50" : crit ? "bg-red-50/30 hover:bg-red-50/60" : "hover:bg-slate-50/60"} ${crit ? "shadow-[inset_3px_0_0_#ef4444]" : ""}`}
                         >
                           <td className="pl-2 text-slate-300">{canEdit && view === "all" && <GripVertical size={14} className="cursor-grab" />}</td>
-                          <td className={`${cell} text-slate-400`}>{rowNumber.get(m.id) ?? index + 1}</td>
+                          <td className={`${cell} tabular-nums text-slate-500`}>{wbs.task.get(m.id) || index + 1}</td>
                           <td className={`${cell} min-w-[13rem]`}>
-                            <button type="button" onClick={() => setEditing(m)} className="flex items-start gap-2 text-left">
-                              {isMilestonePoint(m) ? <Flag size={13} className="mt-0.5 shrink-0" style={{ color }} /> : <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />}
+                            <button type="button" onClick={() => setEditing(m)} className={`flex items-start gap-2 text-left ${g.category ? "pl-4" : ""}`}>
+                              {isMs
+                                ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rotate-45 bg-red-500" title="Milestone" />
+                                : <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-sm ${crit ? "bg-red-500" : "bg-emerald-500"}`} />}
                               <span>
                                 <span className="block font-semibold text-slate-800 hover:text-primary">{m.name}</span>
                                 {m.responsible?.length ? (
                                   <span className="block max-w-[16rem] truncate text-[10px] text-slate-400">{m.responsible.join(", ")}</span>
                                 ) : null}
-                                {/* CR 294 - a chained task says what it waits on, so a date that moved on its own makes sense. */}
-                                {(() => {
-                                  const links = predsOf(m).map((q) => ({ q, t: rows.find((x) => x.id === q.id) })).filter((x) => x.t);
-                                  if (!links.length) return null;
-                                  return (
-                                    <span className="mt-0.5 flex max-w-[16rem] items-center gap-1 truncate text-[10px] font-bold text-indigo-500" title={links.map((x) => `This task ${lagLabel(x.q.type, x.q.lag, x.t!.name)}.`).join(String.fromCharCode(10))}>
-                                      <Link2 size={10} className="shrink-0" /> follows {links.map((x) => x.t!.name).join(", ")}
-                                    </span>
-                                  );
-                                })()}
                               </span>
                             </button>
+                          </td>
+                          <td className={cell}>
+                            {/* CR 300 - Task or Milestone; a milestone has no length, so its end follows its start. */}
+                            <select
+                              disabled={!canEdit}
+                              value={isMs ? "milestone" : "task"}
+                              onChange={(e) => update(m.id, e.target.value === "milestone" ? { isMilestone: true } : { isMilestone: false })}
+                              className={`rounded-md border px-1 py-0.5 text-[10px] font-bold ${isMs ? "border-red-200 bg-red-50 text-red-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+                            >
+                              <option value="task">Task</option>
+                              <option value="milestone">Milestone</option>
+                            </select>
                           </td>
                           <td className={`${cell} border-l border-slate-50`}>
                             <input type="date" disabled={!canEdit} value={m.plannedStart || ""} onChange={(e) => update(m.id, { plannedStart: e.target.value })} className={dateInp} />
                             {moved && m.baselineStart !== m.plannedStart && <span className="block px-1 text-[10px] text-slate-400" title="Baseline start">was {fmtDay(m.baselineStart)}</span>}
                           </td>
                           <td className={cell}>
-                            <input type="date" disabled={!canEdit} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={`${dateInp} ${overrunsDeadline(m, deadline) > 0 ? "!text-red-600 font-bold" : ""}`} title={overrunsDeadline(m, deadline) > 0 ? `${overrunsDeadline(m, deadline)} days past the contract deadline` : undefined} />
+                            <input type="date" disabled={!canEdit || isMs} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={`${dateInp} ${overrunsDeadline(m, deadline) > 0 ? "!text-red-600 font-bold" : ""}`} title={isMs ? "A milestone ends the day it starts" : overrunsDeadline(m, deadline) > 0 ? `${overrunsDeadline(m, deadline)} days past the contract deadline` : undefined} />
                             {moved && m.baselineEnd !== m.plannedEnd && <span className="block px-1 text-[10px] text-slate-400" title="Baseline end">was {fmtDay(m.baselineEnd)}</span>}
                           </td>
                           <td className={`${cell} border-l border-sky-100 bg-sky-50/50`}>
@@ -927,8 +1010,23 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                             })()}
                           </td>
                           <td className={cell}>
+                            <input
+                              key={`${m.id}-${predText}`}
+                              disabled={!canEdit}
+                              defaultValue={predText}
+                              placeholder="-"
+                              onBlur={(e) => { if (e.target.value.trim() !== predText && !setPredText(m, e.target.value)) e.target.value = predText; }}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { (e.target as HTMLInputElement).value = predText; (e.target as HTMLInputElement).blur(); } }}
+                              title="The tasks this one waits on, by number: 1.2, 2.1SS, 3.3FS+5d, 1.3FF-2d"
+                              className="w-24 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] tabular-nums text-slate-700 hover:border-slate-200 focus:border-primary focus:bg-white focus:outline-none disabled:hover:border-transparent"
+                            />
+                          </td>
+                          <td className={`${cell} text-right font-bold tabular-nums ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-emerald-600"}`} title={fl === undefined ? "No dates yet" : fl <= 0 ? "Critical: any delay here moves the project finish" : `Can slip ${fl} day${fl === 1 ? "" : "s"} before the project finish moves`}>
+                            {fl === undefined ? "-" : fl}
+                          </td>
+                          <td className={cell}>
                             <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, statusPatch(m, e.target.value as MilestoneStatus))} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
-                              {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+                              {STATUS_ORDER.map((s2) => <option key={s2} value={s2}>{STATUS_META[s2].label}</option>)}
                             </select>
                           </td>
                           <td className={cell}>
@@ -971,7 +1069,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       </Fragment>
                       );
                     })}
-                    {shown.length === 0 && <tr><td colSpan={12} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
+                    {shown.length === 0 && <tr><td colSpan={15} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
                   </tbody>
                 </table>
               </div>
