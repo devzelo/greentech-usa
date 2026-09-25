@@ -201,7 +201,7 @@ router.post("/signatures", signatureUpload.single("file"), async (req: AuthedReq
     }
     const url = `/${req.file.path.replace(/\\/g, "/")}`;
     const makeDefault = !(user.signatures || []).some((s) => s.isDefault);
-    user.signatures.push({ label: String(req.body.label || ""), url, isDefault: makeDefault } as (typeof user.signatures)[number]);
+    user.signatures.push({ label: String(req.body.label || "").trim().slice(0, 120), url, isDefault: makeDefault } as (typeof user.signatures)[number]);
     if (makeDefault) user.signatureUrl = url;
     await user.save();
     res.status(201).json(publicSignatures(user));
@@ -214,7 +214,7 @@ router.patch("/signatures/:sid", async (req: AuthedRequest, res: Response, next:
     if (!user) return res.status(404).json({ error: "User not found." });
     const sig = (user.signatures || []).find((s) => String(s._id) === req.params.sid);
     if (!sig) return res.status(404).json({ error: "Signature not found." });
-    if (typeof req.body.label === "string") sig.label = req.body.label;
+    if (typeof req.body.label === "string") sig.label = req.body.label.trim().slice(0, 120);
     if (req.body.isDefault === true) {
       for (const s of user.signatures) s.isDefault = false;
       sig.isDefault = true;
