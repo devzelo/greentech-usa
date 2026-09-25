@@ -22,14 +22,16 @@ export default function ToolMenu({ label, icon, tone = "plain", align = "right",
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     // It stays by its button: a scroll of the page (not of the menu itself) closes it.
     const scroll = (e: Event) => { if (!menu.current?.contains(e.target as Node)) setOpen(false); };
+    const resize = () => setOpen(false);
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
     window.addEventListener("scroll", scroll, true);
-    window.addEventListener("resize", () => setOpen(false), { once: true });
+    window.addEventListener("resize", resize);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", esc);
       window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", resize);
     };
   }, [open, align]);
   // "solid" is a button in its own right (the blue Add), "primary" the caret half of a split button,
