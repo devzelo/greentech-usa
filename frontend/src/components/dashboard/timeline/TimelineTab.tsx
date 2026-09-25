@@ -387,7 +387,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: outRows, categories: outCats, version: label, scheduleName, remarks: printRemarks,
-    zoom, actual: printActual, paper, overview: printOverview,
+    zoom, actual: printActual, paper, overview: printOverview, critical: showCritical,
   });
   const versionLabel = subject
     ? `${entryCode(subject)} · ${entryTitle(subject)}`
