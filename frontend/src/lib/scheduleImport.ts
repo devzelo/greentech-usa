@@ -1,14 +1,19 @@
 import type { ApiMilestone, MilestoneStatus } from "./api";
-import { CUSTOM_KEY, addDuration, newMilestoneId, parseDate, toIso } from "./projectSchedule";
+import { CUSTOM_KEY, addDuration, newMilestoneId, parseDate, toIso, wbsNumbers } from "./projectSchedule";
+import { parsePreds } from "./scheduleLinks";
 
 /**
  * CR 239: schedules are usually drafted in Excel first and imported. One standard column layout,
  * offered as a template to download; the importer also accepts the usual alternative headings so a
  * Primavera-style export can come in without renaming every column.
+ *
+ * CR 300 - the scheduler's columns too: the number (1.1, or an activity ID such as A1000), the
+ * type (task or milestone) and the predecessors (1.2, 2.1SS+3d), so a schedule downloaded for Excel
+ * comes back in with its links.
  */
 
 export const TEMPLATE_COLUMNS = [
-  "Category", "Task / Milestone", "Description", "Duration (days)", "Planned start", "Planned finish",
+  "#", "Category", "Task / Milestone", "Type", "Description", "Duration (days)", "Planned start", "Planned finish", "Predecessors",
   "Actual start", "Actual finish", "Status", "% complete", "Responsible",
 ] as const;
 
@@ -23,11 +28,15 @@ const ALIASES: Record<string, keyof Row> = {
   "actual start": "actualStart", "actual finish": "actualFinish", "actual end": "actualFinish",
   status: "status", "percent complete": "percent", "complete": "percent", percent: "percent", progress: "percent",
   responsible: "responsible", owner: "responsible", "responsible person": "responsible", assignee: "responsible",
+  no: "number", number: "number", "item no": "number", "activity id": "number", "task id": "number", id: "number", ref: "number",
+  type: "type", "activity type": "type", "task type": "type",
+  predecessors: "preds", predecessor: "preds", "depends on": "preds", links: "preds", "predecessor ids": "preds",
 };
 
 interface Row {
   category: unknown; name: unknown; description: unknown; duration: unknown; start: unknown; finish: unknown;
   actualStart: unknown; actualFinish: unknown; status: unknown; percent: unknown; responsible: unknown;
+  number: unknown; type: unknown; preds: unknown;
 }
 
 const norm = (h: unknown) => String(h ?? "").toLowerCase().replace(/[%()/_\-.:#]/g, " ").replace(/\s+/g, " ").trim();
@@ -64,6 +73,9 @@ export interface ImportResult {
   skipped: number;          // rows with no task name
   headerRow: number;        // 1-based row the headings were found on
   unknownColumns: string[];
+  /** CR 300 - links read from the Predecessors column, and those naming no task in the sheet. */
+  linked: number;
+  unmatchedLinks: number;
 }
 
 /** Read a schedule from an .xlsx / .xls / .csv file. */
@@ -76,7 +88,8 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
   // The heading row is the first row within the top 15 that names a task column.
   let headerAt = grid.findIndex((r, i) => i < 15 && (r || []).some((c) => ALIASES[norm(c)] === "name"));
   if (headerAt < 0) headerAt = 0;
-  const heads = (grid[headerAt] || []).map(norm);
+  // "#" is all punctuation, so it is read as the number column before the headings are cleaned.
+  const heads = (grid[headerAt] || []).map((h) => (String(h ?? "").trim() === "#" ? "number" : norm(h)));
   const fieldAt: Partial<Record<keyof Row, number>> = {};
   const unknown: string[] = [];
   heads.forEach((h, i) => {
@@ -89,6 +102,7 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
 
   const get = (r: unknown[], f: keyof Row) => (fieldAt[f] === undefined ? "" : r[fieldAt[f]!]);
   const out: ApiMilestone[] = [];
+  const refs: Array<{ number: string; preds: string }> = [];
   let skipped = 0;
   let carriedCategory = "";
   for (const r of grid.slice(headerAt + 1)) {
@@ -114,6 +128,11 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
     const actualStart = toDate(get(r, "actualStart"));
     const actualEnd = toDate(get(r, "actualFinish"));
     const status = toStatus(get(r, "status"), actualEnd ? 100 : percent);
+    // A milestone by its type, or (with no type column) by a duration given as 0.
+    const typeText = norm(get(r, "type"));
+    const rawDur = String(get(r, "duration") ?? "").trim();
+    const isMilestone = fieldAt.type !== undefined ? /mile|finish mile|start mile/.test(typeText) : rawDur !== "" && dur === 0 && !!start;
+    refs.push({ number: String(get(r, "number") ?? "").trim(), preds: String(get(r, "preds") ?? "").trim() });
     out.push({
       id: newMilestoneId(), key: CUSTOM_KEY, name: name.slice(0, 160),
       description: String(get(r, "description") ?? "").trim().slice(0, 2000),
@@ -124,10 +143,28 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
       status, percent: status === "completed" ? 100 : percent,
       responsible: String(get(r, "responsible") ?? "").split(/[;,]/).map((x) => x.trim()).filter(Boolean),
       notes: "",
+      ...(isMilestone ? { isMilestone: true, durationValue: 0, plannedEnd: start } : {}),
     });
   }
   const categories = [...new Set(out.map((m) => m.category || "").filter(Boolean))];
-  return { milestones: out, categories, skipped, headerRow: headerAt + 1, unknownColumns: unknown };
+  // The links, by the numbers in the sheet's own # column, or else by the 1.1 numbers the tasks
+  // take here (which are the numbers a downloaded schedule carries).
+  let linked = 0, unmatched = 0;
+  if (fieldAt.preds !== undefined) {
+    const own = new Map<string, string>();
+    refs.forEach((x, i) => { if (x.number) own.set(x.number.toLowerCase(), out[i].id); });
+    const wbs = wbsNumbers(out, categories).task;
+    const byWbs = new Map<string, string>([...wbs].map(([id, n]) => [n, id]));
+    const idOf = (n: string) => (own.size ? own.get(n.toLowerCase()) : byWbs.get(n));
+    refs.forEach((x, i) => {
+      if (!x.preds) return;
+      const { preds, unknown: miss } = parsePreds(x.preds, idOf);
+      const clean = preds.filter((q) => q.id !== out[i].id);
+      if (clean.length) { out[i] = { ...out[i], predecessors: clean }; linked += clean.length; }
+      unmatched += miss.length;
+    });
+  }
+  return { milestones: out, categories, skipped, headerRow: headerAt + 1, unknownColumns: unknown, linked, unmatchedLinks: unmatched };
 }
 
 /** The template: the headings and a few example rows, as an .xlsx. */
@@ -135,10 +172,11 @@ export async function scheduleTemplate(): Promise<Blob> {
   const XLSX = await import("xlsx");
   const rows = [
     [...TEMPLATE_COLUMNS],
-    ["Award / NTP", "Notice to Proceed", "Contract award and NTP", 0, "2026-07-16", "2026-07-16", "", "", "Completed", 100, "Project Manager"],
-    ["Design", "Final design submitted", "Drawings and calculations", 90, "2026-08-15", "", "", "", "In progress", 40, "Design Lead"],
-    ["Procurement", "Pumps and valves", "RFQ, PO, fabrication, shipping", 120, "2026-09-01", "", "", "", "Not started", 0, "Procurement"],
-    ["Construction", "Tank foundations", "", 45, "2026-12-01", "", "", "", "Not started", 0, "Site Engineer"],
+    ["1.1", "Award / NTP", "Notice to Proceed", "Milestone", "Contract award and NTP", 0, "2026-07-16", "2026-07-16", "", "", "", "Completed", 100, "Project Manager"],
+    ["2.1", "Design", "Final design submitted", "Task", "Drawings and calculations", 90, "2026-07-17", "", "1.1", "", "", "In progress", 40, "Design Lead"],
+    ["2.2", "Design", "Design approval", "Milestone", "", 0, "2026-10-15", "", "2.1", "", "", "Not started", 0, "Client"],
+    ["3.1", "Procurement", "Pumps and valves", "Task", "RFQ, PO, fabrication, shipping", 120, "2026-09-01", "", "2.1SS+30d", "", "", "Not started", 0, "Procurement"],
+    ["4.1", "Construction", "Tank foundations", "Task", "", 45, "2026-12-01", "", "2.2, 3.1FS+5d", "", "", "Not started", 0, "Site Engineer"],
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = TEMPLATE_COLUMNS.map((c) => ({ wch: Math.max(12, c.length + 2) }));

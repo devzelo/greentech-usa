@@ -1482,6 +1482,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                 </table>
                 {imported.milestones.length > 40 && <p className="px-2 py-1.5 text-[10px] text-slate-400">and {imported.milestones.length - 40} more</p>}
               </div>
+              {(imported.linked > 0 || imported.unmatchedLinks > 0) && (
+                <p className="text-[10px] text-slate-500">
+                  {imported.linked} link{imported.linked === 1 ? "" : "s"} read from the Predecessors column{imported.unmatchedLinks > 0 ? `; ${imported.unmatchedLinks} named no task in the sheet and were left out` : ""}.
+                </p>
+              )}
               {imported.unknownColumns.length > 0 && <p className="text-[10px] text-slate-400">Columns not used: {imported.unknownColumns.join(", ")}</p>}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <button type="button" onClick={() => void downloadTemplate()} className="text-[11px] font-bold text-primary hover:underline">Download the template</button>

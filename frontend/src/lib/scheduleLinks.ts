@@ -87,7 +87,8 @@ export function parsePreds(text: string, idOfNumber: (n: string) => string | und
   const preds: Pred[] = [];
   const unknown: string[] = [];
   for (const raw of text.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean)) {
-    const m = /^([0-9]+(?:\.[0-9]+)?)(FS|SS|FF|SF)?([+-][0-9]+)?d?$/i.exec(raw);
+    // A number (1.2) or an activity ID from an imported sheet (A1000), then the type and the lag.
+    const m = /^([A-Za-z]*[0-9]+(?:\.[0-9]+)*)(FS|SS|FF|SF)?([+-][0-9]+)?d?$/i.exec(raw);
     const id = m ? idOfNumber(m[1]) : undefined;
     if (!m || !id) { unknown.push(raw); continue; }
     if (preds.some((p) => p.id === id)) continue;
