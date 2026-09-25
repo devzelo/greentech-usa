@@ -35,6 +35,7 @@ import { FiguresToggle } from "./FiguresPrivacy";
 import Toolbox from "../toolbox/Toolbox";
 import NewRecordMenu from "./NewRecordMenu";
 import PoweredByProjnell from "../PoweredByProjnell";
+import projnellMark from "@/assets/projnell-mark.png";
 
 const allSidebarLinks = [
   { name: "Overview", icon: LayoutDashboard, path: "/dashboard" },
@@ -362,6 +363,13 @@ export default function DashboardLayout() {
               </div>
             </div>
           </Link>
+        )}
+
+        {/* Collapsed, the panel keeps the Projnell mark at its foot, as it keeps the GT mark at its head. */}
+        {!isSidebarOpen && (
+          <div className="mt-auto flex justify-center border-t border-slate-100 py-3" title="Powered by Projnell">
+            <img src={projnellMark} alt="Powered by Projnell" className="h-7 w-7 rounded-md select-none" draggable={false} />
+          </div>
         )}
 
         {/* Powered by Projnell — attribution at the very bottom of the panel (expanded only). */}
