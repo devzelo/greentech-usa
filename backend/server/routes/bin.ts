@@ -33,6 +33,7 @@ import TechnicalDoc from "../models/TechnicalDoc";
 import ProcurementSection from "../models/ProcurementSection";
 import ProcurementItem from "../models/ProcurementItem";
 import SavedDocument, { describeSavedDoc } from "../models/SavedDocument";
+import ScheduleRevision, { scheduleEntryName } from "../models/ScheduleRevision";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { sectionToTabId } from "../lib/access";
 
@@ -60,6 +61,8 @@ const RECYCLE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   "procurement-section": M(ProcurementSection), "procurement-item": M(ProcurementItem),
   // CR-P (86) — filed proposal revisions and other saved document versions.
   "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
+  // CR 300 - schedule baselines, revisions and uploaded schedules.
+  "schedule-entry": M(ScheduleRevision),
 };
 const ARCHIVE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
@@ -68,6 +71,7 @@ const ARCHIVE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   submittal: Submittal as unknown as mongoose.Model<unknown>,
   rfq: Rfq as unknown as mongoose.Model<unknown>,
   company: Company as unknown as mongoose.Model<unknown>,
+  "schedule-entry": M(ScheduleRevision),
 };
 
 async function projectNames(): Promise<Record<string, string>> {
@@ -81,13 +85,14 @@ async function projectNames(): Promise<Record<string, string>> {
 router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const nameById = await projectNames();
-    const [projects, agreements, submittals, rfqs, companies, savedDocs] = await Promise.all([
+    const [projects, agreements, submittals, rfqs, companies, savedDocs, schedules] = await Promise.all([
       Project.find({ archived: true }).select("projectId name category location updatedAt").sort({ updatedAt: -1 }).lean(),
       Agreement.find({ archived: true }).select("name agreementType ownerProjectId ownerContextType updatedAt").sort({ updatedAt: -1 }).lean(),
       Submittal.find({ archived: true }).select("title productName projectId updatedAt").sort({ updatedAt: -1 }).lean(),
       Rfq.find({ archived: true }).select("rfqNo title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
       Company.find({ archived: true }).select("name category updatedAt").sort({ updatedAt: -1 }).lean(),
       SavedDocument.find({ archived: true }).select("kind refId version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
+      ScheduleRevision.find({ archived: true }).select("kind baselineNo version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
     ]);
     const items = [
       ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", origin: "Projects", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),
@@ -100,6 +105,8 @@ router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunc
         const l = describeSavedDoc(d);
         return { kind: l.binKind, id: String(d._id), refId: String(d._id), name: l.name, subtitle: l.subtitle, projectId: d.projectId, projectName: nameById[d.projectId] || "", origin: binOrigin(l.binKind, nameById[d.projectId] || d.projectId), updatedAt: (d as { updatedAt?: unknown }).updatedAt, link: binLink(l.binKind, d.projectId) };
       }),
+      // CR 300 - archived schedule baselines, revisions and uploads.
+      ...schedules.map((e) => ({ kind: "schedule-entry", id: String(e._id), refId: String(e._id), name: scheduleEntryName(e), subtitle: "Schedule", projectId: e.projectId, projectName: nameById[e.projectId] || "", origin: `Project · ${nameById[e.projectId] || e.projectId} · Schedule`, updatedAt: (e as { updatedAt?: unknown }).updatedAt, link: binLink("schedule-entry", e.projectId) })),
     ];
     items.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
     res.json(items);
@@ -147,6 +154,7 @@ function binLink(kind: string, projectId: string, data?: Record<string, unknown>
     }
     if (kind === "agreement" || kind === "sub-invoice" || kind === "sub-agreement") return `${base}?tab=subs`;
     if (kind === "invoice") return `${base}?tab=finances`;
+    if (kind === "schedule-entry") return `${base}?tab=pm`;
     if (kind === "document") {
       const tab = sectionToTabId(String(data?.section || ""));
       if (tab) return `${base}?tab=${encodeURIComponent(tab)}`;

@@ -1126,10 +1126,33 @@ export interface ApiMilestone {
 }
 
 export interface ApiScheduleDraft { milestones: ApiMilestone[]; categories?: string[]; savedAt: string; savedBy: string }
+export type ScheduleEntryKind = "revision" | "baseline" | "upload";
+export type ScheduleEntryStatus = "draft" | "submitted" | "approved" | "rejected";
+export interface ApiScheduleEntryFile { docId: string; name: string; filePath: string; fileType: string; size: string; uploadedAt: string; uploadedBy: string }
+/**
+ * One entry in a schedule's register (CR 300): a saved revision, a frozen baseline (B0, B1...), or
+ * a schedule kept as a file only. Older entries have no `kind`, and are revisions.
+ */
 export interface ApiScheduleRevision {
   _id: string; projectId: string; scheduleId?: string; categories?: string[]; version: number; milestones: ApiMilestone[]; progress: number;
   note: string; savedBy: string; createdAt: string;
+  kind?: ScheduleEntryKind;
+  baselineNo?: number;
+  title?: string;
+  description?: string;
+  dataDate?: string;
+  approvedAt?: string;
+  contractCompletion?: string;
+  status?: ScheduleEntryStatus;
+  submittedAt?: string;
+  submittedBy?: string;
+  client?: string;
+  relatedDocument?: string;
+  files?: ApiScheduleEntryFile[];
+  archived?: boolean;
 }
+export type ScheduleEntryDetails = Partial<Pick<ApiScheduleRevision,
+  "title" | "description" | "note" | "dataDate" | "approvedAt" | "contractCompletion" | "status" | "submittedAt" | "client" | "relatedDocument" | "archived">> & { files?: string[] };
 type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress: number };
 // 2026-09-21 - `sched` names a schedule beside the master (its id); left out, the master.
 const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : "");
@@ -1154,6 +1177,24 @@ export async function discardTimelineDraft(projectId: string, sched?: string): P
 }
 export async function fetchTimelineRevisions(projectId: string, sched?: string): Promise<ApiScheduleRevision[]> {
   return request(`/projects/${projectId}/schedule/revisions${sq(sched)}`);
+}
+/** CR 300 - freeze the live schedule (or the revision `fromId`) as the next baseline. */
+export async function createScheduleBaseline(projectId: string, details: ScheduleEntryDetails & { fromId?: string }, sched?: string): Promise<ApiScheduleRevision> {
+  return request(`/projects/${projectId}/schedule/baselines${sq(sched)}`, { method: "POST", body: JSON.stringify(details) });
+}
+/** CR 300 - a schedule kept as a file only (`files` are document ids already uploaded to the project). */
+export async function createScheduleUpload(projectId: string, details: ScheduleEntryDetails, sched?: string): Promise<ApiScheduleRevision> {
+  return request(`/projects/${projectId}/schedule/entries${sq(sched)}`, { method: "POST", body: JSON.stringify(details) });
+}
+export async function updateScheduleEntry(projectId: string, entryId: string, details: ScheduleEntryDetails, sched?: string): Promise<ApiScheduleRevision> {
+  return request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}${sq(sched)}`, { method: "PATCH", body: JSON.stringify(details) });
+}
+export async function deleteScheduleEntry(projectId: string, entryId: string, sched?: string): Promise<void> {
+  await request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}${sq(sched)}`, { method: "DELETE" });
+}
+/** A register file's link, to open or to download. */
+export function scheduleEntryFileUrl(f: ApiScheduleEntryFile, download = false): string {
+  return fileUrl(f.filePath, f.name, download);
 }
 
 /** CR-P (126) - an approved extension of time: the new deadline, and why. */

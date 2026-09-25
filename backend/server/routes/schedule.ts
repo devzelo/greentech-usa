@@ -1,8 +1,11 @@
 import { Router, Response, NextFunction } from "express";
 import Project, { type MilestoneRecord } from "../models/Project";
-import ScheduleRevision from "../models/ScheduleRevision";
+import mongoose from "mongoose";
+import ScheduleRevision, { scheduleEntryName, type ScheduleEntryFile } from "../models/ScheduleRevision";
+import ProjectDocument from "../models/ProjectDocument";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
+import { recycleAndDelete } from "../lib/recycleBin";
 
 // CR 188-192: the project timeline (Project Management > Timeline / Milestones). Save makes the
 // edits live and keeps a numbered version; Save as draft parks them without changing the live
@@ -136,7 +139,8 @@ function overallProgress(ms: MilestoneRecord[]): number {
 router.get("/revisions", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const id = schedId(req);
-    res.json(await ScheduleRevision.find({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ version: -1 }).limit(100).lean());
+    // CR 300 - the whole register: revisions, baselines and uploaded schedules, newest first.
+    res.json(await ScheduleRevision.find({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ createdAt: -1 }).limit(300).lean());
   } catch (err) { next(err); }
 });
 
@@ -153,7 +157,7 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
     target.apply({ milestones, categories, draft: null });
     if (!id && milestones.length) project.progress = progress;
     await project.save();
-    const last = await ScheduleRevision.findOne({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ version: -1 }).select("version").lean();
+    const last = await ScheduleRevision.findOne({ projectId: req.params.id, scheduleId: id || { $in: ["", null] }, kind: { $in: ["revision", null] } }).sort({ version: -1 }).select("version").lean();
     const rev = await ScheduleRevision.create({
       projectId: req.params.id,
       scheduleId: id,
@@ -163,6 +167,9 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
       progress,
       note: str(req.body?.note, 500).trim(),
       savedBy: req.user!.name || "",
+      kind: "revision",
+      title: `Revision ${(last?.version || 0) + 1}`,
+      dataDate: new Date().toISOString().slice(0, 10),
     });
     res.json({ schedule: project.schedule, progress: project.progress, revision: rev });
   } catch (err) { next(err); }
@@ -247,6 +254,151 @@ router.delete("/draft", async (req: AuthedRequest, res: Response, next: NextFunc
     target.apply({ draft: null });
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress });
+  } catch (err) { next(err); }
+});
+
+// ── CR 300 - the schedule register: baselines, uploaded schedules, and every entry's details ──
+const ENTRY_STATUSES = new Set(["draft", "submitted", "approved", "rejected"]);
+const entryQuery = (req: AuthedRequest) => {
+  const id = schedId(req);
+  return { projectId: req.params.id, scheduleId: id || { $in: ["", null] } };
+};
+/**
+ * The files an entry points at, looked up by id among this project's own documents. The client
+ * names the documents; their paths always come from the server, so an entry can never point at
+ * another project's file.
+ */
+async function entryFiles(projectId: string, input: unknown, by: string): Promise<ScheduleEntryFile[]> {
+  if (!Array.isArray(input)) return [];
+  const ids = input.map((f) => str((f as { docId?: unknown })?.docId ?? f, 40)).filter((x) => mongoose.isValidObjectId(x)).slice(0, 40);
+  if (!ids.length) return [];
+  const docs = await ProjectDocument.find({ _id: { $in: ids }, projectId }).lean();
+  return ids.map((docId) => docs.find((d) => String(d._id) === docId)).filter((d): d is NonNullable<typeof d> => !!d).map((d) => ({
+    docId: String(d._id), name: d.name, filePath: d.filePath, fileType: d.fileType, size: d.size,
+    uploadedAt: new Date(d.uploadedAt || Date.now()).toISOString(), uploadedBy: by,
+  }));
+}
+/** The details a person can set on any entry. The schedule itself (its tasks) is never edited here. */
+function entryDetails(body: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  if (body.title !== undefined) out.title = str(body.title, 160).trim();
+  if (body.description !== undefined) out.description = str(body.description, 2000).trim();
+  if (body.note !== undefined) out.note = str(body.note, 500).trim();
+  for (const k of ["dataDate", "approvedAt", "contractCompletion", "submittedAt"]) if (body[k] !== undefined) out[k] = date(body[k]);
+  if (body.client !== undefined) out.client = str(body.client, 160).trim();
+  if (body.relatedDocument !== undefined) out.relatedDocument = str(body.relatedDocument, 200).trim();
+  if (body.status !== undefined && ENTRY_STATUSES.has(String(body.status))) out.status = String(body.status);
+  if (body.archived !== undefined) out.archived = body.archived === true;
+  return out;
+}
+
+// A new baseline: the live schedule (or a saved revision of it) frozen as B0, B1, B2... The tasks
+// are copied once and never edited afterwards; only the details around them can change.
+router.post("/baselines", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const id = schedId(req);
+    const target = scheduleOf(project, id);
+    if (!target) return res.status(404).json(noSchedule);
+    let milestones = target.milestones, categories = target.categories;
+    const fromId = str(req.body?.fromId, 40);
+    if (fromId) {
+      if (!mongoose.isValidObjectId(fromId)) return res.status(400).json({ error: "That revision was not found." });
+      const from = await ScheduleRevision.findOne({ _id: fromId, ...entryQuery(req) }).lean();
+      if (!from || from.kind === "upload") return res.status(400).json({ error: "That revision was not found." });
+      milestones = from.milestones; categories = from.categories;
+    }
+    if (!milestones.length) return res.status(400).json({ error: "The schedule is empty. Add its tasks before freezing a baseline." });
+    const last = await ScheduleRevision.findOne({ ...entryQuery(req), kind: "baseline" }).sort({ baselineNo: -1 }).select("baselineNo").lean();
+    const baselineNo = last ? last.baselineNo + 1 : 0;
+    const details = entryDetails(req.body || {});
+    const entry = await ScheduleRevision.create({
+      projectId: req.params.id,
+      scheduleId: id,
+      version: 0,
+      kind: "baseline",
+      baselineNo,
+      milestones,
+      categories,
+      progress: overallProgress(milestones),
+      savedBy: req.user!.name || "",
+      status: "approved",
+      title: `Baseline B${baselineNo}`,
+      ...details,
+      files: await entryFiles(req.params.id, req.body?.files, req.user!.name || ""),
+    });
+    res.json(entry);
+  } catch (err) { next(err); }
+});
+
+// A schedule kept as a file only: one sent to the client or received back, with no live table.
+router.post("/entries", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id }).select("projectId").lean();
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const files = await entryFiles(req.params.id, req.body?.files, req.user!.name || "");
+    if (!files.length) return res.status(400).json({ error: "Attach the schedule file first." });
+    const details = entryDetails(req.body || {});
+    const entry = await ScheduleRevision.create({
+      projectId: req.params.id,
+      scheduleId: schedId(req),
+      version: 0,
+      kind: "upload",
+      savedBy: req.user!.name || "",
+      title: files[0].name.replace(/\.[^.]+$/, ""),
+      ...details,
+      submittedBy: details.status === "submitted" ? req.user!.name || "" : "",
+      files,
+    });
+    res.json(entry);
+  } catch (err) { next(err); }
+});
+
+// An entry's details: title, dates, status, client, archive, and the files that go with it.
+router.patch("/entries/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
+    const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req) });
+    if (!entry) return res.status(404).json({ error: "Not found" });
+    const details = entryDetails(req.body || {});
+    if (details.status === "submitted" && entry.status !== "submitted") {
+      entry.submittedBy = req.user!.name || "";
+      if (!details.submittedAt && !entry.submittedAt) entry.submittedAt = new Date().toISOString().slice(0, 10);
+    }
+    if (details.status === "approved" && entry.status !== "approved" && !details.approvedAt && !entry.approvedAt) {
+      entry.approvedAt = new Date().toISOString().slice(0, 10);
+    }
+    entry.set(details);
+    if (req.body?.files !== undefined) {
+      // Files already on the entry keep who added them; new ones are credited to this person.
+      const listed = await entryFiles(req.params.id, req.body.files, req.user!.name || "");
+      entry.files = listed.map((f) => (entry.files || []).find((x) => x.docId === f.docId) || f);
+      entry.markModified("files");
+    }
+    await entry.save();
+    res.json(entry);
+  } catch (err) { next(err); }
+});
+
+// Deleting an entry puts it in the Recycle Bin, where it can be restored. Its files stay in the
+// project's documents.
+router.delete("/entries/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
+    const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req) });
+    if (!entry) return res.status(404).json({ error: "Not found" });
+    const project = await Project.findOne({ projectId: req.params.id }).select("name").lean();
+    await recycleAndDelete(entry, {
+      kind: "schedule-entry",
+      name: scheduleEntryName(entry),
+      subtitle: "Schedule",
+      projectId: req.params.id,
+      projectName: project?.name || "",
+      deletedById: req.user?.userId,
+      deletedByName: req.user?.name || "",
+    });
+    res.json({ message: "Deleted" });
   } catch (err) { next(err); }
 });
 

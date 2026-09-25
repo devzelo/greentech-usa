@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Archive, Trash2, RotateCcw, Loader2, Briefcase, Handshake, FileText, ClipboardList,
+  Archive, CalendarRange, Trash2, RotateCcw, Loader2, Briefcase, Handshake, FileText, ClipboardList,
   Package, Building2, ExternalLink, X, Users, Truck, Receipt, Megaphone,
 } from "lucide-react";
 import {
@@ -45,6 +45,8 @@ const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: st
   // CR-P (86) — a filed proposal revision (a frozen PDF from the proposals table), and other saved versions.
   "saved-proposal": { label: "Filed proposal", icon: FileText, cls: "bg-indigo-50 text-indigo-600" },
   "saved-document": { label: "Saved version", icon: FileText, cls: "bg-slate-100 text-slate-500" },
+  // CR 300 - a schedule baseline, revision or uploaded schedule.
+  "schedule-entry": { label: "Schedule", icon: CalendarRange, cls: "bg-emerald-50 text-emerald-600" },
 };
 const metaFor = (k: string) => KIND_META[k] || { label: k, icon: FileText, cls: "bg-slate-100 text-slate-500" };
 
