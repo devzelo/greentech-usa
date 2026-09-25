@@ -75,7 +75,7 @@ export default function GanttChart({
   showCritical?: boolean;
   /** The table's numbers (1, 1.1...), so the chart names rows the same way. */
   numbers?: Map<string, string>;
-  /** The baseline to draw under each bar; each task's own first planned dates otherwise. */
+  /** The baseline to draw under each bar (a task not in it gets none); each task's own first planned dates when left out. */
   baseline?: Map<string, { s: string; e: string }>;
   /** Dragging, when the schedule can be edited: a whole bar moved, or its end moved, by whole days. */
   onMove?: (m: ApiMilestone, days: number) => void;
@@ -315,8 +315,9 @@ export default function GanttChart({
               }
               const { m } = l;
               const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd) || ps;
+              // Given a baseline, the chart compares with it alone (an empty one: with nothing).
               const b = baseline?.get(m.id);
-              const bs = parseDate(b ? b.s : m.baselineStart), be = parseDate(b ? b.e : m.baselineEnd);
+              const bs = parseDate(baseline ? b?.s : m.baselineStart), be = parseDate(baseline ? b?.e : m.baselineEnd);
               const as = parseDate(m.actualStart), ae = parseDate(m.actualEnd) || (as && m.status !== "completed" ? today : null);
               const moved = bs && be && ps && pe && (bs.getTime() !== ps.getTime() || be.getTime() !== pe.getTime());
               const late = delayDays(m, today) > 0;
