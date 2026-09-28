@@ -4,7 +4,7 @@ import {
   Calculator as CalcIcon, CalendarDays, Camera, ChevronLeft, Coins, FileStack, FolderOpen, Image as ImageIcon,
   GripVertical, Pencil, Percent, Ruler, Sparkles, StickyNote, Timer, ToolCase, Type, X,
 } from "lucide-react";
-import { useCapturing, type CaptureKind } from "./capture";
+import { useCapturing, useToolWindowOpen, type CaptureKind } from "./capture";
 import { useSnip } from "./SnipTool";
 import { useClockRunning } from "./timerStore";
 import Calculator from "./Calculator";
@@ -75,6 +75,9 @@ export default function Toolbox() {
   const [drawing, setDrawing] = useState(false);
   const [selection, setSelection] = useState("");
   const capturing = useCapturing();
+  // CR 302 - a tool's own window (PDF workspace, image editor...) is not covered by the toolbox.
+  const toolWindow = useToolWindowOpen();
+  const hidden = capturing || toolWindow;
   const clockRunning = useClockRunning();
   const snip = useSnip();
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -183,7 +186,7 @@ export default function Toolbox() {
         <div
           data-toolbox-panel
           className="fixed z-[1200] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
-          style={{ visibility: capturing ? "hidden" : "visible", left: panelLeft, top: panelTop, width: panelW, maxHeight: panelH }}
+          style={{ visibility: hidden ? "hidden" : "visible", left: panelLeft, top: panelTop, width: panelW, maxHeight: panelH }}
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
             {/* Drag the panel by its bar, the same as dragging the bubble. */}
@@ -251,7 +254,7 @@ export default function Toolbox() {
           className={`fixed z-[1200] flex touch-none items-center justify-center rounded-full border shadow-xl transition-colors active:cursor-grabbing ${
             open ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-primary hover:text-primary"
           }`}
-          style={{ left: pos.x, top: pos.y, width: BUBBLE, height: BUBBLE, visibility: capturing ? "hidden" : "visible" }}
+          style={{ left: pos.x, top: pos.y, width: BUBBLE, height: BUBBLE, visibility: hidden ? "hidden" : "visible" }}
         >
           <ToolCase size={20} />
           {clockRunning && <span className="absolute right-1 top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 ring-2 ring-white" title="A timer is running" />}
@@ -259,7 +262,7 @@ export default function Toolbox() {
         document.body,
       )}
 
-      {drawing && <DrawOverlay onClose={() => setDrawing(false)} onScreenshot={() => take("tab")} />}
+      {drawing && <DrawOverlay onClose={() => setDrawing(false)} onScreenshot={() => take("tab")} onSnip={() => take("tab", true)} />}
       {snip.ui}
     </>
   );

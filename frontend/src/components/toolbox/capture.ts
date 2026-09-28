@@ -56,3 +56,20 @@ export async function captureScreen(kind: CaptureKind): Promise<Blob | null> {
     setCapturing(false);
   }
 }
+
+/**
+ * CR 302 (2026-09-25): whether a tool has its own window open (the PDF workspace, the image editor,
+ * the area selector). The toolbox gets out of its way while it is: the panel and the bubble hide
+ * and come back when the window closes. The small "attach to project" dialog does not count; it
+ * sits over the panel on purpose.
+ */
+const TOOL_WINDOW = "[data-toolbox-modal]:not([data-toolbox-attach])";
+const watchBody = (f: () => void) => {
+  const mo = new MutationObserver(f);
+  mo.observe(document.body, { childList: true });
+  return () => mo.disconnect();
+};
+const toolWindowOpen = () => !!document.querySelector(TOOL_WINDOW);
+export function useToolWindowOpen(): boolean {
+  return useSyncExternalStore(watchBody, toolWindowOpen);
+}

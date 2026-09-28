@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, GripHorizontal, MousePointer2, X } from "lucide-react";
+import { Camera, GripHorizontal, MousePointer2, SquareDashedMousePointer, X } from "lucide-react";
 import { AnnotationLayer, AnnotationToolbar, useShapeHistory, useUndoKeys, type AnnoTool } from "./annotate";
 import { useCapturing } from "./capture";
 
 // Draw / Annotate over the whole screen: pen, highlighter, arrows, lines, rectangles, circles,
-// text and eraser. "Screenshot" captures the page with the drawing and opens the editor.
+// text and eraser. "Full page" captures the page with the drawing and opens the editor.
 // "Pause" lets clicks reach the page (scroll, open a tab) and keeps the drawing visible.
+// CR 301 (2026-09-25): "Snip area" captures the page with the drawing and lets you drag a box over
+// just the part you want, so drawing and snipping happen in one go.
 
-export default function DrawOverlay({ onClose, onScreenshot }: { onClose: () => void; onScreenshot: () => void }) {
+export default function DrawOverlay({ onClose, onScreenshot, onSnip }: { onClose: () => void; onScreenshot: () => void; onSnip: () => void }) {
   const hist = useShapeHistory();
   const [tool, setTool] = useState<AnnoTool>("pen");
   const [color, setColor] = useState("#ef4444");
@@ -50,8 +52,11 @@ export default function DrawOverlay({ onClose, onScreenshot }: { onClose: () => 
             <button type="button" onClick={() => setPaused((p) => !p)} title="Let clicks reach the page (the drawing stays)" className={`${small} ${paused ? "bg-amber-100 text-amber-700" : "text-slate-600 hover:bg-slate-100"}`}>
               <MousePointer2 size={13} /> {paused ? "Resume drawing" : "Pause"}
             </button>
-            <button type="button" onClick={onScreenshot} className={`${small} text-slate-600 hover:bg-slate-100`} title="Capture the page with your drawing">
-              <Camera size={13} /> Screenshot
+            <button type="button" onClick={onSnip} className={`${small} bg-emerald-50 text-primary hover:bg-emerald-100`} title="Capture the page with your drawing, then drag over the part to keep">
+              <SquareDashedMousePointer size={13} /> Snip area
+            </button>
+            <button type="button" onClick={onScreenshot} className={`${small} text-slate-600 hover:bg-slate-100`} title="Capture the whole page with your drawing">
+              <Camera size={13} /> Full page
             </button>
             <button type="button" onClick={() => setAtBottom((b) => !b)} className={`${small} text-slate-400 hover:bg-slate-100`} title={atBottom ? "Move bar to the top" : "Move bar to the bottom"}>
               <GripHorizontal size={13} />
