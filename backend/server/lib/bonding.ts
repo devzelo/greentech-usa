@@ -33,3 +33,21 @@ export function cleanBonding(input: unknown) {
     notes: txt(b.notes, 2000),
   };
 }
+
+/**
+ * CR 312 (2026-09-25): the figures the bank reports need that a project did not hold (see the
+ * frontend's lib/wip.ts), cleaned the same way.
+ */
+export function cleanWip(input: unknown) {
+  const w = (input || {}) as Record<string, unknown>;
+  const pct100 = (v: unknown) => { const p = pct(v); return p && parseFloat(p) <= 100 ? p : ""; };
+  return {
+    competition: txt(w.competition, 80),
+    primeContractor: txt(w.primeContractor, 160),
+    winChance: pct100(w.winChance),
+    fundedValue: amt(w.fundedValue),
+    grossProfitPct: pct100(w.grossProfitPct),
+    approvedChanges: amt(w.approvedChanges),
+    costToComplete: amt(w.costToComplete),
+  };
+}

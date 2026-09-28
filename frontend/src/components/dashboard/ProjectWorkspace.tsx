@@ -29,6 +29,8 @@ import ProcurementPO from "./ProcurementPO";
 import { projectPdfInfo } from "../../lib/pdfProjectHeader";
 import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import { BondingCard } from "./BondingEditor";
+import WipFields from "./WipFields";
+import { withWip, type ProjectWip } from "../../lib/wip";
 import { logoAsPng } from "../../lib/logoImage";
 import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -1611,13 +1613,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     disciplines: string; contractNo: string; contractYear: string; contractDate: string;
     // CR 289 - the solicitation number, and the Directory company the client was picked from.
     solicitationNo: string; clientCompanyId: string;
+    wip: ProjectWip;   // CR 312
   };
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState<IdentityForm>({
     name: "", clientName: "", status: "Planning", category: "", categories: [], contractType: "", cpars: "", siteAddress: EMPTY_SITE_ADDRESS,
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
     startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
-    solicitationNo: "", clientCompanyId: "",
+    solicitationNo: "", clientCompanyId: "", wip: withWip(),
   });
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
@@ -1672,6 +1675,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       contractNo: project.contractNo || "",
       contractYear: project.contractYear || "",
       contractDate: project.contractDate || "",
+      wip: withWip(project.wip),
     });
     // The JV editor writes straight into the shared jvInfo state, so snapshot it — Cancel must
     // discard partner edits (including removed stamps/signatures) just like the other fields.
@@ -1714,6 +1718,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         contractNo: identityForm.contractNo,
         contractYear: identityForm.contractYear,
         contractDate: identityForm.contractDate,
+        // CR 312 - only sent by someone who can see the figures, so a blank never overwrites them.
+        ...(project.canSeeFigures !== false ? { wip: identityForm.wip } : {}),
         jointVenture: jvInfo, // §M — JV now lives in Project Identity
       });
       setProject(updated);
@@ -7344,6 +7350,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   />
                   <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>
                 </div>
+                {project?.canSeeFigures !== false && (
+                  <div className="md:col-span-2">
+                    <WipFields value={identityForm.wip} onChange={(wip) => setIdentityForm({ ...identityForm, wip })} contractValue={identityForm.value} disabled={!isOwner} />
+                  </div>
+                )}
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiscal / Funding</label>
                   <input

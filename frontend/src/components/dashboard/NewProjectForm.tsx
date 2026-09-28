@@ -1,5 +1,7 @@
 import BondingEditor from "./BondingEditor";
 import { emptyBonding, type ProjectBonding } from "../../lib/bonding";
+import WipFields from "./WipFields";
+import { emptyWip, type ProjectWip } from "../../lib/wip";
 import { motion, AnimatePresence } from "motion/react";
 import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -195,6 +197,7 @@ export default function NewProjectForm() {
   const [projectValue, setProjectValue] = useState("");
   // CR 309 - bonds and letter of credit, set when the project is made and updated in Legal Docs.
   const [bonding, setBonding] = useState<ProjectBonding>(emptyBonding);
+  const [wip, setWip] = useState<ProjectWip>(emptyWip);   // CR 312
   const [fiscal, setFiscal] = useState("");
   const [compliance, setCompliance] = useState("");
   const [disciplinesInput, setDisciplinesInput] = useState("");
@@ -376,6 +379,7 @@ export default function NewProjectForm() {
         endDate,
         value: projectValue,
         bonding,
+        wip,
         fiscal,
         compliance,
         disciplines: disciplinesInput.split(",").map((d) => d.trim()).filter(Boolean),
@@ -692,6 +696,10 @@ export default function NewProjectForm() {
               placeholder="e.g. Civil Engineering, Hydrology, SCADA"
               className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
+          </div>
+          {/* CR 312 - what the bank reports need. */}
+          <div className="md:col-span-2 lg:col-span-4">
+            <WipFields value={wip} onChange={setWip} contractValue={projectValue} />
           </div>
           {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
           <div className="space-y-1 md:col-span-2 lg:col-span-4">
