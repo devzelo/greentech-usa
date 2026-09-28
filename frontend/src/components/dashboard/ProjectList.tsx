@@ -14,6 +14,8 @@ import MilestoneTrack from "./MilestoneTrack";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
 import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectStatus";
+import { createPortal } from "react-dom";
+import { WIP_CURRENT, WIP_OPPORTUNITY } from "../../lib/wip";
 import { locationFlag } from "../../lib/countryFlag";
 import FinanceStrip from "./FinanceStrip";
 import { Fig, FiguresToggle } from "./FiguresPrivacy";
@@ -53,6 +55,16 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const [financials, setFinancials] = useState<Record<string, ProjectFinancials>>({});
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false); // CR-P-01 — Quick Report popup PDF preview
+  /**
+   * CR 311 (2026-09-25): Quick Report asks which report first. Internal is the portfolio report, for
+   * the stages ticked (Draft and On hold are never in it). WIP is the work-in-progress report for
+   * banks and bonding companies: current and completed contracts, future opportunities, or both.
+   */
+  const INTERNAL_STAGES = ["Proposal", "BidSubmitted", "Active", "Warranty", "Closed", "Lost"];
+  const [reportAsk, setReportAsk] = useState(false);
+  const [reportType, setReportType] = useState<"internal" | "wip">("internal");
+  const [stages, setStages] = useState<string[]>(["Proposal", "BidSubmitted", "Active", "Warranty", "Closed"]);
+  const [wipParts, setWipParts] = useState({ current: true, opportunities: true });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -131,6 +143,8 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   // financial figures this person may see (the server marks each project; GT staff by default,
   // outside logins only where GT has switched the figures on for them). With none, no button.
   const reportProjects = filtered.filter((p) => p.canSeeFigures !== false);
+  const internalProjects = reportProjects.filter((p) => stages.some((st) => statusMatches(st, p.status)));
+  const stageCount = (st: string) => reportProjects.filter((p) => statusMatches(st, p.status)).length;
   const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
   return (
@@ -152,7 +166,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         <div className="flex items-center gap-3 flex-wrap md:justify-end shrink-0">
           {/* CR-P-01 — "Quick Report" opens a popup PDF preview (download/print from there). */}
           {reportProjects.length > 0 && mode !== "drafts" && (
-            <button onClick={() => setShowReport(true)} className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
+            <button onClick={() => setReportAsk(true)} className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-white text-slate-700 hover:text-primary text-xs font-bold shadow-sm">
               <FileText size={13} /> Quick Report
             </button>
           )}
@@ -454,14 +468,85 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       </>
       )}
 
+      {/* CR 311 - which report, and what goes in it. */}
+      {reportAsk && createPortal(
+        <div className="fixed inset-0 z-[150] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setReportAsk(false); }}>
+          <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 px-5 py-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FileText size={15} className="text-primary" /> Quick Report</p>
+              <p className="text-[11px] text-slate-500">{reportProjects.length} project{reportProjects.length === 1 ? "" : "s"} in the list you are looking at.</p>
+            </div>
+            <div className="space-y-4 p-5">
+              <div className="grid grid-cols-2 gap-2">
+                {([["internal", "Internal", "The portfolio report, for the team"], ["wip", "Work in progress (WIP)", "For banks, sureties and bonding companies"]] as const).map(([k, t, h]) => (
+                  <button key={k} type="button" onClick={() => setReportType(k)}
+                    className={`rounded-2xl border p-3 text-left transition-colors ${reportType === k ? "border-primary bg-emerald-50/60 ring-2 ring-primary/20" : "border-slate-200 hover:border-slate-300"}`}>
+                    <span className="block text-sm font-bold text-slate-900">{t}</span>
+                    <span className="block text-[11px] text-slate-500">{h}</span>
+                  </button>
+                ))}
+              </div>
+              {reportType === "internal" ? (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Stages to include</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {INTERNAL_STAGES.map((st) => (
+                      <label key={st} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        <input type="checkbox" className="accent-emerald-500" checked={stages.includes(st)} onChange={(e) => setStages((cur) => (e.target.checked ? [...cur, st] : cur.filter((x) => x !== st)))} />
+                        <span className="flex-1">{statusMeta(st).label}</span>
+                        <span className="text-[10px] text-slate-400">{stageCount(st)}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400">Drafts and projects on hold are never in the report.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tables to include</p>
+                  {([["current", "Current and completed contracts", WIP_CURRENT], ["opportunities", "Future opportunities (proposals out)", WIP_OPPORTUNITY]] as const).map(([k, t, list]) => (
+                    <label key={k} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" className="accent-emerald-500" checked={wipParts[k]} onChange={(e) => setWipParts((cur) => ({ ...cur, [k]: e.target.checked }))} />
+                      <span className="flex-1">{t}</span>
+                      <span className="text-[10px] text-slate-400">{reportProjects.filter((p) => list.some((st) => statusMatches(st, p.status))).length}</span>
+                    </label>
+                  ))}
+                  <p className="text-[10px] text-slate-400">A large landscape table (11 x 17 in), one line per contract, to copy into each bank&apos;s own form. Profit, change orders, cost to complete, funded value and chance of winning come from each project&apos;s bank report figures.</p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+              <button type="button" onClick={() => setReportAsk(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button type="button"
+                disabled={reportType === "internal" ? !internalProjects.length : !wipParts.current && !wipParts.opportunities}
+                onClick={() => { setReportAsk(false); setShowReport(true); }}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-40">
+                {reportType === "internal" && !internalProjects.length ? "No projects in those stages" : "Create report"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* CR-P-01 — Quick Report: popup PDF preview with download/print. */}
-      {showReport && (
+      {showReport && reportType === "wip" && (
+        <PdfPreviewModal
+          title={`Work in progress report · ${mode === "my" ? "My Projects" : "All Projects"}`}
+          fileName={`GreenTech_WIP_Report_${new Date().toISOString().slice(0, 10)}.pdf`}
+          build={async () => {
+            const { buildWipReportPdf } = await import("../../lib/wipReportPdf");
+            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects" });
+          }}
+          onClose={() => setShowReport(false)}
+        />
+      )}
+      {showReport && reportType === "internal" && (
         <PdfPreviewModal
           title={mode === "my" ? "Quick Report · My Projects" : "Quick Report · All Projects"}
           fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
           build={() => pdf(
             <PortfolioReportPDF
-              projects={reportProjects}
+              projects={internalProjects}
               financials={financials}
               logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
               scope={mode === "my" ? "My Projects" : "All Projects"}

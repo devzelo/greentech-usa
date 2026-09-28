@@ -45,3 +45,7 @@ export const plannedProfit = (value: string, w: ProjectWip) => {
   const p = parseFloat(w.grossProfitPct);
   return isFinite(p) ? (moneyNum(value) * p) / 100 : 0;
 };
+
+/** CR 311 - which projects go in each table of the WIP report, by status. */
+export const WIP_CURRENT = ["Active", "Warranty", "Closed"];
+export const WIP_OPPORTUNITY = ["Proposal", "BidSubmitted"];
