@@ -7,6 +7,7 @@ import {
   Folder, ChevronRight, Home, Plus, Trash2, Pencil, Check,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useUrlState } from "../../hooks/useUrlState";
 import { fetchAllDocuments, updateDocumentDescription, fetchFolderNotes, setFolderNote, documentUrl, getAuthUser, fetchProjects, fetchCompanyDetails, createCompanyDetail, updateCompanyDetail, deleteCompanyDetail, withFileToken, type ApiProject, type ApiCompanyDetail, ApiGlobalDocument } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -83,7 +84,16 @@ export default function Documents() {
   const { confirm, dialogs } = useDialogs();
   const isGuest = getAuthUser()?.role === "subcontractor";
   const isAdmin = getAuthUser()?.role === "admin";
-  const [tab, setTab] = useState<"projects" | "company" | "classified">("projects");
+  /**
+   * CR 305 (2026-09-25): the tab and the folder you are in live in the address (?tab=, and
+   * ?p= project, ?t= project tab, ?g= section for project files), so a refresh reopens the same
+   * place and Back steps up one level. Company and classified documents add their own tab keys.
+   */
+  const url = useUrlState();
+  type DocTab = "projects" | "company" | "classified";
+  const tabParam = url.get("tab");
+  const tab: DocTab = tabParam === "company" || tabParam === "classified" ? tabParam : "projects";
+  const setTab = (t: DocTab) => url.set({ tab: t === "projects" ? "" : t, p: "", t: "", g: "", ct: "", cs: "" });
   const navigate = useNavigate();
   const [docs, setDocs] = useState<ApiGlobalDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,8 +102,10 @@ export default function Documents() {
   const [view, setView] = useState<ViewMode>("list");
   const [selected, setSelected] = useState<ApiGlobalDocument | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
-  // Folder-drill navigation: pick a project → tab → section group. Null = top level.
-  const [browse, setBrowse] = useState<{ pid?: string; tabId?: string; group?: string }>({});
+  // Folder-drill navigation: pick a project → tab → section group. Empty = top level.
+  const bp = url.get("p"), bt = url.get("t"), bg = url.get("g");
+  const browse = useMemo(() => ({ pid: bp || undefined, tabId: bt || undefined, group: bg || undefined }), [bp, bt, bg]);
+  const setBrowse = (b: { pid?: string; tabId?: string; group?: string }) => url.set({ p: b.pid, t: b.tabId, g: b.group });
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Per-file description — editable inline, saved on blur. Guests never edit (read-only view).
@@ -165,32 +177,34 @@ export default function Documents() {
    */
   const [companyFocus, setCompanyFocus] = useState<{ fileId: string; tabId: string } | null>(null);
   useEffect(() => {
-    if (searchParams.get("tab") !== "company") return;
     const fileId = searchParams.get("focus") || "";
-    setTab("company");
-    if (fileId) setCompanyFocus({ fileId, tabId: searchParams.get("ctab") || "" });
-    ["tab", "focus", "ctab"].forEach((k) => searchParams.delete(k));
+    if (searchParams.get("tab") !== "company" || !fileId) return;
+    setCompanyFocus({ fileId, tabId: searchParams.get("ctab") || "" });
+    // The tab stays in the address (CR 305); only the one-off pointers go.
+    ["focus", "ctab"].forEach((k) => searchParams.delete(k));
     setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
   // Deep-link from global search: ?focus=<docId> opens the document and flashes its row.
   useEffect(() => {
     const focus = searchParams.get("focus");
-    if (!focus || !docs.length) return;
+    if (!focus || !docs.length || searchParams.get("tab") === "company") return;
     const doc = docs.find((d) => d._id === focus);
     if (doc) {
-      setTab("projects");
       setSearch(""); setTypeFilter("All Types");
-      setBrowse({ pid: doc.projectId, tabId: sectionToPath(doc.section).tabId, group: groupKey(doc.section) });
+      // Open the file's folder, in place of the search link (no extra history step).
+      url.set({ tab: "", p: doc.projectId, t: sectionToPath(doc.section).tabId, g: groupKey(doc.section), focus: "" }, { replace: true });
       setSelected(doc);
       setHighlightId(doc._id);
       setTimeout(() => {
         document.getElementById(`doc-${doc._id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 100);
       setTimeout(() => setHighlightId(null), 3000);
+      return;
     }
     searchParams.delete("focus");
     setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, searchParams, setSearchParams]);
 
   // Base set honouring the type filter — folder counts & leaves derive from this.

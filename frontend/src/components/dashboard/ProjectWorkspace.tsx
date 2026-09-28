@@ -690,6 +690,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [openRfqId, setOpenRfqId] = useState<string | undefined>(undefined); // open a specific RFQ after creating it from the BOQ
 
   // Deep-link support for the "+ New" menu: /dashboard/projects/:id?tab=procurement&proc=rfqs
+  // CR 305 (2026-09-25): the address is where the open tab lives now, not a one-off link: it is read
+  // whenever it changes (a refresh, Back, Forward) and kept up to date as tabs are clicked (below).
   useEffect(() => {
     let tab = searchParams.get("tab");
     const proc = searchParams.get("proc");
@@ -705,9 +707,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (tab) setActiveTab(tab);
     if (proc) setProcSub(proc as typeof procSub);
     if (sub) setSubsSubTab(sub as "employees" | "subcontractors" | "partners" | "vendors");
-    // Consume the params so the same destination can be opened again later (and so the user's
-    // own tab clicks aren't snapped back by a stale query string).
-    setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   const [showSectionList, setShowSectionList] = useState(false); // reorder-list panel (kept, hidden by default — on-box arrows are primary)
@@ -1790,6 +1789,32 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [showSubModal, setShowSubModal] = useState(false);
   // Subs & Employees tab: "employees" | "subcontractors", plus which subcontractor is open.
   const [subsSubTab, setSubsSubTab] = useState<"employees" | "subcontractors" | "partners" | "vendors">("employees");
+  /**
+   * CR 305 - the open tab (and its sub-tab, for Procurement, Finances and Subcontractors &
+   * Employees) written to the address as it changes, each change a history step, so a refresh
+   * stays put and Back returns to the tab before. On arrival the address wins: a link or a refresh
+   * is read above, and only a bare address is filled in, without a history step.
+   */
+  const urlTabReady = useRef(false);
+  useEffect(() => {
+    const first = !urlTabReady.current;
+    urlTabReady.current = true;
+    if (first && searchParams.get("tab")) return;
+    const next = new URLSearchParams(searchParams);
+    const put = (k: string, v: string) => { if (v) next.set(k, v); else next.delete(k); };
+    put("tab", activeTab);
+    put("proc", activeTab === "procurement" ? procSub : "");
+    put("fin", activeTab === "finances" ? finSub : "");
+    put("sub", activeTab === "subs" ? subsSubTab : "");
+    // Filling in the sub-tab of a tab the address already names corrects it; it is not a new step.
+    const subKey = activeTab === "procurement" ? "proc" : activeTab === "finances" ? "fin" : activeTab === "subs" ? "sub" : "";
+    // So is turning an old link's tab (?tab=expenses, ?tab=client) into the tab it now opens.
+    const urlTab = searchParams.get("tab") || "";
+    const urlOpens = (FIN_PERM_BY_KEY as Record<string, string>)[urlTab] ? "finances" : urlTab === "client" ? "project-info" : urlTab;
+    const filling = urlOpens === activeTab && (urlTab !== activeTab || (!!subKey && !searchParams.get(subKey)));
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: first || filling });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, procSub, finSub, subsSubTab]);
   // Vendors (shared with the RFQ tab) — listed here so each vendor record can hold agreements.
   const [projVendors, setProjVendors] = useState<ApiVendor[]>([]);
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null);

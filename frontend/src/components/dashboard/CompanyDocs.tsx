@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useUrlState } from "../../hooks/useUrlState";
 import { AnimatePresence } from "motion/react";
 import {
   Plus, Pencil, Trash2, Upload, Eye, Download, Loader2, FolderOpen,
@@ -88,8 +89,6 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
   const [vaultOpen, setVaultOpen] = useState(kind === "classified");
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
   const [loadingTabs, setLoadingTabs] = useState(true);
-  const [activeMain, setActiveMain] = useState<string>("");
-  const [activeSub, setActiveSub] = useState<string>("");
   const [files, setFiles] = useState<CompanyFile[]>([]);
   // CR 211 - the documents table sorts by any column.
   const sort = useTableSort<CompanyFile>(files, {
@@ -112,7 +111,18 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
 
   const mains = useMemo(() => tabs.filter((t) => !t.parentId), [tabs]);
   const subsOf = (parentId: string) => tabs.filter((t) => t.parentId === parentId);
-  const activeSubs = useMemo(() => (activeMain ? subsOf(activeMain) : []), [tabs, activeMain]);
+  /**
+   * CR 305 (2026-09-25): the open tab and sub-tab are in the address (?ct= and ?cs=), so a refresh
+   * keeps you in, say, Insurance, and Back returns to the tab you came from. A tab that no longer
+   * exists falls back to the first one.
+   */
+  const url = useUrlState();
+  const ctParam = url.get("ct"), csParam = url.get("cs");
+  const activeMain = mains.some((t) => t.tabId === ctParam) ? ctParam : (mains[0]?.tabId || "");
+  const activeSubs = useMemo(() => (activeMain ? subsOf(activeMain) : []), [tabs, activeMain]); // eslint-disable-line react-hooks/exhaustive-deps
+  const activeSub = activeSubs.some((t) => t.tabId === csParam) ? csParam : (activeSubs[0]?.tabId || "");
+  const setActiveMain = (id: string) => url.set({ ct: id, cs: "" });
+  const setActiveSub = (id: string) => url.set({ ct: activeMain, cs: id });
   // The tab whose files we show: a chosen sub-tab, or the main tab if it has none.
   const currentTabId = activeSubs.length > 0 ? activeSub : activeMain;
   const currentLabel = tabs.find((t) => t.tabId === currentTabId)?.label || "";
@@ -122,8 +132,8 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
     try {
       const t = await fetchCompanyTabs(kind);
       setTabs(t);
-      const firstMain = preferMain || t.find((x) => !x.parentId)?.tabId || "";
-      setActiveMain((cur) => (cur && t.some((x) => x.tabId === cur) ? cur : firstMain));
+      // A tab just added opens; otherwise the address keeps what was open.
+      if (preferMain && preferMain !== ctParam) url.set({ ct: preferMain, cs: "" });
     } finally {
       setLoadingTabs(false);
     }
@@ -137,8 +147,8 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
     if (!focus?.tabId || !tabs.length) return;
     const tab = tabs.find((t) => t.tabId === focus.tabId);
     if (!tab) return;
-    if (tab.parentId) { setActiveMain(tab.parentId); setActiveSub(tab.tabId); }
-    else { setActiveMain(tab.tabId); }
+    url.set(tab.parentId ? { ct: tab.parentId, cs: tab.tabId } : { ct: tab.tabId, cs: "" }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.tabId, tabs]);
   useEffect(() => {
     if (!focus?.fileId || !files.some((f) => f._id === focus.fileId)) return;
@@ -148,12 +158,7 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [focus?.fileId, files]);
 
-  // When the active main changes, auto-select its first sub-tab (if any).
-  useEffect(() => {
-    const subs = activeMain ? tabs.filter((t) => t.parentId === activeMain) : [];
-    setActiveSub(subs.length > 0 ? subs[0].tabId : "");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMain, tabs.length]);
+  // A main tab opens on its first sub-tab: worked out from the address, no effect needed.
 
   // Load files whenever the resolved current tab changes.
   useEffect(() => {
@@ -190,7 +195,7 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
       if (dialog.mode === "rename" && dialog.tab) {
         if (label === dialog.tab.label) return;
         await renameCompanyTab(dialog.tab.tabId, label);
-        await loadTabs(activeMain);
+        await loadTabs();
         toast("Renamed.", "success");
       } else if (dialog.mode === "addMain") {
         const tab = await createCompanyTab(label, "", kind);
@@ -198,7 +203,7 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
         toast(`Added "${label}".`, "success");
       } else if (dialog.mode === "addSub" && activeMain) {
         const tab = await createCompanyTab(label, activeMain, kind);
-        await loadTabs(activeMain);
+        await loadTabs();
         setActiveSub(tab.tabId);
         toast(`Added "${label}".`, "success");
       }
@@ -212,7 +217,9 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
     const isMain = !tab.parentId;
     try {
       await deleteCompanyTab(tab.tabId);
-      await loadTabs(isMain ? "" : activeMain);
+      await loadTabs();
+      // The deleted tab leaves the address; the first remaining one opens in its place.
+      if (isMain ? tab.tabId === activeMain : tab.tabId === activeSub) url.set(isMain ? { ct: "", cs: "" } : { cs: "" }, { replace: true });
       toast(`Deleted "${tab.label}".`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
   };
@@ -253,6 +260,19 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
   return (
     <div className="space-y-5">
       {banner}
+      {/* CR 305 - where you are, as a path: Documents > Company documents > Insurance > Policies. */}
+      <nav aria-label="Path" className="flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-400">
+        <span>Documents</span>
+        <ChevronRight size={12} className="text-slate-300" />
+        <span className={activeMainTab ? "" : "text-slate-700"}>{kind === "classified" ? "Classified documents" : "Company documents"}</span>
+        {activeMainTab && (
+          <>
+            <ChevronRight size={12} className="text-slate-300" />
+            <span className={activeSubTab ? "" : "text-slate-700"}>{activeMainTab.label}</span>
+          </>
+        )}
+        {activeSubTab && (<><ChevronRight size={12} className="text-slate-300" /><span className="text-slate-700">{activeSubTab.label}</span></>)}
+      </nav>
       {/* Main tabs */}
       <div className="flex items-center gap-2 flex-wrap">
         {mains.map((t) => (
