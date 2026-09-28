@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowUpRight, Circle, Eraser, Highlighter, Minus, Pencil, Redo2, Square, Trash, Type, Undo2 } from "lucide-react";
+import { ArrowUpRight, Circle, Eraser, Highlighter, MessageSquareText, Minus, Pencil, Redo2, Square, Trash, Type, Undo2 } from "lucide-react";
 
 // Shared annotation engine for the toolbox: Draw over the screen, the snip editor and Image Tools.
 // Shapes are kept in "content units" (screen px for the overlay, image px for a picture), drawn on
@@ -9,9 +9,20 @@ export type Pt = [number, number];
 export type Shape =
   | { kind: "pen" | "marker"; color: string; width: number; points: Pt[] }
   | { kind: "arrow" | "line" | "rect" | "ellipse"; color: string; width: number; a: Pt; b: Pt }
-  | { kind: "text"; color: string; size: number; at: Pt; text: string };
+  | { kind: "text"; color: string; size: number; at: Pt; text: string }
+  // CR 303 (2026-09-25) - a comment: a yellow sticky note with its text, as a PDF reader has.
+  | { kind: "note"; color: string; size: number; at: Pt; text: string };
 type LineShape = Extract<Shape, { a: Pt }>;
-export type AnnoTool = "pen" | "marker" | "arrow" | "line" | "rect" | "ellipse" | "text" | "eraser";
+export type AnnoTool = "pen" | "marker" | "arrow" | "line" | "rect" | "ellipse" | "text" | "note" | "eraser";
+
+/** The box a comment note takes, in content units (text width estimated from the font size). */
+function noteBox(s: { size: number; at: Pt; text: string }, measure?: (t: string) => number) {
+  const lines = s.text.split("\n");
+  const pad = s.size * 0.5;
+  const lh = s.size * 1.25;
+  const tw = Math.max(...lines.map((l) => (measure ? measure(l) : l.length * s.size * 0.56)));
+  return { x: s.at[0], y: s.at[1], w: tw + pad * 2 + s.size * 0.3, h: lines.length * lh + pad * 2 - (lh - s.size), pad, lh, lines };
+}
 
 export const ANNO_COLORS = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#0f172a", "#ffffff"];
 
@@ -20,7 +31,26 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], k = 1
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    if (s.kind === "text") {
+    if (s.kind === "note") {
+      ctx.font = `600 ${s.size * k}px Inter, system-ui, sans-serif`;
+      const b = noteBox(s, (t) => ctx.measureText(t).width / k);
+      const [x, y, w, h] = [b.x * k, b.y * k, b.w * k, b.h * k];
+      ctx.shadowColor = "rgba(15,23,42,.18)";
+      ctx.shadowBlur = 4 * k;
+      ctx.shadowOffsetY = 1 * k;
+      ctx.fillStyle = "#fef08a";
+      ctx.fillRect(x, y, w, h);
+      ctx.shadowColor = "transparent";
+      ctx.strokeStyle = "#eab308";
+      ctx.lineWidth = Math.max(1, 0.8 * k);
+      ctx.strokeRect(x, y, w, h);
+      // A band in the chosen colour down the left edge says whose comment it is at a glance.
+      ctx.fillStyle = s.color === "#ffffff" ? "#eab308" : s.color;
+      ctx.fillRect(x, y, Math.max(2, s.size * 0.3 * k), h);
+      ctx.fillStyle = "#422006";
+      ctx.textBaseline = "top";
+      b.lines.forEach((line, i) => ctx.fillText(line, x + (b.pad + s.size * 0.3) * k, y + b.pad * k + i * b.lh * k));
+    } else if (s.kind === "text") {
       ctx.fillStyle = s.color;
       ctx.font = `700 ${s.size * k}px Inter, system-ui, sans-serif`;
       ctx.textBaseline = "top";
@@ -83,6 +113,10 @@ const distToSeg = (p: Pt, a: Pt, b: Pt) => {
 
 /** Whether point p (content units) touches the shape, with a tolerance. */
 export function hitShape(s: Shape, p: Pt, tol: number): boolean {
+  if (s.kind === "note") {
+    const b = noteBox(s);
+    return p[0] >= b.x - tol && p[0] <= b.x + b.w + tol && p[1] >= b.y - tol && p[1] <= b.y + b.h + tol;
+  }
   if (s.kind === "text") {
     const lines = s.text.split("\n");
     const w = Math.max(...lines.map((l) => l.length)) * s.size * 0.6;
@@ -129,7 +163,9 @@ export function useShapeHistory() {
   const undo = useCallback(() => setStack((s) => s.past.length ? { past: s.past.slice(0, -1), now: s.past[s.past.length - 1], future: [s.now, ...s.future] } : s), []);
   const redo = useCallback(() => setStack((s) => s.future.length ? { past: [...s.past, s.now], now: s.future[0], future: s.future.slice(1) } : s), []);
   const reset = useCallback(() => setStack({ past: [], now: [], future: [] }), []);
-  return { shapes: stack.now, setShapes: set, undo, redo, reset, canUndo: stack.past.length > 0, canRedo: stack.future.length > 0 };
+  /** Start over from a given drawing (another page's marks), with a fresh undo history. */
+  const load = useCallback((shapes: Shape[]) => setStack({ past: [], now: shapes, future: [] }), []);
+  return { shapes: stack.now, setShapes: set, undo, redo, reset, load, canUndo: stack.past.length > 0, canRedo: stack.future.length > 0 };
 }
 
 /**
@@ -143,7 +179,7 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draft = useRef<Shape | null>(null);
   const erased = useRef<Shape[] | null>(null);
-  const [textAt, setTextAt] = useState<{ at: Pt; css: Pt } | null>(null);
+  const [textAt, setTextAt] = useState<{ at: Pt; css: Pt; kind: "text" | "note" } | null>(null);
   const [text, setText] = useState("");
   const textRef = useRef<HTMLTextAreaElement>(null);
   const pointerAt = useRef(0); // when the mouse was last pressed, to tell a click away from a focus steal
@@ -181,7 +217,12 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
   const unit = 1 / scale;
 
   const commitText = () => {
-    if (textAt && text.trim()) onChange([...shapes, { kind: "text", color, size: (12 + width * 3) * unit, at: textAt.at, text: text.replace(/\s+$/, "") }]);
+    if (textAt && text.trim()) {
+      const body = text.replace(/\s+$/, "");
+      onChange([...shapes, textAt.kind === "note"
+        ? { kind: "note", color, size: (11 + width) * unit, at: textAt.at, text: body }
+        : { kind: "text", color, size: (12 + width * 3) * unit, at: textAt.at, text: body }]);
+    }
     setTextAt(null);
     setText("");
   };
@@ -219,19 +260,19 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
 
   // Changing tool with a note open keeps what was typed instead of dropping it.
   useEffect(() => {
-    if (tool !== "text" && textAt) commitText();
+    if (textAt && tool !== textAt.kind) commitText();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
   const down = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     const p = toContent(e);
-    if (tool === "text") {
+    if (tool === "text" || tool === "note") {
       // A click places what is open and starts the next note where you clicked, so several
       // labels can be added one after another without going back to the toolbar.
       if (textAt) commitText();
       const r = canvasRef.current!.getBoundingClientRect();
-      setTextAt({ at: p, css: [e.clientX - r.left, e.clientY - r.top] });
+      setTextAt({ at: p, css: [e.clientX - r.left, e.clientY - r.top], kind: tool });
       setText("");
       return;
     }
@@ -280,7 +321,7 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
     onChange([...shapes, d]);
   };
 
-  const cursor = tool === "text" ? "text" : tool === "eraser" ? "cell" : "crosshair";
+  const cursor = tool === "text" || tool === "note" ? "text" : tool === "eraser" ? "cell" : "crosshair";
   return (
     <div className="absolute inset-0" style={style}>
       <canvas
@@ -289,7 +330,7 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
         style={{ cursor }}
         // The text box is created on pointerdown; the mousedown that follows would move focus off
         // it (a canvas cannot hold focus), blurring it away before a word could be typed.
-        onMouseDown={(e) => { if (tool === "text") e.preventDefault(); }}
+        onMouseDown={(e) => { if (tool === "text" || tool === "note") e.preventDefault(); }}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -314,10 +355,10 @@ export function AnnotationLayer({ shapes, onChange, tool, color, width, contentW
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitText(); }
             if (e.key === "Escape") { e.stopPropagation(); setTextAt(null); setText(""); }
           }}
-          placeholder="Type here, Enter to place"
+          placeholder={textAt.kind === "note" ? "Your comment, Enter to place" : "Type here, Enter to place"}
           rows={Math.max(1, text.split("\n").length)}
-          className="absolute min-w-[10rem] resize-none rounded border border-dashed border-slate-500 bg-white/90 px-1 font-bold leading-tight shadow-sm outline-none ring-2 ring-primary/40"
-          style={{ left: textAt.css[0], top: textAt.css[1], color, fontSize: 12 + width * 3, zIndex: 2, pointerEvents: "auto" }}
+          className={`absolute min-w-[10rem] resize-none rounded border px-1 leading-tight shadow-sm outline-none ring-2 ring-primary/40 ${textAt.kind === "note" ? "border-amber-400 bg-yellow-100 font-semibold" : "border-dashed border-slate-500 bg-white/90 font-bold"}`}
+          style={{ left: textAt.css[0], top: textAt.css[1], color: textAt.kind === "note" ? "#422006" : color, fontSize: textAt.kind === "note" ? 11 + width : 12 + width * 3, zIndex: 2, pointerEvents: "auto" }}
         />
       )}
     </div>
@@ -332,6 +373,7 @@ const TOOL_LIST: Array<{ key: AnnoTool; label: string; icon: ReactNode }> = [
   { key: "rect", label: "Rectangle", icon: <Square size={14} /> },
   { key: "ellipse", label: "Circle", icon: <Circle size={14} /> },
   { key: "text", label: "Text", icon: <Type size={14} /> },
+  { key: "note", label: "Comment", icon: <MessageSquareText size={14} /> },
   { key: "eraser", label: "Eraser", icon: <Eraser size={14} /> },
 ];
 

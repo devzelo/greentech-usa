@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-  CheckSquare, ChevronLeft, ChevronRight, Eye, FileStack, FileUp, Files, Loader2, Plus, RotateCcw, RotateCw,
+  CheckSquare, ChevronLeft, ChevronRight, Eye, FileStack, FileUp, Files, Loader2, PenLine, Plus, RotateCcw, RotateCw,
   Scissors, Square, Trash2, X,
 } from "lucide-react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { PDFDocument as LibDocument, PDFPage } from "pdf-lib";
 import ExportActions, { stamp } from "./ExportActions";
+import type { Shape } from "./annotate";
+import { markCanvas, rotateCanvas, stampMarks } from "./pdfMarks";
+import PdfPageMarkup, { type RenderedPage } from "./PdfPageMarkup";
 import { toast } from "../../lib/toast";
 
 // PDF tools: merge, split, rotate, reorder, compress and image-to-PDF, all on one page grid.
 // Everything runs in the browser; nothing is uploaded until the user saves or attaches the result.
+// CR 303 (2026-09-25): any page opens full size to be marked up (text, comments, highlights,
+// drawings); the marks are laid over the page when the PDF is built.
 
 type PdfJs = typeof import("pdfjs-dist");
 let pdfjsReady: Promise<PdfJs> | null = null;
@@ -38,7 +43,11 @@ interface Source {
   height?: number;
 }
 
-interface PageItem { key: string; srcId: string; index: number; rotate: number }
+interface PageItem {
+  key: string; srcId: string; index: number; rotate: number;
+  /** CR 303 - marks drawn on the page, in points, and the page's total rotation when they were drawn. */
+  marks?: Shape[]; markRotate?: number;
+}
 type Mode = "none" | "balanced" | "strong";
 type Busy = "" | "add" | "build" | "extract" | "split";
 interface Result { blob: Blob; name: string; kind: "pdf" | "zip" }
@@ -103,6 +112,12 @@ async function renderPage(page: PDFPageProxy, scale: number, rotation: number) {
   return canvas;
 }
 
+// An image becomes a Letter page (landscape when the picture is wide), with the picture centred.
+function letterFor(src: Source) {
+  const landscape = (src.width ?? 1) > (src.height ?? 1);
+  return { W: landscape ? LETTER.h : LETTER.w, H: landscape ? LETTER.w : LETTER.h };
+}
+
 // Draws an image source onto a white canvas, capped at maxSide px on the long edge.
 async function imageCanvas(src: Source, maxSide: number) {
   const img = await loadImage(src.url!);
@@ -163,12 +178,20 @@ async function buildPdf(
       if (pre) {
         out.addPage(pre);
         if (it.rotate) pre.setRotation(degrees(norm(pre.getRotation().angle + it.rotate)));
+        if (it.marks?.length) await stampMarks(out, pre, it.marks, it.markRotate ?? 0, pre.getCropBox());
       } else {
         const rq = q ?? FALLBACK;
         const page = await src.pdf!.getPage(it.index + 1);
         const rot = norm(page.rotate + it.rotate);
         const size = page.getViewport({ scale: 1, rotation: rot });
         const canvas = await renderPage(page, rq.scale, rot);
+        // A page rebuilt as a picture takes its marks into the picture, turned to match it.
+        if (it.marks?.length) {
+          const r0 = norm(it.markRotate ?? 0);
+          const drawn = page.getViewport({ scale: 1, rotation: r0 });
+          const overlay = rotateCanvas(markCanvas(it.marks, drawn.width, drawn.height, rq.scale), rot - r0);
+          canvas.getContext("2d")!.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+        }
         const jpg = await out.embedJpg(await canvasBytes(canvas, "image/jpeg", rq.quality));
         canvas.width = canvas.height = 0;
         page.cleanup();
@@ -177,15 +200,14 @@ async function buildPdf(
       }
     } else {
       const img = await embedImage(out, src, q);
-      const landscape = (src.width ?? 1) > (src.height ?? 1);
-      const W = landscape ? LETTER.h : LETTER.w;
-      const H = landscape ? LETTER.w : LETTER.h;
+      const { W, H } = letterFor(src);
       const fit = Math.min((W - 2 * LETTER.margin) / img.width, (H - 2 * LETTER.margin) / img.height);
       const w = img.width * fit;
       const h = img.height * fit;
       const p = out.addPage([W, H]);
       p.drawImage(img, { x: (W - w) / 2, y: (H - h) / 2, width: w, height: h });
       if (it.rotate) p.setRotation(degrees(norm(it.rotate)));
+      if (it.marks?.length) await stampMarks(out, p, it.marks, it.markRotate ?? 0, { x: 0, y: 0, width: W, height: H });
     }
     onProgress?.(i + 1);
   }
@@ -214,6 +236,10 @@ export default function PdfTools() {
   const [overKey, setOverKey] = useState("");
   const dragKey = useRef("");
   const inputRef = useRef<HTMLInputElement>(null);
+  // CR 303 - the page open in the markup viewer (its place in the page list), and its picture.
+  const [markupAt, setMarkupAt] = useState<number | null>(null);
+  const viewUrl = useRef("");
+  useEffect(() => () => { if (viewUrl.current) URL.revokeObjectURL(viewUrl.current); }, []);
 
   useEffect(() => { pagesRef.current = pages; }, [pages]);
 
@@ -293,7 +319,8 @@ export default function PdfTools() {
   // Escape closes the workspace; the page behind does not scroll while it is open.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector("[data-toolbox-attach]")) setOpen(false); };
+    // Escape inside the page viewer closes the viewer, not the whole workspace.
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector("[data-toolbox-attach], [data-pdf-markup]")) setOpen(false); };
     window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -401,6 +428,49 @@ export default function PdfTools() {
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
+
+  /** The page as it reads now, drawn large for marking up. */
+  const renderView = async (key: string): Promise<RenderedPage> => {
+    const it = pagesRef.current.find((p) => p.key === key);
+    const src = it && sourcesRef.current.get(it.srcId);
+    if (!it || !src) throw new Error("The page is no longer there.");
+    let canvas: HTMLCanvasElement, w: number, h: number, rot: number;
+    if (src.kind === "pdf") {
+      const page = await src.pdf!.getPage(it.index + 1);
+      rot = norm(page.rotate + it.rotate);
+      const base = page.getViewport({ scale: 1, rotation: rot });
+      w = base.width; h = base.height;
+      canvas = await renderPage(page, Math.min(3, 2400 / Math.max(w, h)), rot);
+      page.cleanup();
+    } else {
+      // The picture on its Letter page, as it will be in the PDF.
+      const { W, H } = letterFor(src);
+      const k = 2400 / Math.max(W, H);
+      const img = await loadImage(src.url!);
+      const c = document.createElement("canvas");
+      c.width = Math.round(W * k); c.height = Math.round(H * k);
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      const fit = Math.min((W - 2 * LETTER.margin) / img.naturalWidth, (H - 2 * LETTER.margin) / img.naturalHeight);
+      const iw = img.naturalWidth * fit, ih = img.naturalHeight * fit;
+      ctx.drawImage(img, ((W - iw) / 2) * k, ((H - ih) / 2) * k, iw * k, ih * k);
+      rot = norm(it.rotate);
+      canvas = rotateCanvas(c, rot);
+      w = rot % 180 ? H : W; h = rot % 180 ? W : H;
+    }
+    const bytes = await canvasBytes(canvas, "image/jpeg", 0.9);
+    if (viewUrl.current) URL.revokeObjectURL(viewUrl.current);
+    viewUrl.current = URL.createObjectURL(toBlob(bytes, "image/jpeg"));
+    return { url: viewUrl.current, w, h, rot };
+  };
+  const setMarks = (key: string, marks: Shape[], rot: number) => {
+    const cur = pagesRef.current.find((p) => p.key === key);
+    const same = JSON.stringify(cur?.marks ?? []) === JSON.stringify(marks);
+    if (same && (cur?.markRotate ?? 0) === rot) return;
+    update(key, (p) => ({ ...p, marks: marks.length ? marks : undefined, markRotate: rot }));
+    // Opening a turned page only re-expresses its marks; a real change makes the built file stale.
+    if (!same && (cur?.markRotate ?? 0) === rot) setResult(null);
+  };
 
   const clearResult = () => setResult(null);
   const clearAll = () => { setPages([]); setResult(null); setOpen(false); };
@@ -588,6 +658,8 @@ export default function PdfTools() {
                       dragKey.current = "";
                       setOverKey("");
                     }}
+                    onDoubleClick={() => setMarkupAt(i)}
+                    title="Double-click to open the page and mark it up"
                     className={`flex cursor-grab flex-col rounded-xl border bg-white p-1.5 shadow-sm transition active:cursor-grabbing ${
                       isSel ? "border-primary ring-2 ring-primary/25" : "border-slate-200"
                     } ${overKey === p.key ? "outline-2 outline-dashed outline-primary" : ""}`}
@@ -616,6 +688,20 @@ export default function PdfTools() {
                         />
                       </label>
                       <span className="absolute right-1 top-1 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{i + 1}</span>
+                      {p.marks?.length ? (
+                        <span className="absolute bottom-1 left-1 inline-flex items-center gap-0.5 rounded-md bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-950 shadow-sm" title={`${p.marks.length} mark${p.marks.length === 1 ? "" : "s"} on this page`}>
+                          <PenLine size={10} /> {p.marks.length}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setMarkupAt(i)}
+                        disabled={working}
+                        className="absolute bottom-1 right-1 inline-flex items-center gap-1 rounded-md bg-white/95 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow-sm hover:text-primary disabled:opacity-40"
+                        aria-label={`Open page ${i + 1} to view and mark it up`}
+                      >
+                        <Eye size={11} /> Open
+                      </button>
                     </div>
                     <p className="mt-1 truncate text-[10px] text-slate-500" title={src ? `${src.name}, ${pageLabel}` : ""}>
                       {src?.name ?? "Unknown"} <span className="text-slate-400">{pageLabel}</span>
@@ -670,7 +756,7 @@ export default function PdfTools() {
   return (
     <div className="space-y-2" onDragOver={onFileDragOver} onDragLeave={onFileDragLeave} onDrop={onFileDrop}>
       <p className="text-[11px] text-slate-500">
-        Merge, split, rotate, reorder and compress PDFs, or turn photos into a PDF. Files are processed on this device.
+        Merge, split, rotate, reorder and compress PDFs, or turn photos into a PDF. Open any page to add text, comments, highlights or drawings. Files are processed on this device.
       </p>
       <button
         type="button"
@@ -697,6 +783,18 @@ export default function PdfTools() {
       )}
       {fileInput}
       {open && createPortal(workspace, document.body)}
+      {open && markupAt !== null && pages[markupAt] && (
+        <PdfPageMarkup
+          pages={pages.map((p) => {
+            const src = sourcesRef.current.get(p.srcId);
+            return { key: p.key, label: `${src?.name ?? "Unknown"}${src?.kind === "pdf" ? `, p.${p.index + 1}` : ""}`, marks: p.marks ?? [], markRotate: p.markRotate ?? 0 };
+          })}
+          start={markupAt}
+          render={renderView}
+          onMarks={setMarks}
+          onClose={() => setMarkupAt(null)}
+        />
+      )}
     </div>
   );
 }
