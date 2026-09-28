@@ -597,6 +597,21 @@ const BADGE: Record<Approval, string> = {
   pending: "bg-amber-50 text-amber-600",
 };
 const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+/**
+ * CR 304 (2026-09-25) - what each entry is and where it came from, so the list says whether a
+ * line is an invoice paid, a purchase order's bill, or an expense logged by hand.
+ */
+function expenseType(e: MyExpense): { label: string; detail: string; cls: string } {
+  if (e.invoiceId) {
+    const detail = [e.invoiceNo ? `Invoice ${e.invoiceNo}` : "", e.invoiceParty, e.poNo ? `PO ${e.poNo}` : ""].filter(Boolean).join(" · ");
+    return e.poNo
+      ? { label: "PO invoice payment", detail, cls: "bg-violet-50 text-violet-700" }
+      : { label: "Invoice payment", detail, cls: "bg-blue-50 text-blue-700" };
+  }
+  if (e.historic) return { label: "Past expense", detail: "Recorded in bulk, already paid", cls: "bg-slate-100 text-slate-600" };
+  if (e.items?.length) return { label: "Itemised expense", detail: `${e.items.length} item${e.items.length === 1 ? "" : "s"}`, cls: "bg-emerald-50 text-emerald-700" };
+  return { label: "Expense", detail: "Logged by hand", cls: "bg-emerald-50 text-emerald-700" };
+}
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function MyExpensesCard({ expenses }: { expenses: MyExpense[] }) {
@@ -619,7 +634,7 @@ function MyExpensesCard({ expenses }: { expenses: MyExpense[] }) {
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={CARD}>
       <h2 className="text-xl font-display font-bold text-slate-900 mb-1 flex items-center gap-2"><Receipt size={20} className="text-primary" /> My Logged Expenses</h2>
-      <p className="text-xs text-slate-400 mb-5">Expenses you've added across your projects. Only you and the project team can see these.</p>
+      <p className="text-xs text-slate-400 mb-5">Expenses you've added across your projects, including payments on invoices and purchase orders. Only you and the project team can see these.</p>
 
       {rows.length === 0 ? (
         <p className="text-sm text-slate-400 italic">You haven't logged any expenses yet.</p>
@@ -649,17 +664,23 @@ function MyExpensesCard({ expenses }: { expenses: MyExpense[] }) {
             <>
               {/* Tablet and up: a table that scrolls inside the card */}
               <div className="hidden sm:block max-h-[28rem] overflow-auto rounded-2xl border border-slate-100">
-                <table className="w-full min-w-[36rem] text-sm">
+                <table className="w-full min-w-[44rem] text-sm">
                   <thead>
                     <tr>
-                      {["Project", "Description", "Qty", "Unit price", "Total", "Date", "Approval"].map((h, i) => (
-                        <th key={h} className={`sticky top-0 z-10 bg-slate-50 border-b border-slate-100 px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap ${i >= 2 && i <= 4 ? "text-right" : "text-left"}`}>{h}</th>
+                      {["Type", "Project", "Description", "Qty", "Unit price", "Total", "Date", "Approval"].map((h, i) => (
+                        <th key={h} className={`sticky top-0 z-10 bg-slate-50 border-b border-slate-100 px-3 py-3 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap ${i >= 3 && i <= 5 ? "text-right" : "text-left"}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {shown.map(({ e, approval, unit, total }) => (
+                    {shown.map(({ e, approval, unit, total }) => {
+                      const t = expenseType(e);
+                      return (
                       <tr key={e._id} className="hover:bg-slate-50/40 align-top">
+                        <td className="px-3 py-2.5 min-w-[8rem]">
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap ${t.cls}`}>{t.label}</span>
+                          {t.detail && <p className="mt-0.5 text-[11px] text-slate-400 line-clamp-2" title={t.detail}>{t.detail}</p>}
+                        </td>
                         <td className="px-3 py-2.5 font-bold text-slate-700 max-w-[9rem] truncate" title={e.projectName}>{e.projectName}</td>
                         <td className="px-3 py-2.5 text-slate-600 min-w-[10rem]">
                           {e.description ? <p className="line-clamp-2" title={e.description}>{e.description}</p> : dash}
@@ -673,7 +694,8 @@ function MyExpensesCard({ expenses }: { expenses: MyExpense[] }) {
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${BADGE[approval]}`}>{approval}</span>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -682,6 +704,10 @@ function MyExpensesCard({ expenses }: { expenses: MyExpense[] }) {
               <ul className="sm:hidden max-h-[28rem] overflow-y-auto divide-y divide-slate-100 rounded-2xl border border-slate-100">
                 {shown.map(({ e, approval, unit, total }) => (
                   <li key={e._id} className="p-3 space-y-1">
+                    <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold ${expenseType(e).cls}`}>{expenseType(e).label}</span>
+                      <span className="truncate">{expenseType(e).detail}</span>
+                    </p>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-bold text-slate-700 truncate">{e.projectName}</span>
                       <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${BADGE[approval]}`}>{approval}</span>

@@ -1354,7 +1354,11 @@ export async function fetchExpenses(projectId: string) {
 }
 
 /** The caller's own logged expenses across all their projects (subcontractor profile). */
-export interface MyExpense extends ApiExpense { projectId: string; projectName: string }
+export interface MyExpense extends ApiExpense {
+  projectId: string; projectName: string;
+  /** CR 304 - for a payment on a received invoice: its number, supplier and purchase order. */
+  invoiceNo?: string; invoiceParty?: string; poNo?: string;
+}
 export async function fetchMyExpenses(): Promise<MyExpense[]> {
   return request(`/projects/my-expenses`);
 }

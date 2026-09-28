@@ -4,6 +4,9 @@ import Project from "../models/Project";
 import User from "../models/User";
 import Company from "../models/Company";
 import Expense from "../models/Expense";
+import Invoice from "../models/Invoice";
+import ProcurementPO from "../models/ProcurementPO";
+import mongoose from "mongoose";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
@@ -152,7 +155,22 @@ router.get("/my-expenses", async (req: AuthedRequest, res: Response, next: NextF
       ? await Expense.find({ projectId: { $in: ids }, $or: [{ addedById: userId }, { subId: { $in: mySubIds } }] })
           .sort({ createdAt: -1 }).lean()
       : [];
-    res.json(expenses.map((e) => ({ ...e, projectName: nameById[e.projectId] || e.projectId })));
+    // CR 304 (2026-09-25) - what each entry is: a payment on a received invoice (named by its number,
+    // supplier and purchase order, when it came from one), or an expense logged by hand.
+    const invIds = [...new Set(expenses.map((e) => e.invoiceId).filter((x): x is string => !!x && mongoose.isValidObjectId(x)))];
+    const invoices = invIds.length ? await Invoice.find({ _id: { $in: invIds } }).select("number party poId").lean() : [];
+    const poIds = [...new Set(invoices.map((i) => i.poId).filter((x) => !!x && mongoose.isValidObjectId(x)))];
+    const pos = poIds.length ? await ProcurementPO.find({ _id: { $in: poIds } }).select("poNo").lean() : [];
+    const invById = new Map(invoices.map((i) => [String(i._id), i]));
+    const poNoById = new Map(pos.map((po) => [String(po._id), po.poNo || ""]));
+    res.json(expenses.map((e) => {
+      const inv = e.invoiceId ? invById.get(e.invoiceId) : undefined;
+      return {
+        ...e,
+        projectName: nameById[e.projectId] || e.projectId,
+        ...(inv ? { invoiceNo: inv.number || "", invoiceParty: inv.party || "", poNo: inv.poId ? poNoById.get(inv.poId) || "" : "" } : {}),
+      };
+    }));
   } catch (err) { next(err); }
 });
 
