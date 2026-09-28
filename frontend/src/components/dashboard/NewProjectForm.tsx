@@ -1,3 +1,5 @@
+import BondingEditor from "./BondingEditor";
+import { emptyBonding, type ProjectBonding } from "../../lib/bonding";
 import { motion, AnimatePresence } from "motion/react";
 import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -191,6 +193,8 @@ export default function NewProjectForm() {
   const [isPublished, setIsPublished] = useState(false);
   const [progress, setProgress] = useState(0);
   const [projectValue, setProjectValue] = useState("");
+  // CR 309 - bonds and letter of credit, set when the project is made and updated in Legal Docs.
+  const [bonding, setBonding] = useState<ProjectBonding>(emptyBonding);
   const [fiscal, setFiscal] = useState("");
   const [compliance, setCompliance] = useState("");
   const [disciplinesInput, setDisciplinesInput] = useState("");
@@ -370,6 +374,7 @@ export default function NewProjectForm() {
         startDate,
         endDate,
         value: projectValue,
+        bonding,
         fiscal,
         compliance,
         disciplines: disciplinesInput.split(",").map((d) => d.trim()).filter(Boolean),
@@ -655,6 +660,12 @@ export default function NewProjectForm() {
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>
+          </div>
+          {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bonding &amp; letter of credit</label>
+            <BondingEditor value={bonding} onChange={setBonding} contractValue={projectValue} />
+            <p className="text-[10px] text-slate-400">The same figures show at the top of the project&apos;s Legal Docs, where they can be updated once a bank accepts.</p>
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiscal / Funding</label>

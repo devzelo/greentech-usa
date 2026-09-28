@@ -61,6 +61,8 @@ export interface IProject extends Document {
   fiscal: string;
   compliance: string;
   value: string; // contract value / project worth (free-form, e.g. "$2.5M" or "USD 2,500,000")
+  /** CR 309 - bonds and letter of credit (see lib/bonding.ts). */
+  bonding?: Record<string, unknown>;
   // Financial figures access (client request, 2026-09-11) — per person (userId → on/off), who sees
   // the project's value and its expense / income / profit totals. With no entry, GT staff see them
   // and outside logins do not (lib/access canSeeFigures).
@@ -263,6 +265,7 @@ const ProjectSchema = new Schema<IProject>(
     fiscal: { type: String, default: "" },
     compliance: { type: String, default: "" },
     value: { type: String, default: "" },
+    bonding: { type: Schema.Types.Mixed, default: undefined },
     figuresAccess: { type: Schema.Types.Mixed, default: {} },   // financial figures access, per userId
     disciplines: [{ type: String }],
     scopeOfWork: { type: [String], default: [] },

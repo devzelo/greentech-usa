@@ -182,6 +182,8 @@ export interface ApiProject {
   fiscal: string;
   compliance: string;
   value: string; // contract value / project worth (free-form)
+  /** CR 309 - bonds and letter of credit; absent for people who cannot see the figures. */
+  bonding?: Partial<import("./bonding").ProjectBonding>;
   disciplines: string[];
   /** CR 277 - key scope of work bullets, shown in About This Project. */
   scopeOfWork?: string[];

@@ -28,6 +28,7 @@ import ProcurementShipment from "./ProcurementShipment";
 import ProcurementPO from "./ProcurementPO";
 import { projectPdfInfo } from "../../lib/pdfProjectHeader";
 import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
+import { BondingCard } from "./BondingEditor";
 import { logoAsPng } from "../../lib/logoImage";
 import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -6291,6 +6292,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           )}
 
           {/* LEGAL DOCS */}
+          {/* CR 309 - the bonding figures in brief, above the bank and bond documents. */}
+          {activeTab === "legal" && id && project && (
+            <BondingCard project={project} canEdit={canEditIdentity} onSaved={(bonding) => setProject((p) => (p ? { ...p, bonding } : p))} />
+          )}
           {activeTab === "legal" && id && (
             /* CR-P (152) — the same tab system as Project Management. */
             <DocTabs

@@ -16,6 +16,7 @@ import { getProjectAccess, isProjectGuest, canSeeFigures } from "../lib/access";
 import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
 import { duplicateProject } from "../lib/duplicateProject";
+import { cleanBonding } from "../lib/bonding";
 
 // Shared check: is the requester the JV partner of this project (or staff)?
 async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { email?: string }; ownerId?: unknown; assignedEmployees?: string[]; guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }> }): Promise<boolean> {
@@ -51,7 +52,7 @@ function shapeFigures(project: unknown, userId: string, role: string): Record<st
   const can = canSeeFigures(obj as { ownerId?: unknown; figuresAccess?: Record<string, boolean> }, userId, role);
   const isOwner = !!obj.ownerId && String(obj.ownerId) === String(userId);
   if (!isOwner && role !== "admin") delete obj.figuresAccess;
-  if (!can) obj.value = "";
+  if (!can) { obj.value = ""; delete obj.bonding; }   // CR 309 - bond amounts are figures too
   obj.canSeeFigures = can;
   return obj;
 }
@@ -361,6 +362,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     // project's place in that year (2601, 2602 ...). See lib/projectNumber.
     const nextNumber = () => nextProjectNumber(req.body.contractDate, req.body.contractYear);
 
+    if (req.body.bonding !== undefined) req.body.bonding = cleanBonding(req.body.bonding);
     // Stamp owner from the authenticated user
     req.body.ownerId = req.user!.userId;
     req.body.owner = req.user!.name;
@@ -389,7 +391,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 const IDENTITY_FIELDS = new Set([
   "name", "status", "category", "categories", "contractType", "cpars", "contractNo", "solicitationNo", "contractYear", "contractDate", "contractFile", "location", "siteAddress", "description",
   "owner", "ownerId", "image", "published", "progress",
-  "startDate", "endDate", "fiscal", "compliance", "value", "disciplines", "scopeOfWork",
+  "startDate", "endDate", "fiscal", "compliance", "value", "bonding", "disciplines", "scopeOfWork",
   "projectNature", "clientInfo", "timeline",
   "schedule",   // CR-P (121)-(126) — milestones & extensions; assigned employees are let through below
   // The JV partner record carries the partner's stamps & signatures, which end up on signed
@@ -440,6 +442,7 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
       }
     }
 
+    if (req.body.bonding !== undefined) req.body.bonding = cleanBonding(req.body.bonding);
     // Never let clients overwrite ownership
     delete req.body.ownerId;
     delete req.body.owner;
