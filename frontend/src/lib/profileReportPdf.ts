@@ -31,6 +31,8 @@ export interface ProfileReportInput {
   stats: Array<[string, string]>;       // the figures across the top
   sections: ProfileReportSection[];
   note?: string;                        // footer note
+  /** CR 307 - the company's logo as a PNG data URL, printed beside its name. */
+  logo?: string;
 }
 
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -42,8 +44,22 @@ export async function buildProfileReportPdf(o: ProfileReportInput): Promise<Blob
   const newPage = (): Flow => brandPage(doc, b, PAGE, note);
   let f = newPage();
 
+  // CR 307 (2026-09-25): the logo goes beside the name, in a box it keeps its proportions in.
+  let tx = X;
+  let logoBottom = f.y;
+  if (o.logo) {
+    try {
+      const png = await doc.embedPng(o.logo);
+      const box = 64;
+      const k = Math.min(box / png.width, box / png.height);
+      const w = png.width * k, h = png.height * k;
+      f.page.drawImage(png, { x: X + (box - w) / 2, y: f.y + 6 - box + (box - h) / 2, width: w, height: h });
+      tx = X + box + 14;
+      logoBottom = f.y + 6 - box - 8;
+    } catch { /* an unreadable logo leaves the report as it was */ }
+  }
   f.y = titleBlock(f.page, b, {
-    x: X, y: f.y, w: W,
+    x: tx, y: f.y, w: W - (tx - X),
     eyebrow: o.kind === "company" ? "Directory · company report" : "Team · person report",
     title: o.name,
     meta: [
@@ -51,6 +67,7 @@ export async function buildProfileReportPdf(o: ProfileReportInput): Promise<Blob
       ["Generated", new Date().toLocaleDateString(undefined, { dateStyle: "medium" })],
     ],
   });
+  f.y = Math.min(f.y, logoBottom);
   f.y -= 8;
 
   // ── The figures across the top ──

@@ -12,6 +12,7 @@ import {
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
+import { logoAsPng } from "../../lib/logoImage";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { fileName } from "../../lib/fileNames";
 import TaskMiniBoard from "./TaskMiniBoard";
@@ -116,9 +117,15 @@ export default function CompanyProfile({
   const pname = (id?: string) => (id ? projById[id] || id : "-");
   const buildReport = async () => {
     const { buildProfileReportPdf } = await import("../../lib/profileReportPdf");
+    // CR 307 - the logo beside the name; the report still prints if it cannot be read.
+    let logo: string | undefined;
+    if (company.logoUrl) {
+      try { logo = await logoAsPng(withFileToken(company.logoUrl)); } catch { logo = undefined; }
+    }
     return buildProfileReportPdf({
       kind: "company",
       name: company.name,
+      logo,
       subtitle: company.category || "",
       fields: [
         ["Category", company.category || ""],
