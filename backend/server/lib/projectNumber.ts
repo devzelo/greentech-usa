@@ -2,8 +2,14 @@ import Project from "../models/Project";
 
 /**
  * CR 295 (2026-09-24): the GT project number is four plain digits and nothing else. The first two
- * are the year the contract was signed, the last two are the project's place in that year, from
- * 01. The first project of 2026 is 2601, the second 2602, and 2027 starts again at 2701.
+ * are the year, the last two are the project's place in that year, from 01. The first project of
+ * 2026 is 2601, the second 2602, and 2027 starts again at 2701.
+ *
+ * CR 313 (2026-09-25): the year is the year the project is created, not the contract's. A project
+ * starts life as an opportunity or a proposal, often months before any award, and keeps its number
+ * from then to closeout: a proposal written in November 2026 and awarded in 2027 stays 26xx. Every
+ * project made that year counts, drafts and proposals included, and a number is never handed out
+ * twice, so a cancelled proposal's number is simply not used again.
  *
  * It used to read <year>-<NN> ("2026-10"). Numbers issued under that scheme are left alone: an id
  * is in the project's URL and in the path of every file uploaded to it, so renumbering old
@@ -11,21 +17,18 @@ import Project from "../models/Project";
  * sequence, so a 2026 project can never be handed a number that looks like an earlier one.
  */
 
-/** The two digits a number starts with: the contract date's year, else the year on the project. */
-export function yearPrefix(contractDate?: string, contractYear?: string): string {
-  const fromDate = /^([0-9]{4})-[0-9]{2}-[0-9]{2}$/.exec(String(contractDate ?? "").trim());
-  const four = /^[0-9]{4}$/.test(String(contractYear ?? "").trim());
-  const year = fromDate ? fromDate[1] : four ? String(contractYear).trim() : String(new Date().getFullYear());
-  return year.slice(-2);
+/** The two digits a number starts with: the year it is created in. */
+export function yearPrefix(now = new Date()): string {
+  return String(now.getFullYear()).slice(-2);
 }
 
 /**
  * The next free number for that year. Worked out from the highest number already issued, not from
  * a count, so deleting a project can never mint a duplicate.
  */
-export async function nextProjectNumber(contractDate?: string, contractYear?: string): Promise<string> {
-  const yy = yearPrefix(contractDate, contractYear);
-  const yyyy = String(new Date().getFullYear()).slice(0, 2) + yy;   // 26 -> 2026, for the old ids
+export async function nextProjectNumber(now = new Date()): Promise<string> {
+  const yy = yearPrefix(now);
+  const yyyy = String(now.getFullYear());   // 2026, for the old "2026-10" ids
   // [0-9] rather than \d: the year is interpolated into these, and this survives any tooling that
   // mangles backslashes.
   const [current, legacy] = await Promise.all([

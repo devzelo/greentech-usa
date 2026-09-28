@@ -86,7 +86,7 @@ export async function duplicateProject(oldPid: string, opts: { ownerId: string; 
   if (!src) throw new Error("Project not found");
 
   // CR 295 - the same four-digit number the create route issues.
-  const newPid = await nextProjectNumber(src.contractDate, src.contractYear);
+  const newPid = await nextProjectNumber();   // CR 313 - a copy is a new project, made today
 
   // Copy the whole uploads/<oldPid> tree so every file has its own physical copy.
   try {

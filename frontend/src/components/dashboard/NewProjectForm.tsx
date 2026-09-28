@@ -281,9 +281,10 @@ export default function NewProjectForm() {
   // Fill the client fields from a Directory client company (picked or newly created).
   useEffect(() => {
     let alive = true;
-    fetchNextProjectNumber(contractDate, contractYear).then((n) => { if (alive) setGtNumber(n); }).catch(() => { if (alive) setGtNumber(""); });
+    // CR 313 - the number follows the day the project is made, so it is fetched once.
+    fetchNextProjectNumber().then((n) => { if (alive) setGtNumber(n); }).catch(() => { if (alive) setGtNumber(""); });
     return () => { alive = false; };
-  }, [contractDate, contractYear]);
+  }, []);
 
   const applyClientCompany = (c: ApiCompany) => {
     setClientName(c.name || "");
@@ -545,8 +546,9 @@ export default function NewProjectForm() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Assigned automatically</span>
             </div>
             <p className="text-[10px] text-slate-400">
-              The year from the contract date, then this project's place in that year. It is issued when the project is created,
-              so it may differ if someone else creates one first.
+              This year, then this project&apos;s place among every project made this year (proposals and drafts included).
+              It is kept for life, from proposal to closeout, even if the award comes next year. Issued when the project is
+              created, so it may differ if someone else creates one first.
             </p>
           </div>
           <div className="space-y-2">
@@ -580,7 +582,7 @@ export default function NewProjectForm() {
               placeholder={String(new Date().getFullYear())}
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
-            <p className="text-[10px] text-slate-400">Taken from the contract date. The GT project number starts with its last two digits.</p>
+            <p className="text-[10px] text-slate-400">Taken from the contract date. It does not change the GT project number.</p>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>

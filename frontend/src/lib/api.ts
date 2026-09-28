@@ -1073,9 +1073,8 @@ export async function fetchProject(id: string): Promise<ApiProject> {
  * CR 298 - the four-digit number a project created now would be given, for the New Project form to
  * show while it is being filled in. It is a preview: the number is allocated on creation.
  */
-export async function fetchNextProjectNumber(contractDate = "", contractYear = ""): Promise<string> {
-  const q = new URLSearchParams({ contractDate, contractYear }).toString();
-  const r = await request<{ number: string }>(`/projects/next-number?${q}`);
+export async function fetchNextProjectNumber(): Promise<string> {
+  const r = await request<{ number: string }>(`/projects/next-number`);
   return r.number;
 }
 

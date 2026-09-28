@@ -20,7 +20,13 @@ import mongoose from "mongoose";
 import { connectDB } from "./config/db";
 import Project from "./models/Project";
 import Agreement from "./models/Agreement";
-import { yearPrefix } from "./lib/projectNumber";
+// CR 297's one-off renumbering used the contract year; new numbers follow the creation year
+// (CR 313, lib/projectNumber), but this script keeps the rule it ran with.
+const yearPrefix = (contractDate?: string, contractYear?: string) => {
+  const fromDate = /^([0-9]{4})-[0-9]{2}-[0-9]{2}$/.exec(String(contractDate ?? "").trim());
+  const four = /^[0-9]{4}$/.test(String(contractYear ?? "").trim());
+  return (fromDate ? fromDate[1] : four ? String(contractYear).trim() : String(new Date().getFullYear())).slice(-2);
+};
 
 // Every project-scoped collection, imported for the side effect of registering the model, so the
 // sweep below finds them from the schemas rather than from a list that would fall out of date.

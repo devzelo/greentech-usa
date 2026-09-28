@@ -247,15 +247,15 @@ const sectionWords = (v?: VolContent) =>
   (v?.sections || []).reduce((n, s) => n + String((s as { body?: string }).body || "").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length, 0);
 
 /**
- * CR 298 - GET /api/projects/next-number?contractDate=YYYY-MM-DD: the four-digit number a project
- * created now would be given, so the New Project form can show it while it is being filled in.
+ * CR 298 - GET /api/projects/next-number: the four-digit number a project created now would be
+ * given (CR 313: from today's year, whatever the contract date), so the New Project form can show it while it is being filled in.
  * A preview only - the number is allocated when the project is actually created, so two people
  * filling the form at once are not handed the same one. (Before "/:id" so it is not read as an id.)
  */
 router.get("/next-number", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
-    const number = await nextProjectNumber(String(req.query.contractDate || ""), String(req.query.contractYear || ""));
+    const number = await nextProjectNumber();
     res.json({ number });
   } catch (err) { next(err); }
 });
@@ -358,9 +358,9 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (req.user!.role === "subcontractor") {
       return res.status(403).json({ error: "Guests cannot create projects." });
     }
-    // CR 295 - the internal number is four plain digits: the contract year's last two, then the
-    // project's place in that year (2601, 2602 ...). See lib/projectNumber.
-    const nextNumber = () => nextProjectNumber(req.body.contractDate, req.body.contractYear);
+    // CR 295 / 313 - the internal number is four plain digits: the year the project is created,
+    // then its place in that year (2601, 2602 ...). See lib/projectNumber.
+    const nextNumber = () => nextProjectNumber();
 
     if (req.body.bonding !== undefined) req.body.bonding = cleanBonding(req.body.bonding);
     // Stamp owner from the authenticated user
@@ -443,7 +443,10 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
     }
 
     if (req.body.bonding !== undefined) req.body.bonding = cleanBonding(req.body.bonding);
-    // Never let clients overwrite ownership
+    // Never let clients overwrite ownership, and a project keeps its number for life (CR 313): it is
+    // in the project's address and in the path of every file uploaded to it.
+    delete req.body.projectId;
+    delete req.body.previousIds;
     delete req.body.ownerId;
     delete req.body.owner;
     // The contract document is written only by /projects/:id/contract, which also cleans up the
