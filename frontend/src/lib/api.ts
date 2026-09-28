@@ -3180,12 +3180,15 @@ export interface CompanyTab {
   parentId: string;
   order: number;
   system: boolean;
+  /** CR 306 - folders made inside the tab ("Bonds", "Bonds/Chase Bank"). */
+  folders?: string[];
 }
 
 export interface CompanyFile {
   _id: string;
   kind: "company" | "classified" | "profile";
   tabId: string;
+  folder?: string;      // CR 306 - the folder inside the tab ("" = the tab itself)
   companyId?: string;   // profile files (CR-P-07)
   docType?: string;     // catalogue | certification | document | other
   name: string;
@@ -3245,6 +3248,19 @@ export async function fetchCompanyFiles(opts: { kind: "company" | "classified"; 
   if (opts.tab) qs.set('tab', opts.tab);
   if (opts.archived) qs.set('archived', 'true');
   return request(`/company/files?${qs.toString()}`);
+}
+// CR 306 - folders inside a company / classified tab.
+export async function createCompanyFolder(tabId: string, path: string): Promise<CompanyTab> {
+  return request(`/company/tabs/${encodeURIComponent(tabId)}/folders`, { method: 'POST', body: JSON.stringify({ path }) });
+}
+export async function renameCompanyFolder(tabId: string, from: string, to: string): Promise<CompanyTab> {
+  return request(`/company/tabs/${encodeURIComponent(tabId)}/folders`, { method: 'PATCH', body: JSON.stringify({ from, to }) });
+}
+export async function deleteCompanyFolder(tabId: string, path: string): Promise<CompanyTab> {
+  return request(`/company/tabs/${encodeURIComponent(tabId)}/folders?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+}
+export async function moveCompanyFile(id: string, folder: string): Promise<CompanyFile> {
+  return request(`/company/files/${id}`, { method: 'PATCH', body: JSON.stringify({ folder }) });
 }
 // CR-P-39 — archive / restore a company file.
 export async function setCompanyFileArchived(id: string, archived: boolean): Promise<CompanyFile> {
@@ -3306,10 +3322,11 @@ export async function fetchNdaFiles(): Promise<CompanyFile[]> { return request('
 /** CR-P (45) - the standard terms & conditions pool (its own Company Documents tab). */
 export async function fetchTermsFiles(): Promise<CompanyFile[]> { return request('/company/terms-files'); }
 
-export async function uploadCompanyFile(file: File, opts: { kind: "company" | "classified"; tabId?: string }): Promise<CompanyFile> {
+export async function uploadCompanyFile(file: File, opts: { kind: "company" | "classified"; tabId?: string; folder?: string }): Promise<CompanyFile> {
   const fd = new FormData();
   fd.append('kind', opts.kind);
   if (opts.tabId) fd.append('tabId', opts.tabId);
+  if (opts.folder) fd.append('folder', opts.folder);
   fd.append('file', file);
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}/api/company/files`, {

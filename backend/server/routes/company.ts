@@ -357,6 +357,81 @@ router.delete("/tabs/:tabId", async (req: AuthedRequest, res: Response, next: Ne
   }
 });
 
+// ── CR 306 (2026-09-25): folders inside a tab ─────────────────────────────────
+// A folder is a path within its tab ("Bonds", "Bonds/Chase Bank"). Files carry the path they sit
+// in; a folder made empty with New folder is remembered on the tab until files go into it.
+// Classified folders follow the classified files: administrators only.
+
+/** A clean folder path: plain names, no "." or "..", at most 8 deep. "" is the tab itself. */
+export function cleanFolder(v: unknown): string {
+  return String(v ?? "")
+    .split(/[\\/]+/)
+    .map((p) => p.replace(/[\u0000-\u001f<>:"|?*]/g, "").trim().slice(0, 80))
+    .filter((p) => p && p !== "." && p !== "..")
+    .slice(0, 8)
+    .join("/")
+    .slice(0, 400);
+}
+const within = (folder: string, root: string) => folder === root || folder.startsWith(`${root}/`);
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+async function folderTab(req: AuthedRequest, res: Response) {
+  const tab = await CompanyTab.findOne({ tabId: req.params.tabId });
+  if (!tab) { res.status(404).json({ error: "Tab not found." }); return null; }
+  if (tab.kind === "classified" && !isAdmin(req)) { res.status(403).json({ error: "Administrator access required." }); return null; }
+  return tab;
+}
+
+// POST /api/company/tabs/:tabId/folders { path } - make a folder (and any folders above it).
+router.post("/tabs/:tabId/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const tab = await folderTab(req, res);
+    if (!tab) return;
+    const folder = cleanFolder(req.body?.path);
+    if (!folder) return res.status(400).json({ error: "Name the folder." });
+    if (!tab.folders.includes(folder)) {
+      if (tab.folders.length >= 500) return res.status(400).json({ error: "This tab has too many folders." });
+      tab.folders.push(folder);
+      await tab.save();
+    }
+    res.status(201).json(tab);
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/company/tabs/:tabId/folders { from, to } - rename or move a folder, with its files.
+router.patch("/tabs/:tabId/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const tab = await folderTab(req, res);
+    if (!tab) return;
+    const from = cleanFolder(req.body?.from), to = cleanFolder(req.body?.to);
+    if (!from || !to) return res.status(400).json({ error: "Name the folder." });
+    if (within(to, from)) return res.status(400).json({ error: "A folder cannot go inside itself." });
+    const moved = (f: string) => (within(f, from) ? to + f.slice(from.length) : f);
+    const files = await CompanyFile.find({ tabId: tab.tabId, folder: { $regex: `^${escapeRe(from)}(/|$)` } });
+    for (const f of files) { f.folder = moved(f.folder); await f.save(); }
+    tab.folders = [...new Set(tab.folders.map(moved))];
+    if (!tab.folders.includes(to)) tab.folders.push(to);
+    await tab.save();
+    res.json(tab);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/company/tabs/:tabId/folders?path= - remove an empty folder. One holding files
+// (archived ones included) is refused, so nothing is deleted by accident.
+router.delete("/tabs/:tabId/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const tab = await folderTab(req, res);
+    if (!tab) return;
+    const folder = cleanFolder(req.query.path);
+    if (!folder) return res.status(400).json({ error: "Which folder?" });
+    const inside = await CompanyFile.countDocuments({ tabId: tab.tabId, folder: { $regex: `^${escapeRe(folder)}(/|$)` } });
+    if (inside) return res.status(400).json({ error: `The folder still holds ${inside} file${inside === 1 ? "" : "s"}. Move or delete them first.` });
+    tab.folders = tab.folders.filter((f) => !within(f, folder));
+    await tab.save();
+    res.json(tab);
+  } catch (err) { next(err); }
+});
+
 // ── Files ──────────────────────────────────────────────────────────────────
 
 // GET /api/company/files?tab=<tabId>&kind=company|classified
@@ -460,6 +535,7 @@ router.post("/files", upload.single("file"), async (req: AuthedRequest, res: Res
     const file = await CompanyFile.create({
       kind,
       tabId,
+      folder: cleanFolder(req.body.folder),
       name: req.file.originalname,
       fileType: extOf(req.file.originalname),
       size: humanSize(req.file.size),
@@ -481,6 +557,7 @@ router.patch("/files/:id", async (req: AuthedRequest, res: Response, next: NextF
     if (file.kind === "classified" && !isAdmin(req)) return res.status(403).json({ error: "Administrator access required." });
     if (typeof req.body?.archived === "boolean") file.archived = req.body.archived;
     if (typeof req.body?.description === "string") file.description = req.body.description.slice(0, 2000);
+    if (typeof req.body?.folder === "string") file.folder = cleanFolder(req.body.folder);   // CR 306 - move
     // Proposal step 4 - what the document is, its version and expiry.
     if (typeof req.body?.libraryKey === "string") file.libraryKey = req.body.libraryKey.slice(0, 80);
     if (typeof req.body?.version === "string") file.version = req.body.version.slice(0, 40);

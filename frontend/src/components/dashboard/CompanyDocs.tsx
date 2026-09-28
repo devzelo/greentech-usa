@@ -3,16 +3,22 @@ import { useUrlState } from "../../hooks/useUrlState";
 import { AnimatePresence } from "motion/react";
 import {
   Plus, Pencil, Trash2, Upload, Eye, Download, Loader2, FolderOpen,
-  List as ListIcon, LayoutGrid, ChevronRight, Archive, RotateCcw, KeyRound,
+  List as ListIcon, LayoutGrid, ChevronRight, Archive, RotateCcw, KeyRound, Folder, FolderPlus, FolderUp, CornerLeftUp,
 } from "lucide-react";
 import {
   fetchCompanyTabs, createCompanyTab, renameCompanyTab, deleteCompanyTab,
   fetchCompanyFiles, uploadCompanyFile, deleteCompanyFile, setCompanyFileArchived, companyFileUrl, updateCompanyFile,
+  createCompanyFolder, renameCompanyFolder, deleteCompanyFolder,
   CompanyTab, CompanyFile,
 } from "../../lib/api";
 import { APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import { expiryInfo } from "../../lib/docExpiry";
 import { createPortal } from "react-dom";
+
+// CR 306 - folder paths inside a tab ("A/B": B inside A).
+const parentOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+const nameOf = (p: string) => p.split("/").pop() || p;
+const within = (folder: string, root: string) => folder === root || folder.startsWith(`${root}/`);
 
 // Proposal step 4 - what a document is (Appendix Library type), its version and expiry, shown as a
 // badge so an expiring insurance certificate is seen before it goes into a proposal.
@@ -90,14 +96,6 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
   const [loadingTabs, setLoadingTabs] = useState(true);
   const [files, setFiles] = useState<CompanyFile[]>([]);
-  // CR 211 - the documents table sorts by any column.
-  const sort = useTableSort<CompanyFile>(files, {
-    name: (f) => f.name,
-    description: (f) => f.description,
-    type: (f) => f.libraryKey || f.fileType,
-    addedBy: (f) => f.uploadedByName,
-    date: (f) => f.createdAt,
-  });
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");   // CR-P-07 — default to the list preview
   const [showArchived, setShowArchived] = useState(false); // CR-P-39
@@ -121,11 +119,45 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
   const activeMain = mains.some((t) => t.tabId === ctParam) ? ctParam : (mains[0]?.tabId || "");
   const activeSubs = useMemo(() => (activeMain ? subsOf(activeMain) : []), [tabs, activeMain]); // eslint-disable-line react-hooks/exhaustive-deps
   const activeSub = activeSubs.some((t) => t.tabId === csParam) ? csParam : (activeSubs[0]?.tabId || "");
-  const setActiveMain = (id: string) => url.set({ ct: id, cs: "" });
-  const setActiveSub = (id: string) => url.set({ ct: activeMain, cs: id });
+  const setActiveMain = (id: string) => url.set({ ct: id, cs: "", cf: "" });
+  const setActiveSub = (id: string) => url.set({ ct: activeMain, cs: id, cf: "" });
   // The tab whose files we show: a chosen sub-tab, or the main tab if it has none.
   const currentTabId = activeSubs.length > 0 ? activeSub : activeMain;
   const currentLabel = tabs.find((t) => t.tabId === currentTabId)?.label || "";
+
+  /**
+   * CR 306 (2026-09-25): folders inside a tab. The folder you are in is in the address too (?cf=),
+   * with its path shown and each level clickable. Folders come from the tab's own list (made with
+   * New folder) and from the files' folders (an uploaded folder brings its own).
+   */
+  const folder = url.get("cf");
+  const openFolder = (f: string) => url.set({ cf: f });
+  const curTab = tabs.find((t) => t.tabId === currentTabId);
+  const allFolders = useMemo(() => {
+    const out = new Set<string>();
+    const add = (path: string) => { const parts = path.split("/"); for (let i = 1; i <= parts.length; i++) out.add(parts.slice(0, i).join("/")); };
+    (curTab?.folders || []).forEach(add);
+    files.forEach((f) => { if (f.folder) add(f.folder); });
+    return out;
+  }, [curTab, files]);
+  const childFolders = useMemo(
+    () => [...allFolders].filter((p) => parentOf(p) === folder).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    [allFolders, folder],
+  );
+  const filesIn = (path: string) => files.filter((f) => within(f.folder || "", path)).length;
+  const here = useMemo(() => files.filter((f) => (f.folder || "") === folder), [files, folder]);
+  // CR 211 - the documents table sorts by any column.
+  const sort = useTableSort<CompanyFile>(here, {
+    name: (f) => f.name,
+    description: (f) => f.description,
+    type: (f) => f.libraryKey || f.fileType,
+    addedBy: (f) => f.uploadedByName,
+    date: (f) => f.createdAt,
+  });
+  const [folderDialog, setFolderDialog] = useState<{ mode: "new" | "rename"; path?: string } | null>(null);
+  const [confirmFolder, setConfirmFolder] = useState("");
+  const [folderProgress, setFolderProgress] = useState("");
+  const replaceTab = (t: CompanyTab) => setTabs((prev) => prev.map((x) => (x.tabId === t.tabId ? t : x)));
 
   const loadTabs = async (preferMain?: string) => {
     setLoadingTabs(true);
@@ -147,12 +179,15 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
     if (!focus?.tabId || !tabs.length) return;
     const tab = tabs.find((t) => t.tabId === focus.tabId);
     if (!tab) return;
-    url.set(tab.parentId ? { ct: tab.parentId, cs: tab.tabId } : { ct: tab.tabId, cs: "" }, { replace: true });
+    url.set(tab.parentId ? { ct: tab.parentId, cs: tab.tabId, cf: "" } : { ct: tab.tabId, cs: "", cf: "" }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.tabId, tabs]);
   useEffect(() => {
-    if (!focus?.fileId || !files.some((f) => f._id === focus.fileId)) return;
-    setFlashId(focus.fileId);
+    const hit = focus?.fileId ? files.find((f) => f._id === focus.fileId) : undefined;
+    if (!hit) return;
+    // The file may sit in a folder: open it first so the row is there to flash.
+    if ((hit.folder || "") !== folder) url.set({ cf: hit.folder || "" }, { replace: true });
+    setFlashId(hit._id);
     const t1 = setTimeout(() => document.getElementById(`cfile-${focus.fileId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
     const t2 = setTimeout(() => setFlashId(""), 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -219,21 +254,81 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
       await deleteCompanyTab(tab.tabId);
       await loadTabs();
       // The deleted tab leaves the address; the first remaining one opens in its place.
-      if (isMain ? tab.tabId === activeMain : tab.tabId === activeSub) url.set(isMain ? { ct: "", cs: "" } : { cs: "" }, { replace: true });
+      if (isMain ? tab.tabId === activeMain : tab.tabId === activeSub) url.set(isMain ? { ct: "", cs: "", cf: "" } : { cs: "", cf: "" }, { replace: true });
       toast(`Deleted "${tab.label}".`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not delete.", "error"); }
   };
 
   // ── File actions ─────────────────────────────────────────────────────────
-  const handleUpload = async (file: File) => {
+  // Into the folder you are in; several at once.
+  const handleUpload = async (list: File[]) => {
     if (!currentTabId) { toast("Pick a tab first.", "info"); return; }
+    if (!list.length) return;
     setUploading(true);
     try {
-      await uploadCompanyFile(file, { kind, tabId: currentTabId });
+      for (let i = 0; i < list.length; i++) {
+        if (list.length > 1) setFolderProgress(`Uploading ${i + 1} of ${list.length}`);
+        await uploadCompanyFile(list[i], { kind, tabId: currentTabId, folder });
+      }
       await refreshFiles();
-      toast("File uploaded.", "success");
+      toast(list.length === 1 ? "File uploaded." : `${list.length} files uploaded.`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setFolderProgress(""); }
+  };
+  /**
+   * CR 306 - Upload folder: every file in the chosen folder and its subfolders, each landing in
+   * the same folder here (inside the one you are in). System clutter (.DS_Store, Thumbs.db) stays out.
+   */
+  const handleFolderUpload = async (list: File[]) => {
+    if (!currentTabId || !list.length) return;
+    const wanted = list.filter((f) => !/^(\.ds_store|thumbs\.db|desktop\.ini)$/i.test(f.name) && !f.name.startsWith("~$"));
+    if (!wanted.length) { toast("That folder has no files to upload.", "info"); return; }
+    if (wanted.length > 300) { toast(`That folder has ${wanted.length} files; upload up to 300 at a time.`, "error"); return; }
+    const top = (wanted[0].webkitRelativePath || "").split("/")[0] || "";
+    setUploading(true);
+    let done = 0;
+    try {
+      for (const f of wanted) {
+        const dir = (f.webkitRelativePath || f.name).split("/").slice(0, -1).join("/");
+        setFolderProgress(`Uploading ${done + 1} of ${wanted.length}`);
+        await uploadCompanyFile(f, { kind, tabId: currentTabId, folder: [folder, dir].filter(Boolean).join("/") });
+        done++;
+      }
+      await refreshFiles();
+      toast(`${done} file${done === 1 ? "" : "s"} uploaded${top ? ` into "${top}"` : ""}.`, "success");
+    } catch (err) {
+      await refreshFiles().catch(() => undefined);
+      toast(`${done} of ${wanted.length} uploaded. ${err instanceof Error ? err.message : "The rest failed."}`, "error");
+    } finally { setUploading(false); setFolderProgress(""); }
+  };
+  const submitFolderDialog = async (name: string) => {
+    const d = folderDialog;
+    setFolderDialog(null);
+    if (!d || !currentTabId) return;
+    const clean = name.replace(/[\\/]+/g, " ").trim();
+    if (!clean) return;
+    try {
+      if (d.mode === "new") {
+        const path = [folder, clean].filter(Boolean).join("/");
+        replaceTab(await createCompanyFolder(currentTabId, path));
+        toast(`Folder "${clean}" made. Open it to upload into it.`, "success");
+      } else if (d.path) {
+        const to = [parentOf(d.path), clean].filter(Boolean).join("/");
+        if (to === d.path) return;
+        replaceTab(await renameCompanyFolder(currentTabId, d.path, to));
+        await refreshFiles();
+        toast("Folder renamed.", "success");
+      }
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save the folder.", "error"); }
+  };
+  const removeFolder = async () => {
+    const path = confirmFolder;
+    setConfirmFolder("");
+    if (!path || !currentTabId) return;
+    try {
+      replaceTab(await deleteCompanyFolder(currentTabId, path));
+      toast("Folder removed.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not remove the folder.", "error"); }
   };
 
   const confirmDeleteFile = async () => {
@@ -271,7 +366,23 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
             <span className={activeSubTab ? "" : "text-slate-700"}>{activeMainTab.label}</span>
           </>
         )}
-        {activeSubTab && (<><ChevronRight size={12} className="text-slate-300" /><span className="text-slate-700">{activeSubTab.label}</span></>)}
+        {activeSubTab && (<><ChevronRight size={12} className="text-slate-300" />
+          {folder
+            ? <button type="button" onClick={() => openFolder("")} className="rounded px-1 hover:bg-slate-100 hover:text-slate-700">{activeSubTab.label}</button>
+            : <span className="text-slate-700">{activeSubTab.label}</span>}
+        </>)}
+        {!activeSubTab && activeMainTab && folder && <button type="button" onClick={() => openFolder("")} className="rounded px-1 hover:bg-slate-100 hover:text-slate-700">(top)</button>}
+        {folder && folder.split("/").map((part, i, all) => {
+          const path = all.slice(0, i + 1).join("/");
+          return (
+            <span key={path} className="inline-flex items-center gap-1">
+              <ChevronRight size={12} className="text-slate-300" />
+              {i < all.length - 1
+                ? <button type="button" onClick={() => openFolder(path)} className="rounded px-1 hover:bg-slate-100 hover:text-slate-700">{part}</button>
+                : <span className="inline-flex items-center gap-1 text-slate-700"><Folder size={11} /> {part}</span>}
+            </span>
+          );
+        })}
       </nav>
       {/* Main tabs */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -332,10 +443,30 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
       {/* Files toolbar */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <h2 className="text-lg font-display font-bold text-slate-900">
-          {currentLabel ? `${activeMainTab?.label}${activeSubTab && activeSubTab.tabId !== activeMain ? ` › ${activeSubTab.label}` : ""}` : (kind === "classified" ? "Classified Files" : "Company Files")}
-          <span className="text-slate-400 ml-2 text-sm font-medium">({files.length})</span>
+          {folder ? folder.split("/").pop() : currentLabel ? `${activeMainTab?.label}${activeSubTab && activeSubTab.tabId !== activeMain ? ` › ${activeSubTab.label}` : ""}` : (kind === "classified" ? "Classified Files" : "Company Files")}
+          <span className="text-slate-400 ml-2 text-sm font-medium">({here.length})</span>
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {folder && (
+            <button onClick={() => openFolder(parentOf(folder))} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border border-slate-100 bg-white text-slate-500 shadow-sm hover:text-slate-900" title="Up one folder">
+              <CornerLeftUp size={13} /> Up
+            </button>
+          )}
+          {folderProgress && <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary"><Loader2 size={12} className="animate-spin" /> {folderProgress}</span>}
+          {!showArchived && currentTabId && (
+            <>
+              <button onClick={() => setFolderDialog({ mode: "new" })} disabled={uploading} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border border-slate-100 bg-white text-slate-600 shadow-sm hover:text-primary disabled:opacity-50" title={folder ? `New folder inside "${folder.split("/").pop()}"` : "New folder in this tab"}>
+                <FolderPlus size={13} /> New folder
+              </button>
+              <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border shadow-sm cursor-pointer ${uploading ? "border-slate-100 bg-slate-100 text-slate-300" : "border-slate-100 bg-white text-slate-600 hover:text-primary"}`} title="Upload a whole folder, keeping its subfolders">
+                <FolderUp size={13} /> Upload folder
+                {/* webkitdirectory lets the browser pick a folder; its files come with their paths. */}
+                <input type="file" className="hidden" multiple disabled={uploading}
+                  ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+                  onChange={(e) => { const l = Array.from<File>(e.target.files || []); e.target.value = ""; void handleFolderUpload(l); }} />
+              </label>
+            </>
+          )}
           {/* CR-P-39 — view archived files */}
           <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border shadow-sm transition-all ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-400 border-slate-100 hover:text-slate-900"}`} title={showArchived ? "Back to active files" : "Show archived files"}>
             <Archive size={13} /> {showArchived ? "Viewing archived" : "Archived"}
@@ -343,7 +474,7 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
           {!showArchived && (
           <label className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${currentTabId ? "bg-gt-gradient text-white shadow-lg shadow-primary/20 hover:scale-105" : "bg-slate-100 text-slate-300 cursor-not-allowed"}`}>
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
-            <input type="file" className="hidden" disabled={!currentTabId || uploading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleUpload(f); }} />
+            <input type="file" multiple className="hidden" disabled={!currentTabId || uploading} onChange={(e) => { const l = Array.from<File>(e.target.files || []); e.target.value = ""; void handleUpload(l); }} />
           </label>
           )}
           <div className="flex items-center gap-1 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
@@ -356,16 +487,40 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
         </div>
       </div>
 
+      {/* CR 306 - the folders in the folder you are in */}
+      {!loadingFiles && currentTabId && childFolders.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {childFolders.map((path) => {
+            const n = filesIn(path);
+            return (
+              <div key={path} className="group flex items-center gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm hover:border-primary/40">
+                <button type="button" onClick={() => openFolder(path)} className="flex min-w-0 flex-1 items-center gap-2 text-left" title={`Open ${path}`}>
+                  <Folder size={20} className="shrink-0 text-amber-500" fill="currentColor" fillOpacity={0.15} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold text-slate-800">{nameOf(path)}</span>
+                    <span className="block text-[10px] text-slate-400">{n} file{n === 1 ? "" : "s"}</span>
+                  </span>
+                </button>
+                <span className="flex shrink-0 items-center opacity-60 group-hover:opacity-100">
+                  <button type="button" onClick={() => setFolderDialog({ mode: "rename", path })} className="rounded p-1 text-slate-400 hover:text-primary" title="Rename folder"><Pencil size={12} /></button>
+                  <button type="button" onClick={() => setConfirmFolder(path)} className="rounded p-1 text-slate-400 hover:text-red-500" title={n ? "Only an empty folder can be removed" : "Remove folder"}><Trash2 size={12} /></button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Files */}
       {loadingFiles ? (
         <div className="flex items-center justify-center py-24 text-slate-300"><Loader2 size={28} className="animate-spin" /></div>
       ) : !currentTabId ? (
         <div className="text-center py-20 text-slate-400 text-sm font-medium">Select or create a tab to see its files.</div>
-      ) : files.length === 0 ? (
-        <div className="text-center py-20 text-slate-400 text-sm font-medium">No files in this tab yet. Use Upload to add one.</div>
+      ) : here.length === 0 ? (
+        childFolders.length ? null : <div className="text-center py-20 text-slate-400 text-sm font-medium">{folder ? "This folder is empty. Use Upload or Upload folder to add files here." : "No files in this tab yet. Use Upload, Upload folder or New folder."}</div>
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {files.map((f) => {
+          {here.map((f) => {
             const isImage = classifyForFilter(f.fileType) === "image";
             return (
               <div key={f._id} id={`cfile-${f._id}`} className={`bg-white rounded-2xl border shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col group ${flashId === f._id ? "border-amber-300 ring-2 ring-amber-300" : "border-slate-100"}`}>
@@ -484,6 +639,24 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
         confirmLabel="Delete tab"
         onCancel={() => setConfirmTab(null)}
         onConfirm={confirmDeleteTab}
+      />
+      <PromptDialog
+        open={!!folderDialog}
+        title={folderDialog?.mode === "rename" ? "Rename folder" : "New folder"}
+        label="Folder name"
+        placeholder="e.g. Chase Bank"
+        initialValue={folderDialog?.mode === "rename" ? nameOf(folderDialog.path || "") : ""}
+        confirmLabel={folderDialog?.mode === "rename" ? "Save" : "Make folder"}
+        onCancel={() => setFolderDialog(null)}
+        onSubmit={submitFolderDialog}
+      />
+      <ConfirmDialog
+        open={!!confirmFolder}
+        title={`Remove the folder "${nameOf(confirmFolder)}"?`}
+        message={filesIn(confirmFolder) ? `It still holds ${filesIn(confirmFolder)} file(s). Move or delete them first; only an empty folder can be removed.` : "The folder is empty, so nothing else is removed."}
+        confirmLabel="Remove folder"
+        onCancel={() => setConfirmFolder("")}
+        onConfirm={removeFolder}
       />
       <ConfirmDialog
         open={!!confirmFile}

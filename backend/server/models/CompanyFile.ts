@@ -6,6 +6,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface ICompanyFile extends Document {
   kind: "company" | "classified" | "profile";
   tabId: string; // company only — which CompanyTab it belongs to
+  folder: string; // CR 306 - the folder inside the tab ("" = the tab itself, "A/B" = B inside A)
   companyId: string; // profile only (CR-P-07) — the Directory Company this file belongs to
   docType: string;   // profile only — catalogue | certification | document | other
   name: string;
@@ -28,6 +29,7 @@ const CompanyFileSchema = new Schema<ICompanyFile>(
   {
     kind: { type: String, enum: ["company", "classified", "profile"], default: "company" },
     tabId: { type: String, default: "" },
+    folder: { type: String, default: "" },
     companyId: { type: String, default: "", index: true },
     docType: { type: String, default: "document" },
     name: { type: String, required: true },

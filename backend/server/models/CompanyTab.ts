@@ -9,6 +9,8 @@ export interface ICompanyTab extends Document {
   order: number;
   system: boolean;
   kind: string; // "company" | "classified" (legacy docs without it = company)
+  /** CR 306 - folders made inside the tab ("A", "A/B"); a folder holding files needs no entry. */
+  folders: string[];
 }
 
 const CompanyTabSchema = new Schema<ICompanyTab>(
@@ -19,6 +21,7 @@ const CompanyTabSchema = new Schema<ICompanyTab>(
     order: { type: Number, default: 0 },
     system: { type: Boolean, default: false },
     kind: { type: String, default: "company", index: true },
+    folders: { type: [String], default: [] },
   },
   { timestamps: true }
 );
