@@ -111,7 +111,7 @@ function InputField({ label, placeholder, type = "text", value, onChange }: {
         placeholder={placeholder}
         value={value ?? ""}
         onChange={(e) => onChange?.(e.target.value)}
-        className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
       />
     </div>
   );
@@ -506,18 +506,18 @@ export default function NewProjectForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2 md:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project Name *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Ghana Municipal WTP Upgrade"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 lg:col-span-2">
             <ClientPicker
               label="Client Name"
               value={clientName}
@@ -527,19 +527,19 @@ export default function NewProjectForm() {
               hint="Pick a client from the Directory, or type a new name and add it. Also fills the Client Information tab."
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white outline-none appearance-none"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white outline-none appearance-none"
             >
               {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}
             </select>
           </div>
           {/* CR 298 - the three numbers a project is known by, together: ours, the client's
               contract, and the solicitation it was bid under. */}
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">GT Project #</label>
             <div className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4">
               <span className="text-lg font-bold tabular-nums text-primary">{gtNumber || "----"}</span>
@@ -551,40 +551,40 @@ export default function NewProjectForm() {
               created, so it may differ if someone else creates one first.
             </p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract #</label>
             <input
               type="text"
               value={contractNo}
               onChange={(e) => setContractNo(e.target.value)}
               placeholder="e.g. 24GE5087360003"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">From the original contract.</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitation #</label>
             <input
               type="text"
               value={solicitationNo}
               onChange={(e) => setSolicitationNo(e.target.value)}
               placeholder="e.g. 19GE058473008"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">From the original RFP, if there was one.</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year Started</label>
             <input
               type="number"
               value={contractYear}
               onChange={(e) => setContractYear(e.target.value)}
               placeholder={String(new Date().getFullYear())}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">Taken from the contract date. It does not change the GT project number.</p>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Date</label>
             <input
               type="date"
@@ -594,12 +594,12 @@ export default function NewProjectForm() {
                 const year = /^([0-9]{4})-/.exec(e.target.value)?.[1];
                 if (year) setContractYear(year);
               }}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">The exact date the contract was signed / awarded.</p>
           </div>
           {/* The signed contract document — uploaded as soon as the project is created. */}
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract Document</label>
             <div className="flex items-center gap-3 flex-wrap">
               {contractFile
@@ -613,45 +613,45 @@ export default function NewProjectForm() {
             </div>
             <p className="text-[10px] text-slate-400">Saved on the project identity and previewable from the project.</p>
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Categories (Services)</label>
             <CategoryMultiSelect value={categories} onChange={(v) => { setCategories(v); markTouched(); }} />
             <p className="text-[10px] text-slate-400">Pick every service this project covers.</p>
           </div>
           {/* Project site address — feeds RFQ/PO delivery and the project header. CR 186: pasted as
               one block, with the parts beside it. */}
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 lg:col-span-4">
             <AddressBox label="Project site address" value={siteAddr} onChange={(v) => { setSiteAddr(v); markTouched(); }} />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress (%)</label>
             <input
               type="number"
               min={0} max={100}
               value={progress}
               onChange={(e) => setProgress(Number(e.target.value))}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Start Date</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">End Date</label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project Value / Worth</label>
             <input
               type="text"
@@ -659,57 +659,57 @@ export default function NewProjectForm() {
               value={projectValue}
               onChange={(e) => setProjectValue(sanitizeMoney(e.target.value))}
               placeholder="e.g. $2,500,000"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>
           </div>
-          {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bonding &amp; letter of credit</label>
-            <BondingEditor value={bonding} onChange={setBonding} contractValue={projectValue} />
-            <p className="text-[10px] text-slate-400">The same figures show at the top of the project&apos;s Legal Docs, where they can be updated once a bank accepts.</p>
-          </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiscal / Funding</label>
             <input
               type="text"
               value={fiscal}
               onChange={(e) => setFiscal(e.target.value)}
               placeholder="e.g. USAID Regional Grant"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Compliance</label>
             <input
               type="text"
               value={compliance}
               onChange={(e) => setCompliance(e.target.value)}
               placeholder="e.g. Passed Internal Audit"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Disciplines (comma separated)</label>
             <input
               type="text"
               value={disciplinesInput}
               onChange={(e) => setDisciplinesInput(e.target.value)}
               placeholder="e.g. Civil Engineering, Hydrology, SCADA"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
+          {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
+          <div className="space-y-1 md:col-span-2 lg:col-span-4">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bonding &amp; letter of credit</label>
+            <BondingEditor value={bonding} onChange={setBonding} contractValue={projectValue} />
+            <p className="text-[10px] text-slate-400">The same figures show at the top of the project&apos;s Legal Docs, where they can be updated once a bank accepts.</p>
+          </div>
+          <div className="space-y-1 md:col-span-2 lg:col-span-4">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</label>
             <textarea
               rows={3}
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               placeholder="Brief project description..."
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none"
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none"
             />
           </div>
-          <div className="md:col-span-2 flex items-center justify-between p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+          <div className="md:col-span-2 lg:col-span-4 flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl">
             <div className="flex items-center gap-3">
               <Globe size={18} className={isPublished ? "text-indigo-500" : "text-slate-300"} />
               <div>
@@ -767,7 +767,7 @@ export default function NewProjectForm() {
                       value={jv[f.field]}
                       onChange={(e) => updateJv(f.field, e.target.value)}
                       placeholder={f.placeholder}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
                     />
                   </div>
                 ))}
@@ -793,7 +793,7 @@ export default function NewProjectForm() {
                   <select
                     value={jv.lead}
                     onChange={(e) => updateJv("lead", e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all appearance-none"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all appearance-none"
                   >
                     <option value="">— Who is leading? —</option>
                     <option value="GreenTech USA">GreenTech USA</option>
@@ -808,7 +808,7 @@ export default function NewProjectForm() {
                   value={jv.partnerAddress}
                   onChange={(e) => updateJv("partnerAddress", e.target.value)}
                   placeholder="Paste the full address exactly as written"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y"
                 />
               </div>
               {/* Partner stamps & signatures */}
@@ -914,11 +914,11 @@ export default function NewProjectForm() {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Address</label>
-                <textarea rows={5} value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Paste the full address exactly as written" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y" />
+                <textarea rows={5} value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Paste the full address exactly as written" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>
-                <textarea rows={3} value={clientNotes} onChange={(e) => setClientNotes(e.target.value)} placeholder="Any relevant notes about the client relationship..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none" />
+                <textarea rows={3} value={clientNotes} onChange={(e) => setClientNotes(e.target.value)} placeholder="Any relevant notes about the client relationship..." className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none" />
               </div>
             </div>
           )}
