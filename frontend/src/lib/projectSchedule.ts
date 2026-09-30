@@ -190,12 +190,46 @@ export function addDuration(d: Date, n: number, unit: DurationUnit): Date {
 
 export const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / DAY);
 
-/** Planned length in days ("0 days" is a milestone). Null when a date is missing. */
+/**
+ * CR 322 (2026-09-28): a duration is the days worked, first and last included. 3 days from 2 Sep
+ * run 2, 3, 4 Sep; a task that starts and ends the same day is 1 day; only a milestone is 0.
+ */
+/** The last day of a task `n` units long that starts on `d`. */
+export function endForDuration(d: Date, n: number, unit: DurationUnit): Date {
+  const next = addDuration(d, n, unit);
+  return n > 0 && next > d ? new Date(next.getFullYear(), next.getMonth(), next.getDate() - 1) : d;
+}
+
+/**
+ * A milestone: marked as one. A row saved before CR 322 with one date for start and end and no
+ * duration was a milestone in all but name (it printed as "0 days"), and still counts as one.
+ */
+export const isMilestonePoint = (m: ApiMilestone) =>
+  !!m.isMilestone || (!m.inc && !m.durationValue && !!m.plannedStart && (m.plannedEnd || m.plannedStart) === m.plannedStart);
+
+/** Planned length in days, both ends counted (0 for a milestone). Null when a date is missing. */
 export function plannedDays(m: ApiMilestone): number | null {
   const s = parseDate(m.plannedStart), e = parseDate(m.plannedEnd);
-  return s && e ? Math.max(0, daysBetween(s, e)) : null;
+  if (!s || !e) return null;
+  return isMilestonePoint(m) ? 0 : Math.max(1, daysBetween(s, e) + 1);
 }
-export const isMilestonePoint = (m: ApiMilestone) => plannedDays(m) === 0;
+
+/**
+ * Rows as the schedule now counts them. A task saved under the old rule kept its length as
+ * "finish minus start": 3 days meant 2 Sep to 5 Sep. Its dates are what people agreed to, so they
+ * stay; the typed duration is what changes, to the days those dates really cover (4). Weeks and
+ * months are left to the dates. An old same-day row becomes a milestone outright. Each row is
+ * marked once converted, so it is never done twice.
+ */
+export function normalizeDurations(rows: ApiMilestone[]): ApiMilestone[] {
+  if (!rows.some((m) => !m.inc)) return rows;
+  return rows.map((m) => {
+    if (m.inc) return m;
+    if (isMilestonePoint(m)) return { ...m, isMilestone: true, durationValue: 0, plannedEnd: m.plannedStart || m.plannedEnd, inc: true };
+    const unit = m.durationUnit || "days";
+    return { ...m, durationValue: m.durationValue && m.durationValue > 0 && unit === "days" ? m.durationValue + 1 : 0, durationUnit: "days", inc: true };
+  });
+}
 
 /**
  * CR 233 - the duration that counts: actual dates are only entered when they differ from the plan,
@@ -203,7 +237,7 @@ export const isMilestonePoint = (m: ApiMilestone) => plannedDays(m) === 0;
  */
 export function effectiveDays(m: ApiMilestone): { days: number | null; actual: boolean } {
   const as = parseDate(m.actualStart), ae = parseDate(m.actualEnd);
-  if (as && ae) return { days: Math.max(0, daysBetween(as, ae)), actual: true };
+  if (as && ae) return { days: Math.max(1, daysBetween(as, ae) + 1), actual: true };
   return { days: plannedDays(m), actual: false };
 }
 

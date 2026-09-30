@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Flag, History, Plus, X } from "lucide-react";
 import { fetchEmployees, type ApiMilestone, type MilestoneStatus } from "../../../lib/api";
 import {
-  CUSTOM_KEY, MASTER_PHASES, SCHEDULE_CATEGORIES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
+  CUSTOM_KEY, MASTER_PHASES, SCHEDULE_CATEGORIES, STATUS_META, STATUS_ORDER, daysBetween, endForDuration, fmtDay, humanGap, parseDate, statusPatch, toIso, type DurationUnit,
 } from "../../../lib/projectSchedule";
 import { LINK_TYPES, lagLabel, overrunsDeadline, predsOf, startFromLink, wouldCycle, type LinkType, type Pred } from "../../../lib/scheduleLinks";
 import { wbsNumbers } from "../../../lib/projectSchedule";
@@ -45,7 +45,7 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
     if (mode !== "duration") return;
     const s = parseDate(m.plannedStart);
     if (!s) return;
-    const end = toIso(addDuration(s, m.durationValue || 0, (m.durationUnit || "days") as DurationUnit));
+    const end = toIso(endForDuration(s, m.durationValue || 0, (m.durationUnit || "days") as DurationUnit));
     if (end !== m.plannedEnd) set({ plannedEnd: end });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, m.plannedStart, m.durationValue, m.durationUnit]);
@@ -179,7 +179,7 @@ export default function PhaseEditor({ initial, usedKeys, onSave, onClose, canEdi
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
               {badOrder ? <span className="font-bold text-red-600">The end is before the start.</span>
-                : ps && pe ? <>{fmtDay(ps)} to {fmtDay(pe)} · <b>{daysBetween(ps, pe)} days</b>{daysBetween(ps, pe) >= 30 ? ` (${humanGap(ps, pe)})` : ""}{daysBetween(ps, pe) === 0 ? " · a milestone (zero duration)" : ""}</>
+                : ps && pe ? <>{fmtDay(ps)} to {fmtDay(pe)} · <b>{daysBetween(ps, pe) + 1} day{daysBetween(ps, pe) === 0 ? "" : "s"}</b>{daysBetween(ps, pe) >= 30 ? ` (${humanGap(ps, pe)})` : ""}{daysBetween(ps, pe) === 0 ? " · a milestone (zero duration)" : ""}</>
                 : "Same start and end date makes it a milestone (a flag on the chart)."}
             </p>
             {/* CR 300 - what this task waits on: any number of links, each with its type and lag. */}

@@ -1,5 +1,5 @@
 import type { ApiMilestone, MilestoneStatus } from "./api";
-import { CUSTOM_KEY, addDuration, newMilestoneId, parseDate, toIso, wbsNumbers } from "./projectSchedule";
+import { CUSTOM_KEY, endForDuration, newMilestoneId, parseDate, toIso, wbsNumbers } from "./projectSchedule";
 import { parsePreds } from "./scheduleLinks";
 
 /**
@@ -119,7 +119,7 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
     // With no category column, a row with a name but no dates and no duration is a group heading
     // (how Primavera lays out a WBS): it names the category for the rows under it.
     if (!cat && !start && !finishRaw && !dur && fieldAt.category === undefined) { carriedCategory = name; continue; }
-    const finish = finishRaw || (start && dur ? toIso(addDuration(parseDate(start)!, dur, "days")) : "");
+    const finish = finishRaw || (start && dur ? toIso(endForDuration(parseDate(start)!, dur, "days")) : "");
     // 40, "40%" and 0.4 (a cell formatted as a percentage) all mean 40%.
     const rawPct = get(r, "percent");
     let pctNum = Number(String(rawPct ?? "").replace(/[^0-9.]/g, "")) || 0;
@@ -143,6 +143,7 @@ export async function readScheduleFile(file: File): Promise<ImportResult> {
       status, percent: status === "completed" ? 100 : percent,
       responsible: String(get(r, "responsible") ?? "").split(/[;,]/).map((x) => x.trim()).filter(Boolean),
       notes: "",
+      inc: true,   // CR 322 - a sheet's durations are days worked, both ends counted
       ...(isMilestone ? { isMilestone: true, durationValue: 0, plannedEnd: start } : {}),
     });
   }

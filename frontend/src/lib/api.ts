@@ -1121,6 +1121,15 @@ export interface ApiMilestone {
    */
   predecessors?: Array<{ id: string; type: "FS" | "SS" | "FF" | "SF"; lag: number }>;
   isMilestone?: boolean;   // a marker with no length: start and finish are the same day
+  /**
+   * CR 322 - durations count the days worked, first and last included. `inc` marks a task already
+   * kept that way; one without it was saved under the old count and is converted when it is read
+   * (see normalizeDurations), so no date on an existing schedule moves.
+   */
+  inc?: boolean;
+  /** CR 322 - a task counts every calendar day unless one of these is switched off. */
+  includeWeekends?: boolean;
+  includeHolidays?: boolean;
   // The older chained schedule (read only).
   duration?: number;
   unit?: "days" | "weeks" | "months";

@@ -54,6 +54,10 @@ function cleanMilestones(input: unknown, known: string[] = []): MilestoneRecord[
       linkType: (["SS", "FF", "SF"].includes(String(m.linkType)) ? String(m.linkType) : "FS") as MilestoneRecord["linkType"],
       lagDays: Math.max(-3650, Math.min(3650, Math.round(Number(m.lagDays) || 0))),
       isMilestone: m.isMilestone === true,
+      // CR 322 - the inclusive day count, and the days a task leaves out.
+      inc: m.inc === true,
+      includeWeekends: m.includeWeekends !== false,
+      includeHolidays: m.includeHolidays !== false,
       // CR 300 - the links, each checked; the older single link is read into the list.
       predecessors: (() => {
         const list = Array.isArray(m.predecessors) ? (m.predecessors as Array<Record<string, unknown>>) : [];

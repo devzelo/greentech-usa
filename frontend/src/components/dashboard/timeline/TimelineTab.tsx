@@ -11,7 +11,7 @@ import {
 import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import {
-  CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, effectiveEndDate, fmtDay, isMilestonePoint,
+  CUSTOM_KEY, MASTER_PHASES, STATUS_META, STATUS_ORDER, addDuration, daysBetween, delayDays, endForDuration, normalizeDurations, plannedDays, effectiveEndDate, fmtDay, isMilestonePoint,
   newMilestoneId, planSchedule, parseDate, phaseColor, phasePercent, startSlip, statusPatch, toIso, effectiveDays, timelineChanges, defaultCategoryFor, groupByCategory,
   UNCATEGORISED, categoryList, wbsNumbers, type DurationUnit,
 } from "../../../lib/projectSchedule";
@@ -46,6 +46,7 @@ const blank = (key: string, name: string, category = defaultCategoryFor(key, nam
   id: newMilestoneId(), key, name, description: "", plannedStart: "", plannedEnd: "", baselineStart: "", baselineEnd: "",
   actualStart: "", actualEnd: "", durationValue: 0, durationUnit: "days", status: "not_started", percent: 0, responsible: [], notes: "",
   category,
+  inc: true,   // CR 322 - made under the inclusive day count
 });
 const hasData = (m: ApiMilestone) => !!(m.plannedStart || m.plannedEnd || m.actualStart || m.actualEnd || m.notes || (m.percent ?? 0) > 0 || m.responsible?.length);
 
@@ -63,7 +64,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // ones that existed are filed in History by the server, so nothing is lost.
   const sched = undefined;
   const scheduleName = "Project schedule";
-  const live = useMemo(() => project.schedule?.milestones || [], [project.schedule]);
+  // CR 322 - rows saved under the old day count are read into the new one (dates unchanged).
+  const live = useMemo(() => normalizeDurations(project.schedule?.milestones || []), [project.schedule]);
   const liveCats = useMemo(() => project.schedule?.categories || [], [project.schedule]);
   const draft = project.schedule?.draft || null;
   const [rows, setRows] = useState<ApiMilestone[]>(live);
@@ -115,7 +117,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     return () => window.removeEventListener("beforeunload", h);
   }, [unsaved]);
 
-  const takeRegister = (all: ApiScheduleRevision[]) => {
+  const takeRegister = (raw: ApiScheduleRevision[]) => {
+    const all = raw.map((e) => ({ ...e, milestones: normalizeDurations(e.milestones || []) }));
     setRegister(all);
     // The editor's revisions are the project schedule's own; records of the old separate schedules
     // (CR 314) are history only.
@@ -143,7 +146,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const next = { ...r, ...patch };
     // A phase entered by duration keeps its length when the start moves.
     if (("plannedStart" in patch || "durationValue" in patch || "durationUnit" in patch) && next.durationValue && next.plannedStart) {
-      next.plannedEnd = toIso(addDuration(parseDate(next.plannedStart)!, next.durationValue, (next.durationUnit || "days") as DurationUnit));
+      next.plannedEnd = toIso(endForDuration(parseDate(next.plannedStart)!, next.durationValue, (next.durationUnit || "days") as DurationUnit));
     }
     if ("plannedEnd" in patch) next.durationValue = 0;
     // CR 294 - a milestone is a marker: no length, so its finish is its start.
@@ -352,7 +355,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (unsaved && !(await confirm({ title: "Discard changes?", message: "Your edits since the last save will be lost.", confirmLabel: "Discard", danger: true }))) return;
     setRows(base); setCats(baseCats); setLoadedFrom("");
   };
-  const openDraft = () => { if (draft) { setRows(draft.milestones); setCats(draft.categories || categoryList([], draft.milestones)); setDraftRows(draft.milestones); setLoadedFrom("Draft"); } };
+  const openDraft = () => { if (draft) { const dr = normalizeDurations(draft.milestones); setRows(dr); setCats(draft.categories || categoryList([], dr)); setDraftRows(dr); setLoadedFrom("Draft"); } };
   const dropDraft = async () => {
     if (!(await confirm({ title: "Delete the draft?", message: "The saved draft is removed. The live timeline stays as it is.", confirmLabel: "Delete draft", danger: true }))) return;
     try { const r = await discardTimelineDraft(project.id, sched); onScheduleSaved(r.schedule, r.progress); setDraftRows(null); if (loadedFrom === "Draft") { setRows(base); setLoadedFrom(""); } toast("Draft deleted.", "success"); }
@@ -727,7 +730,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     return {
       number: wbs.phase.get(category) || "",
       from, to,
-      days: from && to ? Math.max(0, daysBetween(from, to)) : null,
+      days: from && to ? Math.max(1, daysBetween(from, to) + 1) : null,
       actualFrom: aStarts.length ? new Date(Math.min(...aStarts.map((d) => d.getTime()))) : null,
       actualTo: aEnds.length ? new Date(Math.max(...aEnds.map((d) => d.getTime()))) : null,
       float: floats.length ? Math.min(...floats) : null,
@@ -1052,7 +1055,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                         )}
                         {!folded && g.items.map(({ m, index }) => {
                       const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
-                      const d = ps && pe ? daysBetween(ps, pe) : null;
+                      const d = plannedDays(m);
                       const late = delayDays(m, today);
                       const slip = startSlip(m);
                       const moved = (m.baselineStart && m.baselineStart !== m.plannedStart) || (m.baselineEnd && m.baselineEnd !== m.plannedEnd);

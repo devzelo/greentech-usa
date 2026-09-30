@@ -1,5 +1,5 @@
 import type { ApiMilestone } from "./api";
-import { DAY, addDuration, daysBetween, parseDate, toIso, type DurationUnit } from "./projectSchedule";
+import { DAY, addDuration, daysBetween, isMilestonePoint, parseDate, toIso, type DurationUnit } from "./projectSchedule";
 
 /**
  * CR 294 (2026-09-23): a schedule is a chain, not a pile of separate dates.
@@ -19,8 +19,16 @@ import { DAY, addDuration, daysBetween, parseDate, toIso, type DurationUnit } fr
  * allow), a backward pass from the project's finish gives the latest dates, and the difference is
  * each task's float. Float 0 is critical.
  *
- * Days are calendar days, the count the rest of the schedule uses (the Duration column, the chart,
- * the contract-time bar), so nothing disagrees.
+ * CR 322 (2026-09-28): how days are counted, from the client's worked example (a recipe project,
+ * kept as the engine's test).
+ *   - A duration is the days worked, first and last included: 3 days from 2 Sep is 2, 3, 4 Sep.
+ *     A task that starts and ends the same day is 1 day. Only a milestone is 0.
+ *   - A milestone that follows a task falls on the day that task finishes; whatever follows a
+ *     milestone starts the next day.
+ *   - A task may leave out weekends, holidays or both; by default it counts every calendar day.
+ * To make those come out without special cases everywhere, the engine thinks in day boundaries
+ * ("instants"): a task runs from the start of its first day to the end of its last, and a
+ * milestone sits at the end of its day.
  */
 
 export type LinkType = "FS" | "SS" | "FF" | "SF";
@@ -97,52 +105,111 @@ export function parsePreds(text: string, idOfNumber: (n: string) => string | und
   return { preds, unknown };
 }
 
-const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+// Whole days, so a clock change can never shave an hour into a day's worth of float.
+const dn = (d: Date) => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY);
+const fromDn = (n: number) => { const u = new Date(n * DAY); return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate()); };
 
-/** A task with no length: start and finish are the same day. */
-export const isZeroLength = (m: ApiMilestone) => !!m.isMilestone;
+/** A milestone: no length, a moment at the end of its day. */
+export const isZeroLength = (m: ApiMilestone) => isMilestonePoint(m);
+
+// The days a task may leave out. Holidays are set once for the page (the platform's holiday list).
+let HOLIDAYS = new Set<string>();
+export function setScheduleHolidays(days: Iterable<string>) { HOLIDAYS = new Set(days); }
+const everyDay = (m: ApiMilestone) => m.includeWeekends !== false && m.includeHolidays !== false;
+function isWorkDay(n: number, m: ApiMilestone): boolean {
+  const d = fromDn(n);
+  if (m.includeWeekends === false && (d.getDay() === 0 || d.getDay() === 6)) return false;
+  if (m.includeHolidays === false && HOLIDAYS.has(toIso(d))) return false;
+  return true;
+}
+const nextWorkDay = (n: number, m: ApiMilestone) => { let d = n, guard = 0; while (!isWorkDay(d, m) && guard++ < 400) d++; return d; };
 
 /**
- * The length to keep when a task moves: what was typed as a duration, or the span its two dates
- * already describe. Null when the task has no length to preserve.
+ * A task's place in time as two day boundaries: `s` the start of its first day, `f` the end of its
+ * last. A milestone has both at the end of its day. Null when it has no date yet.
+ */
+function span(m: ApiMilestone): { s: number; f: number } | null {
+  const S = parseDate(m.plannedStart);
+  if (!S) return null;
+  if (isZeroLength(m)) { const t = dn(S) + 1; return { s: t, f: t }; }
+  const F = parseDate(m.plannedEnd) || S;
+  const s0 = dn(S);
+  return { s: s0, f: Math.max(dn(F), s0) + 1 };
+}
+
+/**
+ * The length to keep when a task moves: what was typed as a duration, or the days its two dates
+ * cover (both counted; working days only when the task leaves some out). Null when it has no
+ * length to preserve.
  */
 export function lengthOf(m: ApiMilestone): { value: number; unit: DurationUnit } | null {
   if (isZeroLength(m)) return { value: 0, unit: "days" };
   if (m.durationValue && m.durationValue > 0) return { value: m.durationValue, unit: (m.durationUnit || "days") as DurationUnit };
-  const s = parseDate(m.plannedStart), e = parseDate(m.plannedEnd);
-  if (s && e) return { value: Math.max(0, daysBetween(s, e)), unit: "days" };
-  return null;
+  const sp = span(m);
+  if (!sp) return null;
+  if (everyDay(m)) return { value: sp.f - sp.s, unit: "days" };
+  let n = 0;
+  for (let d = sp.s; d < sp.f; d++) if (isWorkDay(d, m)) n++;
+  return { value: Math.max(1, n), unit: "days" };
 }
 
-/** The finish that goes with a start, keeping the task's length. */
-export function finishFor(m: ApiMilestone, start: Date): Date {
+/** Where a task's last day ends, given where its first day starts. */
+function finishInstant(m: ApiMilestone, s0: number): number {
+  if (isZeroLength(m)) return s0;
   const len = lengthOf(m);
-  if (!len || len.value <= 0) return start;
-  return addDuration(start, len.value, len.unit);
+  if (!len || len.value <= 0) return s0 + 1;
+  if (len.unit === "months") return Math.max(s0 + 1, dn(addDuration(fromDn(s0), len.value, "months")));
+  const calendar = everyDay(m);
+  const n = Math.max(1, Math.round(len.value * (len.unit === "weeks" ? (calendar ? 7 : 5) : 1)));
+  if (calendar) return s0 + n;
+  let last = nextWorkDay(s0, m), left = n - 1, guard = 0;
+  while (left > 0 && guard++ < 20000) { last++; if (isWorkDay(last, m)) left--; }
+  return last + 1;
 }
-
-/** The start that goes with a finish, keeping the task's length (for FF and SF links). */
-export function startForFinish(m: ApiMilestone, finish: Date): Date {
+/** The other way round, for FF and SF links: where it must start to finish at `f0`. */
+function startInstant(m: ApiMilestone, f0: number): number {
+  if (isZeroLength(m)) return f0;
   const len = lengthOf(m);
-  if (!len || len.value <= 0) return finish;
+  if (!len || len.value <= 0) return f0 - 1;
   if (len.unit === "months") {
-    const full = Math.floor(len.value);
-    const extra = Math.round((len.value - full) * 30);
-    return new Date(finish.getFullYear(), finish.getMonth() - full, finish.getDate() - extra);
+    const f = fromDn(f0), full = Math.floor(len.value), extra = Math.round((len.value - full) * 30);
+    return Math.min(f0 - 1, dn(new Date(f.getFullYear(), f.getMonth() - full, f.getDate() - extra)));
   }
-  return addDays(finish, -Math.round(len.value * (len.unit === "weeks" ? 7 : 1)));
+  const calendar = everyDay(m);
+  const n = Math.max(1, Math.round(len.value * (len.unit === "weeks" ? (calendar ? 7 : 5) : 1)));
+  if (calendar) return f0 - n;
+  let first = f0 - 1, guard = 0;
+  while (!isWorkDay(first, m) && guard++ < 400) first--;
+  let left = n - 1;
+  while (left > 0 && guard++ < 20000) { first--; if (isWorkDay(first, m)) left--; }
+  return first;
 }
 
-/** The earliest start one link allows, or null when the other task has no dates yet. */
+/**
+ * What one link asks of the task that follows: the boundary its start (FS, SS) or its finish
+ * (FF, SF) may not come before. Two adjustments keep milestones where people expect them:
+ * a milestone after a milestone is the next day, and a milestone tied to a task's start falls on
+ * that first day rather than the evening before.
+ */
+const linkShift = (link: LinkType, predIsPoint: boolean, succIsPoint: boolean) =>
+  (link === "FS" && predIsPoint && succIsPoint) || ((link === "SS" || link === "SF") && succIsPoint && !predIsPoint) ? 1 : 0;
+function linkBoundary(pred: ApiMilestone, link: LinkType, lag: number, succIsPoint: boolean): number | null {
+  const p = span(pred);
+  if (!p) return null;
+  return (link === "FS" || link === "FF" ? p.f : p.s) + lag + linkShift(link, isZeroLength(pred), succIsPoint);
+}
+
+/**
+ * The earliest start one link allows (a milestone's date, for a milestone), or null when the other
+ * task has no dates yet. Without `task` it answers for a plain task that follows.
+ */
 export function startFromLink(pred: ApiMilestone, link: LinkType, lag: number, task?: ApiMilestone): Date | null {
-  const ps = parseDate(pred.plannedStart);
-  const pf = parseDate(pred.plannedEnd) || ps;
-  switch (link) {
-    case "SS": return ps ? addDays(ps, lag) : null;
-    case "FF": return pf ? (task ? startForFinish(task, addDays(pf, lag)) : addDays(pf, lag)) : null;
-    case "SF": return ps ? (task ? startForFinish(task, addDays(ps, lag)) : addDays(ps, lag)) : null;
-    default: return pf ? addDays(pf, 1 + lag) : null;
-  }
+  const point = !!task && isZeroLength(task);
+  const at = linkBoundary(pred, link, lag, point);
+  if (at === null) return null;
+  if (point) return fromDn(at - 1);
+  if (link === "FS" || link === "SS") return fromDn(task ? nextWorkDay(at, task) : at);
+  return task ? fromDn(startInstant(task, at)) : fromDn(at - 1);
 }
 
 /** Every task in an order where each comes after all the tasks it waits on. Tasks in a loop are left out. */
@@ -211,18 +278,29 @@ export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
   const byId = new Map(rows.map((r) => [r.id, { ...r }]));
   for (const id of topoOrder(rows)) {
     const t = byId.get(id)!;
-    const starts = predsOf(t)
-      .map((p) => { const pred = byId.get(p.id); return pred ? startFromLink(pred, p.type, p.lag, t) : null; })
-      .filter((d): d is Date => !!d);
+    const point = isZeroLength(t);
+    const starts: number[] = [];
+    for (const p of predsOf(t)) {
+      const pred = byId.get(p.id);
+      const at = pred ? linkBoundary(pred, p.type, p.lag, point) : null;
+      if (at === null) continue;
+      starts.push(p.type === "FS" || p.type === "SS" ? at : startInstant(t, at));
+    }
     if (!starts.length) continue;
-    const start = new Date(Math.max(...starts.map((d) => d.getTime())));
-    // The length is read before the start is moved. Read after, a task given as two dates took its
-    // length from the new start to the old end, and stretched instead of moving (CR 300 - the CR 294
-    // version did this too).
-    const len = lengthOf(t);
-    t.plannedStart = toIso(start);
-    t.plannedEnd = toIso(len && len.value > 0 ? addDuration(start, len.value, len.unit) : start);
-    if (isZeroLength(t)) { t.plannedEnd = t.plannedStart; t.durationValue = 0; }
+    let s0 = Math.max(...starts);
+    if (point) {
+      // A milestone sits at the end of its day.
+      t.plannedStart = toIso(fromDn(s0 - 1));
+      t.plannedEnd = t.plannedStart;
+      t.durationValue = 0;
+      continue;
+    }
+    s0 = nextWorkDay(s0, t);
+    // The finish is worked out from the length the task had BEFORE it moved (CR 300): a task given
+    // as two dates must move, not stretch.
+    const f0 = finishInstant(t, s0);
+    t.plannedStart = toIso(fromDn(s0));
+    t.plannedEnd = toIso(fromDn(f0 - 1));
   }
   // Anything caught in a loop keeps what it had; the editor refuses to make one in the first place.
   return rows.map((r) => byId.get(r.id) || r);
@@ -233,19 +311,15 @@ export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
  *
  * `float` is each task's total float in days: how far it can slip before the project's finish
  * moves. `critical` holds the tasks with none to spare. Cancelled tasks and tasks without dates
- * take no part. `finish` is the project's planned finish.
+ * take no part. `finish` is the project's last planned day. Both are always worked out here;
+ * nobody types a float or marks a task critical (CR 320).
  */
 export interface CpmInfo { float: Map<string, number>; critical: Set<string>; finish: Date | null }
 export function criticalPath(rows: ApiMilestone[]): CpmInfo {
   const live = rows.filter((r) => r.status !== "cancelled" && parseDate(r.plannedStart));
   const byId = new Map(live.map((r) => [r.id, r]));
-  // Whole days, so a clock change can never shave an hour into a day's worth of float.
-  const dn = (d: Date) => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY);
   const es = new Map<string, number>(), ef = new Map<string, number>();
-  for (const r of live) {
-    const s = parseDate(r.plannedStart)!, e = parseDate(r.plannedEnd) || s;
-    es.set(r.id, dn(s)); ef.set(r.id, Math.max(dn(s), dn(e)));
-  }
+  for (const r of live) { const sp = span(r)!; es.set(r.id, sp.s); ef.set(r.id, sp.f); }
   const float = new Map<string, number>();
   const critical = new Set<string>();
   if (!live.length) return { float, critical, finish: null };
@@ -257,15 +331,14 @@ export function criticalPath(rows: ApiMilestone[]): CpmInfo {
   const lf = new Map<string, number>(), ls = new Map<string, number>();
   for (const id of topoOrder(live).reverse()) {
     const dur = ef.get(id)! - es.get(id)!;
+    const point = isZeroLength(byId.get(id)!);
     let latest = pf;
     for (const s of succ.get(id) || []) {
       if (!ls.has(s.id)) continue;       // a successor caught in a loop sets no limit
-      const sls = ls.get(s.id)!, slf = lf.get(s.id)!;
-      const cand = s.type === "SS" ? sls - s.lag + dur
-        : s.type === "FF" ? slf - s.lag
-        : s.type === "SF" ? slf - s.lag + dur
-        : sls - 1 - s.lag;
-      latest = Math.min(latest, cand);
+      const shift = linkShift(s.type, point, isZeroLength(byId.get(s.id)!));
+      // The latest this task's start (SS, SF) or finish (FS, FF) may be, from that successor.
+      const limit = (s.type === "FS" || s.type === "SS" ? ls.get(s.id)! : lf.get(s.id)!) - s.lag - shift;
+      latest = Math.min(latest, s.type === "FS" || s.type === "FF" ? limit : limit + dur);
     }
     lf.set(id, latest);
     ls.set(id, latest - dur);
@@ -276,8 +349,7 @@ export function criticalPath(rows: ApiMilestone[]): CpmInfo {
     float.set(r.id, f);
     if (f <= 0) critical.add(r.id);
   }
-  const u = new Date(pf * DAY);
-  return { float, critical, finish: new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate()) };
+  return { float, critical, finish: fromDn(pf - 1) };
 }
 
 /**

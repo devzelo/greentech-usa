@@ -15,6 +15,7 @@ export interface MilestoneRecord {
   linkType: "FS" | "SS" | "FF" | "SF";
   lagDays: number;                   // + waits, - overlaps
   isMilestone: boolean;              // no length: start and finish are the same day
+  inc?: boolean; includeWeekends?: boolean; includeHolidays?: boolean;   // CR 322
   // CR 300 - every task this one waits on, each with its own link type and lag.
   predecessors: Array<{ id: string; type: "FS" | "SS" | "FF" | "SF"; lag: number }>;
   duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string;
@@ -216,6 +217,11 @@ const MilestoneSchema = new Schema({
   linkType: { type: String, enum: ["FS", "SS", "FF", "SF"], default: "FS" },
   lagDays: { type: Number, default: 0 },
   isMilestone: { type: Boolean, default: false },
+  // CR 322 - `inc`: kept under the inclusive day count (a row without it is converted when read).
+  // A task counts every calendar day unless weekends or holidays are switched off.
+  inc: { type: Boolean, default: false },
+  includeWeekends: { type: Boolean, default: true },
+  includeHolidays: { type: Boolean, default: true },
   predecessors: { type: [{ id: { type: String, default: "" }, type: { type: String, enum: ["FS", "SS", "FF", "SF"], default: "FS" }, lag: { type: Number, default: 0 } }], default: [] },
   // Older chained schedule
   duration: { type: Number, default: 0, min: 0 },
