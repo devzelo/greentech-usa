@@ -386,7 +386,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: outRows, categories: outCats, version: label, scheduleName, remarks: printRemarks,
-    zoom, actual: printActual, paper, overview: printOverview, critical: showCritical,
+    zoom, actual: printActual, paper, overview: printOverview, critical: showCritical, float: showFloat,
   });
   const versionLabel = subject
     ? `${entryCode(subject)} · ${entryTitle(subject)}`
@@ -696,6 +696,13 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const idOfNumber = (n: string) => { for (const [id, num] of wbs.task) if (num === n) return id; return undefined; };
   const [showCritical, setShowCritical] = useState(() => { try { return localStorage.getItem("gt-schedule-critical") !== "0"; } catch { return true; } });
   const toggleCritical = () => setShowCritical((v) => { try { localStorage.setItem("gt-schedule-critical", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
+  /**
+   * CR 319 (2026-09-28): float is its own switch. It used to come on with the critical path, and
+   * the hatched tails it draws read as "this is showing the float days", not the critical path.
+   * Off by default, so Critical path shows the path and nothing else.
+   */
+  const [showFloat, setShowFloat] = useState(() => { try { return localStorage.getItem("gt-schedule-float") === "1"; } catch { return false; } });
+  const toggleFloat = () => setShowFloat((v) => { try { localStorage.setItem("gt-schedule-float", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   /** A phase's figures, rolled up from its tasks. */
   const phaseRollup = (items: ApiMilestone[], category: string) => {
     const starts = items.map((m) => parseDate(m.plannedStart)).filter((d): d is Date => !!d);
@@ -845,10 +852,20 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               type="button"
               onClick={toggleCritical}
               aria-pressed={showCritical}
-              title={showCritical ? "Critical path shown in red. Click to hide it." : "Show the critical path: the tasks with no float, where any delay moves the project finish."}
+              title={showCritical ? "The critical path is in red: the chain of tasks that sets the finish date. Worked out automatically. Click to hide it." : "Show the critical path: the chain of tasks where any delay moves the project finish. Worked out automatically."}
               className={`${btn} ${showCritical ? "!border-red-200 !bg-red-50 !text-red-600" : ""}`}
             >
               <span className={`h-2 w-3.5 rounded-sm ${showCritical ? "bg-red-500" : "bg-slate-300"}`} /> Critical path{showCritical && cpm.critical.size ? ` (${cpm.critical.size})` : ""}
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleFloat}
+              aria-pressed={showFloat}
+              title={showFloat ? "Float is drawn after each bar: the days a task can slip without moving the finish. Click to hide it." : "Show float on the chart: the days each task can slip without moving the project finish. Worked out automatically."}
+              className={`${btn} ${showFloat ? "!border-sky-200 !bg-sky-50 !text-sky-700" : ""}`}
+            >
+              <span className={`h-2 w-3.5 rounded-sm border border-dashed ${showFloat ? "border-sky-500 bg-sky-100" : "border-slate-300"}`} /> Float
             </button>
 
             {/* CR 284 - Preview is the one people reach for on every pass over a schedule, so it sits
@@ -962,7 +979,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       <th colSpan={2} className="border-l border-sky-100 bg-sky-50 px-2 pt-2 text-center text-sky-800" title="Only entered when it differs from the plan">Actual</th>
                       <th rowSpan={2} className="border-l border-slate-100 px-2 py-2 text-right">Duration</th>
                       <th rowSpan={2} className="px-2 py-2 text-left" title="The tasks this one waits on, by number. 1.2 means it starts after 1.2 finishes; add SS, FF or SF for the other link types and +3d or -2d for a lag.">Predecessors</th>
-                      <th rowSpan={2} className="px-2 py-2 text-right" title="Float: how many days a task can slip before the project finish moves. 0 is the critical path.">Float</th>
+                      <th rowSpan={2} className="px-2 py-2 text-right" title="Float: how many days a task can slip before the project finish moves. Worked out automatically; it cannot be typed.">Float</th>
+                      <th rowSpan={2} className="px-2 py-2" title="Critical: Yes when the task has no float, so any delay to it delays the project. Worked out automatically; it cannot be set by hand.">Critical</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">Status</th>
                       <th rowSpan={2} className="px-2 py-2 text-left">% complete</th>
                       <th rowSpan={2} className="px-2 py-2 text-center" title="The project manager's note on this task. Internal, never printed.">Remark</th>
@@ -1003,6 +1021,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                             <td className={`${cell} border-l border-slate-50 text-right font-bold tabular-nums text-slate-800`}>{ph.days !== null ? `${ph.days} days` : "-"}</td>
                             <td className={`${cell} text-[11px] text-slate-500`} title="Links into this phase from the tasks of other phases">{ph.incoming.length ? ph.incoming.join(", ") : "-"}</td>
                             <td className={`${cell} text-right font-bold tabular-nums ${ph.float === null ? "text-slate-300" : ph.float <= 0 ? "text-red-600" : "text-emerald-600"}`}>{ph.float === null ? "-" : ph.float}</td>
+                            <td className={`${cell} text-slate-300`}>-</td>
                             <td className={cell}><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${STATUS_META[ph.status].chip}`}>{STATUS_META[ph.status].label}</span></td>
                             <td className={cell}>
                               <div className="flex items-center gap-2">
@@ -1026,7 +1045,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                         )}
                         {g.category && !folded && g.items.length === 0 && (
                           <tr className="border-t border-slate-100">
-                            <td colSpan={15} className="px-10 py-3 text-[11px] italic text-slate-400">
+                            <td colSpan={16} className="px-10 py-3 text-[11px] italic text-slate-400">
                               No tasks in {g.category} yet.{canEdit && <> <button type="button" onClick={() => addInCategory(g.category)} className="font-bold not-italic text-blue-600 hover:underline">Add one</button>, or tick items on the left with "Add to category" set to {g.category}.</>}
                             </td>
                           </tr>
@@ -1122,6 +1141,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           <td className={`${cell} text-right font-bold tabular-nums ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-emerald-600"}`} title={fl === undefined ? "No dates yet" : fl <= 0 ? "Critical: any delay here moves the project finish" : `Can slip ${fl} day${fl === 1 ? "" : "s"} before the project finish moves`}>
                             {fl === undefined ? "-" : fl}
                           </td>
+                          {/* CR 319 - read-only: the system decides what is critical. */}
+                          <td className={`${cell} text-[11px] font-bold ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-slate-500"}`}>{fl === undefined ? "-" : fl <= 0 ? "Yes" : "No"}</td>
                           <td className={cell}>
                             <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, statusPatch(m, e.target.value as MilestoneStatus))} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
                               {STATUS_ORDER.map((s2) => <option key={s2} value={s2}>{STATUS_META[s2].label}</option>)}
@@ -1167,7 +1188,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       </Fragment>
                       );
                     })}
-                    {shown.length === 0 && <tr><td colSpan={15} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
+                    {shown.length === 0 && <tr><td colSpan={16} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1221,6 +1242,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             baseline={baselineMap}
             cpm={cpm}
             showCritical={showCritical}
+            showFloat={showFloat}
             numbers={wbs.task}
             onMove={canEdit ? dragMove : undefined}
             onResize={canEdit ? dragResize : undefined}

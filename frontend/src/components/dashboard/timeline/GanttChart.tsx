@@ -59,7 +59,7 @@ export type GanttSection = { category: string; items: ApiMilestone[]; folded?: b
 
 export default function GanttChart({
   rows, sections, contractStart, deadline, originalDeadline, labels = true, zoom = "month",
-  cpm, showCritical = true, numbers, baseline, onMove, onResize,
+  cpm, showCritical = true, showFloat = false, numbers, baseline, onMove, onResize,
 }: {
   rows: ApiMilestone[];
   /** Phases with their tasks, drawn as summary bars (CR 269). Falls back to a flat list. */
@@ -73,6 +73,8 @@ export default function GanttChart({
   /** CR 300 - float and the critical path, from the engine. */
   cpm?: CpmInfo;
   showCritical?: boolean;
+  /** CR 319 - float tails, a switch of their own (off unless asked for). */
+  showFloat?: boolean;
   /** The table's numbers (1, 1.1...), so the chart names rows the same way. */
   numbers?: Map<string, string>;
   /** The baseline to draw under each bar (a task not in it gets none); each task's own first planned dates when left out. */
@@ -357,14 +359,16 @@ export default function GanttChart({
                         )}
                       </div>
                       {/* The days it can slip before the project finish moves. */}
-                      {showCritical && fl !== undefined && fl > 0 && (
+                      {showFloat && fl !== undefined && fl > 0 && (
                         <div
-                          className="pointer-events-none absolute rounded-sm border border-dashed"
+                          className="pointer-events-none absolute flex items-center overflow-hidden rounded-sm border border-dashed"
                           style={{
                             top: BAR_TOP + 1, height: BAR_H - 2, left: xEnd(pe) + move + grow, width: fl * pxPerDay,
                             borderColor: `${GREEN}99`, background: `repeating-linear-gradient(45deg, ${GREEN}33 0 3px, transparent 3px 6px)`,
                           }}
-                        />
+                        >
+                          {fl * pxPerDay > 58 && <span className="whitespace-nowrap px-1 text-[8px] font-bold text-emerald-700">{fl} day{fl === 1 ? "" : "s"} float</span>}
+                        </div>
                       )}
                     </>
                   ))}

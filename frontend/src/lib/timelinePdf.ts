@@ -71,6 +71,8 @@ export interface TimelinePdfInput {
   overview?: boolean;
   /** CR 300 - mark the critical path in red, as the screen's toggle does. On unless turned off. */
   critical?: boolean;
+  /** CR 319 - draw each task's float after its bar. Off unless asked for. */
+  float?: boolean;
 }
 
 /**
@@ -169,6 +171,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
       ms ? "0 days" : ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? " (actual)" : ""}`,
       predsOf(m).map((q) => predLabel(q, wbs.task.get(q.id) || "?")).join(", ") || "-",
       fl === undefined ? "-" : String(fl),
+      fl === undefined ? "-" : fl <= 0 ? "Yes" : "No",
       STATUS_META[m.status || "not_started"].label,
       `${pct}%`,
       ...(o.remarks ? [m.notes || ""] : []),
@@ -178,12 +181,12 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     const cellColors: Array<ReturnType<typeof rgb> | undefined> = [];
     if (ms) cellColors[2] = RED;                                                // milestones red, as on screen
     if (showActual) cellColors[6] = lateBy && m.actualEnd ? RED : undefined;   // a late finish, red as on screen
-    if (crit) cellColors[10 - shift] = RED;                                     // no float: the critical path
-    cellColors[11 - shift] = statusInk(m.status);                               // the status chip's colour
+    if (crit) { cellColors[10 - shift] = RED; cellColors[11 - shift] = RED; }   // no float: the critical path
+    cellColors[12 - shift] = statusInk(m.status);                               // the status chip's colour
     return {
       cells,
       cellColors,
-      bar: { col: 12 - shift, pct, color: pct >= 100 ? EMERALD : BLUE },
+      bar: { col: 13 - shift, pct, color: pct >= 100 ? EMERALD : BLUE },
       color: lateBy && !m.actualEnd ? RED : undefined,
     };
   });
@@ -206,6 +209,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     { label: "Duration", w: 74, align: "right" as const },
     { label: "Predecessors", w: 96, wrap: true },
     { label: "Float", w: 40, align: "right" as const },
+    { label: "Critical", w: 44 },
     { label: "Status", w: 80 },
     { label: "% complete", w: 62 },
   ];
@@ -216,7 +220,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   f = drawTable(b, f, X, cols, grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.8, maxLines: 4 });
 
   // ── Gantt ──
-  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE, { wbs, cpm, showCrit });
+  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE, { wbs, cpm, showCrit, showFloat: o.float === true });
 
   // CR 299 - the overview strip, as it reads at the top of the schedule, when it was asked for.
   if (o.overview) f = drawOverview(b, newPage, f, rows, o, today, PAGE);
@@ -251,8 +255,8 @@ const PDF_PX_PER_DAY = { month: 2.3, week: 8, day: 12 } as const;
 const GANTT_LABEL = 250;
 
 function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date, PAGE: { w: number; h: number },
-  plan: { wbs: ReturnType<typeof wbsNumbers>; cpm: CpmInfo; showCrit: boolean }): Flow {
-  const { wbs, cpm, showCrit } = plan;
+  plan: { wbs: ReturnType<typeof wbsNumbers>; cpm: CpmInfo; showCrit: boolean; showFloat: boolean }): Flow {
+  const { wbs, cpm, showCrit, showFloat } = plan;
   const isCrit = (id: string) => showCrit && cpm.critical.has(id);
   const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = GANTT_LABEL, CH = W - LABEL, ROW = 15, BOTTOM = 74;
   const zoom = o.zoom || "month";
@@ -449,7 +453,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
             if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? RED : EMERALD });
             // Its float: the days it can slip before the finish moves, as a dashed tail.
             const fl = cpm.float.get(m.id);
-            if (showCrit && fl && fl > 0 && pe < sheetTo) {
+            if (showFloat && fl && fl > 0 && pe < sheetTo) {
               const fx = clampL(xEnd(pe)), fw = clampL(xEnd(pe) + fl * pxPerDay) - fx;
               if (fw > 1) page.drawRectangle({ x: fx, y: top - 8.5, width: fw, height: 4.5, borderColor: EMERALD, borderWidth: 0.5, borderDashArray: [1.5, 1.2], color: rgb(0.93, 0.99, 0.96) });
             }
