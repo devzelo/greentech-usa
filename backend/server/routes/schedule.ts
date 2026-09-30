@@ -97,7 +97,7 @@ function cleanCategories(input: unknown): string[] {
 type Draft = { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
 type Plain = {
   milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[];
-  subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean }>;
+  subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean; filed?: boolean }>;
 };
 // 2026-09-21 - every call names its schedule (?sched=<id>); none means the master. The master's
 // save also moves the project's progress; a separate schedule never does.
@@ -139,8 +139,43 @@ function overallProgress(ms: MilestoneRecord[]): number {
 router.get("/revisions", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const id = schedId(req);
-    // CR 300 - the whole register: revisions, baselines and uploaded schedules, newest first.
-    res.json(await ScheduleRevision.find({ projectId: req.params.id, scheduleId: id || { $in: ["", null] } }).sort({ createdAt: -1 }).limit(300).lean());
+    if (id) {
+      return res.json(await ScheduleRevision.find({ projectId: req.params.id, scheduleId: id }).sort({ createdAt: -1 }).limit(300).lean());
+    }
+    /**
+     * CR 314 (2026-09-28): a project has one schedule. The separate schedules that were made beside
+     * the master are no longer offered; each one holding tasks is filed here once, as a record of
+     * its own, and the revisions it had saved are listed with the rest, named after it. Nothing is
+     * deleted: the schedules stay on the project, marked as filed.
+     */
+    const project = await Project.findOne({ projectId: req.params.id });
+    const s = ((project?.toObject() as { schedule?: Plain } | undefined)?.schedule || {}) as Plain;
+    const subs = s.subs || [];
+    if (project && subs.some((x) => !x.filed && (x.milestones || []).length)) {
+      for (const x of subs) {
+        if (x.filed || !(x.milestones || []).length) continue;
+        await ScheduleRevision.create({
+          projectId: req.params.id,
+          scheduleId: x.id,
+          version: 0,
+          kind: "submittal",
+          title: `${x.name} (separate schedule)`,
+          description: "Filed from the separate schedules when the project moved to one schedule.",
+          milestones: x.milestones,
+          categories: x.categories || [],
+          progress: overallProgress(x.milestones),
+          savedBy: "",
+          dataDate: new Date().toISOString().slice(0, 10),
+        });
+      }
+      project.schedule = { ...s, subs: subs.map((x) => ({ ...x, filed: true })) } as unknown as typeof project.schedule;
+      project.markModified("schedule");
+      await project.save();
+    }
+    // The whole register: revisions, baselines, submittals and uploaded schedules, newest first.
+    const nameOf = new Map(subs.map((x) => [x.id, x.name]));
+    const all = await ScheduleRevision.find({ projectId: req.params.id }).sort({ createdAt: -1 }).limit(400).lean();
+    res.json(all.map((e) => (e.scheduleId ? { ...e, scheduleName: nameOf.get(e.scheduleId) || "Separate schedule" } : e)));
   } catch (err) { next(err); }
 });
 

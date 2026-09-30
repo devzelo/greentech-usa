@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import {
   discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl,
-  saveScheduleSubs,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
@@ -59,16 +58,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   onSaveExtensions?: (next: ApiExtension[], message: string) => Promise<void>;
 }) {
   const { confirm, prompt, dialogs } = useDialogs();
-  // 2026-09-21 - the master schedule (the default) and separate schedules beside it. Each has its own
-  // tasks, categories, draft, revisions and files; a new one is made from scratch.
-  const [activeSub, setActiveSub] = useState("");
-  const subs = project.schedule?.subs || [];
-  const sub = subs.find((x) => x.id === activeSub) || null;
-  const sched = sub ? sub.id : undefined;
-  const scheduleName = sub ? sub.name : "Master schedule";
-  const live = useMemo(() => (sub ? sub.milestones || [] : project.schedule?.milestones || []), [project.schedule, activeSub]); // eslint-disable-line react-hooks/exhaustive-deps
-  const liveCats = useMemo(() => (sub ? sub.categories || [] : project.schedule?.categories || []), [project.schedule, activeSub]); // eslint-disable-line react-hooks/exhaustive-deps
-  const draft = (sub ? sub.draft : project.schedule?.draft) || null;
+  // CR 314 (2026-09-28): one schedule per project. The separate schedules beside the master are
+  // gone; what they were for (printing part of the job) is done by showing only some phases. The
+  // ones that existed are filed in History by the server, so nothing is lost.
+  const sched = undefined;
+  const scheduleName = "Project schedule";
+  const live = useMemo(() => project.schedule?.milestones || [], [project.schedule]);
+  const liveCats = useMemo(() => project.schedule?.categories || [], [project.schedule]);
+  const draft = project.schedule?.draft || null;
   const [rows, setRows] = useState<ApiMilestone[]>(live);
   const [base, setBase] = useState<ApiMilestone[]>(live);        // what the rows are compared with
   // The schedule's categories, in order, like BOQ sections: named, renamable, kept when empty.
@@ -120,7 +117,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
   const takeRegister = (all: ApiScheduleRevision[]) => {
     setRegister(all);
-    setRevisions(all.filter((e) => kindOf(e) === "revision").sort((a, b) => b.version - a.version));
+    // The editor's revisions are the project schedule's own; records of the old separate schedules
+    // (CR 314) are history only.
+    setRevisions(all.filter((e) => kindOf(e) === "revision" && !e.scheduleId).sort((a, b) => b.version - a.version));
   };
   const loadRevisions = () => fetchTimelineRevisions(project.id, sched).then(takeRegister).catch(() => takeRegister([]));
   // Opening another schedule starts clean on that schedule's own tasks, categories and revisions.
@@ -130,7 +129,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setRevisions(null); setRegister([]);
     void loadRevisions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, activeSub]);
+  }, [project.id]);
 
   const today = new Date();
   const contractStart = project.startDate || project.contractDate || "";
@@ -486,7 +485,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // ── CR 300 - the register: baselines, revisions and schedules kept as files ──
   const fileNameFor = (e: ApiScheduleRevision) => `${safe(project.name)} - ${scheduleName} ${safe(entryCode(e))} ${safe(entryTitle(e))}.pdf`;
   const replaceEntry = (e: ApiScheduleRevision) => {
-    setRegister((p) => p.map((x) => (x._id === e._id ? e : x)));
+    setRegister((p) => p.map((x) => (x._id === e._id ? { ...e, scheduleName: x.scheduleName } : x)));
     if (kindOf(e) === "revision") setRevisions((p) => (p ? p.map((x) => (x._id === e._id ? e : x)) : p));
   };
   const curBase = useMemo(() => currentBaseline(register), [register]);
@@ -543,7 +542,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         toast(`"${entryTitle(entry)}" added to the schedule history.`, "success");
       } else {
         const ids = await uploadAll(newFiles, kindOf(state.entry));
-        replaceEntry(await updateScheduleEntry(project.id, state.entry._id, { ...details, files: [...keep, ...ids] }, sched));
+        replaceEntry(await updateScheduleEntry(project.id, state.entry._id, { ...details, files: [...keep, ...ids] }, state.entry.scheduleId || undefined));
         toast("Details saved.", "success");
       }
       return true;
@@ -568,12 +567,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     },
     edit: (e) => setEntryDialog({ mode: "edit", entry: e }),
     setStatus: (e, st: ScheduleEntryStatus) => {
-      updateScheduleEntry(project.id, e._id, { status: st }, sched)
+      updateScheduleEntry(project.id, e._id, { status: st }, e.scheduleId || undefined)
         .then((x) => { replaceEntry(x); toast(`${entryCode(x)} marked ${st}.`, "success"); })
         .catch((err) => toast(err instanceof Error ? err.message : "Could not update it.", "error"));
     },
     archive: (e) => {
-      updateScheduleEntry(project.id, e._id, { archived: !e.archived }, sched)
+      updateScheduleEntry(project.id, e._id, { archived: !e.archived }, e.scheduleId || undefined)
         .then((x) => { replaceEntry(x); toast(x.archived ? `${entryCode(x)} archived. Tick "Show archived" to see it, or restore it from the Archive.` : `${entryCode(x)} restored.`, "success"); })
         .catch((err) => toast(err instanceof Error ? err.message : "Could not update it.", "error"));
     },
@@ -588,7 +587,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         danger: true,
       }))) return;
       try {
-        await deleteScheduleEntry(project.id, e._id, sched);
+        await deleteScheduleEntry(project.id, e._id, e.scheduleId || undefined);
         setRegister((p) => p.filter((x) => x._id !== e._id));
         setRevisions((p) => (p ? p.filter((x) => x._id !== e._id) : p));
         toast(`${entryCode(e)} deleted. Restore it from the Recycle Bin if needed.`, "success");
@@ -600,45 +599,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     <FrozenSchedule milestones={e.milestones} categories={catsOf(e)} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} zoom={zoom}
       baseline={kindOf(e) === "revision" ? baselineMap : new Map()} />
   );
-
-  // ── The master schedule and the separate schedules beside it ──
-  const [subDialog, setSubDialog] = useState<{ id?: string; name: string; copyCats: boolean } | null>(null);
-  const saveSubs = async (next: Array<{ id: string; name: string; categories?: string[] }>, message: string) => {
-    try {
-      const r = await saveScheduleSubs(project.id, next);
-      onScheduleSaved(r.schedule, r.progress);
-      toast(message, "success");
-      return true;
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the schedule list.", "error"); return false; }
-  };
-  const submitSubDialog = async () => {
-    if (!subDialog) return;
-    const name = subDialog.name.trim();
-    if (!name) { toast("Name the schedule.", "error"); return; }
-    if (name.toLowerCase() === "master schedule" || subs.some((x) => x.id !== subDialog.id && x.name.toLowerCase() === name.toLowerCase())) { toast(`There is already a schedule called "${name}".`, "error"); return; }
-    const keep = subs.map((x) => ({ id: x.id, name: x.id === subDialog.id ? name : x.name }));
-    if (subDialog.id) {
-      if (await saveSubs(keep, `Renamed to ${name}.`)) setSubDialog(null);
-      return;
-    }
-    const id = `s${Date.now().toString(36)}`;
-    const categories = subDialog.copyCats ? categoryList(project.schedule?.categories, project.schedule?.milestones || []) : [];
-    if (await saveSubs([...keep, { id, name, categories }], `${name} created. Add its categories and milestones.`)) {
-      setSubDialog(null);
-      setActiveSub(id);
-    }
-  };
-  const deleteSub = async (id: string) => {
-    const x = subs.find((s2) => s2.id === id);
-    if (!x) return;
-    if (!(await confirm({ title: `Delete ${x.name}?`, message: `Its ${x.milestones?.length || 0} milestone${(x.milestones?.length || 0) === 1 ? "" : "s"}, categories and draft are deleted. The master schedule is not touched, and the revision PDFs stay in Schedule files.`, confirmLabel: "Delete schedule", danger: true }))) return;
-    if (await saveSubs(subs.filter((s2) => s2.id !== id).map((s2) => ({ id: s2.id, name: s2.name })), `${x.name} deleted.`)) { setActiveSub(""); setSubDialog(null); }
-  };
-  const openSchedule = async (id: string) => {
-    if (id === activeSub) return;
-    if (unsaved && !(await confirm({ title: "Leave without saving?", message: `Your changes to ${scheduleName} have not been saved.`, confirmLabel: "Discard and switch", danger: true }))) return;
-    setActiveSub(id);
-  };
 
   // ── CR 244 - every revision is filed as a PDF in its schedule's folder ──
   const filesRef = useRef<ScheduleFilesHandle>(null);
@@ -779,8 +739,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     update(m.id, withPreds(m, preds));
     return true;
   };
-  // The header bar is the project's: it follows the master schedule only.
-  const previewProject: ApiProject = sub ? project : { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
+  const previewProject: ApiProject = { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
 
   const btn = "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary disabled:opacity-50";
@@ -806,33 +765,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {/* Hidden file input for the Excel import (CR 239). */}
       <input ref={xlsInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readExcel(f); e.target.value = ""; }} />
 
-      {/* The master schedule and the separate schedules beside it, as tabs. */}
-      {(started || subs.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-1.5">
-          {[{ id: "", name: "Master schedule", count: project.schedule?.milestones?.length || 0 }, ...subs.map((x) => ({ id: x.id, name: x.name, count: x.milestones?.length || 0 }))].map((x) => {
-            const on = activeSub === x.id;
-            return (
-              <span key={x.id || "master"} className={`inline-flex items-center rounded-xl ${on ? "bg-white shadow-sm ring-1 ring-primary/20" : ""}`}>
-                <button type="button" onClick={() => void openSchedule(x.id)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold ${on ? "text-slate-900" : "text-slate-500 hover:text-slate-900"}`}>
-                  <CalendarRange size={12} className={on ? "text-primary" : "text-slate-400"} />
-                  {x.name}
-                  <span className="text-[10px] font-semibold text-slate-400">{x.count}</span>
-                </button>
-                {x.id && on && canEdit && (
-                  <button type="button" onClick={() => setSubDialog({ id: x.id, name: x.name, copyCats: false })} title="Rename or delete this schedule" className="mr-1 rounded p-1 text-slate-400 hover:text-primary"><Pencil size={11} /></button>
-                )}
-              </span>
-            );
-          })}
-          {canEdit && (
-            <button type="button" onClick={() => setSubDialog({ name: "", copyCats: false })} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-500 hover:border-primary hover:text-primary">
-              <Plus size={12} /> New schedule
-            </button>
-          )}
-          {sub && <span className="ml-auto pr-2 text-[11px] text-slate-400">Separate from the master: its own milestones, revisions and files.</span>}
-        </div>
-      )}
-
       {/* CR 300 - the schedule's three views: the approved baselines, the live schedule, and the
           history of every schedule sent or received. */}
       <div role="tablist" aria-label="Schedule views" className="flex items-center gap-1 border-b border-slate-200">
@@ -855,17 +787,15 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {regTab === "current" && !started && (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
           <Flag size={30} className="mx-auto text-slate-300" />
-          <p className="mt-3 font-display text-lg font-bold text-slate-900">{sub ? `${sub.name} is empty` : "No schedule yet"}</p>
+          <p className="mt-3 font-display text-lg font-bold text-slate-900">No schedule yet</p>
           <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
             {!canEdit
               ? "The project manager has not created this schedule yet."
-              : sub
-                ? "Build it from scratch: add its categories, then the milestones in each, or import it from Excel. It is separate from the master schedule."
                 : "Create the project schedule: pick the phases and tasks, group them by category, or import a schedule prepared in Excel."}
           </p>
           {canEdit && (
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> {sub ? "Start this schedule" : "Create schedule"}</button>
+              <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> Create schedule</button>
               <button type="button" onClick={() => void addCategory()} className={btn}><FolderPlus size={13} /> Add a category</button>
               <button type="button" onClick={() => xlsInput.current?.click()} className={btn}><FileUp size={13} /> Import from Excel</button>
               <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Copy from another project</button>
@@ -1345,50 +1275,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
       {/* CR 241 / 244 - the schedule files, by schedule, searchable. */}
       <ScheduleFiles ref={filesRef} projectId={project.id} projectName={project.name} canEdit={canEdit} highlight={filedTo} />
-
-      {/* A new schedule beside the master, made from scratch (or rename / delete one). */}
-      {subDialog && createPortal(
-        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onClick={() => setSubDialog(null)}>
-          <div className="my-20 w-full max-w-lg rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
-              <p className="text-sm font-bold text-slate-900">{subDialog.id ? `Edit ${subs.find((x) => x.id === subDialog.id)?.name || "schedule"}` : "New schedule"}</p>
-              <button onClick={() => setSubDialog(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
-            </div>
-            <div className="space-y-4 p-5">
-              <label className="block space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Name</span>
-                <input autoFocus value={subDialog.name} onChange={(e) => setSubDialog({ ...subDialog, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") void submitSubDialog(); }} placeholder="e.g. Design schedule" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
-              </label>
-              {!subDialog.id && (
-                <>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["Bidding schedule", "Design schedule", "Construction schedule", "Procurement schedule"].filter((n) => !subs.some((x) => x.name === n)).map((n) => (
-                      <button key={n} type="button" onClick={() => setSubDialog({ ...subDialog, name: n })} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-primary/10 hover:text-primary">{n}</button>
-                    ))}
-                  </div>
-                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                    It starts empty and is separate from the master schedule: its own categories, milestones, revisions and files. The master stays the default.
-                  </p>
-                  {categoryList(project.schedule?.categories, project.schedule?.milestones || []).length > 0 && (
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                      <input type="checkbox" checked={subDialog.copyCats} onChange={(e) => setSubDialog({ ...subDialog, copyCats: e.target.checked })} className="accent-emerald-600" />
-                      Start with the master's category names (no milestones)
-                    </label>
-                  )}
-                </>
-              )}
-              <div className="flex items-center justify-between gap-2">
-                {subDialog.id ? <button type="button" onClick={() => void deleteSub(subDialog.id!)} className="text-[11px] font-bold text-rose-600 hover:underline">Delete this schedule</button> : <span />}
-                <div className="flex gap-2">
-                  <button onClick={() => setSubDialog(null)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
-                  <button onClick={() => void submitSubDialog()} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary">{subDialog.id ? "Save" : "Create schedule"}</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
 
       {/* CR 273 - before anything is built: does this print carry the remarks? */}
       {askRemarks && createPortal(

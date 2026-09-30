@@ -10,7 +10,9 @@ import type { MilestoneRecord } from "./Project";
 //             latest one not archived is the one the schedule is measured against
 //   upload    a schedule sent or received as a file only (no live table behind it)
 // Each can carry its submission details and files, which the History tab lists.
-export type ScheduleEntryKind = "revision" | "baseline" | "upload";
+//   submittal a dated snapshot filed on purpose ("Save for submittal / history"), and the
+//             separate schedules that existed before CR 314, filed once
+export type ScheduleEntryKind = "revision" | "baseline" | "upload" | "submittal";
 export type ScheduleEntryStatus = "draft" | "submitted" | "approved" | "rejected";
 export interface ScheduleEntryFile {
   docId: string; name: string; filePath: string; fileType: string; size: string; uploadedAt: string; uploadedBy: string;
@@ -54,7 +56,7 @@ const ScheduleRevisionSchema = new Schema<IScheduleRevision>(
     progress: { type: Number, default: 0 },
     note: { type: String, default: "" },
     savedBy: { type: String, default: "" },
-    kind: { type: String, enum: ["revision", "baseline", "upload"], default: "revision" },
+    kind: { type: String, enum: ["revision", "baseline", "upload", "submittal"], default: "revision" },
     baselineNo: { type: Number, default: -1 },
     title: { type: String, default: "" },
     description: { type: String, default: "" },
@@ -82,5 +84,6 @@ export function scheduleEntryName(e: { kind?: string; baselineNo?: number; versi
     return e.title && e.title !== code ? `${code} - ${e.title}` : code;
   }
   if (e.kind === "upload") return e.title || "Uploaded schedule";
+  if (e.kind === "submittal") return e.title || "Saved schedule";
   return `Schedule revision ${e.version ?? ""}`.trim();
 }

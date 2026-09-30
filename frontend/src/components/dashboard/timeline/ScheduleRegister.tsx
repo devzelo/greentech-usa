@@ -28,12 +28,15 @@ import ShareMenu from "../ShareMenu";
 
 export type Entry = ApiScheduleRevision;
 export const kindOf = (e: Entry) => e.kind || "revision";
-export const entryCode = (e: Entry) => (kindOf(e) === "baseline" ? `B${e.baselineNo ?? 0}` : kindOf(e) === "upload" ? "File" : `Rev ${e.version}`);
+export const entryCode = (e: Entry) => (kindOf(e) === "baseline" ? `B${e.baselineNo ?? 0}` : kindOf(e) === "upload" ? "File" : kindOf(e) === "submittal" ? "Saved" : `Rev ${e.version}`);
 export function entryTitle(e: Entry): string {
   const k = kindOf(e);
   if (k === "baseline") return e.title && e.title !== `Baseline B${e.baselineNo ?? 0}` ? e.title : `Baseline B${e.baselineNo ?? 0}`;
   if (k === "upload") return e.title || e.files?.[0]?.name || "Uploaded schedule";
-  return e.title && e.title !== `Revision ${e.version}` ? e.title : `Revision ${e.version}`;
+  if (k === "submittal") return e.title || "Saved schedule";
+  const own = e.title && e.title !== `Revision ${e.version}` ? e.title : `Revision ${e.version}`;
+  // A revision of one of the old separate schedules says which.
+  return e.scheduleName ? `${e.scheduleName}: ${own}` : own;
 }
 /** A schedule's planned finish: the latest planned end among its tasks. */
 export function finishOf(ms: ApiMilestone[]): Date | null {
@@ -57,6 +60,7 @@ const KIND: Record<string, { label: string; cls: string }> = {
   baseline: { label: "Baseline", cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   revision: { label: "Revision", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   upload: { label: "File", cls: "bg-violet-50 text-violet-700 ring-violet-200" },
+  submittal: { label: "Saved schedule", cls: "bg-amber-50 text-amber-700 ring-amber-200" },
 };
 export const StatusPill = ({ s }: { s?: ScheduleEntryStatus }) => {
   const m = STATUS[s || "draft"];

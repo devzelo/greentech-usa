@@ -1129,7 +1129,7 @@ export interface ApiMilestone {
 }
 
 export interface ApiScheduleDraft { milestones: ApiMilestone[]; categories?: string[]; savedAt: string; savedBy: string }
-export type ScheduleEntryKind = "revision" | "baseline" | "upload";
+export type ScheduleEntryKind = "revision" | "baseline" | "upload" | "submittal";
 export type ScheduleEntryStatus = "draft" | "submitted" | "approved" | "rejected";
 export interface ApiScheduleEntryFile { docId: string; name: string; filePath: string; fileType: string; size: string; uploadedAt: string; uploadedBy: string }
 /**
@@ -1140,6 +1140,8 @@ export interface ApiScheduleRevision {
   _id: string; projectId: string; scheduleId?: string; categories?: string[]; version: number; milestones: ApiMilestone[]; progress: number;
   note: string; savedBy: string; createdAt: string;
   kind?: ScheduleEntryKind;
+  /** CR 314 - set on records that came from a separate schedule (before there was only one). */
+  scheduleName?: string;
   baselineNo?: number;
   title?: string;
   description?: string;
