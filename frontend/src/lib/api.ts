@@ -214,7 +214,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[]; /** CR 317 - when Current was last saved. */ savedAt?: string; savedBy?: string };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[]; /** CR 317 - when Current was last saved. */ savedAt?: string; savedBy?: string; /** CR 326 */ description?: string };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -1210,6 +1210,10 @@ type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress:
 const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : "");
 export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
   return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories, phaseInfo }) });
+}
+/** CR 326 - the line describing the schedule, under its title. */
+export async function saveScheduleDescription(projectId: string, description: string): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/description`, { method: "PUT", body: JSON.stringify({ description }) });
 }
 /** CR 317 - a plain Save: Current is updated and no history record is filed. */
 export async function saveTimelinePlain(projectId: string, milestones: ApiMilestone[], categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult> {

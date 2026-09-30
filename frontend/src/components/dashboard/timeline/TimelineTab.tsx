@@ -5,7 +5,7 @@ import {
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
-  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimelinePlain, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements, approveScheduleBaseline, createScheduleSubmittal, makeScheduleCurrent,
+  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimelinePlain, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements, approveScheduleBaseline, createScheduleSubmittal, makeScheduleCurrent, saveScheduleDescription,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiSchedulePhase, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
@@ -545,6 +545,23 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   };
 
+  // CR 326 - the schedule for Primavera P6: its XML format, which P6 imports as it is.
+  const downloadP6 = async () => {
+    if (!outRows.length) { toast("The schedule is empty.", "error"); return; }
+    const { buildP6Xml } = await import("../../../lib/p6Export");
+    const xml = buildP6Xml({ projectNo: project.id, projectName: project.name, contractStart, deadline, milestones: inView(rows), categories: catList });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([xml], { type: "application/xml" })); a.download = fileName.replace(/\.pdf$/, " (P6).xml"); a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("P6 file downloaded. In P6: File, Import, Primavera PM (XML).", "success");
+  };
+  // CR 326 - the schedule's description, a line under its title, saved as it is typed.
+  const saveDescription = async (text: string) => {
+    if (text.trim() === (project.schedule?.description || "")) return;
+    try { const r = await saveScheduleDescription(project.id, text); onScheduleSaved({ ...(project.schedule || { milestones: [] }), description: r.schedule.description }, r.progress); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not save the description.", "error"); }
+  };
+
   // ── CR 300 - the register: baselines, revisions and schedules kept as files ──
   const fileNameFor = (e: ApiScheduleRevision) => `${safe(project.name)} - ${scheduleName} ${safe(entryCode(e))} ${safe(entryTitle(e))}.pdf`;
   const tidy = (e: ApiScheduleRevision): ApiScheduleRevision => ({ ...e, milestones: normalizeDurations(e.milestones || []) });
@@ -978,6 +995,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           progress={overallPct}
           baseline={curBase}
           dirty={dirty}
+          description={project.schedule?.description || ""}
+          onDescription={canEdit ? saveDescription : undefined}
         />
         {/* CR 268, extended 2026-09-22: one bar for the whole schedule. It stays at the top of the
             page while you scroll the table AND the timeline chart, because the actions belong to
@@ -1039,6 +1058,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                 {busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF
               </button>
               <button type="button" onClick={() => downloadCsv()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Download for Excel</button>
+              <button type="button" onClick={() => void downloadP6()} className={MENU_ITEM} title="A Primavera P6 XML file: activities, durations, dates and relationships"><CalendarRange size={13} /> Export to P6 (XML)</button>
               <div className="my-1 border-t border-slate-100" />
               <ShareMenu variant="button" fileName={fileName} fileUrl="" projectName={project.name} prepareFile={sharePdf} className={MENU_ITEM} />
             </ToolMenu>

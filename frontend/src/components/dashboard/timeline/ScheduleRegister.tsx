@@ -335,8 +335,10 @@ function EntryFiles({ e, projectName }: { e: Entry; projectName: string }) {
 }
 
 // ── Current tab: the header card, and the earlier revisions under the editor ──────────────────
-export function CurrentSummary({ label, dataDate, finish, progress, baseline, dirty }: {
+export function CurrentSummary({ label, dataDate, finish, progress, baseline, dirty, description = "", onDescription }: {
   label: string; dataDate: string; finish: Date | null; progress: number; baseline: Entry | null; dirty: boolean;
+  /** CR 326 - a line describing the schedule; editable when `onDescription` is given. */
+  description?: string; onDescription?: (text: string) => void;
 }) {
   // `dataDate` is the day Current was last saved.
   const bFinish = baseline ? finishOf(baseline.milestones) : null;
@@ -349,6 +351,18 @@ export function CurrentSummary({ label, dataDate, finish, progress, baseline, di
         <h3 className="font-display text-base font-bold text-slate-900">Current schedule · {label}</h3>
         {dirty && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Unsaved changes</span>}
       </div>
+      {onDescription ? (
+        <input
+          key={description}
+          defaultValue={description}
+          maxLength={500}
+          placeholder="Add a description of this schedule"
+          aria-label="Schedule description"
+          onBlur={(e) => onDescription(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          className="mt-1 w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-slate-600 hover:border-slate-200 focus:border-primary focus:bg-white focus:outline-none"
+        />
+      ) : description ? <p className="mt-1 px-1 text-xs text-slate-600">{description}</p> : null}
       <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
         <div className={cell}><p className="text-slate-400">Last saved</p><p className="font-bold text-slate-800">{dataDate ? fmtDay(dataDate) : "-"}</p></div>
         <div className={cell}><p className="text-slate-400">Project completion</p><p className="font-bold text-slate-800">{finish ? fmtDay(finish) : "-"}</p></div>

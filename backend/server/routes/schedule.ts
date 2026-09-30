@@ -146,7 +146,7 @@ function cleanPhaseInfo(input: unknown, categories: string[], milestones: Milest
 
 type Draft = { milestones: MilestoneRecord[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt: string; savedBy: string } | null;
 type Plain = {
-  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt?: string; savedBy?: string;
+  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt?: string; savedBy?: string; description?: string;
   subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean; filed?: boolean }>;
 };
 // 2026-09-21 - every call names its schedule (?sched=<id>); none means the master. The master's
@@ -316,6 +316,19 @@ router.put("/subs", async (req: AuthedRequest, res: Response, next: NextFunction
         : { id, name, categories: cleanCategories(raw?.categories), milestones: [], draft: null, own: true };
     });
     project.schedule = { ...s, subs } as unknown as typeof project.schedule;
+    project.markModified("schedule");
+    await project.save();
+    res.json({ schedule: project.schedule, progress: project.progress });
+  } catch (err) { next(err); }
+});
+
+// CR 326 - the schedule's description: a line under its title, saved on its own.
+router.put("/description", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const s = ((project.toObject() as { schedule?: Plain }).schedule || {}) as Plain;
+    project.schedule = { ...s, description: str(req.body?.description, 500).trim() } as unknown as typeof project.schedule;
     project.markModified("schedule");
     await project.save();
     res.json({ schedule: project.schedule, progress: project.progress });
