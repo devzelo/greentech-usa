@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Upload, FileText, Download, Loader2, X } from "lucide-react";
+import { Plus, Trash2, Upload, FileText, Download, Loader2, X, Pencil, Save } from "lucide-react";
 import {
   fetchTableRows, createTableRow, updateTableRow, deleteTableRow,
   uploadTableRowFile, deleteTableRowFile, tableRowFileUrl,
@@ -14,7 +14,17 @@ type Confirm = ReturnType<typeof useDialogs>["confirm"];
 // `columns`; each row also carries a revision number and file attachments. Used for Project Info →
 // Amendments & Addenda (client request: an amendments table 1, 2, 3 … with descriptions & revisions).
 
-export interface TableColumn { key: string; label: string; type?: "text" | "date" | "number"; width?: string; placeholder?: string; options?: string[] }
+export interface TableColumn {
+  key: string; label: string; type?: "text" | "date" | "number" | "longtext"; width?: string; placeholder?: string; options?: string[];
+  /** Filled in for a new entry, e.g. "Amendment 3" from the count so far. */
+  auto?: (count: number) => string;
+  /** How a saved row shows this column, when it is more than the stored value (older rows). */
+  show?: (data: Record<string, string>) => string;
+}
+
+// CR 330 (2026-09-28): an entry is written in a small form and saved with a Save button; saved
+// entries are plain rows of a table, opened to read or edit. They used to be open text boxes that
+// saved on leaving the field, which read as unsaved text.
 
 export default function StructuredTable({ projectId, tableKey, columns, canEdit, addLabel = "Add row", showRev = true, showFiles = true }: {
   projectId: string; tableKey: string; columns: TableColumn[]; canEdit: boolean; addLabel?: string; showRev?: boolean; showFiles?: boolean;
@@ -25,6 +35,8 @@ export default function StructuredTable({ projectId, tableKey, columns, canEdit,
   const [busy, setBusy] = useState(false);
   const [filesRow, setFilesRow] = useState<ApiTableRow | null>(null);
   const { confirm, dialogs } = useDialogs();
+  // The entry being written: a new one (no row) or a saved one opened for editing.
+  const [form, setForm] = useState<{ row: ApiTableRow | null; data: Record<string, string>; revNo: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
@@ -39,19 +51,21 @@ export default function StructuredTable({ projectId, tableKey, columns, canEdit,
     setFilesRow((m) => (m && m._id === u._id ? u : m));
   }, []);
 
-  const add = async () => {
-    setBusy(true);
-    try { const r = await createTableRow(projectId, tableKey); setRows((p) => [...p, r]); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Failed to add row."); }
+  const openNew = () => setForm({
+    row: null, revNo: 0,
+    data: Object.fromEntries(columns.map((c) => [c.key, c.auto ? c.auto(rows.length) : c.type === "date" ? new Date().toISOString().slice(0, 10) : ""])),
+  });
+  const openRow = (row: ApiTableRow) => setForm({ row, revNo: row.revNo, data: Object.fromEntries(columns.map((c) => [c.key, row.data?.[c.key] || ""])) });
+  const saveForm = async () => {
+    if (!form) return;
+    if (!columns.some((c) => !c.auto && c.type !== "date" && (form.data[c.key] || "").trim())) { setErr("Write the description before saving."); return; }
+    setBusy(true); setErr("");
+    try {
+      if (form.row) replace(await updateTableRow(projectId, form.row._id, { data: form.data, revNo: form.revNo }));
+      else { const r = await createTableRow(projectId, tableKey, form.data, form.revNo); setRows((p) => [...p, r]); }
+      setForm(null);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save."); }
     finally { setBusy(false); }
-  };
-  const patchCell = async (rid: string, key: string, value: string) => {
-    try { replace(await updateTableRow(projectId, rid, { data: { [key]: value } })); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Update failed."); }
-  };
-  const patchRev = async (rid: string, revNo: number) => {
-    try { replace(await updateTableRow(projectId, rid, { revNo })); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Update failed."); }
   };
   const remove = async (rid: string) => {
     if (!(await confirm({ title: "Delete row?", message: "This permanently deletes this row and its files.", confirmLabel: "Delete", danger: true }))) return;
@@ -72,52 +86,79 @@ export default function StructuredTable({ projectId, tableKey, columns, canEdit,
               {columns.map((c) => <th key={c.key} className="py-3 px-3" style={c.width ? { minWidth: c.width } : undefined}>{c.label}</th>)}
               {showRev && <th className="py-3 px-3 w-14">Rev</th>}
               {showFiles && <th className="py-3 px-3 text-center w-24">Files</th>}
-              {canEdit && <th className="py-3 px-3 text-right w-12"></th>}
+              {canEdit && <th className="py-3 px-3 text-right w-20"></th>}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={colCount} className="text-center text-slate-300 py-8"><Loader2 size={15} className="animate-spin inline" /></td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={colCount} className="text-center text-slate-300 py-8">No rows yet.</td></tr>}
             {rows.map((row, i) => (
-              <tr key={row._id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 align-top">
+              <tr key={row._id} onClick={() => canEdit && openRow(row)} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/50 align-top ${canEdit ? "cursor-pointer" : ""}`} title={canEdit ? "Open to read or edit" : undefined}>
                 <td className="py-2.5 px-3 text-slate-400">{i + 1}</td>
-                {columns.map((c) => (
-                  <td key={c.key} className="py-2.5 px-3">
-                    {canEdit ? (
-                      c.options ? (
-                        <input list={`dl-${tableKey}-${c.key}`} defaultValue={row.data?.[c.key] || ""} placeholder={c.placeholder || ""}
-                          onBlur={(e) => { if (e.target.value !== (row.data?.[c.key] || "")) patchCell(row._id, c.key, e.target.value); }}
-                          className="w-full bg-transparent border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-                      ) : (
-                        <input type={c.type === "date" ? "date" : c.type === "number" ? "number" : "text"} defaultValue={row.data?.[c.key] || ""} placeholder={c.placeholder || ""}
-                          onBlur={(e) => { if (e.target.value !== (row.data?.[c.key] || "")) patchCell(row._id, c.key, e.target.value); }}
-                          className="w-full bg-transparent border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-                      )
-                    ) : <span className="text-slate-700">{row.data?.[c.key] || "—"}</span>}
-                  </td>
-                ))}
-                {showRev && (
-                  <td className="py-2.5 px-3">
-                    {canEdit ? <input type="number" min={0} defaultValue={row.revNo} onBlur={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v !== row.revNo) patchRev(row._id, v); }} className="w-12 bg-transparent border border-slate-200 rounded-lg px-1.5 py-1.5 text-xs text-center" /> : <span>{row.revNo}</span>}
-                  </td>
-                )}
+                {columns.map((c) => {
+                  const v = c.show ? c.show(row.data || {}) : row.data?.[c.key] || "";
+                  return <td key={c.key} className={`py-2.5 px-3 text-slate-700 ${c.type === "longtext" ? "whitespace-pre-wrap" : "whitespace-nowrap"} ${c.key === columns[0].key ? "font-bold" : ""}`}>{v || <span className="text-slate-300">-</span>}</td>;
+                })}
+                {showRev && <td className="py-2.5 px-3 text-slate-600">{row.revNo}</td>}
                 {showFiles && (
                   <td className="py-2.5 px-3 text-center">
-                    <button onClick={() => setFilesRow(row)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${row.files.length ? "bg-primary/10 text-primary hover:bg-primary/20" : "bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>
+                    <button onClick={(e) => { e.stopPropagation(); setFilesRow(row); }} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${row.files.length ? "bg-primary/10 text-primary hover:bg-primary/20" : "bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>
                       {row.files.length ? <><FileText size={11} /> {row.files.length}</> : <><Upload size={11} /> Add</>}
                     </button>
                   </td>
                 )}
-                {canEdit && <td className="py-2.5 px-3 text-right"><button onClick={() => remove(row._id)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400"><Trash2 size={14} /></button></td>}
+                {canEdit && (
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                    <button onClick={(e) => { e.stopPropagation(); openRow(row); }} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-primary" title="Edit"><Pencil size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); void remove(row._id); }} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-400" title="Delete"><Trash2 size={14} /></button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {columns.filter((c) => c.options).map((c) => (
-        <datalist key={c.key} id={`dl-${tableKey}-${c.key}`}>{c.options!.map((o) => <option key={o} value={o} />)}</datalist>
-      ))}
-      {canEdit && <button disabled={busy} onClick={add} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-40"><Plus size={13} /> {addLabel}</button>}
+      {canEdit && <button disabled={busy} onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-40"><Plus size={13} /> {addLabel}</button>}
+
+      {form && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setForm(null); }}>
+          <div className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <h3 className="text-sm font-bold text-slate-900">{form.row ? "Edit entry" : addLabel}</h3>
+              <button onClick={() => setForm(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 p-5">
+              {columns.map((c) => (
+                <label key={c.key} className={`block space-y-1 ${c.type === "longtext" ? "col-span-2" : ""}`}>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{c.label}</span>
+                  {c.type === "longtext" ? (
+                    <textarea autoFocus rows={4} value={form.data[c.key] || ""} placeholder={c.placeholder || ""} onChange={(e) => setForm({ ...form, data: { ...form.data, [c.key]: e.target.value } })}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                  ) : (
+                    <input type={c.type === "date" ? "date" : c.type === "number" ? "number" : "text"} value={form.data[c.key] || ""} placeholder={c.placeholder || ""}
+                      onChange={(e) => setForm({ ...form, data: { ...form.data, [c.key]: e.target.value } })}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                  )}
+                </label>
+              ))}
+              {showRev && (
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Revision</span>
+                  <input type="number" min={0} value={form.revNo} onChange={(e) => setForm({ ...form, revNo: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </label>
+              )}
+              {!form.row && showFiles && <p className="col-span-2 text-[10px] text-slate-400">Save it first; then attach its files from the row.</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+              <button onClick={() => setForm(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button disabled={busy} onClick={() => void saveForm()} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-40">
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {filesRow && <RowFilesModal projectId={projectId} row={filesRow} canEdit={canEdit} confirm={confirm} onClose={() => setFilesRow(null)} onChange={replace} />}
       {dialogs}

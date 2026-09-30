@@ -124,11 +124,12 @@ export default function ProjectInfoTab({ projectId, canEdit, projectInfo, client
         {active.special === "amendments" ? (
           <StructuredTable
             projectId={projectId} tableKey="project-info-amendments" canEdit={canEdit} addLabel="Add amendment"
+// CR 330 - an amendment is a description and its issue date; no separate title. Older rows
+            // that had a title show it in front of their description.
             columns={[
-              { key: "number", label: "Amendment / Addendum No.", placeholder: "Amendment 1", width: "160px" },
-              { key: "title", label: "Title / Subject", placeholder: "Subject", width: "180px" },
-              { key: "description", label: "Description", placeholder: "What changed…", width: "240px" },
-              { key: "date", label: "Date Issued", type: "date", width: "130px" },
+              { key: "number", label: "Amendment / Addendum No.", placeholder: "Amendment 1", width: "150px", auto: (n) => `Amendment ${n + 1}` },
+              { key: "date", label: "Issue date", type: "date", width: "120px" },
+              { key: "description", label: "Description", type: "longtext", placeholder: "What this amendment or addendum changes", width: "320px", show: (d) => [d.title, d.description].filter(Boolean).join(": ") },
             ]}
           />
         ) : (
