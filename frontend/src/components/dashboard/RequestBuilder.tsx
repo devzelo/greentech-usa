@@ -600,14 +600,28 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
               <button onClick={() => setCreating(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-3">
+              {/* CR 329 (2026-09-28) - the type is editable: pick one of the standard types, or type
+                  your own. A typed one is kept as a custom request under that name. */}
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Type
-                <select className={`${inp} mt-1 font-bold`} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value, sections: withQuestions(e.target.value, draft.sections) })}>
-                  {REQUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select></label>
-              {draft.type === "Custom Request" && (
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Custom title
-                  <input className={`${inp} mt-1`} value={draft.customTitle} onChange={(e) => setDraft({ ...draft, customTitle: e.target.value })} placeholder="Name this request" /></label>
-              )}
+                <input
+                  list="request-type-list"
+                  className={`${inp} mt-1 font-bold`}
+                  value={draft.type === "Custom Request" ? draft.customTitle : draft.type}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const known = REQUEST_TYPES.find((t) => t !== "Custom Request" && t.toLowerCase() === v.trim().toLowerCase());
+                    setDraft(known
+                      ? { ...draft, type: known, customTitle: "", sections: withQuestions(known, draft.sections) }
+                      : { ...draft, type: "Custom Request", customTitle: v.slice(0, 160), sections: withQuestions(v, draft.sections) });
+                  }}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="Pick a type, or type your own"
+                />
+                <datalist id="request-type-list">
+                  {REQUEST_TYPES.filter((t) => t !== "Custom Request").map((t) => <option key={t} value={t} />)}
+                </datalist>
+                <span className="mt-1 block normal-case tracking-normal text-[10px] font-medium text-slate-400">Choose from the list or write your own type. Clear the box to see the whole list.</span>
+              </label>
               {/* CR-P (147) — the recipient, from the Directory; the project's client by default. */}
               <CompanyPicker
                 label="To (who receives this request)"
