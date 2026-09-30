@@ -23,6 +23,8 @@ export interface IScheduleRevision extends Document {
   scheduleId: string;
   version: number;
   categories: string[];
+  /** CR 321 - the phases' details as they stood. */
+  phaseInfo: unknown[];
   milestones: MilestoneRecord[];
   progress: number;
   note: string;
@@ -52,6 +54,7 @@ const ScheduleRevisionSchema = new Schema<IScheduleRevision>(
     scheduleId: { type: String, default: "" },
     version: { type: Number, required: true },
     categories: { type: [String], default: [] },
+    phaseInfo: { type: [Schema.Types.Mixed], default: [] },
     milestones: { type: Schema.Types.Mixed, default: [] },
     progress: { type: Number, default: 0 },
     note: { type: String, default: "" },

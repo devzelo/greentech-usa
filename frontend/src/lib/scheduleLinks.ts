@@ -212,6 +212,51 @@ export function startFromLink(pred: ApiMilestone, link: LinkType, lag: number, t
   return task ? fromDn(startInstant(task, at)) : fromDn(at - 1);
 }
 
+/**
+ * CR 321 (2026-09-28): what the rest of the schedule asks of a task beyond its own links.
+ *   - A phase may wait on another phase or on a milestone. That is the same as every item in the
+ *     phase waiting on it, so it is read as links the items do not carry themselves.
+ *   - A phase, a task or a milestone may have its start set by hand. With links as well, the later
+ *     of the two applies, so a date set by hand never breaks a dependency.
+ *   - A task on "auto" with nothing to wait on starts when the project does.
+ */
+export interface PhaseLink { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number }
+export interface PhaseRule { name: string; startMode?: "auto" | "manual"; manualStart?: string; pred?: PhaseLink | null }
+export interface PlanContext { phases?: PhaseRule[]; projectStart?: string }
+const phaseKey = (s?: string) => (s || "").trim().toLowerCase();
+
+/** The items a phase's link points at: the milestone itself, or the other phase's items. */
+export function phaseLinkTargets(rows: ApiMilestone[], link: PhaseLink): string[] {
+  if (link.kind === "item") return rows.some((r) => r.id === link.ref) ? [link.ref] : [];
+  const items = rows.filter((r) => phaseKey(r.category) === phaseKey(link.ref) && r.status !== "cancelled");
+  if (link.type !== "SS") return items.map((r) => r.id);
+  // A phase starts when its earliest item does.
+  const dated = items.filter((r) => parseDate(r.plannedStart)).sort((a, b) => parseDate(a.plannedStart)!.getTime() - parseDate(b.plannedStart)!.getTime());
+  return dated.length ? [dated[0].id] : [];
+}
+
+/** The rows with each phase's link written onto its items (never one that would make a loop). */
+export function withPhaseLinks(rows: ApiMilestone[], ctx?: PlanContext): ApiMilestone[] {
+  const rules = (ctx?.phases || []).filter((p) => p.pred && p.pred.ref);
+  if (!rules.length) return rows;
+  let out = rows;
+  for (const rule of rules) {
+    const link = rule.pred!;
+    const targets = phaseLinkTargets(rows, link);
+    if (!targets.length) continue;
+    const cur = out;
+    out = cur.map((r) => {
+      if (phaseKey(r.category) !== phaseKey(rule.name)) return r;
+      const own = predsOf(r);
+      const extra = targets
+        .filter((id) => id !== r.id && !own.some((q) => q.id === id) && !wouldCycle(cur, r.id, id))
+        .map((id) => ({ id, type: (link.type === "SS" ? "SS" : "FS") as LinkType, lag: Math.round(link.lag || 0) }));
+      return extra.length ? withPreds(r, [...own, ...extra]) : r;
+    });
+  }
+  return out;
+}
+
 /** Every task in an order where each comes after all the tasks it waits on. Tasks in a loop are left out. */
 function topoOrder(rows: ApiMilestone[]): string[] {
   const ids = new Set(rows.map((r) => r.id));
@@ -254,6 +299,23 @@ export function wouldCycle(rows: ApiMilestone[], id: string, predId: string): bo
   return false;
 }
 
+/**
+ * CR 321 - an item put into the list with what comes after it. A successor is the same link seen
+ * from the other end: "this, then 2.4" is kept as "this" among 2.4's predecessors, so a link made
+ * from either item shows on both, and taking it off one takes it off the other.
+ */
+export function withItem(rows: ApiMilestone[], item: ApiMilestone, successors: Pred[]): ApiMilestone[] {
+  let found = false;
+  const out = rows.map((r) => {
+    if (r.id === item.id) { found = true; return item; }
+    const own = predsOf(r), kept = own.filter((p) => p.id !== item.id);
+    const add = successors.find((c) => c.id === r.id);
+    if (!add && kept.length === own.length) return r;
+    return withPreds(r, add ? [...kept, { id: item.id, type: add.type, lag: add.lag }] : kept);
+  });
+  return found ? out : [...out, item];
+}
+
 /** The tasks that hang off `id`, directly or further down the chain. */
 export function dependentsOf(rows: ApiMilestone[], id: string): string[] {
   const out: string[] = [];
@@ -274,10 +336,19 @@ export function dependentsOf(rows: ApiMilestone[], id: string): string[] {
  * keeps the dates it has; one whose predecessors have no dates yet is left alone rather than given
  * a guess.
  */
-export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
-  const byId = new Map(rows.map((r) => [r.id, { ...r }]));
-  for (const id of topoOrder(rows)) {
+export function relinkAll(rows: ApiMilestone[], ctx?: PlanContext): ApiMilestone[] {
+  const linked = withPhaseLinks(rows, ctx);
+  const own = new Map(rows.map((r) => [r.id, r]));
+  const byId = new Map(linked.map((r) => [r.id, { ...r }]));
+  const phaseFloor = new Map<string, number>();
+  for (const p of ctx?.phases || []) {
+    const d = p.startMode === "manual" ? parseDate(p.manualStart) : null;
+    if (d) phaseFloor.set(phaseKey(p.name), dn(d));
+  }
+  const projectStart = parseDate(ctx?.projectStart);
+  for (const id of topoOrder(linked)) {
     const t = byId.get(id)!;
+    const o = own.get(id)!;
     const point = isZeroLength(t);
     const starts: number[] = [];
     for (const p of predsOf(t)) {
@@ -285,6 +356,21 @@ export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
       const at = pred ? linkBoundary(pred, p.type, p.lag, point) : null;
       if (at === null) continue;
       starts.push(p.type === "FS" || p.type === "SS" ? at : startInstant(t, at));
+    }
+    // CR 321 - dates set by hand are floors; a milestone sits at the end of its day.
+    const at = (d: Date) => dn(d) + (point ? 1 : 0);
+    const floor = phaseFloor.get(phaseKey(o.category));
+    if (floor !== undefined) starts.push(floor + (point ? 1 : 0));
+    if (o.startMode === "manual") {
+      const d = parseDate(o.manualStart || o.plannedStart);
+      if (d) starts.push(at(d));
+    } else if (o.startMode === "auto") {
+      if (!starts.length && projectStart) starts.push(at(projectStart));
+    } else if (starts.length && !predsOf(o).length) {
+      // A row from before the forms, with a typed date and no link of its own, now caught by its
+      // phase: the typed date is kept as a date set by hand, so the phase can only push it later.
+      const d = parseDate(o.plannedStart);
+      if (d) { starts.push(at(d)); t.startMode = "manual"; t.manualStart = o.plannedStart; }
     }
     if (!starts.length) continue;
     let s0 = Math.max(...starts);
@@ -303,7 +389,13 @@ export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
     t.plannedEnd = toIso(fromDn(f0 - 1));
   }
   // Anything caught in a loop keeps what it had; the editor refuses to make one in the first place.
-  return rows.map((r) => byId.get(r.id) || r);
+  // Only the dates come back: a phase's link is never written onto its items for good.
+  return rows.map((r) => {
+    const t = byId.get(r.id);
+    if (!t) return r;
+    if (t.plannedStart === r.plannedStart && t.plannedEnd === r.plannedEnd && t.durationValue === r.durationValue && t.startMode === r.startMode) return r;
+    return { ...r, plannedStart: t.plannedStart, plannedEnd: t.plannedEnd, durationValue: t.durationValue, ...(t.startMode !== r.startMode ? { startMode: t.startMode, manualStart: t.manualStart } : {}) };
+  });
 }
 
 /**
@@ -315,7 +407,8 @@ export function relinkAll(rows: ApiMilestone[]): ApiMilestone[] {
  * nobody types a float or marks a task critical (CR 320).
  */
 export interface CpmInfo { float: Map<string, number>; critical: Set<string>; finish: Date | null }
-export function criticalPath(rows: ApiMilestone[]): CpmInfo {
+export function criticalPath(all: ApiMilestone[], ctx?: PlanContext): CpmInfo {
+  const rows = withPhaseLinks(all, ctx);
   const live = rows.filter((r) => r.status !== "cancelled" && parseDate(r.plannedStart));
   const byId = new Map(live.map((r) => [r.id, r]));
   const es = new Map<string, number>(), ef = new Map<string, number>();

@@ -55,7 +55,7 @@ const weekNo = (d: Date) => {
   return Math.ceil(((t.getTime() - first.getTime()) / DAY + 1) / 7);
 };
 
-export type GanttSection = { category: string; items: ApiMilestone[]; folded?: boolean; number?: string };
+export type GanttSection = { category: string; items: ApiMilestone[]; folded?: boolean; number?: string; color?: string };
 
 export default function GanttChart({
   rows, sections, contractStart, deadline, originalDeadline, labels = true, zoom = "month",
@@ -89,11 +89,11 @@ export default function GanttChart({
 
   // Every row the chart draws, in order: a phase bar followed by its tasks (none when folded).
   const lines = useMemo(() => {
-    const out: Array<{ kind: "section"; category: string; items: ApiMilestone[]; number?: string } | { kind: "row"; m: ApiMilestone; index: number }> = [];
+    const out: Array<{ kind: "section"; category: string; items: ApiMilestone[]; number?: string; color?: string } | { kind: "row"; m: ApiMilestone; index: number }> = [];
     let index = 0;
     if (sections?.length) {
       for (const s of sections) {
-        if (s.category) out.push({ kind: "section", category: s.category, items: s.items, number: s.number });
+        if (s.category) out.push({ kind: "section", category: s.category, items: s.items, number: s.number, color: s.color });
         if (!s.folded) for (const m of s.items) out.push({ kind: "row", m, index: index++ });
       }
     } else {
@@ -258,6 +258,7 @@ export default function GanttChart({
           <div className="border-b border-slate-100 bg-slate-50 px-2 text-[9px] font-bold uppercase tracking-widest leading-[32px] text-slate-400" style={{ height: HEADER_H }}>Task</div>
           {lines.map((l, i) => (l.kind === "section" ? (
             <div key={`s-${l.category}-${i}`} className="flex items-center gap-1.5 border-b border-slate-100 bg-blue-50/70 px-2 text-[11px] font-bold text-blue-900" style={{ height: SECTION_ROW }}>
+              {l.color && <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: l.color }} />}
               {l.number && <span className="w-6 shrink-0 text-[10px] font-bold text-blue-700">{l.number}</span>}
               <span className="truncate" title={l.category}>{l.category}</span>
               <span className="ml-auto shrink-0 text-[9px] font-bold text-blue-400">{l.items.length}</span>
@@ -305,11 +306,12 @@ export default function GanttChart({
                     {span && (
                       <div className="absolute" style={{ top: 8, left: x(span.s), width: Math.max(6, xEnd(span.e) - x(span.s)) }}>
                         {/* A blue summary bar with end caps, as a project schedule prints it. */}
-                        <div className="relative h-2 overflow-hidden rounded-sm" style={{ background: BLUE }}>
-                          <div className="h-full" style={{ width: `${done}%`, background: BLUE_DARK }} />
+                        {/* CR 321 - in the phase's own colour when it has one; the done part is drawn darker. */}
+                        <div className="relative h-2 overflow-hidden rounded-sm" style={{ background: l.color || BLUE }}>
+                          <div className="h-full" style={l.color ? { width: `${done}%`, background: "rgba(15,23,42,0.35)" } : { width: `${done}%`, background: BLUE_DARK }} />
                         </div>
-                        <div className="absolute -top-0.5 left-0 h-3 w-1" style={{ background: BLUE_DARK }} />
-                        <div className="absolute -top-0.5 right-0 h-3 w-1" style={{ background: BLUE_DARK }} />
+                        <div className="absolute -top-0.5 left-0 h-3 w-1" style={{ background: l.color || BLUE_DARK }} />
+                        <div className="absolute -top-0.5 right-0 h-3 w-1" style={{ background: l.color || BLUE_DARK }} />
                       </div>
                     )}
                   </div>

@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, FolderPlus, ChevronRight, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
-  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl,
-  type ApiExtension, type ApiMilestone, type ApiProject, type ApiScheduleRevision, type MilestoneStatus,
+  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements,
+  type ApiExtension, type ApiMilestone, type ApiProject, type ApiSchedulePhase, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
@@ -18,14 +18,14 @@ import {
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
-import PhaseEditor from "./PhaseEditor";
+import { ItemForm, MilestoneMark, PhaseForm, phaseColorOf } from "./ScheduleForms";
 import ToolMenu, { MENU_ITEM } from "./ToolMenu";
 import {
   BaselineTab, CurrentSummary, EarlierRevisions, EntryDialog, FrozenSchedule, HistoryTab, currentBaseline, entryCode, entryTitle, kindOf,
   type EntryDialogMode, type EntryHandlers,
 } from "./ScheduleRegister";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
-import { criticalPath, dependentsOf, overrunsDeadline, parsePreds, predLabel, predsOf, relinkAll, suggestNext, withPreds, wouldCycle } from "../../../lib/scheduleLinks";
+import { criticalPath, dependentsOf, overrunsDeadline, parsePreds, predLabel, predsOf, relinkAll, setScheduleHolidays, withItem, withPreds, wouldCycle, type PlanContext, type Pred } from "../../../lib/scheduleLinks";
 import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
 import ScheduleFiles, { SCHEDULE_SECTION, type ScheduleFilesHandle } from "./ScheduleFiles";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -74,7 +74,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const [cats, setCats] = useState<string[]>(liveCats);
   const [baseCats, setBaseCats] = useState<string[]>(liveCats);
   const catList = useMemo(() => categoryList(cats, rows), [cats, rows]);
+  // CR 321 - each phase's details (colour, dates set by hand, what it waits on), by name.
+  const livePhases = useMemo(() => project.schedule?.phaseInfo || [], [project.schedule]);
+  const [phases, setPhases] = useState<ApiSchedulePhase[]>(livePhases);
+  const [basePhases, setBasePhases] = useState<ApiSchedulePhase[]>(livePhases);
   const [editing, setEditing] = useState<ApiMilestone | null>(null);
+  // The forms' side panel: one at a time, a task or milestone, or a phase (null = a new one).
+  const [phaseEdit, setPhaseEdit] = useState<{ name: string | null } | null>(null);
+  const [panelNarrow, setPanelNarrow] = useState(false);
+  const openItem = (m: ApiMilestone) => { setPhaseEdit(null); setPanelNarrow(false); setEditing(m); };
+  const openPhase = (name: string | null) => { setEditing(null); setPanelNarrow(false); setPhaseEdit({ name }); };
   const [view, setView] = useState<View>("all");
   const [pickerOpen, setPickerOpen] = useState(live.length === 0);
   const [pickQuery, setPickQuery] = useState("");
@@ -104,8 +113,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     setBaseCats(liveCats);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveCats]);
+  useEffect(() => {
+    setPhases((cur) => (JSON.stringify(cur) === JSON.stringify(basePhases) ? livePhases : cur));
+    setBasePhases(livePhases);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePhases]);
   const catsChanged = JSON.stringify(catList) !== JSON.stringify(categoryList(baseCats, base));
-  const dirty = !same(rows, base) || catsChanged;
+  const phasesChanged = JSON.stringify(phases) !== JSON.stringify(basePhases);
+  const dirty = !same(rows, base) || catsChanged || phasesChanged;
   // Rows last parked as a draft: leaving the page with exactly those needs no warning.
   const [draftRows, setDraftRows] = useState<ApiMilestone[] | null>(null);
   const unsaved = dirty && !(draftRows && same(rows, draftRows));
@@ -127,8 +142,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const loadRevisions = () => fetchTimelineRevisions(project.id, sched).then(takeRegister).catch(() => takeRegister([]));
   // Opening another schedule starts clean on that schedule's own tasks, categories and revisions.
   useEffect(() => {
-    setRows(live); setBase(live); setCats(liveCats); setBaseCats(liveCats);
-    setLoadedFrom(""); setCreating(false); setDraftRows(null); setEditing(null); setCollapsed(new Set());
+    setRows(live); setBase(live); setCats(liveCats); setBaseCats(liveCats); setPhases(livePhases); setBasePhases(livePhases);
+    setLoadedFrom(""); setCreating(false); setDraftRows(null); setEditing(null); setPhaseEdit(null); setCollapsed(new Set());
     setRevisions(null); setRegister([]);
     void loadRevisions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,12 +153,37 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const contractStart = project.startDate || project.contractDate || "";
   const deadline = effectiveEndDate(project);
   const usedKeys = rows.map((r) => r.key || "").filter((k) => k && k !== CUSTOM_KEY);
+  /**
+   * CR 321 - what the schedule asks of its items beyond their own links: a phase that waits on
+   * another, dates set by hand, and the project start for an item with nothing to wait on.
+   * CR 322 - the holidays a task may leave out are the platform's own list.
+   */
+  const [holidayTick, setHolidayTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    fetchAnnouncements().then((list) => {
+      if (!alive) return;
+      const days: string[] = [];
+      for (const a of list) {
+        if (a.kind !== "holiday") continue;
+        const s = parseDate(a.date), e = parseDate(a.endDate) || s;
+        for (let d = s, n = 0; d && e && d <= e && n < 60; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1), n++) days.push(toIso(d));
+      }
+      setScheduleHolidays(days);
+      setHolidayTick((t) => t + 1);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const planCtx = useMemo<PlanContext>(() => ({ phases, projectStart: contractStart }), [phases, contractStart, holidayTick]);
 
   // ── Editing ──
   const update = (id: string, patch: Partial<ApiMilestone>) => setRows((p) => {
     const edited = p.map((r) => {
     if (r.id !== id) return r;
     const next = { ...r, ...patch };
+    // CR 321 - a start typed in the table is a date set by hand, unless the task follows its links.
+    if ("plannedStart" in patch && (next.startMode === "manual" || (next.startMode === "auto" && !predsOf(next).length))) { next.startMode = "manual"; next.manualStart = patch.plannedStart || ""; }
     // A phase entered by duration keeps its length when the start moves.
     if (("plannedStart" in patch || "durationValue" in patch || "durationUnit" in patch) && next.durationValue && next.plannedStart) {
       next.plannedEnd = toIso(endForDuration(parseDate(next.plannedStart)!, next.durationValue, (next.durationUnit || "days") as DurationUnit));
@@ -169,7 +209,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const movesTheChain = ["plannedStart", "plannedEnd", "durationValue", "durationUnit", "dependsOn", "linkType", "lagDays", "predecessors", "isMilestone"]
       .some((k) => k in patch);
     if (!movesTheChain) return edited;
-    const next = relinkAll(edited);
+    const next = relinkAll(edited, planCtx);
     // Say so once when a change pushes work past the contract deadline; it is allowed, but not quietly.
     const moved = [id, ...dependentsOf(next, id)];
     const over = next.filter((m) => moved.includes(m.id) && overrunsDeadline(m, deadline) > 0);
@@ -179,11 +219,33 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     }
     return next;
   });
-  const applyEditor = (m: ApiMilestone) => {
+  const applyEditor = (m: ApiMilestone, successors: Pred[]) => {
     // CR 294 - a task saved from the editor carries the chain with it, the same as an edit in the
-    // table: anything waiting on it is worked out again.
-    setRows((p) => relinkAll(p.some((r) => r.id === m.id) ? p.map((r) => (r.id === m.id ? m : r)) : [...p, m]));
-    setEditing(null);
+    // table: anything waiting on it is worked out again. CR 321 - its successors are written onto
+    // the items that follow it.
+    setRows((p) => relinkAll(withItem(p, m, successors), planCtx));
+    setEditing(null); setCreating(true);
+  };
+  /**
+   * CR 321 - a phase saved from its form: its name (the category its items carry), its number (its
+   * place in the list) and the rest of its details. Renaming it carries its items and any phase
+   * that waits on it; then the schedule is worked through again, since its link or its start may
+   * have moved.
+   */
+  const savePhase = (info: ApiSchedulePhase, number: number) => {
+    const old = phaseEdit?.name ?? null;
+    const k = (s?: string | null) => (s || "").trim().toLowerCase();
+    const names = old === null ? [...catList] : catList.filter((c) => k(c) !== k(old));
+    names.splice(Math.max(0, Math.min(names.length, number - 1)), 0, info.name);
+    const renamed = old !== null && old !== info.name;
+    const nextPhases = [
+      ...phases.filter((x) => k(x.name) !== k(old ?? info.name)).map((x) => (renamed && x.pred?.kind === "phase" && k(x.pred.ref) === k(old) ? { ...x, pred: { ...x.pred, ref: info.name } } : x)),
+      info,
+    ];
+    const nextRows = renamed ? rows.map((m) => (k(m.category) === k(old) ? { ...m, category: info.name } : m)) : rows;
+    setCats(names); setPhases(nextPhases);
+    setRows(relinkAll(nextRows, { phases: nextPhases, projectStart: contractStart }));
+    setCreating(true); setPhaseEdit(null);
   };
   /**
    * CR 300 - bars dragged on the chart. A task tied to others starts where its links put it, so
@@ -206,7 +268,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const remove = async (m: ApiMilestone) => {
     if (hasData(m) && !(await confirm({ title: `Remove "${m.name}"?`, message: "Its dates, progress and notes are removed from this timeline when you save.", confirmLabel: "Remove", danger: true }))) return;
     // A task that followed the removed one stands alone rather than hanging off a ghost.
-    setRows((p) => relinkAll(p.filter((r) => r.id !== m.id).map((r) => (predsOf(r).some((q) => q.id === m.id) ? withPreds(r, predsOf(r).filter((q) => q.id !== m.id)) : r))));
+    const nextPhases = phases.some((x) => x.pred?.kind === "item" && x.pred.ref === m.id) ? phases.map((x) => (x.pred?.kind === "item" && x.pred.ref === m.id ? { ...x, pred: null } : x)) : phases;
+    if (nextPhases !== phases) setPhases(nextPhases);
+    setRows((p) => relinkAll(p.filter((r) => r.id !== m.id).map((r) => (predsOf(r).some((q) => q.id === m.id) ? withPreds(r, predsOf(r).filter((q) => q.id !== m.id)) : r)), { phases: nextPhases, projectStart: contractStart }));
+    if (editing?.id === m.id) setEditing(null);
   };
   const move = (from: number, to: number) => setRows((p) => {
     if (to < 0 || to >= p.length || from === to) return p;
@@ -224,25 +289,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (existing) await remove(existing);
     else { setRows((p) => [...p, blank(key, name, catFor(key, name))]); setCreating(true); }
   };
-  const addCustom = () => setEditing(blank(CUSTOM_KEY, "", addTo));
   /**
-   * CR 294 - a new task opens where the one before it leaves off: tied to it, starting the day
-   * after it finishes. The dates are a suggestion like any other and can be typed over, and the
-   * link can be removed in the editor.
+   * CR 321 - the Add menu's three forms. A new task or milestone opens blank, on "auto": its dates
+   * come from the links picked in the form, or from the project start when it has none.
    */
-  const addMilestone = () => {
-    const next = MASTER_PHASES.find((p) => !usedKeys.includes(p.key));
-    const base = next ? blank(next.key, next.name, catFor(next.key, next.name)) : blank(CUSTOM_KEY, "", addTo);
-    setEditing({ ...base, ...suggestNext(rows[rows.length - 1], contractStart) });
-  };
+  const addTask = (category = addTo) => openItem({ ...blank(CUSTOM_KEY, "", category), startMode: "auto", priority: "normal" });
+  const addMilestone = (category = addTo) => openItem({ ...blank(CUSTOM_KEY, "", category), startMode: "auto", isMilestone: true, icon: "diamond" });
+  const addCustom = () => addTask();
 
-  // ── Categories, like BOQ sections: add, rename, order, delete, and add a milestone inside one ──
-  const addCategory = async () => {
-    const name = (await prompt({ title: "New category", label: "Category name", placeholder: "e.g. Design, Procurement, Construction", confirmLabel: "Add category" }))?.trim();
-    if (!name) return;
-    if (catList.some((c) => c.toLowerCase() === name.toLowerCase()) || name === UNCATEGORISED) { toast(`"${name}" is already a category.`, "error"); return; }
-    setCats([...catList, name]); setCreating(true);
-  };
+  // ── Phases, like BOQ sections: add, edit, order, delete, and add an item inside one ──
+  // Items without a phase sit under "Other"; naming that group makes it a phase.
   const renameCategory = async (c: string) => {
     const name = (await prompt({ title: `Rename "${c}"`, label: "Category name", initialValue: c === UNCATEGORISED ? "" : c, confirmLabel: "Rename" }))?.trim();
     if (!name || name === c) return;
@@ -261,10 +317,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const inIt = (m: ApiMilestone) => ((m.category || "").trim() || UNCATEGORISED) === c;
     const n = rows.filter(inIt).length;
     if (n && !(await confirm({ title: `Delete "${c}"?`, message: `The category and its ${n} milestone${n === 1 ? "" : "s"} are taken off this schedule when you save. Saved revisions keep them.`, confirmLabel: "Delete category", danger: true }))) return;
-    setRows((p) => p.filter((m) => !inIt(m)));
+    const gone = new Set(rows.filter(inIt).map((m) => m.id));
+    // Whatever waited on the phase, or on one of its items, stands alone.
+    const nextPhases = phases.filter((x) => x.name.toLowerCase() !== c.toLowerCase())
+      .map((x) => (x.pred && (x.pred.kind === "phase" ? x.pred.ref.toLowerCase() === c.toLowerCase() : gone.has(x.pred.ref)) ? { ...x, pred: null } : x));
+    setPhases(nextPhases);
+    setRows((p) => relinkAll(p.filter((m) => !inIt(m)).map((r) => (predsOf(r).some((q) => gone.has(q.id)) ? withPreds(r, predsOf(r).filter((q) => !gone.has(q.id))) : r)), { phases: nextPhases, projectStart: contractStart }));
     setCats(catList.filter((x) => x !== c));
+    if (phaseEdit?.name === c) setPhaseEdit(null);
   };
-  const addInCategory = (c: string) => setEditing(blank(CUSTOM_KEY, "", c === UNCATEGORISED ? "" : c));
+  const addInCategory = (c: string) => addTask(c === UNCATEGORISED ? "" : c);
   const sortByDate = () => setRows((p) => [...p].sort((a, b) => (parseDate(a.plannedStart)?.getTime() ?? Infinity) - (parseDate(b.plannedStart)?.getTime() ?? Infinity)));
 
   // ── Save / draft / cancel ──
@@ -275,6 +337,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     // revision's note, instead of asking the PM to remember it.
     const since = revisions?.[0]?.milestones || [];
     const changes = timelineChanges(since, rows);
+    if (!changes.length && (catsChanged || phasesChanged)) changes.push("Phases updated");
     if (!changes.length && revisions?.length) { toast("Nothing has changed since the last revision.", "info"); return false; }
     const shownChanges = changes.length ? changes : ["First version of this timeline"];
     const list = shownChanges.slice(0, 14).map((c) => `• ${c}`).join("\n") + (shownChanges.length > 14 ? `\n• and ${shownChanges.length - 14} more` : "");
@@ -287,10 +350,11 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const note = shownChanges.join("; ").slice(0, 500);
     setBusy("save");
     try {
-      const r = await saveTimeline(project.id, rows, note, sched, catList);
+      const r = await saveTimeline(project.id, rows, note, sched, catList, phases);
       const savedRows = r.revision.milestones;
+      const savedPhases = r.revision.phaseInfo || phases;
       onScheduleSaved(r.schedule, r.progress);
-      setRows(savedRows); setBase(savedRows); setCats(catList); setBaseCats(catList); setLoadedFrom(""); setDraftRows(null);
+      setRows(savedRows); setBase(savedRows); setCats(catList); setBaseCats(catList); setPhases(savedPhases); setBasePhases(savedPhases); setLoadedFrom(""); setDraftRows(null);
       setRevisions((p) => [r.revision, ...(p || [])]);
       setRegister((p) => [r.revision, ...p]);
       // CR 244 - file the revision as a PDF in this schedule's folder, and say where it went.
@@ -344,7 +408,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const saveDraft = async () => {
     setBusy("draft");
     try {
-      const r = await saveTimelineDraft(project.id, rows, sched, catList);
+      const r = await saveTimelineDraft(project.id, rows, sched, catList, phases);
       onScheduleSaved(r.schedule, r.progress);
       setDraftRows(rows); setLoadedFrom("Draft");
       toast("Saved as a draft. The live timeline has not changed until you Save.", "success");
@@ -353,15 +417,15 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   };
   const cancel = async () => {
     if (unsaved && !(await confirm({ title: "Discard changes?", message: "Your edits since the last save will be lost.", confirmLabel: "Discard", danger: true }))) return;
-    setRows(base); setCats(baseCats); setLoadedFrom("");
+    setRows(base); setCats(baseCats); setPhases(basePhases); setLoadedFrom(""); setEditing(null); setPhaseEdit(null);
   };
-  const openDraft = () => { if (draft) { const dr = normalizeDurations(draft.milestones); setRows(dr); setCats(draft.categories || categoryList([], dr)); setDraftRows(dr); setLoadedFrom("Draft"); } };
+  const openDraft = () => { if (draft) { const dr = normalizeDurations(draft.milestones); setRows(dr); setCats(draft.categories || categoryList([], dr)); setPhases(draft.phaseInfo || []); setDraftRows(dr); setLoadedFrom("Draft"); } };
   const dropDraft = async () => {
     if (!(await confirm({ title: "Delete the draft?", message: "The saved draft is removed. The live timeline stays as it is.", confirmLabel: "Delete draft", danger: true }))) return;
     try { const r = await discardTimelineDraft(project.id, sched); onScheduleSaved(r.schedule, r.progress); setDraftRows(null); if (loadedFrom === "Draft") { setRows(base); setLoadedFrom(""); } toast("Draft deleted.", "success"); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete the draft.", "error"); }
   };
-  const loadVersion = (v: ApiScheduleRevision) => { setRows(v.milestones); setCats(v.categories?.length ? v.categories : categoryList([], v.milestones)); setLoadedFrom(`Version ${v.version}`); setVersionsOpen(false); toast(`Version ${v.version} loaded. Save to make it the live timeline again.`, "success"); };
+  const loadVersion = (v: ApiScheduleRevision) => { setRows(v.milestones); setPhases(v.phaseInfo || []); setCats(v.categories?.length ? v.categories : categoryList([], v.milestones)); setLoadedFrom(`Version ${v.version}`); setVersionsOpen(false); toast(`Version ${v.version} loaded. Save to make it the live timeline again.`, "success"); };
 
   // ── Import from another project ──
   const importFrom = async (src: ApiProject) => {
@@ -388,7 +452,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const outCats = subject ? (subject.categories?.length ? subject.categories : categoryList([], subject.milestones)) : catList;
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
-    originalDeadline: project.endDate, milestones: outRows, categories: outCats, version: label, scheduleName, remarks: printRemarks,
+    originalDeadline: project.endDate, milestones: outRows, categories: outCats, phaseInfo: subject ? subject.phaseInfo : phases, version: label, scheduleName, remarks: printRemarks,
     zoom, actual: printActual, paper, overview: printOverview, critical: showCritical, float: showFloat,
   });
   const versionLabel = subject
@@ -468,7 +532,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const list = entry ? entry.milestones : rows;
     const cats = entry ? (entry.categories?.length ? entry.categories : categoryList([], entry.milestones)) : catList;
     const nums = wbsNumbers(list, cats);
-    const cp = criticalPath(list);
+    const cp = criticalPath(list, entry ? { phases: entry.phaseInfo } : planCtx);
     const esc = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const head = ["#", "Phase", "Task / milestone", "Type", "Description", "Planned start", "Planned end", "Duration (days)", "Predecessors", "Float (days)", "Critical", "Baseline start", "Baseline end", "Actual start", "Actual end", "Status", "% complete", "Days late", "Responsible", "Notes"];
     const ordered = groupByCategory(list.map((m) => ({ m })), cats).flatMap((g) => g.items.map((x) => x.m));
@@ -599,7 +663,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     load: (e) => { loadVersion(e); setRegTab("current"); },
   };
   const frozen = (e: ApiScheduleRevision) => (
-    <FrozenSchedule milestones={e.milestones} categories={catsOf(e)} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} zoom={zoom}
+    <FrozenSchedule milestones={e.milestones} categories={catsOf(e)} phases={e.phaseInfo} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} zoom={zoom}
       baseline={kindOf(e) === "revision" ? baselineMap : new Map()} />
   );
 
@@ -695,7 +759,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
    * filtered view keeps every row's number; and the critical path, the tasks with no float.
    */
   const wbs = useMemo(() => wbsNumbers(rows, catList), [rows, catList]);
-  const cpm = useMemo(() => criticalPath(rows), [rows]);
+  const cpm = useMemo(() => criticalPath(rows, planCtx), [rows, planCtx]);
   const idOfNumber = (n: string) => { for (const [id, num] of wbs.task) if (num === n) return id; return undefined; };
   const [showCritical, setShowCritical] = useState(() => { try { return localStorage.getItem("gt-schedule-critical") !== "0"; } catch { return true; } });
   const toggleCritical = () => setShowCritical((v) => { try { localStorage.setItem("gt-schedule-critical", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
@@ -756,8 +820,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const cell = "px-2 py-2 align-middle";
   const dateInp = "w-[7.6rem] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-slate-700 hover:border-slate-200 focus:border-primary focus:bg-white focus:outline-none disabled:hover:border-transparent";
 
+  // The forms sit down the right-hand side; on a wide screen the schedule makes room for them.
+  const panelOpen = !!editing || !!phaseEdit;
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 transition-[margin] ${panelOpen ? (panelNarrow ? "sm:mr-9" : "xl:mr-[29rem]") : ""}`}>
       <TimelineBar project={previewProject} canEdit={canEdit} onSaveExtensions={onSaveExtensions} userName={userName} />
 
       {draft && !loadedFrom && (
@@ -806,7 +872,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           {canEdit && (
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               <button type="button" onClick={startCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> Create schedule</button>
-              <button type="button" onClick={() => void addCategory()} className={btn}><FolderPlus size={13} /> Add a category</button>
+              <button type="button" onClick={() => openPhase(null)} className={btn}><FolderPlus size={13} /> Add a phase</button>
               <button type="button" onClick={() => xlsInput.current?.click()} className={btn}><FileUp size={13} /> Import from Excel</button>
               <button type="button" onClick={() => setImportOpen(true)} className={btn}><Import size={13} /> Copy from another project</button>
               <button type="button" onClick={() => void downloadTemplate()} className={btn}><FileSpreadsheet size={13} /> Excel template</button>
@@ -895,8 +961,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             {canEdit && (
               <>
                 <ToolMenu label="Add" icon={<Plus size={13} />} tone="solid">
-                  <button type="button" onClick={addMilestone} className={MENU_ITEM}><Flag size={13} /> Add milestone</button>
-                  <button type="button" onClick={() => void addCategory()} className={MENU_ITEM}><FolderPlus size={13} /> Add category</button>
+                  <button type="button" onClick={() => openPhase(null)} className={MENU_ITEM}><FolderPlus size={13} /> Phase</button>
+                  <button type="button" onClick={() => addTask()} className={MENU_ITEM}><ListTodo size={13} /> Task</button>
+                  <button type="button" onClick={() => addMilestone()} className={MENU_ITEM}><Diamond size={13} /> Milestone</button>
                   <div className="my-1 border-t border-slate-100" />
                   <button type="button" onClick={() => xlsInput.current?.click()} disabled={busy === "import"} className={MENU_ITEM}>
                     {busy === "import" ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} Import from Excel
@@ -1001,6 +1068,13 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       const folded = collapsed.has(g.category);
                       const ph = phaseRollup(g.items.map(({ m }) => m), g.category);
                       const phCritical = showCritical && ph.float !== null && ph.float <= 0;
+                      // CR 321 - the phase's own record: its colour, and a finish target set by hand.
+                      const info = phases.find((x) => x.name.toLowerCase() === g.category.toLowerCase());
+                      const phColor = phaseColorOf(phases, g.category, catList.indexOf(g.category));
+                      const target = info?.finishMode === "manual" ? parseDate(info.targetFinish) : null;
+                      const pastTarget = !!target && !!ph.to && ph.to > target;
+                      const linkNo = !info?.pred ? "" : info.pred.kind === "phase" ? wbs.phase.get(catList.find((c) => c.toLowerCase() === info.pred!.ref.toLowerCase()) || "") || "" : wbs.task.get(info.pred.ref) || "";
+                      const phLink = info?.pred && linkNo ? predLabel({ id: "", type: info.pred.type, lag: info.pred.lag }, `${info.pred.kind === "phase" ? "Phase " : ""}${linkNo}`) : "";
                       return (
                       <Fragment key={g.category || "all"}>
                         {/* CR 300 - a phase is a row of its own: numbered, typed, with its figures rolled up from its tasks. */}
@@ -1011,18 +1085,19 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                             <td className={`${cell} min-w-[13rem]`}>
                               <button type="button" onClick={() => toggleCategory(g.category)} className="flex items-center gap-1.5 text-left" title={folded ? "Show its tasks" : "Fold its tasks away"}>
                                 {folded ? <ChevronRight size={14} className="shrink-0 text-blue-600" /> : <ChevronDown size={14} className="shrink-0 text-blue-600" />}
-                                <span className="font-bold text-slate-900">{g.category}</span>
+                                {g.category !== UNCATEGORISED && <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: phColor }} />}
+                                <span className="font-bold text-slate-900" title={info?.description || undefined}>{g.category}</span>
                                 <span className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>
                                 {ph.late > 0 && <span className="rounded-full bg-red-50 px-1.5 text-[9px] font-bold text-red-600">{ph.late} late</span>}
                               </button>
                             </td>
                             <td className={cell}><span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">Phase</span></td>
                             <td className={`${cell} border-l border-slate-50 font-bold text-slate-800`}>{ph.from ? fmtDay(ph.from) : "-"}</td>
-                            <td className={`${cell} font-bold text-slate-800`}>{ph.to ? fmtDay(ph.to) : "-"}</td>
+                            <td className={`${cell} font-bold ${pastTarget ? "text-red-600" : "text-slate-800"}`} title={pastTarget ? `Past the phase's target finish of ${fmtDay(target)}` : target ? `Target finish ${fmtDay(target)}` : undefined}>{ph.to ? fmtDay(ph.to) : "-"}</td>
                             <td className={`${cell} border-l border-sky-100 bg-sky-50/40 text-slate-600`}>{ph.actualFrom ? fmtDay(ph.actualFrom) : ""}</td>
                             <td className={`${cell} bg-sky-50/40 text-slate-600`}>{ph.actualTo ? fmtDay(ph.actualTo) : ""}</td>
                             <td className={`${cell} border-l border-slate-50 text-right font-bold tabular-nums text-slate-800`}>{ph.days !== null ? `${ph.days} days` : "-"}</td>
-                            <td className={`${cell} text-[11px] text-slate-500`} title="Links into this phase from the tasks of other phases">{ph.incoming.length ? ph.incoming.join(", ") : "-"}</td>
+                            <td className={`${cell} text-[11px] text-slate-500`} title={phLink ? "What the phase itself waits on, then the links into it from the tasks of other phases" : "Links into this phase from the tasks of other phases"}>{phLink && <b className="font-bold text-slate-700">{phLink}{ph.incoming.length ? ", " : ""}</b>}{ph.incoming.length ? ph.incoming.join(", ") : phLink ? "" : "-"}</td>
                             <td className={`${cell} text-right font-bold tabular-nums ${ph.float === null ? "text-slate-300" : ph.float <= 0 ? "text-red-600" : "text-emerald-600"}`}>{ph.float === null ? "-" : ph.float}</td>
                             <td className={`${cell} text-slate-300`}>-</td>
                             <td className={cell}><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${STATUS_META[ph.status].chip}`}>{STATUS_META[ph.status].label}</span></td>
@@ -1037,7 +1112,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                               {canEdit && (
                                 <div className="inline-flex items-center gap-0.5">
                                   <button type="button" onClick={() => addInCategory(g.category)} title={`Add a task or milestone to ${g.category}`} className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 text-[10px] font-bold text-blue-600 shadow-sm ring-1 ring-slate-200 hover:bg-blue-50"><Plus size={11} /> Task</button>
-                                  <button type="button" onClick={() => void renameCategory(g.category)} title="Rename this phase" className="rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><Pencil size={12} /></button>
+                                  <button type="button" onClick={() => (g.category === UNCATEGORISED ? void renameCategory(g.category) : openPhase(g.category))} title={g.category === UNCATEGORISED ? "Name this group to make it a phase" : "Edit this phase"} className="rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><Pencil size={12} /></button>
                                   {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, -1)} disabled={catList.indexOf(g.category) <= 0} title="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>}
                                   {g.category !== UNCATEGORISED && <button type="button" onClick={() => moveCategory(g.category, 1)} disabled={catList.indexOf(g.category) >= catList.length - 1} title="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>}
                                   <button type="button" onClick={() => void deleteCategory(g.category)} title="Delete this phase" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
@@ -1078,9 +1153,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           <td className="pl-2 text-slate-300">{canEdit && view === "all" && <GripVertical size={14} className="cursor-grab" />}</td>
                           <td className={`${cell} tabular-nums text-slate-500`}>{wbs.task.get(m.id) || index + 1}</td>
                           <td className={`${cell} min-w-[13rem]`}>
-                            <button type="button" onClick={() => setEditing(m)} className={`flex items-start gap-2 text-left ${g.category ? "pl-4" : ""}`}>
+                            <button type="button" onClick={() => openItem(m)} className={`flex items-start gap-2 text-left ${g.category ? "pl-4" : ""}`}>
                               {isMs
-                                ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rotate-45 bg-red-500" title="Milestone" />
+                                ? <MilestoneMark icon={m.icon} size={11} color="#ef4444" className="mt-0.5" />
                                 : <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-sm ${crit ? "bg-red-500" : "bg-emerald-500"}`} />}
                               <span>
                                 <span className="block font-semibold text-slate-800 hover:text-primary">{m.name}</span>
@@ -1175,7 +1250,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                                   {rowBusy === m.id ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
                                 </button>
                               )}
-                              <button type="button" onClick={() => setEditing(m)} title={canEdit ? "Edit" : "View"} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-primary"><Pencil size={13} /></button>
+                              <button type="button" onClick={() => openItem(m)} title={canEdit ? "Edit" : "View"} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-primary"><Pencil size={13} /></button>
                               {canEdit && (
                                 <>
                                   <button type="button" onClick={() => move(index, index - 1)} disabled={index === 0} title="Move up" className="rounded p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-30"><ArrowUp size={13} /></button>
@@ -1237,7 +1312,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           {/* CR 238 - the chart follows the table's grouping. CR 300 - a folded phase keeps its summary bar. */}
           <GanttChart
             rows={groups.flatMap((g) => (collapsed.has(g.category) ? [] : g.items.map((s) => s.m)))}
-            sections={hasCategories ? groups.map((g) => ({ category: g.category, items: g.items.map((s) => s.m), folded: collapsed.has(g.category), number: wbs.phase.get(g.category) })) : undefined}
+            sections={hasCategories ? groups.map((g) => ({ category: g.category, items: g.items.map((s) => s.m), folded: collapsed.has(g.category), number: wbs.phase.get(g.category), color: g.category === UNCATEGORISED ? undefined : phaseColorOf(phases, g.category, catList.indexOf(g.category)) })) : undefined}
             contractStart={contractStart}
             deadline={deadline}
             originalDeadline={project.endDate}
@@ -1274,7 +1349,38 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>
       )}
 
-      {editing && <PhaseEditor initial={editing} isNew={!rows.some((r) => r.id === editing.id)} usedKeys={usedKeys} canEdit={canEdit} categories={catList} others={rows} deadline={deadline} onSave={applyEditor} onClose={() => setEditing(null)} />}
+      {/* CR 321 - the three forms, as a panel beside the schedule. Keyed, so opening another item starts clean. */}
+      {editing && (
+        <Fragment key={editing.id}><ItemForm
+          kind={editing.isMilestone || isMilestonePoint(editing) ? "milestone" : "task"}
+          initial={editing}
+          isNew={!rows.some((r) => r.id === editing.id)}
+          canEdit={canEdit}
+          rows={rows}
+          catList={catList}
+          ctx={planCtx}
+          deadline={deadline}
+          narrow={panelNarrow}
+          onNarrow={setPanelNarrow}
+          onSave={applyEditor}
+          onClose={() => setEditing(null)}
+        /></Fragment>
+      )}
+      {phaseEdit && (
+        <Fragment key={phaseEdit.name ?? "new-phase"}><PhaseForm
+          initial={phases.find((x) => x.name.toLowerCase() === (phaseEdit.name || "").toLowerCase()) || { name: phaseEdit.name || "" }}
+          oldName={phaseEdit.name}
+          number={phaseEdit.name === null ? catList.length + 1 : catList.indexOf(phaseEdit.name) + 1}
+          catList={catList}
+          rows={rows}
+          phases={phases}
+          canEdit={canEdit}
+          narrow={panelNarrow}
+          onNarrow={setPanelNarrow}
+          onSave={savePhase}
+          onClose={() => setPhaseEdit(null)}
+        /></Fragment>
+      )}
       {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}

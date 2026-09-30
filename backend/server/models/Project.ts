@@ -16,6 +16,8 @@ export interface MilestoneRecord {
   lagDays: number;                   // + waits, - overlaps
   isMilestone: boolean;              // no length: start and finish are the same day
   inc?: boolean; includeWeekends?: boolean; includeHolidays?: boolean;   // CR 322
+  // CR 321 - where the start comes from, and the form's other details.
+  startMode?: string; manualStart?: string; priority?: string; tags?: string[]; icon?: string;
   // CR 300 - every task this one waits on, each with its own link type and lag.
   predecessors: Array<{ id: string; type: "FS" | "SS" | "FF" | "SF"; lag: number }>;
   duration: number; unit: "days" | "weeks" | "months"; doneAt: string; doneBy: string;
@@ -123,12 +125,14 @@ export interface IProject extends Document {
   schedule: {
     milestones: MilestoneRecord[];
     // Timeline work saved as a draft (not live) until the PM saves it.
-    draft: { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
+    draft: { milestones: MilestoneRecord[]; categories?: string[]; phaseInfo?: unknown[]; savedAt: string; savedBy: string } | null;
     // CR-P (126) — approved extensions of time. The latest endDate is the project's deadline now;
     // the project's own endDate stays the original one.
     extensions: Array<{ id: string; endDate: string; reason: string; addedAt: string; addedBy: string }>;
     /** The master schedule's categories, in order (like BOQ sections). Empty ones are kept. */
     categories: string[];
+    /** CR 321 - each phase's details (colour, dates set by hand, what it waits on), by name. */
+    phaseInfo?: unknown[];
     // Schedules beside the master (a Design schedule, a Construction schedule...). Since the client's
     // 2026-09-21 review each is separate: its own tasks, categories, draft and revisions, made from
     // scratch. `own` marks the ones already moved off the old "view of the master" model.
@@ -222,6 +226,12 @@ const MilestoneSchema = new Schema({
   inc: { type: Boolean, default: false },
   includeWeekends: { type: Boolean, default: true },
   includeHolidays: { type: Boolean, default: true },
+  // CR 321 - "" leaves a row as it was before the forms: linked rows follow their links.
+  startMode: { type: String, enum: ["", "auto", "manual"], default: "" },
+  manualStart: { type: String, default: "" },
+  priority: { type: String, enum: ["low", "normal", "high", "urgent"], default: "normal" },
+  tags: { type: [String], default: [] },
+  icon: { type: String, enum: ["diamond", "flag", "star", "circle"], default: "diamond" },
   predecessors: { type: [{ id: { type: String, default: "" }, type: { type: String, enum: ["FS", "SS", "FF", "SF"], default: "FS" }, lag: { type: Number, default: 0 } }], default: [] },
   // Older chained schedule
   duration: { type: Number, default: 0, min: 0 },
@@ -326,9 +336,10 @@ const ProjectSchema = new Schema<IProject>(
     schedule: {
       milestones: { type: [MilestoneSchema], default: [] },
       draft: {
-        type: new Schema({ milestones: { type: [MilestoneSchema], default: [] }, categories: { type: [String], default: [] }, savedAt: { type: String, default: "" }, savedBy: { type: String, default: "" } }, { _id: false }),
+        type: new Schema({ milestones: { type: [MilestoneSchema], default: [] }, categories: { type: [String], default: [] }, phaseInfo: { type: [Schema.Types.Mixed], default: [] }, savedAt: { type: String, default: "" }, savedBy: { type: String, default: "" } }, { _id: false }),
         default: null,
       },
+      phaseInfo: { type: [Schema.Types.Mixed], default: [] },
       extensions: {
         type: [{
           id: { type: String, default: "" },

@@ -1,5 +1,5 @@
 import { PDFDocument, rgb, type Color, type PDFPage } from "pdf-lib";
-import type { ApiMilestone } from "./api";
+import type { ApiMilestone, ApiSchedulePhase } from "./api";
 import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 import { fitOneLine } from "./pdfText";
 import {
@@ -59,6 +59,8 @@ export interface TimelinePdfInput {
   version?: string;       // e.g. "Version 4" or "Draft (not saved)"
   scheduleName?: string;  // CR 243 - "Master schedule", "Design schedule"...
   categories?: string[];  // the schedule's categories, in order
+  /** CR 321 - the phases' details: a phase that waits on another counts in the float. */
+  phaseInfo?: ApiSchedulePhase[];
   /** CR 270 - print each row's remark on its row. Off by default: remarks are internal notes. */
   remarks?: boolean;
   /** CR 273 - the chart prints at the zoom picked on screen, across the whole timeline. */
@@ -147,7 +149,7 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   // and float beside it.
   const hasCats = rows.some((m) => (m.category || "").trim()) || !!o.categories?.length;
   const wbs = wbsNumbers(rows, o.categories);
-  const cpm = criticalPath(rows);
+  const cpm = criticalPath(rows, { phases: o.phaseInfo });
   const showCrit = o.critical !== false;
   const showActual = o.actual !== false;
   const tableRows: TableRow[] = rows.map((m, i) => {

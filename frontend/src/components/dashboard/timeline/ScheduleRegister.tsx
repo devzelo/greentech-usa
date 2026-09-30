@@ -4,7 +4,7 @@ import {
   Archive, ArchiveRestore, CalendarCheck2, CheckCircle2, ChevronDown, ChevronRight, Download, Eye, FileSpreadsheet, FileText, FileUp,
   Lock, MoreVertical, Paperclip, Pencil, Plus, Printer, Search, Send, Trash2, Upload, X, XCircle, FolderOpen, Loader2,
 } from "lucide-react";
-import type { ApiMilestone, ApiScheduleRevision, ScheduleEntryDetails, ScheduleEntryStatus } from "../../../lib/api";
+import type { ApiMilestone, ApiSchedulePhase, ApiScheduleRevision, ScheduleEntryDetails, ScheduleEntryStatus } from "../../../lib/api";
 import { scheduleEntryFileUrl } from "../../../lib/api";
 import { fmtDay, groupByCategory, parseDate, plannedDays, wbsNumbers, daysBetween } from "../../../lib/projectSchedule";
 import { criticalPath, predLabel, predsOf } from "../../../lib/scheduleLinks";
@@ -127,12 +127,12 @@ export function EntryActions({ e, h, compact = false }: { e: Entry; h: EntryHand
 }
 
 /** A frozen schedule, read only: its table, then its chart. */
-export function FrozenSchedule({ milestones, categories = [], contractStart, deadline, originalDeadline, zoom, baseline }: {
-  milestones: ApiMilestone[]; categories?: string[]; contractStart?: string; deadline?: string; originalDeadline?: string; zoom: GanttZoom;
+export function FrozenSchedule({ milestones, categories = [], phases, contractStart, deadline, originalDeadline, zoom, baseline }: {
+  milestones: ApiMilestone[]; categories?: string[]; phases?: ApiSchedulePhase[]; contractStart?: string; deadline?: string; originalDeadline?: string; zoom: GanttZoom;
   baseline?: Map<string, { s: string; e: string }>;
 }) {
   const wbs = useMemo(() => wbsNumbers(milestones, categories), [milestones, categories]);
-  const cpm = useMemo(() => criticalPath(milestones), [milestones]);
+  const cpm = useMemo(() => criticalPath(milestones, { phases }), [milestones, phases]);
   const groups = useMemo(() => groupByCategory(milestones.map((m) => ({ m })), categories), [milestones, categories]);
   const grouped = categories.length > 0 || milestones.some((m) => m.category);
   const th = "px-2 py-1.5 text-left text-[9px] font-bold uppercase tracking-widest text-slate-400";

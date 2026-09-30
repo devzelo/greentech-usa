@@ -214,7 +214,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[] };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[] };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -1130,6 +1130,18 @@ export interface ApiMilestone {
   /** CR 322 - a task counts every calendar day unless one of these is switched off. */
   includeWeekends?: boolean;
   includeHolidays?: boolean;
+  /**
+   * CR 321 - where the start (a milestone's date) comes from. "auto": from its links, or the
+   * project start when it has none. "manual": the date in `manualStart`; with links as well, the
+   * later of the two. A row without it is as it always was: linked rows follow their links, the
+   * rest keep the date typed.
+   */
+  startMode?: "auto" | "manual";
+  manualStart?: string;
+  priority?: SchedulePriority;
+  tags?: string[];
+  /** A milestone's mark on the chart (a diamond unless another is picked). */
+  icon?: MilestoneIcon;
   // The older chained schedule (read only).
   duration?: number;
   unit?: "days" | "weeks" | "months";
@@ -1137,7 +1149,26 @@ export interface ApiMilestone {
   doneBy?: string;
 }
 
-export interface ApiScheduleDraft { milestones: ApiMilestone[]; categories?: string[]; savedAt: string; savedBy: string }
+export type SchedulePriority = "low" | "normal" | "high" | "urgent";
+export type MilestoneIcon = "diamond" | "flag" | "star" | "circle";
+/**
+ * CR 321 - a phase as a record of its own. The phase's name is its category on the tasks, and its
+ * number is its place in the schedule's category list; this holds the rest.
+ */
+export interface ApiSchedulePhase {
+  name: string;
+  color?: string;
+  description?: string;
+  startMode?: "auto" | "manual";
+  manualStart?: string;
+  finishMode?: "auto" | "manual";
+  targetFinish?: string;
+  /** What the phase waits on: another phase (by name) or a milestone (by id). */
+  pred?: { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number } | null;
+  status?: MilestoneStatus;
+  assignedTo?: string[];
+}
+export interface ApiScheduleDraft { milestones: ApiMilestone[]; categories?: string[]; phaseInfo?: ApiSchedulePhase[]; savedAt: string; savedBy: string }
 export type ScheduleEntryKind = "revision" | "baseline" | "upload" | "submittal";
 export type ScheduleEntryStatus = "draft" | "submitted" | "approved" | "rejected";
 export interface ApiScheduleEntryFile { docId: string; name: string; filePath: string; fileType: string; size: string; uploadedAt: string; uploadedBy: string }
@@ -1146,7 +1177,7 @@ export interface ApiScheduleEntryFile { docId: string; name: string; filePath: s
  * a schedule kept as a file only. Older entries have no `kind`, and are revisions.
  */
 export interface ApiScheduleRevision {
-  _id: string; projectId: string; scheduleId?: string; categories?: string[]; version: number; milestones: ApiMilestone[]; progress: number;
+  _id: string; projectId: string; scheduleId?: string; categories?: string[]; phaseInfo?: ApiSchedulePhase[]; version: number; milestones: ApiMilestone[]; progress: number;
   note: string; savedBy: string; createdAt: string;
   kind?: ScheduleEntryKind;
   /** CR 314 - set on records that came from a separate schedule (before there was only one). */
@@ -1170,8 +1201,8 @@ export type ScheduleEntryDetails = Partial<Pick<ApiScheduleRevision,
 type ScheduleResult = { schedule: NonNullable<ApiProject["schedule"]>; progress: number };
 // 2026-09-21 - `sched` names a schedule beside the master (its id); left out, the master.
 const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : "");
-export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
-  return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories }) });
+export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
+  return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories, phaseInfo }) });
 }
 /** CR 243 - a sub-schedule: a named extract of the master schedule, by category. */
 /** A schedule beside the master: its own tasks, categories, draft and revisions. */
@@ -1183,8 +1214,8 @@ export async function saveScheduleSubs(projectId: string, subs: Array<Pick<ApiSu
 export async function saveTimelineRow(projectId: string, milestone: ApiMilestone, sched?: string): Promise<ScheduleResult & { milestone: ApiMilestone }> {
   return request(`/projects/${projectId}/schedule/milestones/${encodeURIComponent(milestone.id)}${sq(sched)}`, { method: "PUT", body: JSON.stringify({ milestone }) });
 }
-export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[], sched?: string, categories?: string[]): Promise<ScheduleResult> {
-  return request(`/projects/${projectId}/schedule/draft${sq(sched)}`, { method: "PUT", body: JSON.stringify({ milestones, categories }) });
+export async function saveTimelineDraft(projectId: string, milestones: ApiMilestone[], sched?: string, categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/draft${sq(sched)}`, { method: "PUT", body: JSON.stringify({ milestones, categories, phaseInfo }) });
 }
 export async function discardTimelineDraft(projectId: string, sched?: string): Promise<ScheduleResult> {
   return request(`/projects/${projectId}/schedule/draft${sq(sched)}`, { method: "DELETE" });

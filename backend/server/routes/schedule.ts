@@ -58,6 +58,12 @@ function cleanMilestones(input: unknown, known: string[] = []): MilestoneRecord[
       inc: m.inc === true,
       includeWeekends: m.includeWeekends !== false,
       includeHolidays: m.includeHolidays !== false,
+      // CR 321 - the forms: where the start comes from, priority, tags, a milestone's mark.
+      startMode: ["auto", "manual"].includes(String(m.startMode)) ? String(m.startMode) : "",
+      manualStart: date(m.manualStart),
+      priority: ["low", "high", "urgent"].includes(String(m.priority)) ? String(m.priority) : "normal",
+      tags: Array.isArray(m.tags) ? m.tags.map((t) => str(t, 40).trim()).filter(Boolean).slice(0, 20) : [],
+      icon: ["flag", "star", "circle"].includes(String(m.icon)) ? String(m.icon) : "diamond",
       // CR 300 - the links, each checked; the older single link is read into the list.
       predecessors: (() => {
         const list = Array.isArray(m.predecessors) ? (m.predecessors as Array<Record<string, unknown>>) : [];
@@ -98,9 +104,45 @@ function cleanCategories(input: unknown): string[] {
   return out;
 }
 
-type Draft = { milestones: MilestoneRecord[]; categories?: string[]; savedAt: string; savedBy: string } | null;
+/**
+ * CR 321 - a phase's details, kept by name beside the category list. A phase may wait on another
+ * phase (named) or on a milestone (by id); a link to something no longer there is dropped.
+ */
+type PhaseInfo = {
+  name: string; color: string; description: string; startMode: string; manualStart: string; finishMode: string; targetFinish: string;
+  pred: { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number } | null; status: string; assignedTo: string[];
+};
+function cleanPhaseInfo(input: unknown, categories: string[], milestones: MilestoneRecord[]): PhaseInfo[] {
+  if (!Array.isArray(input)) return [];
+  const names = new Set(categories.map((c) => c.toLowerCase()));
+  const out: PhaseInfo[] = [];
+  for (const raw of input.slice(0, 100)) {
+    const p = (raw || {}) as Record<string, unknown>;
+    const name = str(p.name, 80).trim();
+    if (!name || !names.has(name.toLowerCase()) || out.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
+    const pr = (p.pred || null) as Record<string, unknown> | null;
+    const kind = pr && pr.kind === "item" ? "item" : "phase";
+    const ref = pr ? str(pr.ref, 80).trim() : "";
+    const refOk = !!ref && (kind === "item" ? milestones.some((m) => m.id === ref) : names.has(ref.toLowerCase()) && ref.toLowerCase() !== name.toLowerCase());
+    out.push({
+      name,
+      color: /^#[0-9a-fA-F]{6}$/.test(String(p.color)) ? String(p.color) : "",
+      description: str(p.description, 2000),
+      startMode: p.startMode === "manual" ? "manual" : "auto",
+      manualStart: date(p.manualStart),
+      finishMode: p.finishMode === "manual" ? "manual" : "auto",
+      targetFinish: date(p.targetFinish),
+      pred: refOk ? { kind, ref, type: pr!.type === "SS" ? "SS" : "FS", lag: Math.max(-3650, Math.min(3650, Math.round(Number(pr!.lag) || 0))) } : null,
+      status: STATUSES.has(String(p.status)) ? String(p.status) : "not_started",
+      assignedTo: Array.isArray(p.assignedTo) ? p.assignedTo.map((r) => str(r, 120).trim()).filter(Boolean).slice(0, 30) : [],
+    });
+  }
+  return out;
+}
+
+type Draft = { milestones: MilestoneRecord[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt: string; savedBy: string } | null;
 type Plain = {
-  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[];
+  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[]; phaseInfo?: PhaseInfo[];
   subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean; filed?: boolean }>;
 };
 // 2026-09-21 - every call names its schedule (?sched=<id>); none means the master. The master's
@@ -111,12 +153,14 @@ function scheduleOf(project: InstanceType<typeof Project>, id: string) {
   const subs = s.subs || [];
   const at = id ? subs.findIndex((x) => x.id === id) : -1;
   if (id && at < 0) return null;
-  const cur = id ? subs[at] : { milestones: s.milestones || [], draft: s.draft || null, categories: s.categories || [] };
+  const cur: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[]; phaseInfo?: PhaseInfo[] } =
+    id ? subs[at] : { milestones: s.milestones || [], draft: s.draft || null, categories: s.categories || [], phaseInfo: s.phaseInfo || [] };
   return {
     milestones: (cur.milestones || []) as MilestoneRecord[],
     draft: (cur.draft || null) as Draft,
     categories: cur.categories || [],
-    apply(patch: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[] }) {
+    phaseInfo: (cur.phaseInfo || []) as PhaseInfo[],
+    apply(patch: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[]; phaseInfo?: PhaseInfo[] }) {
       const next: Plain = id
         ? { ...s, subs: subs.map((x, k) => (k === at ? { ...x, ...patch } : x)) }
         : { ...s, ...patch };
@@ -193,7 +237,8 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
     const milestones = cleanMilestones(req.body?.milestones);
     const categories = req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories;
     const progress = overallProgress(milestones);
-    target.apply({ milestones, categories, draft: null });
+    const phaseInfo = cleanPhaseInfo(req.body?.phaseInfo !== undefined ? req.body.phaseInfo : target.phaseInfo, categories, milestones);
+    target.apply({ milestones, categories, phaseInfo, draft: null });
     if (!id && milestones.length) project.progress = progress;
     await project.save();
     const last = await ScheduleRevision.findOne({ projectId: req.params.id, scheduleId: id || { $in: ["", null] }, kind: { $in: ["revision", null] } }).sort({ version: -1 }).select("version").lean();
@@ -203,6 +248,7 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
       version: (last?.version || 0) + 1,
       milestones,
       categories,
+      phaseInfo,
       progress,
       note: str(req.body?.note, 500).trim(),
       savedBy: req.user!.name || "",
@@ -272,9 +318,12 @@ router.put("/draft", async (req: AuthedRequest, res: Response, next: NextFunctio
     if (!project) return res.status(404).json({ error: "Project not found" });
     const target = scheduleOf(project, schedId(req));
     if (!target) return res.status(404).json(noSchedule);
+    const draftRows = cleanMilestones(req.body?.milestones);
+    const draftCats = req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories;
     const draft = {
-      milestones: cleanMilestones(req.body?.milestones),
-      categories: req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories,
+      milestones: draftRows,
+      categories: draftCats,
+      phaseInfo: cleanPhaseInfo(req.body?.phaseInfo !== undefined ? req.body.phaseInfo : target.phaseInfo, draftCats, draftRows),
       savedAt: new Date().toISOString(),
       savedBy: req.user!.name || "",
     };
@@ -340,13 +389,13 @@ router.post("/baselines", async (req: AuthedRequest, res: Response, next: NextFu
     const id = schedId(req);
     const target = scheduleOf(project, id);
     if (!target) return res.status(404).json(noSchedule);
-    let milestones = target.milestones, categories = target.categories;
+    let milestones = target.milestones, categories = target.categories, phaseInfo: unknown[] = target.phaseInfo;
     const fromId = str(req.body?.fromId, 40);
     if (fromId) {
       if (!mongoose.isValidObjectId(fromId)) return res.status(400).json({ error: "That revision was not found." });
       const from = await ScheduleRevision.findOne({ _id: fromId, ...entryQuery(req) }).lean();
       if (!from || from.kind === "upload") return res.status(400).json({ error: "That revision was not found." });
-      milestones = from.milestones; categories = from.categories;
+      milestones = from.milestones; categories = from.categories; phaseInfo = from.phaseInfo || [];
     }
     if (!milestones.length) return res.status(400).json({ error: "The schedule is empty. Add its tasks before freezing a baseline." });
     const last = await ScheduleRevision.findOne({ ...entryQuery(req), kind: "baseline" }).sort({ baselineNo: -1 }).select("baselineNo").lean();
@@ -360,6 +409,7 @@ router.post("/baselines", async (req: AuthedRequest, res: Response, next: NextFu
       baselineNo,
       milestones,
       categories,
+      phaseInfo,
       progress: overallProgress(milestones),
       savedBy: req.user!.name || "",
       status: "approved",
