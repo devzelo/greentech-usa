@@ -2,6 +2,8 @@ import { Router, Response, NextFunction } from "express";
 import Project, { type MilestoneRecord } from "../models/Project";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
+import User from "../models/User";
 import ScheduleRevision, { baselineNumber, scheduleEntryName, type ScheduleEntryFile } from "../models/ScheduleRevision";
 import ClassifiedAccess from "../models/ClassifiedAccess";
 import ProjectDocument from "../models/ProjectDocument";
@@ -395,11 +397,26 @@ function entryDetails(body: Record<string, unknown>) {
 async function passkeyError(req: AuthedRequest): Promise<string> {
   const doc = await ClassifiedAccess.findOne({ key: "singleton" }).select("pinHash").lean();
   const hash = (doc as { pinHash?: string } | null)?.pinHash || "";
-  if (!hash) return req.user?.role === "admin" ? "" : "No passkey has been set yet. An administrator sets it on the Classified Documents page.";
+  if (!hash) {
+    // The role is read from the account as it is now, not from the token, which may be hours old.
+    const u = mongoose.isValidObjectId(req.user?.userId) ? await User.findById(req.user!.userId).select("role").lean() : null;
+    return (u as { role?: string } | null)?.role === "admin" ? "" : "No passkey has been set yet. An administrator sets it on the Classified Documents page.";
+  }
   const pin = String(req.headers["x-passkey"] || "");
   if (!pin) return "Enter the passkey to delete a locked baseline.";
   return (await bcrypt.compare(pin, hash)) ? "" : "Incorrect passkey.";
 }
+// A passkey is a short PIN, so guesses are counted per person: five wrong ones lock it for 15 minutes.
+const passkeyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  skip: (req) => !req.headers["x-passkey"],
+  keyGenerator: (req) => `passkey:${(req as AuthedRequest).user?.userId || "anon"}`,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many wrong passkeys. Try again in 15 minutes." },
+});
 const sameSchedule = (a: MilestoneRecord[], b: MilestoneRecord[]) => JSON.stringify(a || []) === JSON.stringify(b || []);
 /** What Current holds, filed in History before something else takes its place, so it is never lost. */
 async function fileCurrent(projectId: string, target: { milestones: MilestoneRecord[]; categories: string[]; phaseInfo: unknown[] }, why: string, by: string) {
@@ -618,7 +635,7 @@ router.patch("/entries/:rid", async (req: AuthedRequest, res: Response, next: Ne
 
 // Deleting an entry puts it in the Recycle Bin, where it can be restored. Its files stay in the
 // project's documents.
-router.delete("/entries/:rid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+router.delete("/entries/:rid", passkeyLimiter, async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
     const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req) });
@@ -627,7 +644,10 @@ router.delete("/entries/:rid", async (req: AuthedRequest, res: Response, next: N
     // is not a session failure.)
     if (entry.kind === "baseline" && entry.status === "approved") {
       const why = await passkeyError(req);
-      if (why) return res.status(400).json({ error: why });
+      if (why) {
+        if (req.headers["x-passkey"]) console.warn(`[schedule] wrong passkey for baseline ${req.params.rid} by user ${req.user?.userId}`);
+        return res.status(400).json({ error: why });
+      }
     }
     const project = await Project.findOne({ projectId: req.params.id }).select("name").lean();
     await recycleAndDelete(entry, {
