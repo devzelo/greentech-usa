@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { ApiMilestone } from "../../../lib/api";
-import { DAY, delayDays, fmtDay, isMilestonePoint, parseDate, phasePercent } from "../../../lib/projectSchedule";
+import { ChevronLeft, ChevronRight, Circle, Diamond, Flag, Star } from "lucide-react";
+import type { ApiMilestone, MilestoneIcon } from "../../../lib/api";
+import { DAY, delayDays, fmtDay, isMilestonePoint, parseDate, phasePercent, plannedDays } from "../../../lib/projectSchedule";
 import { predsOf, type CpmInfo, type LinkType } from "../../../lib/scheduleLinks";
+import { DEFAULT_COLORS, FLOAT_COLOR, defaultDisplay, type BarColors, type BarKey, type ScheduleDisplay } from "../../../lib/scheduleDisplay";
 
 /**
  * CR 189: the timeline as a Gantt chart: each task's planned bar (with its % complete filled in),
@@ -23,6 +25,16 @@ import { predsOf, type CpmInfo, type LinkType } from "../../../lib/scheduleLinks
  *   Float      a hatched tail after a task's bar: the days it can slip
  * Bars can be dragged: the middle moves a task, the right end changes its length. A task tied to
  * others moves by shifting its links' lag, so the chain stays a chain.
+ *
+ * CR 323 / 324 (2026-09-28): the colours of the client's document, and what is written on the chart
+ * is a choice (the display options).
+ *   Task       red when critical, blue when not; the done part is drawn darker
+ *   Milestone  a black diamond (or the icon picked for it), named beside it
+ *   Phase      a summary bar in the phase's own colour
+ *   Float      a pale bar after the task with its days written on it
+ *   Link       dashed when it carries a lead or a lag
+ *   Label      beside each bar: any of name, duration, dates, % complete, assigned to, number
+ * The Day view names each day (Mon, Tue...), and a month stepper brings a month into view.
  */
 
 export type GanttZoom = "month" | "week" | "day";
@@ -30,7 +42,7 @@ export const GANTT_ZOOMS: Array<[GanttZoom, string]> = [["month", "Monthly"], ["
 
 export const GANTT_ROW = 22;          // one task
 const SECTION_ROW = 24;               // one phase
-const HEADER_H = 32;                  // the two header strips together
+const STRIP = 16;                     // one header strip
 const BAR_TOP = 6, BAR_H = 9;         // a task bar inside its row
 const MID = BAR_TOP + BAR_H / 2;      // where the arrows meet a bar
 
@@ -41,7 +53,16 @@ const SCALE: Record<GanttZoom, { pxPerDay: number; unit: "week" | "day"; top: "m
   day: { pxPerDay: 26, unit: "day", top: "month" },
 };
 
-const GREEN = "#10b981", RED = "#ef4444", BLUE = "#3b82f6", BLUE_DARK = "#1d4ed8", LINK = "#94a3b8";
+const BLUE = "#3b82f6", BLUE_DARK = "#1d4ed8", LINK = "#94a3b8";
+const DONE = "rgba(15,23,42,0.32)";   // the finished part of a bar, drawn darker over its colour
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const LABEL_ROOM = 260;               // space after the last bar for the text beside it
+
+/** A milestone's mark: a diamond unless another icon was picked for it. */
+function Mark({ icon, color, size = 11 }: { icon?: MilestoneIcon; color: string; size?: number }) {
+  const p = { size, color, fill: color, strokeWidth: 1.5 };
+  return icon === "flag" ? <Flag {...p} /> : icon === "star" ? <Star {...p} /> : icon === "circle" ? <Circle {...p} /> : <Diamond {...p} />;
+}
 
 const startOfWeek = (d: Date) => {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -59,7 +80,7 @@ export type GanttSection = { category: string; items: ApiMilestone[]; folded?: b
 
 export default function GanttChart({
   rows, sections, contractStart, deadline, originalDeadline, labels = true, zoom = "month",
-  cpm, showCritical = true, showFloat = false, numbers, baseline, onMove, onResize,
+  cpm, showCritical = true, showFloat = false, showActual = true, bars, colors = DEFAULT_COLORS, stepper = false, numbers, baseline, onMove, onResize, onOpen,
 }: {
   rows: ApiMilestone[];
   /** Phases with their tasks, drawn as summary bars (CR 269). Falls back to a flat list. */
@@ -75,6 +96,16 @@ export default function GanttChart({
   showCritical?: boolean;
   /** CR 319 - float tails, a switch of their own (off unless asked for). */
   showFloat?: boolean;
+  /** CR 325 - the actual dates, as a thin bar under the planned one. */
+  showActual?: boolean;
+  /** CR 323 - what is written beside the bars, in this order, and whether links are drawn. */
+  bars?: ScheduleDisplay["bars"];
+  /** CR 324 - the bar colours (the document's unless changed in the display options). */
+  colors?: BarColors;
+  /** CR 323 - a month stepper over the chart, to bring a month into view. */
+  stepper?: boolean;
+  /** Double click on a bar: open its form. */
+  onOpen?: (m: ApiMilestone) => void;
   /** The table's numbers (1, 1.1...), so the chart names rows the same way. */
   numbers?: Map<string, string>;
   /** The baseline to draw under each bar (a task not in it gets none); each task's own first planned dates when left out. */
@@ -86,6 +117,11 @@ export default function GanttChart({
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const { pxPerDay, unit, top } = SCALE[zoom];
+  // The Day view has a third strip naming each day.
+  const HEADER_H = zoom === "day" ? STRIP * 3 : STRIP * 2;
+  const barList = useMemo(() => bars || defaultDisplay().bars, [bars]);
+  const on = (k: BarKey) => !!barList.find((b) => b.key === k)?.on;
+  const anyLabel = barList.some((b) => b.on && b.key !== "links" && b.key !== "critical");
 
   // Every row the chart draws, in order: a phase bar followed by its tasks (none when folded).
   const lines = useMemo(() => {
@@ -122,7 +158,8 @@ export default function GanttChart({
 
   const x = (d: Date) => ((d.getTime() - from.getTime()) / DAY) * pxPerDay;
   const xEnd = (d: Date) => x(new Date(d.getTime() + DAY));   // bars include their last day
-  const width = Math.max(240, x(to));
+  const gridW = Math.max(240, x(to));
+  const width = gridW + (anyLabel ? LABEL_ROOM : 0);
 
   // The lower header strip: one cell per week or per day.
   const ticks = useMemo(() => {
@@ -148,7 +185,7 @@ export default function GanttChart({
       for (let d = new Date(from.getFullYear(), from.getMonth(), 1); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
         const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
         const left = Math.max(0, x(d));
-        out.push({ label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }), left, w: Math.min(x(next), width) - left });
+        out.push({ label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }), left, w: Math.min(x(next), gridW) - left });
       }
     } else {
       for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)) {
@@ -157,7 +194,7 @@ export default function GanttChart({
     }
     return out.filter((b) => b.w > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, top, pxPerDay, width]);
+  }, [from, to, top, pxPerDay, gridW]);
 
   const start = parseDate(contractStart), end = parseDate(deadline), origEnd = parseDate(originalDeadline);
   const tops = useMemo(() => {
@@ -178,7 +215,52 @@ export default function GanttChart({
   };
 
   const isPoint = (m: ApiMilestone) => !!m.isMilestone || isMilestonePoint(m);
-  const critical = (id: string) => !!(showCritical && cpm?.critical.has(id));
+  const critical = (id: string) => !!(showCritical && on("critical") && cpm?.critical.has(id));
+  const short = (d: Date | null) => (d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
+  /** The text beside a bar, from the display options, in their order: "1.2 Develop recipe (3d) · 2 Sep". */
+  const labelOf = (m: ApiMilestone): string => {
+    const point = isPoint(m);
+    if (point && !on("milestoneLabel")) return "";
+    const out: string[] = [];
+    for (const b of barList) {
+      if (!b.on) continue;
+      const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd) || ps;
+      const t = b.key === "name" ? m.name
+        : b.key === "id" ? numbers?.get(m.id) || ""
+        : b.key === "duration" ? (point ? "" : plannedDays(m) !== null ? `${plannedDays(m)}d` : "")
+        : b.key === "start" ? short(ps)
+        : b.key === "finish" ? (point ? "" : short(pe))
+        : b.key === "percent" ? (point ? "" : `${phasePercent(m)}%`)
+        : b.key === "assigned" ? (m.responsible || []).join(", ")
+        : "";
+      if (!t) continue;
+      if (b.key === "duration") { if (out.length) out[out.length - 1] += ` (${t})`; else out.push(`(${t})`); }
+      else out.push(t);
+    }
+    // A milestone is always named when its label is on, whatever else is off.
+    if (point && !out.length) return m.name;
+    return out.join(" · ");
+  };
+
+  // ── the month stepper ─────────────────────────────────────────────────────────────────────
+  const scroller = useRef<HTMLDivElement>(null);
+  const months = useMemo(() => {
+    const out: Date[] = [];
+    for (let d = new Date(from.getFullYear(), from.getMonth(), 1); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) out.push(d);
+    return out;
+  }, [from, to]);
+  const [monthAt, setMonthAt] = useState(0);
+  const goMonth = (i: number) => {
+    const k = Math.max(0, Math.min(months.length - 1, i));
+    setMonthAt(k);
+    scroller.current?.scrollTo({ left: Math.max(0, x(months[k])), behavior: "smooth" });
+  };
+  const onScroll = () => {
+    const left = scroller.current?.scrollLeft ?? 0;
+    let k = 0;
+    months.forEach((d, i) => { if (x(d) <= left + 4) k = i; });
+    setMonthAt(k);
+  };
 
   // ── dragging ──────────────────────────────────────────────────────────────────────────────
   const [drag, setDrag] = useState<{ id: string; mode: "move" | "end"; dx: number } | null>(null);
@@ -220,12 +302,12 @@ export default function GanttChart({
     if (i === undefined || !ps || !pe) return null;
     const move = shiftOf(m.id, "move"), grow = shiftOf(m.id, "end");
     const y = tops[i] + MID;
-    if (isPoint(m)) return { x: x(ps) + move + 5, y };
+    if (isPoint(m)) return { x: xEnd(ps) + move, y };   // the mark sits at the end of its day
     return side === "start" ? { x: x(ps) + move, y } : { x: xEnd(pe) + move + grow, y };
   };
   const links = useMemo(() => {
     const byId = new Map<string, ApiMilestone>(allTasks.map((m) => [m.id, m]));
-    const out: Array<{ key: string; d: string; crit: boolean; tip: string }> = [];
+    const out: Array<{ key: string; d: string; crit: boolean; lagged: boolean; tip: string }> = [];
     for (const m of allTasks) {
       for (const p of predsOf(m)) {
         const pred = byId.get(p.id);
@@ -244,18 +326,26 @@ export default function GanttChart({
           : `M ${a.x} ${a.y} H ${ox} V ${my} H ${ix} V ${b.y} H ${b.x}`;
         const crit = critical(pred.id) && critical(m.id);
         const lag = p.lag ? ` ${p.lag > 0 ? "+" : ""}${p.lag}d` : "";
-        out.push({ key: `${pred.id}-${m.id}`, d, crit, tip: `${pred.name} to ${m.name}: ${p.type as LinkType}${lag}` });
+        out.push({ key: `${pred.id}-${m.id}`, d, crit, lagged: !!p.lag, tip: `${pred.name} to ${m.name}: ${p.type as LinkType}${lag}${p.lag ? (p.lag > 0 ? " (lag)" : " (lead)") : ""}` });
       }
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTasks, at, tops, from, pxPerDay, drag, cpm, showCritical]);
+  }, [allTasks, at, tops, from, pxPerDay, drag, cpm, showCritical, barList]);
 
   return (
-    <div className="flex overflow-hidden rounded-xl border border-slate-100 bg-white">
+    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+      {stepper && months.length > 1 && (
+        <div className="flex items-center justify-end gap-1 border-b border-slate-100 px-2 py-1">
+          <button type="button" onClick={() => goMonth(monthAt - 1)} disabled={monthAt <= 0} aria-label="Previous month" className="rounded p-0.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><ChevronLeft size={14} /></button>
+          <span className="min-w-[7.5rem] text-center text-[11px] font-bold text-slate-700">{months[monthAt]?.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
+          <button type="button" onClick={() => goMonth(monthAt + 1)} disabled={monthAt >= months.length - 1} aria-label="Next month" className="rounded p-0.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><ChevronRight size={14} /></button>
+        </div>
+      )}
+      <div className="flex">
       {labels && (
         <div className="w-44 shrink-0 border-r border-slate-100 sm:w-60">
-          <div className="border-b border-slate-100 bg-slate-50 px-2 text-[9px] font-bold uppercase tracking-widest leading-[32px] text-slate-400" style={{ height: HEADER_H }}>Task</div>
+          <div className="flex items-center border-b border-slate-100 bg-slate-50 px-2 text-[9px] font-bold uppercase tracking-widest text-slate-400" style={{ height: HEADER_H }}>Task</div>
           {lines.map((l, i) => (l.kind === "section" ? (
             <div key={`s-${l.category}-${i}`} className="flex items-center gap-1.5 border-b border-slate-100 bg-blue-50/70 px-2 text-[11px] font-bold text-blue-900" style={{ height: SECTION_ROW }}>
               {l.color && <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: l.color }} />}
@@ -267,14 +357,14 @@ export default function GanttChart({
             <div key={l.m.id} className="flex items-center gap-1.5 border-b border-slate-50 px-2 text-[11px] font-semibold text-slate-700" style={{ height: GANTT_ROW }}>
               <span className="w-6 shrink-0 text-[9px] tabular-nums text-slate-400">{numbers?.get(l.m.id) || l.index + 1}</span>
               {isPoint(l.m)
-                ? <span className="h-2 w-2 shrink-0 rotate-45" style={{ background: RED }} />
-                : <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: critical(l.m.id) ? RED : GREEN }} />}
+                ? <span className="shrink-0"><Mark icon={l.m.icon} color={colors.milestone} size={9} /></span>
+                : <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: critical(l.m.id) ? colors.critical : colors.normal }} />}
               <span className="truncate" title={l.m.name}>{l.m.name}</span>
             </div>
           )))}
         </div>
       )}
-      <div className="min-w-0 flex-1 overflow-x-auto">
+      <div ref={scroller} onScroll={stepper ? onScroll : undefined} className="min-w-0 flex-1 overflow-x-auto">
         <div style={{ width }} className="relative select-none">
           {/* Two-level time header (CR 269). */}
           <div className="relative border-b border-slate-100 bg-slate-50" style={{ height: HEADER_H }}>
@@ -282,8 +372,10 @@ export default function GanttChart({
               <div key={i} className="absolute top-0 truncate border-r border-slate-200 px-1 text-[9px] font-bold leading-4 text-slate-600" style={{ left: b.left, width: b.w }}>{b.label}</div>
             ))}
             {ticks.map((t, i) => (
-              <div key={i} className={`absolute bottom-0 truncate border-r text-center text-[8px] leading-4 ${t.strong ? "border-slate-200 bg-slate-100/70 text-slate-500" : "border-slate-100 text-slate-400"}`} style={{ left: x(t.at), width: t.w }}>
+              <div key={i} className={`absolute truncate border-r text-center text-[8px] leading-4 ${t.strong ? "border-slate-200 bg-slate-100/70 text-slate-500" : "border-slate-100 text-slate-400"}`} style={{ left: x(t.at), width: t.w, top: STRIP, height: HEADER_H - STRIP }}>
                 {t.w >= 11 ? t.label : ""}
+                {/* CR 323 - the Day view names each day under its date. */}
+                {zoom === "day" && <span className="block text-[7px] font-semibold leading-4">{WEEKDAY[t.at.getDay()]}</span>}
               </div>
             ))}
           </div>
@@ -327,31 +419,34 @@ export default function GanttChart({
               const late = delayDays(m, today) > 0;
               const pct = phasePercent(m);
               const crit = critical(m.id);
-              const color = crit ? RED : GREEN;
+              const color = crit ? colors.critical : colors.normal;
+              const label = labelOf(m);
               const fl = cpm?.float.get(m.id);
               const move = shiftOf(m.id, "move"), grow = shiftOf(m.id, "end");
               const tip = `${numbers?.get(m.id) ? `${numbers.get(m.id)} ` : ""}${m.name}\nPlanned: ${fmtDay(ps) || "-"} to ${fmtDay(pe) || "-"}${moved ? `\nBaseline: ${fmtDay(bs)} to ${fmtDay(be)}` : ""}${as ? `\nActual: ${fmtDay(as)} to ${m.actualEnd ? fmtDay(m.actualEnd) : "ongoing"}` : ""}\n${pct}% complete${fl !== undefined ? `\nFloat: ${fl} day${fl === 1 ? "" : "s"}${fl <= 0 ? " (critical)" : ""}` : ""}${canMove ? "\nDrag to move it; drag its right end to change its length." : ""}`;
               return (
-                <div key={m.id} className="absolute inset-x-0 border-b border-slate-50" style={{ top: topPx, height: GANTT_ROW }} title={tip}>
+                <div key={m.id} className="absolute inset-x-0 border-b border-slate-50" style={{ top: topPx, height: GANTT_ROW }} title={tip} onDoubleClick={onOpen ? () => onOpen(m) : undefined}>
                   {moved && <div className="absolute rounded-sm bg-slate-300/70" style={{ top: BAR_TOP - 3, height: 4, left: x(bs!), width: Math.max(3, xEnd(be!) - x(bs!)) }} />}
                   {ps && pe && (isPoint(m) ? (
                     <>
+                      {/* CR 324 - a black diamond (or its own icon), at the end of its day. */}
                       <div
-                        className={`absolute h-2.5 w-2.5 rotate-45 ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}
-                        style={{ top: BAR_TOP, left: x(ps) + move, background: RED, boxShadow: pct >= 100 ? `0 0 0 1.5px #fff, 0 0 0 2.5px ${RED}` : undefined }}
+                        className={`absolute ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}
+                        style={{ top: BAR_TOP - 1, left: xEnd(ps) + move - 6 }}
                         onPointerDown={(e) => beginDrag(e, m, "move")}
-                      />
-                      {/* The name beside the diamond, as the reference schedules show it. */}
-                      <span className="pointer-events-none absolute whitespace-nowrap text-[9px] font-semibold text-slate-600" style={{ top: BAR_TOP - 1, left: x(ps) + move + 14 }}>{m.name}</span>
+                      >
+                        <Mark icon={m.icon} color={colors.milestone} />
+                      </div>
+                      {label && <span className="pointer-events-none absolute whitespace-nowrap text-[9px] font-semibold text-slate-700" style={{ top: BAR_TOP - 1, left: xEnd(ps) + move + 9 }}>{label}</span>}
                     </>
                   ) : (
                     <>
                       <div
                         className={`absolute overflow-hidden rounded-sm ${canMove ? "cursor-grab active:cursor-grabbing" : ""} ${drag?.id === m.id ? "ring-2 ring-blue-300" : ""}`}
-                        style={{ top: BAR_TOP, height: BAR_H, left: x(ps) + move, width: Math.max(4, xEnd(pe) - x(ps) + grow), background: `${color}40` }}
+                        style={{ top: BAR_TOP, height: BAR_H, left: x(ps) + move, width: Math.max(4, xEnd(pe) - x(ps) + grow), background: color }}
                         onPointerDown={(e) => beginDrag(e, m, "move")}
                       >
-                        <div className="pointer-events-none h-full" style={{ width: `${pct}%`, background: color }} />
+                        <div className="pointer-events-none h-full" style={{ width: `${pct}%`, background: DONE }} />
                         {canResize && (
                           <div
                             className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-black/10 opacity-0 hover:opacity-100"
@@ -363,18 +458,21 @@ export default function GanttChart({
                       {/* The days it can slip before the project finish moves. */}
                       {showFloat && fl !== undefined && fl > 0 && (
                         <div
-                          className="pointer-events-none absolute flex items-center overflow-hidden rounded-sm border border-dashed"
-                          style={{
-                            top: BAR_TOP + 1, height: BAR_H - 2, left: xEnd(pe) + move + grow, width: fl * pxPerDay,
-                            borderColor: `${GREEN}99`, background: `repeating-linear-gradient(45deg, ${GREEN}33 0 3px, transparent 3px 6px)`,
-                          }}
+                          className="pointer-events-none absolute flex items-center overflow-hidden rounded-sm"
+                          style={{ top: BAR_TOP, height: BAR_H, left: xEnd(pe) + move + grow, width: fl * pxPerDay, background: FLOAT_COLOR }}
                         >
-                          {fl * pxPerDay > 58 && <span className="whitespace-nowrap px-1 text-[8px] font-bold text-emerald-700">{fl} day{fl === 1 ? "" : "s"} float</span>}
+                          {fl * pxPerDay > 56 && <span className="whitespace-nowrap px-1 text-[8px] font-bold leading-none text-blue-900">{fl} day{fl === 1 ? "" : "s"} float</span>}
                         </div>
+                      )}
+                      {/* What the display options ask for, written after the bar (and after its float). */}
+                      {label && (
+                        <span className="pointer-events-none absolute whitespace-nowrap text-[9px] font-semibold text-slate-700" style={{ top: BAR_TOP - 2, left: xEnd(pe) + move + grow + (showFloat && fl && fl > 0 ? fl * pxPerDay : 0) + 5 }}>
+                          {label}{showFloat && fl !== undefined && fl > 0 && fl * pxPerDay <= 56 ? ` · ${fl}d float` : ""}
+                        </span>
                       )}
                     </>
                   ))}
-                  {as && ae && (
+                  {showActual && as && ae && (
                     <div className={`pointer-events-none absolute rounded-full border border-dashed ${late ? "border-red-500" : "border-slate-500"}`} style={{ top: BAR_TOP + BAR_H + 2, height: 3, left: x(as), width: Math.max(4, xEnd(ae) - x(as)) }} />
                   )}
                 </div>
@@ -385,10 +483,11 @@ export default function GanttChart({
             <svg className="pointer-events-none absolute inset-0" width={width} height={Math.max(height, GANTT_ROW)}>
               <defs>
                 <marker id="gantt-arrow" viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 z" fill={LINK} /></marker>
-                <marker id="gantt-arrow-crit" viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 z" fill={RED} /></marker>
+                <marker id="gantt-arrow-crit" viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 z" fill={colors.critical} /></marker>
               </defs>
-              {links.map((k) => (
-                <path key={k.key} d={k.d} fill="none" stroke={k.crit ? RED : LINK} strokeWidth={k.crit ? 1.4 : 1} markerEnd={`url(#${k.crit ? "gantt-arrow-crit" : "gantt-arrow"})`}>
+              {/* CR 324 - a link carrying a lead or a lag is drawn dashed. */}
+              {on("links") && links.map((k) => (
+                <path key={k.key} d={k.d} fill="none" stroke={k.crit ? colors.critical : LINK} strokeWidth={k.crit ? 1.4 : 1} strokeDasharray={k.lagged ? "4 3" : undefined} markerEnd={`url(#${k.crit ? "gantt-arrow-crit" : "gantt-arrow"})`}>
                   <title>{k.tip}</title>
                 </path>
               ))}
@@ -403,20 +502,22 @@ export default function GanttChart({
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
-export function GanttLegend() {
+export function GanttLegend({ colors = DEFAULT_COLORS }: { colors?: BarColors }) {
   const item = "inline-flex items-center gap-1.5";
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-slate-500">
-      <span className={item}><span className="h-2 w-8 rounded-sm" style={{ background: BLUE }} /> Phase</span>
-      <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: `${GREEN}40` }}><span className="block h-full w-1/2 rounded-sm" style={{ background: GREEN }} /></span> Task (filled = % complete)</span>
-      <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: RED }} /> Critical task</span>
-      <span className={item}><span className="h-2.5 w-2.5 rotate-45" style={{ background: RED }} /> Milestone</span>
-      <span className={item}><svg width="26" height="10"><path d="M1 3 H8 V7 H22" fill="none" stroke={LINK} strokeWidth="1.2" /><path d="M20 4.5 L25 7 L20 9.5 z" fill={LINK} /></svg> Link</span>
-      <span className={item}><span className="h-2 w-8 rounded-sm border border-dashed" style={{ borderColor: `${GREEN}99`, background: `repeating-linear-gradient(45deg, ${GREEN}33 0 3px, transparent 3px 6px)` }} /> Float</span>
+      <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: colors.critical }} /> Critical task</span>
+      <span className={item}><span className="h-2.5 w-8 overflow-hidden rounded-sm" style={{ background: colors.normal }}><span className="block h-full w-1/2" style={{ background: DONE }} /></span> Non-critical task (darker = done)</span>
+      <span className={item}><Mark color={colors.milestone} size={10} /> Milestone</span>
+      <span className={item}><span className="h-2 w-8 rounded-sm" style={{ background: BLUE }} /> Phase (its own colour)</span>
+      <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: FLOAT_COLOR }} /> Float</span>
+      <span className={item}><svg width="26" height="10"><path d="M1 3 H8 V7 H22" fill="none" stroke={LINK} strokeWidth="1.2" /><path d="M20 4.5 L25 7 L20 9.5 z" fill={LINK} /></svg> Dependency</span>
+      <span className={item}><svg width="26" height="10"><path d="M1 3 H8 V7 H22" fill="none" stroke={LINK} strokeWidth="1.2" strokeDasharray="4 3" /><path d="M20 4.5 L25 7 L20 9.5 z" fill={LINK} /></svg> With lead / lag</span>
       <span className={item}><span className="h-1 w-8 rounded-sm bg-slate-300" /> Baseline</span>
       <span className={item}><span className="h-1.5 w-8 rounded-full border-2 border-dashed border-slate-500" /> Actual</span>
       <span className={item}><span className="h-3 w-0.5 bg-blue-600" /> Today</span>

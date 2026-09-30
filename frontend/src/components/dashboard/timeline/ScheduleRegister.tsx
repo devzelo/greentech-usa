@@ -180,7 +180,7 @@ export function FrozenSchedule({ milestones, categories = [], phases, contractSt
                       <td className={`${td} font-semibold`}>{m.name}</td>
                       <td className={td}>
                         <span className="inline-flex items-center gap-1">
-                          {ms ? <span className="h-2 w-2 rotate-45 bg-red-500" /> : <span className={`h-2 w-2 rounded-sm ${crit ? "bg-red-500" : "bg-emerald-500"}`} />}
+                          {ms ? <span className="h-2 w-2 rotate-45 bg-slate-900" /> : <span className={`h-2 w-2 rounded-sm ${crit ? "bg-red-600" : "bg-blue-600"}`} />}
                           {ms ? "Milestone" : "Task"}
                         </span>
                       </td>

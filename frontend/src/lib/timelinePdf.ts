@@ -42,7 +42,9 @@ const EMERALD = rgb(0.06, 0.73, 0.51);
 // CR 300 - the chart's colours, as on screen: blue phases, green tasks, red critical work and
 // milestones, grey links.
 const PHASE = rgb(0.23, 0.51, 0.96), PHASE_DARK = rgb(0.11, 0.31, 0.85);
-const TASK_TINT = rgb(0.75, 0.93, 0.86), CRIT_TINT = rgb(0.99, 0.8, 0.8);
+// CR 324 - the document's colours: critical red, non-critical blue, a black diamond, float pale blue.
+const TASK = rgb(0.145, 0.388, 0.922), TASK_DONE = rgb(0.11, 0.27, 0.66), CRIT_DONE = rgb(0.6, 0.1, 0.1);
+const INK = rgb(0.06, 0.09, 0.16), FLOAT = rgb(0.75, 0.86, 0.996);
 const LINK_INK = rgb(0.58, 0.64, 0.72);
 
 const hex = (h: string) => { const n = parseInt(h.replace("#", ""), 16); return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
@@ -181,7 +183,6 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     // The columns shift left by two when the Actual pair is left out.
     const shift = showActual ? 0 : 2;
     const cellColors: Array<ReturnType<typeof rgb> | undefined> = [];
-    if (ms) cellColors[2] = RED;                                                // milestones red, as on screen
     if (showActual) cellColors[6] = lateBy && m.actualEnd ? RED : undefined;   // a late finish, red as on screen
     if (crit) { cellColors[10 - shift] = RED; cellColors[11 - shift] = RED; }   // no float: the critical path
     cellColors[12 - shift] = statusInk(m.status);                               // the status chip's colour
@@ -430,8 +431,8 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
         const crit = isCrit(m.id);
         if (k % 2 === 1) page.drawRectangle({ x: X, y: top - ROW, width: LABEL, height: ROW, color: C.mist });
         const cy0 = top - ROW / 2;
-        if (point) page.drawSvgPath(`M ${X + 25} ${-(cy0 + 2.8)} L ${X + 27.8} ${-cy0} L ${X + 25} ${-(cy0 - 2.8)} L ${X + 22.2} ${-cy0} Z`, { x: 0, y: 0, color: RED });
-        else page.drawRectangle({ x: X + 22.6, y: cy0 - 2.3, width: 4.6, height: 4.6, color: crit ? RED : EMERALD });
+        if (point) page.drawSvgPath(`M ${X + 25} ${-(cy0 + 2.8)} L ${X + 27.8} ${-cy0} L ${X + 25} ${-(cy0 - 2.8)} L ${X + 22.2} ${-cy0} Z`, { x: 0, y: 0, color: INK });
+        else page.drawRectangle({ x: X + 22.6, y: cy0 - 2.3, width: 4.6, height: 4.6, color: crit ? RED : TASK });
         page.drawText(wbs.task.get(m.id) || String(idx + 1), { x: X + 3, y: top - ROW / 2 - 2.3, size: 6.2, font: b.regular, color: C.s500 });
         page.drawText(fitOneLine(b.regular, m.name, 7, LABEL - 36), { x: X + 32, y: top - ROW / 2 - 2.4, size: 7, font: b.regular, color: C.slate });
         page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
@@ -443,21 +444,21 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
           if (point) {
             // A milestone: a red diamond, named beside it.
             const cx = clampL(x(ps)), cy = top - 6.5;
-            page.drawSvgPath(`M ${cx} ${-(cy - 3.8)} L ${cx + 3.8} ${-cy} L ${cx} ${-(cy + 3.8)} L ${cx - 3.8} ${-cy} Z`, { x: 0, y: 0, color: RED });
+            page.drawSvgPath(`M ${cx} ${-(cy - 3.8)} L ${cx + 3.8} ${-cy} L ${cx} ${-(cy + 3.8)} L ${cx - 3.8} ${-cy} Z`, { x: 0, y: 0, color: INK });
             const lab = m.name;
             const room = X + LABEL + CH - (cx + 6);
             if (room > 20) page.drawText(fitOneLine(b.regular, lab, 5.8, room), { x: cx + 6, y: top - 8.6, size: 5.8, font: b.regular, color: C.s500 });
           } else {
-            // A task: green (red on the critical path), filled to its % complete.
+            // A task: blue (red on the critical path), its finished part drawn darker.
             const bx = clampL(x(ps)), bw = Math.max(1.5, clampL(xEnd(pe)) - bx);
-            page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: crit ? CRIT_TINT : TASK_TINT });
+            page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: crit ? RED : TASK });
             const pct = phasePercent(m);
-            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? RED : EMERALD });
+            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? CRIT_DONE : TASK_DONE });
             // Its float: the days it can slip before the finish moves, as a dashed tail.
             const fl = cpm.float.get(m.id);
             if (showFloat && fl && fl > 0 && pe < sheetTo) {
               const fx = clampL(xEnd(pe)), fw = clampL(xEnd(pe) + fl * pxPerDay) - fx;
-              if (fw > 1) page.drawRectangle({ x: fx, y: top - 8.5, width: fw, height: 4.5, borderColor: EMERALD, borderWidth: 0.5, borderDashArray: [1.5, 1.2], color: rgb(0.93, 0.99, 0.96) });
+              if (fw > 1) page.drawRectangle({ x: fx, y: top - 9, width: fw, height: 5.5, color: FLOAT });
             }
           }
         }
@@ -513,11 +514,11 @@ function legend(page: PDFPage, b: Brand, x: number, y: number) {
   const diamond = (cx: number, cy: number, r: number) => `M ${cx} ${-(cy - r)} L ${cx + r} ${-cy} L ${cx} ${-(cy + r)} L ${cx - r} ${-cy} Z`;
   const items: Array<[string, (px: number) => void]> = [
     ["Phase", (px) => { page.drawRectangle({ x: px, y: y, width: 18, height: 3.5, color: PHASE }); page.drawRectangle({ x: px, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); page.drawRectangle({ x: px + 16.6, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); }],
-    ["Task (filled = % complete)", (px) => { page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: TASK_TINT }); page.drawRectangle({ x: px, y: y - 1, width: 9, height: 5, color: EMERALD }); }],
+    ["Task (darker = done)", (px) => { page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: TASK }); page.drawRectangle({ x: px, y: y - 1, width: 9, height: 5, color: TASK_DONE }); }],
     ["Critical task", (px) => page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: RED })],
-    ["Milestone", (px) => page.drawSvgPath(diamond(px + 5, y + 1.5, 3.8), { x: 0, y: 0, color: RED })],
+    ["Milestone", (px) => page.drawSvgPath(diamond(px + 5, y + 1.5, 3.8), { x: 0, y: 0, color: INK })],
     ["Link", (px) => { page.drawLine({ start: { x: px, y: y + 4 }, end: { x: px + 6, y: y + 4 }, thickness: 0.6, color: LINK_INK }); page.drawLine({ start: { x: px + 6, y: y + 4 }, end: { x: px + 6, y: y }, thickness: 0.6, color: LINK_INK }); page.drawLine({ start: { x: px + 6, y: y }, end: { x: px + 16, y: y }, thickness: 0.6, color: LINK_INK }); page.drawSvgPath(`M ${px + 18} ${-y} L ${px + 15.4} ${-(y + 1.5)} L ${px + 15.4} ${-(y - 1.5)} Z`, { x: 0, y: 0, color: LINK_INK }); }],
-    ["Float", (px) => page.drawRectangle({ x: px, y: y - 0.5, width: 18, height: 4.5, borderColor: EMERALD, borderWidth: 0.5, borderDashArray: [1.5, 1.2], color: rgb(0.93, 0.99, 0.96) })],
+    ["Float", (px) => page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: FLOAT })],
     ["Actual", (px) => page.drawLine({ start: { x: px, y: y + 1.5 }, end: { x: px + 18, y: y + 1.5 }, thickness: 1.4, dashArray: [2.5, 1.5], color: C.s500 })],
     ["Actual, late", (px) => page.drawLine({ start: { x: px, y: y + 1.5 }, end: { x: px + 18, y: y + 1.5 }, thickness: 1.4, dashArray: [2.5, 1.5], color: RED })],
     ["Today", (px) => page.drawLine({ start: { x: px + 8, y: y - 2 }, end: { x: px + 8, y: y + 6 }, thickness: 1, color: rgb(0.15, 0.39, 0.92) })],

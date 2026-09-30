@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, SlidersHorizontal, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
@@ -19,6 +19,8 @@ import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import { ItemForm, MilestoneMark, PhaseForm, phaseColorOf } from "./ScheduleForms";
+import DisplayOptions from "./DisplayOptions";
+import { barOn, loadDisplay, saveDisplay, shownColumns, type ColKey, type ScheduleDisplay } from "../../../lib/scheduleDisplay";
 import ToolMenu, { MENU_ITEM } from "./ToolMenu";
 import {
   BaselineTab, CurrentSummary, EntryDialog, FrozenSchedule, HistoryTab, baselineNumber, currentBaseline, draftBaseline, entryCode, entryTitle, isFileOnly, isLocked, kindOf,
@@ -83,6 +85,21 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // The forms' side panel: one at a time, a task or milestone, or a phase (null = a new one).
   const [phaseEdit, setPhaseEdit] = useState<{ name: string | null } | null>(null);
   const [panelNarrow, setPanelNarrow] = useState(false);
+  /**
+   * CR 323 - the display options: columns, what is written on the bars, float, actual dates, the
+   * phases in view and the colours. Kept per person and per project. CR 319 - the critical
+   * highlight and float are two separate switches among them, with a button each on the toolbar.
+   */
+  const [display, setDisplayState] = useState<ScheduleDisplay>(() => loadDisplay(project.id));
+  const setDisplay = (d: ScheduleDisplay) => { setDisplayState(d); saveDisplay(project.id, d); };
+  useEffect(() => { setDisplayState(loadDisplay(project.id)); }, [project.id]);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const showCritical = barOn(display, "critical");
+  const showFloat = display.float;
+  const toggleCritical = () => setDisplay({ ...display, bars: display.bars.map((x) => (x.key === "critical" ? { ...x, on: !x.on } : x)) });
+  const toggleFloat = () => setDisplay({ ...display, float: !display.float });
+  const cols = shownColumns(display);
+  const hiddenPhases = new Set(display.hiddenPhases);
   const openItem = (m: ApiMilestone) => { setPhaseEdit(null); setPanelNarrow(false); setEditing(m); };
   const openPhase = (name: string | null) => { setEditing(null); setPanelNarrow(false); setPhaseEdit({ name }); };
   const [view, setView] = useState<View>("all");
@@ -425,12 +442,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
    * (a baseline or an earlier revision) picked from the register.
    */
   const [subject, setSubject] = useState<ApiScheduleRevision | null>(null);
-  const outRows = subject ? subject.milestones : rows;
+  // CR 323 - print and export follow what is shown: only the phases in view.
+  const inView = (list: ApiMilestone[]) => (display.hiddenPhases.length ? list.filter((m) => !display.hiddenPhases.includes((m.category || "").trim() || UNCATEGORISED)) : list);
+  const outRows = subject ? subject.milestones : inView(rows);
   const outCats = subject ? (subject.categories?.length ? subject.categories : categoryList([], subject.milestones)) : catList;
   const pdfInput = (label: string) => ({
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: outRows, categories: outCats, phaseInfo: subject ? subject.phaseInfo : phases, version: label, scheduleName, remarks: printRemarks,
-    zoom, actual: printActual, paper, overview: printOverview, critical: showCritical, float: showFloat,
+    zoom, actual: printActual && display.actual, paper, overview: printOverview, critical: showCritical, float: showFloat,
   });
   const versionLabel = subject
     ? `${entryCode(subject)} · ${entryTitle(subject)}`
@@ -506,7 +525,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // CR 300 - the live schedule or any entry from the register, with the scheduler's columns: the
   // 1.1 numbers, the type, the links and the float.
   const downloadCsv = (entry?: ApiScheduleRevision) => {
-    const list = entry ? entry.milestones : rows;
+    const list = entry ? entry.milestones : inView(rows);
     const cats = entry ? (entry.categories?.length ? entry.categories : categoryList([], entry.milestones)) : catList;
     const nums = wbsNumbers(list, cats);
     const cp = criticalPath(list, entry ? { phases: entry.phaseInfo } : planCtx);
@@ -812,7 +831,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   // Grouped by category (empty categories still show, so milestones can be added to them) once the
   // schedule has any; a flat list otherwise.
   const hasCategories = catList.length > 0;
-  const groups = hasCategories ? groupByCategory(shown, catList, view === "all") : [{ category: "", items: shown }];
+  const groups = (hasCategories ? groupByCategory(shown, catList, view === "all") : [{ category: "", items: shown }]).filter((g) => !display.hiddenPhases.includes(g.category));
   /**
    * CR 300 - the schedule's structure, as a scheduler reads it: each phase numbered 1, 2, 3 with
    * its tasks and milestones counting under it (1.1, 1.2), worked out from the full list so a
@@ -821,15 +840,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const wbs = useMemo(() => wbsNumbers(rows, catList), [rows, catList]);
   const cpm = useMemo(() => criticalPath(rows, planCtx), [rows, planCtx]);
   const idOfNumber = (n: string) => { for (const [id, num] of wbs.task) if (num === n) return id; return undefined; };
-  const [showCritical, setShowCritical] = useState(() => { try { return localStorage.getItem("gt-schedule-critical") !== "0"; } catch { return true; } });
-  const toggleCritical = () => setShowCritical((v) => { try { localStorage.setItem("gt-schedule-critical", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
-  /**
-   * CR 319 (2026-09-28): float is its own switch. It used to come on with the critical path, and
-   * the hatched tails it draws read as "this is showing the float days", not the critical path.
-   * Off by default, so Critical path shows the path and nothing else.
-   */
-  const [showFloat, setShowFloat] = useState(() => { try { return localStorage.getItem("gt-schedule-float") === "1"; } catch { return false; } });
-  const toggleFloat = () => setShowFloat((v) => { try { localStorage.setItem("gt-schedule-float", v ? "0" : "1"); } catch { /* ignore */ } return !v; });
   /** A phase's figures, rolled up from its tasks. */
   const phaseRollup = (items: ApiMilestone[], category: string) => {
     const starts = items.map((m) => parseDate(m.plannedStart)).filter((d): d is Date => !!d);
@@ -872,6 +882,25 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (loop) { toast(`${wbs.task.get(loop.id) || "That task"} already waits on this one, so it cannot come before it.`, "error"); return false; }
     update(m.id, withPreds(m, preds));
     return true;
+  };
+  const thL = "px-2 py-2 text-left", thR = "px-2 py-2 text-right";
+  const HEAD: Record<ColKey, ReactNode> = {
+    id: <th key="id" className={thL}>#</th>,
+    name: <th key="name" className={thL}>Task name</th>,
+    type: <th key="type" className={thL}>Type</th>,
+    start: <th key="start" className={thL}>Start</th>,
+    finish: <th key="finish" className={thL}>Finish</th>,
+    actualStart: <th key="actualStart" className={`${thL} bg-sky-50 text-sky-800`} title="Only entered when it differs from the plan">Actual start</th>,
+    actualFinish: <th key="actualFinish" className={`${thL} bg-sky-50 text-sky-800`} title="Only entered when it differs from the plan">Actual finish</th>,
+    duration: <th key="duration" className={thR}>Duration</th>,
+    predecessors: <th key="predecessors" className={thL} title="The tasks this one waits on, by number. 1.2 means it starts after 1.2 finishes; add SS, FF or SF for the other link types and +3d or -2d for a lag.">Predecessors</th>,
+    relationship: <th key="relationship" className={thL} title="FS finish to start, SS start to start, FF finish to finish, SF start to finish">Relationship</th>,
+    float: <th key="float" className={thR} title="Float: how many days a task can slip before the project finish moves. Worked out automatically; it cannot be typed.">Float</th>,
+    critical: <th key="critical" className={thL} title="Critical: Yes when the task has no float, so any delay to it delays the project. Worked out automatically; it cannot be set by hand.">Critical</th>,
+    status: <th key="status" className={thL}>Status</th>,
+    assigned: <th key="assigned" className={thL}>Assigned to</th>,
+    tags: <th key="tags" className={thL}>Tags</th>,
+    percent: <th key="percent" className={thL}>% complete</th>,
   };
   const previewProject: ApiProject = { ...project, schedule: { ...(project.schedule || { milestones: [] }), milestones: rows } };
   const pickList = MASTER_PHASES.filter((p) => p.name.toLowerCase().includes(pickQuery.trim().toLowerCase()));
@@ -970,6 +999,10 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </select>
               <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </label>
+
+            <button type="button" onClick={() => setDisplayOpen(true)} className={btn} title="Choose the columns, what is written on the bars, the phases in view and the colours">
+              <SlidersHorizontal size={13} /> Display options{display.hiddenPhases.length ? ` (${catList.length - display.hiddenPhases.filter((c) => catList.includes(c)).length}/${catList.length} phases)` : ""}
+            </button>
 
             {/* CR 300 - the critical path, the tasks with no float, marked in red; off for a plain view. */}
             <button
@@ -1099,29 +1132,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </div>
             ) : (
               <div className="max-h-[72vh] overflow-auto">
-                <table className="w-full min-w-[1180px] text-xs">
+                <table className="w-full text-xs" style={{ minWidth: 330 + cols.length * 96 }}>
+                  {/* CR 323 - the columns are a choice: which show, and in what order (Display options). */}
                   <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 shadow-[0_1px_0_#e2e8f0]">
                     <tr>
-                      <th rowSpan={2} className="w-8" />
-                      <th rowSpan={2} className="px-2 py-2 text-left">#</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left">Task name</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left">Type</th>
-                      <th colSpan={2} className="border-l border-slate-100 px-2 pt-2 text-center">Planned</th>
-                      <th colSpan={2} className="border-l border-sky-100 bg-sky-50 px-2 pt-2 text-center text-sky-800" title="Only entered when it differs from the plan">Actual</th>
-                      <th rowSpan={2} className="border-l border-slate-100 px-2 py-2 text-right">Duration</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left" title="The tasks this one waits on, by number. 1.2 means it starts after 1.2 finishes; add SS, FF or SF for the other link types and +3d or -2d for a lag.">Predecessors</th>
-                      <th rowSpan={2} className="px-2 py-2 text-right" title="Float: how many days a task can slip before the project finish moves. Worked out automatically; it cannot be typed.">Float</th>
-                      <th rowSpan={2} className="px-2 py-2" title="Critical: Yes when the task has no float, so any delay to it delays the project. Worked out automatically; it cannot be set by hand.">Critical</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left">Status</th>
-                      <th rowSpan={2} className="px-2 py-2 text-left">% complete</th>
-                      <th rowSpan={2} className="px-2 py-2 text-center" title="The project manager's note on this task. Internal, never printed.">Remark</th>
-                      <th rowSpan={2} className="px-2 py-2 text-right">Actions</th>
-                    </tr>
-                    <tr className="normal-case tracking-normal">
-                      <th className="border-l border-slate-100 px-2 pb-2 text-left font-semibold">Start</th>
-                      <th className="px-2 pb-2 text-left font-semibold">End</th>
-                      <th className="border-l border-sky-100 bg-sky-50 px-2 pb-2 text-left font-semibold text-sky-800">Start</th>
-                      <th className="bg-sky-50 px-2 pb-2 text-left font-semibold text-sky-800">End</th>
+                      <th className="w-8" />
+                      {cols.map((k) => HEAD[k])}
+                      <th className="px-2 py-2 text-center" title="The project manager's note on this task. Internal, never printed.">Remark</th>
+                      <th className="px-2 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1136,38 +1154,49 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       const pastTarget = !!target && !!ph.to && ph.to > target;
                       const linkNo = !info?.pred ? "" : info.pred.kind === "phase" ? wbs.phase.get(catList.find((c) => c.toLowerCase() === info.pred!.ref.toLowerCase()) || "") || "" : wbs.task.get(info.pred.ref) || "";
                       const phLink = info?.pred && linkNo ? predLabel({ id: "", type: info.pred.type, lag: info.pred.lag }, `${info.pred.kind === "phase" ? "Phase " : ""}${linkNo}`) : "";
+                      const P: Record<ColKey, ReactNode> = {
+                        id: <td key="id" className={`${cell} font-bold text-slate-800`}>{ph.number}</td>,
+                        name: (
+                          <td key="name" className={`${cell} min-w-[13rem]`}>
+                            <button type="button" onClick={() => toggleCategory(g.category)} className="flex items-center gap-1.5 text-left" title={folded ? "Show its tasks" : "Fold its tasks away"}>
+                              {folded ? <ChevronRight size={14} className="shrink-0 text-slate-500" /> : <ChevronDown size={14} className="shrink-0 text-slate-500" />}
+                              {g.category !== UNCATEGORISED && <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: phColor }} />}
+                              <span className="font-bold text-slate-900" title={info?.description || undefined}>{g.category}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>
+                              {ph.late > 0 && <span className="rounded-full bg-red-50 px-1.5 text-[9px] font-bold text-red-600">{ph.late} late</span>}
+                            </button>
+                          </td>
+                        ),
+                        type: <td key="type" className={cell}><span className="rounded-md bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200">Phase</span></td>,
+                        start: <td key="start" className={`${cell} font-bold text-slate-800`}>{ph.from ? fmtDay(ph.from) : "-"}</td>,
+                        finish: <td key="finish" className={`${cell} font-bold ${pastTarget ? "text-red-600" : "text-slate-800"}`} title={pastTarget ? `Past the phase's target finish of ${fmtDay(target)}` : target ? `Target finish ${fmtDay(target)}` : undefined}>{ph.to ? fmtDay(ph.to) : "-"}</td>,
+                        actualStart: <td key="actualStart" className={`${cell} text-slate-600`}>{ph.actualFrom ? fmtDay(ph.actualFrom) : ""}</td>,
+                        actualFinish: <td key="actualFinish" className={`${cell} text-slate-600`}>{ph.actualTo ? fmtDay(ph.actualTo) : ""}</td>,
+                        duration: <td key="duration" className={`${cell} text-right font-bold tabular-nums text-slate-800`}>{ph.days !== null ? `${ph.days} days` : "-"}</td>,
+                        predecessors: <td key="predecessors" className={`${cell} text-[11px] text-slate-500`} title={phLink ? "What the phase itself waits on, then the links into it from the tasks of other phases" : "Links into this phase from the tasks of other phases"}>{phLink && <b className="font-bold text-slate-700">{phLink}{ph.incoming.length ? ", " : ""}</b>}{ph.incoming.length ? ph.incoming.join(", ") : phLink ? "" : "-"}</td>,
+                        relationship: <td key="relationship" className={`${cell} text-[11px] text-slate-500`}>{info?.pred && linkNo ? info.pred.type : "-"}</td>,
+                        float: <td key="float" className={`${cell} text-right text-slate-300`}>-</td>,
+                        critical: <td key="critical" className={`${cell} text-slate-300`}>-</td>,
+                        status: <td key="status" className={cell}><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${STATUS_META[info?.status && info.status !== "not_started" ? info.status : ph.status].chip}`}>{STATUS_META[info?.status && info.status !== "not_started" ? info.status : ph.status].label}</span></td>,
+                        assigned: <td key="assigned" className={`${cell} max-w-[12rem] truncate text-[11px] text-slate-600`} title={(info?.assignedTo || []).join(", ")}>{(info?.assignedTo || []).join(", ") || "-"}</td>,
+                        tags: <td key="tags" className={cell} />,
+                        percent: (
+                          <td key="percent" className={cell}>
+                            <div className="flex items-center gap-2">
+                              <span className="w-12 text-right text-xs font-bold tabular-nums text-slate-700">{ph.pct}%</span>
+                              <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${ph.pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${ph.pct}%` }} /></span>
+                            </div>
+                          </td>
+                        ),
+                      };
                       return (
                       <Fragment key={g.category || "all"}>
-                        {/* CR 300 - a phase is a row of its own: numbered, typed, with its figures rolled up from its tasks. */}
+                        {/* CR 300 - a phase is a row of its own: numbered, typed, with its figures rolled up from its tasks.
+                            CR 324 - tinted with the phase's colour. */}
                         {g.category && (
-                          <tr className={`border-t border-slate-200 bg-blue-50/60 ${phCritical ? "shadow-[inset_3px_0_0_#ef4444]" : ""}`}>
+                          <tr className="border-t border-slate-200" style={{ background: g.category === UNCATEGORISED ? "#f8fafc" : `${phColor}14`, boxShadow: phCritical ? `inset 3px 0 0 ${display.colors.critical}` : undefined }}>
                             <td className="pl-2" />
-                            <td className={`${cell} font-bold text-slate-800`}>{ph.number}</td>
-                            <td className={`${cell} min-w-[13rem]`}>
-                              <button type="button" onClick={() => toggleCategory(g.category)} className="flex items-center gap-1.5 text-left" title={folded ? "Show its tasks" : "Fold its tasks away"}>
-                                {folded ? <ChevronRight size={14} className="shrink-0 text-blue-600" /> : <ChevronDown size={14} className="shrink-0 text-blue-600" />}
-                                {g.category !== UNCATEGORISED && <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: phColor }} />}
-                                <span className="font-bold text-slate-900" title={info?.description || undefined}>{g.category}</span>
-                                <span className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>
-                                {ph.late > 0 && <span className="rounded-full bg-red-50 px-1.5 text-[9px] font-bold text-red-600">{ph.late} late</span>}
-                              </button>
-                            </td>
-                            <td className={cell}><span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">Phase</span></td>
-                            <td className={`${cell} border-l border-slate-50 font-bold text-slate-800`}>{ph.from ? fmtDay(ph.from) : "-"}</td>
-                            <td className={`${cell} font-bold ${pastTarget ? "text-red-600" : "text-slate-800"}`} title={pastTarget ? `Past the phase's target finish of ${fmtDay(target)}` : target ? `Target finish ${fmtDay(target)}` : undefined}>{ph.to ? fmtDay(ph.to) : "-"}</td>
-                            <td className={`${cell} border-l border-sky-100 bg-sky-50/40 text-slate-600`}>{ph.actualFrom ? fmtDay(ph.actualFrom) : ""}</td>
-                            <td className={`${cell} bg-sky-50/40 text-slate-600`}>{ph.actualTo ? fmtDay(ph.actualTo) : ""}</td>
-                            <td className={`${cell} border-l border-slate-50 text-right font-bold tabular-nums text-slate-800`}>{ph.days !== null ? `${ph.days} days` : "-"}</td>
-                            <td className={`${cell} text-[11px] text-slate-500`} title={phLink ? "What the phase itself waits on, then the links into it from the tasks of other phases" : "Links into this phase from the tasks of other phases"}>{phLink && <b className="font-bold text-slate-700">{phLink}{ph.incoming.length ? ", " : ""}</b>}{ph.incoming.length ? ph.incoming.join(", ") : phLink ? "" : "-"}</td>
-                            <td className={`${cell} text-right font-bold tabular-nums ${ph.float === null ? "text-slate-300" : ph.float <= 0 ? "text-red-600" : "text-emerald-600"}`}>{ph.float === null ? "-" : ph.float}</td>
-                            <td className={`${cell} text-slate-300`}>-</td>
-                            <td className={cell}><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${STATUS_META[ph.status].chip}`}>{STATUS_META[ph.status].label}</span></td>
-                            <td className={cell}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-12 text-right text-xs font-bold tabular-nums text-slate-700">{ph.pct}%</span>
-                                <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${ph.pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${ph.pct}%` }} /></span>
-                              </div>
-                            </td>
+                            {cols.map((k) => P[k])}
                             <td className={cell} />
                             <td className={`${cell} text-right`}>
                               {canEdit && (
@@ -1184,13 +1213,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                         )}
                         {g.category && !folded && g.items.length === 0 && (
                           <tr className="border-t border-slate-100">
-                            <td colSpan={16} className="px-10 py-3 text-[11px] italic text-slate-400">
+                            <td colSpan={cols.length + 3} className="px-10 py-3 text-[11px] italic text-slate-400">
                               No tasks in {g.category} yet.{canEdit && <> <button type="button" onClick={() => addInCategory(g.category)} className="font-bold not-italic text-blue-600 hover:underline">Add one</button>, or tick items on the left with "Add to category" set to {g.category}.</>}
                             </td>
                           </tr>
                         )}
                         {!folded && g.items.map(({ m, index }) => {
-                      const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
                       const d = plannedDays(m);
                       const late = delayDays(m, today);
                       const slip = startSlip(m);
@@ -1199,61 +1227,64 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       const isMs = !!m.isMilestone || isMilestonePoint(m);
                       const fl = cpm.float.get(m.id);
                       const crit = showCritical && fl !== undefined && fl <= 0;
-                      const predText = predsOf(m).map((q) => { const n = wbs.task.get(q.id); return n ? predLabel(q, n) : ""; }).filter(Boolean).join(", ");
-                      return (
-                        <tr
-                          key={m.id}
-                          draggable={canEdit && view === "all"}
-                          onDragStart={() => { dragFrom.current = index; }}
-                          onDragOver={(e: DragEvent) => { if (dragFrom.current !== null) { e.preventDefault(); setDragOver(index); } }}
-                          onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
-                          onDrop={(e) => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current, index); dragFrom.current = null; setDragOver(null); }}
-                          onDragEnd={() => { dragFrom.current = null; setDragOver(null); }}
-                          className={`border-t border-slate-100 ${dragOver === index ? "bg-blue-50" : crit ? "bg-red-50/30 hover:bg-red-50/60" : "hover:bg-slate-50/60"} ${crit ? "shadow-[inset_3px_0_0_#ef4444]" : ""}`}
-                        >
-                          <td className="pl-2 text-slate-300">{canEdit && view === "all" && <GripVertical size={14} className="cursor-grab" />}</td>
-                          <td className={`${cell} tabular-nums text-slate-500`}>{wbs.task.get(m.id) || index + 1}</td>
-                          <td className={`${cell} min-w-[13rem]`}>
+                      const preds = predsOf(m);
+                      const predText = preds.map((q) => { const n = wbs.task.get(q.id); return n ? predLabel(q, n) : ""; }).filter(Boolean).join(", ");
+                      const C: Record<ColKey, ReactNode> = {
+                        id: <td key="id" className={`${cell} tabular-nums text-slate-500`}>{wbs.task.get(m.id) || index + 1}</td>,
+                        name: (
+                          <td key="name" className={`${cell} min-w-[13rem]`}>
                             <button type="button" onClick={() => openItem(m)} className={`flex items-start gap-2 text-left ${g.category ? "pl-4" : ""}`}>
                               {isMs
-                                ? <MilestoneMark icon={m.icon} size={11} color="#ef4444" className="mt-0.5" />
-                                : <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-sm ${crit ? "bg-red-500" : "bg-emerald-500"}`} />}
+                                ? <MilestoneMark icon={m.icon} size={11} color={display.colors.milestone} className="mt-0.5" />
+                                : <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: crit ? display.colors.critical : display.colors.normal }} />}
                               <span>
                                 <span className="block font-semibold text-slate-800 hover:text-primary">{m.name}</span>
-                                {m.responsible?.length ? (
+                                {!cols.includes("assigned") && m.responsible?.length ? (
                                   <span className="block max-w-[16rem] truncate text-[10px] text-slate-400">{m.responsible.join(", ")}</span>
                                 ) : null}
                               </span>
                             </button>
                           </td>
-                          <td className={cell}>
+                        ),
+                        type: (
+                          <td key="type" className={cell}>
                             {/* CR 300 - Task or Milestone; a milestone has no length, so its end follows its start. */}
                             <select
                               disabled={!canEdit}
                               value={isMs ? "milestone" : "task"}
                               onChange={(e) => update(m.id, e.target.value === "milestone" ? { isMilestone: true } : { isMilestone: false })}
-                              className={`rounded-md border px-1 py-0.5 text-[10px] font-bold ${isMs ? "border-red-200 bg-red-50 text-red-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+                              className={`rounded-md border px-1 py-0.5 text-[10px] font-bold ${isMs ? "border-slate-300 bg-slate-100 text-slate-800" : "border-blue-200 bg-blue-50 text-blue-700"}`}
                             >
                               <option value="task">Task</option>
                               <option value="milestone">Milestone</option>
                             </select>
                           </td>
-                          <td className={`${cell} border-l border-slate-50`}>
+                        ),
+                        start: (
+                          <td key="start" className={cell}>
                             <input type="date" disabled={!canEdit} value={m.plannedStart || ""} onChange={(e) => update(m.id, { plannedStart: e.target.value })} className={dateInp} />
                             {moved && m.baselineStart !== m.plannedStart && <span className="block px-1 text-[10px] text-slate-400" title="Baseline start">was {fmtDay(m.baselineStart)}</span>}
                           </td>
-                          <td className={cell}>
+                        ),
+                        finish: (
+                          <td key="finish" className={cell}>
                             <input type="date" disabled={!canEdit || isMs} value={m.plannedEnd || ""} min={m.plannedStart || undefined} onChange={(e) => update(m.id, { plannedEnd: e.target.value })} className={`${dateInp} ${overrunsDeadline(m, deadline) > 0 ? "!text-red-600 font-bold" : ""}`} title={isMs ? "A milestone ends the day it starts" : overrunsDeadline(m, deadline) > 0 ? `${overrunsDeadline(m, deadline)} days past the contract deadline` : undefined} />
                             {moved && m.baselineEnd !== m.plannedEnd && <span className="block px-1 text-[10px] text-slate-400" title="Baseline end">was {fmtDay(m.baselineEnd)}</span>}
                           </td>
-                          <td className={`${cell} border-l border-sky-100 bg-sky-50/50`}>
+                        ),
+                        actualStart: (
+                          <td key="actualStart" className={`${cell} bg-sky-50/50`}>
                             <input type="date" disabled={!canEdit} value={m.actualStart || ""} onChange={(e) => update(m.id, { actualStart: e.target.value })} className={`${dateInp} ${slip > 0 ? "!text-red-600 font-bold" : ""}`} />
                           </td>
-                          <td className={`${cell} bg-sky-50/50`}>
+                        ),
+                        actualFinish: (
+                          <td key="actualFinish" className={`${cell} bg-sky-50/50`}>
                             <input type="date" disabled={!canEdit} value={m.actualEnd || ""} min={m.actualStart || undefined} onChange={(e) => update(m.id, { actualEnd: e.target.value })} className={`${dateInp} ${late > 0 && m.actualEnd ? "!text-red-600 font-bold" : ""}`} />
                             {late > 0 && <span className="block px-1 text-[10px] font-bold text-red-600">{late} day{late === 1 ? "" : "s"} late</span>}
                           </td>
-                          <td className={`${cell} border-l border-slate-50 text-right tabular-nums text-slate-600`}>
+                        ),
+                        duration: (
+                          <td key="duration" className={`${cell} text-right tabular-nums text-slate-600`}>
                             {(() => {
                               const ed = effectiveDays(m);
                               if (ed.days === null) return "-";
@@ -1265,7 +1296,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                               );
                             })()}
                           </td>
-                          <td className={cell}>
+                        ),
+                        predecessors: (
+                          <td key="predecessors" className={cell}>
                             <input
                               key={`${m.id}-${predText}`}
                               disabled={!canEdit}
@@ -1277,22 +1310,47 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                               className="w-24 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] tabular-nums text-slate-700 hover:border-slate-200 focus:border-primary focus:bg-white focus:outline-none disabled:hover:border-transparent"
                             />
                           </td>
-                          <td className={`${cell} text-right font-bold tabular-nums ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-emerald-600"}`} title={fl === undefined ? "No dates yet" : fl <= 0 ? "Critical: any delay here moves the project finish" : `Can slip ${fl} day${fl === 1 ? "" : "s"} before the project finish moves`}>
+                        ),
+                        relationship: <td key="relationship" className={`${cell} text-[11px] tabular-nums text-slate-600`} title="Finish to start, start to start, finish to finish or start to finish, for each predecessor in turn">{preds.length ? preds.map((q) => q.type).join(", ") : "-"}</td>,
+                        float: (
+                          <td key="float" className={`${cell} text-right font-bold tabular-nums ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-emerald-600"}`} title={fl === undefined ? "No dates yet" : fl <= 0 ? "Critical: any delay here moves the project finish" : `Can slip ${fl} day${fl === 1 ? "" : "s"} before the project finish moves`}>
                             {fl === undefined ? "-" : fl}
                           </td>
-                          {/* CR 319 - read-only: the system decides what is critical. */}
-                          <td className={`${cell} text-[11px] font-bold ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-slate-500"}`}>{fl === undefined ? "-" : fl <= 0 ? "Yes" : "No"}</td>
-                          <td className={cell}>
+                        ),
+                        // CR 319 - read-only: the system decides what is critical.
+                        critical: <td key="critical" className={`${cell} text-[11px] font-bold ${fl === undefined ? "text-slate-300" : fl <= 0 ? "text-red-600" : "text-slate-500"}`}>{fl === undefined ? "-" : fl <= 0 ? "Yes" : "No"}</td>,
+                        status: (
+                          <td key="status" className={cell}>
                             <select disabled={!canEdit} value={m.status || "not_started"} onChange={(e) => update(m.id, statusPatch(m, e.target.value as MilestoneStatus))} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS_META[m.status || "not_started"].chip}`}>
                               {STATUS_ORDER.map((s2) => <option key={s2} value={s2}>{STATUS_META[s2].label}</option>)}
                             </select>
                           </td>
-                          <td className={cell}>
+                        ),
+                        assigned: <td key="assigned" className={`${cell} max-w-[12rem] truncate text-[11px] text-slate-600`} title={(m.responsible || []).join(", ")}>{(m.responsible || []).join(", ") || "-"}</td>,
+                        tags: <td key="tags" className={cell}><span className="flex flex-wrap gap-1">{(m.tags || []).map((t) => <span key={t} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{t}</span>)}</span></td>,
+                        percent: (
+                          <td key="percent" className={cell}>
                             <div className="flex items-center gap-2">
                               <input type="number" min={0} max={100} step={5} disabled={!canEdit} value={pct} onChange={(e) => update(m.id, { percent: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })} className="w-12 rounded-md border border-slate-200 px-1 py-0.5 text-right text-xs tabular-nums disabled:border-transparent" />
                               <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} /></span>
                             </div>
                           </td>
+                        ),
+                      };
+                      return (
+                        <tr
+                          key={m.id}
+                          draggable={canEdit && view === "all"}
+                          onDragStart={() => { dragFrom.current = index; }}
+                          onDragOver={(e: DragEvent) => { if (dragFrom.current !== null) { e.preventDefault(); setDragOver(index); } }}
+                          onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
+                          onDrop={(e) => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current, index); dragFrom.current = null; setDragOver(null); }}
+                          onDragEnd={() => { dragFrom.current = null; setDragOver(null); }}
+                          className={`border-t border-slate-100 ${dragOver === index ? "bg-blue-50" : crit ? "bg-red-50/30 hover:bg-red-50/60" : "hover:bg-slate-50/60"}`}
+                          style={crit ? { boxShadow: `inset 3px 0 0 ${display.colors.critical}` } : undefined}
+                        >
+                          <td className="pl-2 text-slate-300">{canEdit && view === "all" && <GripVertical size={14} className="cursor-grab" />}</td>
+                          {cols.map((k) => C[k])}
                           <td className={`${cell} text-center`}>
                             <button
                               type="button"
@@ -1307,7 +1365,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           <td className={`${cell} text-right`}>
                             <div className="inline-flex items-center gap-0.5">
                               {canEdit && rowDirty(m) && (
-                                <button type="button" onClick={() => void saveRow(m)} disabled={rowBusy === m.id} title="Save this task now (no revision is filed)" className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-bold text-white hover:bg-primary disabled:opacity-50">
+                                <button type="button" onClick={() => void saveRow(m)} disabled={rowBusy === m.id} title="Save this task now" className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-bold text-white hover:bg-primary disabled:opacity-50">
                                   {rowBusy === m.id ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
                                 </button>
                               )}
@@ -1327,7 +1385,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                       </Fragment>
                       );
                     })}
-                    {shown.length === 0 && <tr><td colSpan={16} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
+                    {shown.length === 0 && <tr><td colSpan={cols.length + 3} className="px-4 py-6 text-center text-slate-400">Nothing in this view.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1348,7 +1406,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {rows.some((m) => m.plannedStart && m.plannedEnd) && (
         <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-display text-base font-bold text-slate-900">Timeline chart</h3>
+            <h3 className="font-display text-base font-bold text-slate-900">Gantt chart</h3>
             {/* CR 269 - how much of the calendar fits on screen: months, weeks or single days. */}
             <div className="flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Chart zoom">
               {GANTT_ZOOMS.map(([k, label]) => (
@@ -1382,11 +1440,16 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             cpm={cpm}
             showCritical={showCritical}
             showFloat={showFloat}
+            showActual={display.actual}
+            bars={display.bars}
+            colors={display.colors}
+            stepper
             numbers={wbs.task}
             onMove={canEdit ? dragMove : undefined}
             onResize={canEdit ? dragResize : undefined}
+            onOpen={openItem}
           />
-          <GanttLegend />
+          <GanttLegend colors={display.colors} />
         </div>
       )}
       </div>
@@ -1452,6 +1515,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         />
       )}
 
+      {displayOpen && <DisplayOptions value={display} onChange={setDisplay} phases={catList} onClose={() => setDisplayOpen(false)} />}
       {approving && (
         <ApproveDialog entry={approving} contractCompletion={deadline || ""} differs={sig(base) !== sig(approving.milestones)} unsaved={dirty}
           onSubmit={approveBaseline} onClose={() => setApproving(null)} />
