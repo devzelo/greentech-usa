@@ -164,11 +164,14 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
 
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
+    const showMoney = await figures(req);
     const body = await clean(req.params.id, req.body || {});
     if (!body.name) return res.status(400).json({ error: "Give the work package a name." });
+    // Someone who cannot see the figures cannot set them either.
+    if (!showMoney) { delete body.budget; delete body.changeOrders; }
     const last = await WorkPackage.findOne({ projectId: req.params.id }).sort({ order: -1 }).select("order").lean();
     const doc = await WorkPackage.create({ ...body, projectId: req.params.id, order: (last?.order ?? 0) + 1, createdByName: req.user!.name || "" });
-    res.status(201).json((await shape(req.params.id, [doc], await figures(req)))[0]);
+    res.status(201).json((await shape(req.params.id, [doc], showMoney))[0]);
   } catch (err) { next(err); }
 });
 
@@ -176,6 +179,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 router.post("/import", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const rows = Array.isArray(req.body?.packages) ? req.body.packages.slice(0, 300) : [];
+    const showMoney = await figures(req);
     const last = await WorkPackage.findOne({ projectId: req.params.id }).sort({ order: -1 }).select("order").lean();
     let order = last?.order ?? 0;
     const made: IWorkPackage[] = [];
@@ -183,9 +187,10 @@ router.post("/import", async (req: AuthedRequest, res: Response, next: NextFunct
       // Links are never taken from a sheet.
       const body = await clean(req.params.id, { ...(raw as Record<string, unknown>), rfqId: undefined, poId: undefined, agreementId: undefined });
       if (!body.name) continue;
+      if (!showMoney) { delete body.budget; delete body.changeOrders; }
       made.push(await WorkPackage.create({ ...body, projectId: req.params.id, order: ++order, createdByName: req.user!.name || "" }));
     }
-    res.status(201).json(await shape(req.params.id, made, await figures(req)));
+    res.status(201).json(await shape(req.params.id, made, showMoney));
   } catch (err) { next(err); }
 });
 
