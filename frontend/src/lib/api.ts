@@ -3432,3 +3432,37 @@ export function companyFileUrl(f: CompanyFile): string {
   const rel = norm.startsWith('uploads/') ? norm.slice('uploads/'.length) : norm;
   return withFileToken(`/uploads/${rel}`);
 }
+
+// ── CR 328 - Work Packages (Project Management) ──────────────────────────────
+export type WorkPackageStatus = "not_started" | "in_progress" | "complete" | "on_hold" | "cancelled";
+export type WorkPackageType = "design" | "equipment" | "civil" | "installation" | "controls" | "lifting" | "transport" | "testing" | "commissioning" | "other";
+export interface ApiWorkSubtask { id: string; name: string; status: WorkPackageStatus; progress: number; dueDate?: string; assignee?: string }
+export interface ApiChangeOrder { id: string; no: string; date: string; reason: string; amount?: number; status: "proposed" | "approved"; document?: string }
+/**
+ * A work package with what its linked records say: the RFQ, the quotes, who won, the PO or
+ * agreement, and the money. Those parts are read-only here; they change where the records live.
+ * `money` is null (and `budget` absent) for someone who may not see the project's figures.
+ */
+export interface ApiWorkPackage {
+  _id: string; projectId: string; order: number; name: string; description: string; type: WorkPackageType;
+  responsible: { kind: "internal" | "company"; companyId: string; name: string };
+  rfqId: string; poId: string; agreementId: string;
+  status: WorkPackageStatus; progressMode: "subtasks" | "manual" | "schedule"; progress: number;
+  scheduleRef: { kind: "" | "task" | "phase"; id: string };
+  subtasks: ApiWorkSubtask[]; budget?: number; changeOrders: ApiChangeOrder[]; remarks: string; archived: boolean;
+  rfq: { id: string; no: string; title: string; status: string; date: string; vendors: number } | null;
+  quotes: { count: number; names: string[] };
+  winner: { name: string; place: string; logoUrl: string; companyId: string; internal: boolean; from: string } | null;
+  po: { id: string; no: string; status: string; signed: boolean; date: string } | null;
+  agreement: { id: string; no: string; title: string; status: string; date: string } | null;
+  money: { original: number; source: "po" | "budget" | ""; changes: number; changeCount: number; current: number; paid: number; remaining: number } | null;
+}
+export type WorkPackageInput = Partial<Pick<ApiWorkPackage,
+  "name" | "description" | "type" | "responsible" | "rfqId" | "poId" | "agreementId" | "status" | "progressMode" | "progress" | "scheduleRef" | "subtasks" | "budget" | "changeOrders" | "remarks" | "archived">>;
+const wpBase = (projectId: string) => `/projects/${projectId}/work-packages`;
+export async function fetchWorkPackages(projectId: string): Promise<{ canSeeFigures: boolean; packages: ApiWorkPackage[] }> { return request(wpBase(projectId)); }
+export async function createWorkPackage(projectId: string, body: WorkPackageInput): Promise<ApiWorkPackage> { return request(wpBase(projectId), { method: "POST", body: JSON.stringify(body) }); }
+export async function updateWorkPackage(projectId: string, id: string, body: WorkPackageInput): Promise<ApiWorkPackage> { return request(`${wpBase(projectId)}/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
+export async function deleteWorkPackage(projectId: string, id: string): Promise<void> { await request(`${wpBase(projectId)}/${id}`, { method: "DELETE" }); }
+export async function reorderWorkPackages(projectId: string, ids: string[]): Promise<void> { await request(`${wpBase(projectId)}/order`, { method: "PUT", body: JSON.stringify({ ids }) }); }
+export async function importWorkPackages(projectId: string, packages: WorkPackageInput[]): Promise<ApiWorkPackage[]> { return request(`${wpBase(projectId)}/import`, { method: "POST", body: JSON.stringify({ packages }) }); }

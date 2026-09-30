@@ -10,7 +10,7 @@ import {
   Receipt, Truck, Scale, Wrench, Calendar,
   DollarSign, Loader2, MoreVertical, Copy, Edit2, Palette,
   BookmarkPlus, BookOpen, Trash2, Archive, Info, User, Save, Lock, Unlock, GitCompareArrows, RotateCcw,
-  GanttChartSquare, FileDown, Printer, CheckCircle2, Library,
+  GanttChartSquare, Boxes, FileDown, Printer, CheckCircle2, Library,
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
@@ -84,6 +84,7 @@ import UploadExistingProposal, { autoRevisionTitle, type UploadMeta, type Propos
 import { useDialogs } from "../../lib/useDialogs";
 import TimelineBar from "./timeline/TimelineBar";
 import TimelineTab from "./timeline/TimelineTab";
+import WorkPackages from "./WorkPackages";
 import ClientInfoCard from "./ClientInfoCard";
 import ClientPicker from "./ClientPicker";
 import DocTabs from "./DocTabs";
@@ -5451,6 +5452,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     />
                   ) : null,
                 },
+                // CR 328 - the master list of what the project has to get done, after the schedule.
+                { id: "work-packages", label: "Work Packages", icon: <Boxes size={16} />, content: project ? <WorkPackages project={project} canEdit={canEdit} /> : null },
               ]}
               // CR 208 - minutes written in the platform sit above the uploads in that tab.
               above={{

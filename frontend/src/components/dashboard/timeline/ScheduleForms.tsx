@@ -43,7 +43,7 @@ const inp = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1
 const hint = "text-[11px] leading-snug text-slate-500";
 
 // ── The panel ──
-function SidePanel({ title, icon, narrow, onNarrow, onClose, footer, children }: {
+export function SidePanel({ title, icon, narrow, onNarrow, onClose, footer, children }: {
   title: string; icon: ReactNode; narrow: boolean; onNarrow: (v: boolean) => void; onClose: () => void; footer: ReactNode; children: ReactNode;
 }) {
   return createPortal(
@@ -68,7 +68,7 @@ function SidePanel({ title, icon, narrow, onNarrow, onClose, footer, children }:
   );
 }
 
-function Section({ n, title, note, children }: { n: number; title: string; note?: string; children: ReactNode }) {
+export function Section({ n, title, note, children }: { n: number; title: string; note?: string; children: ReactNode }) {
   return (
     <section>
       <h4 className="flex items-center gap-2 text-xs font-bold text-slate-900">
@@ -80,7 +80,7 @@ function Section({ n, title, note, children }: { n: number; title: string; note?
   );
 }
 
-function Fold({ title, open: initial = false, children }: { title: string; open?: boolean; children: ReactNode }) {
+export function Fold({ title, open: initial = false, children }: { title: string; open?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(initial);
   return (
     <section className="rounded-xl border border-slate-100">
@@ -114,7 +114,7 @@ function ModeChoice({ name, mode, date, onChange, min }: {
 }
 
 /** Names as chips: employees are suggested, anyone can be typed. */
-function Chips({ label, value, onChange, suggestions = [], placeholder, canEdit }: {
+export function Chips({ label, value, onChange, suggestions = [], placeholder, canEdit }: {
   label: string; value: string[]; onChange: (v: string[]) => void; suggestions?: string[]; placeholder: string; canEdit: boolean;
 }) {
   const [text, setText] = useState("");

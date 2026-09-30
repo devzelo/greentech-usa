@@ -34,6 +34,7 @@ import ProcurementSection from "../models/ProcurementSection";
 import ProcurementItem from "../models/ProcurementItem";
 import SavedDocument, { describeSavedDoc } from "../models/SavedDocument";
 import ScheduleRevision, { scheduleEntryName } from "../models/ScheduleRevision";
+import WorkPackage from "../models/WorkPackage";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { sectionToTabId } from "../lib/access";
 
@@ -63,6 +64,8 @@ const RECYCLE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
   // CR 300 - schedule baselines, revisions and uploaded schedules.
   "schedule-entry": M(ScheduleRevision),
+  // CR 328 - work packages.
+  "work-package": M(WorkPackage),
 };
 const ARCHIVE_MODELS: Record<string, mongoose.Model<unknown> | undefined> = {
   "saved-proposal": M(SavedDocument), "saved-document": M(SavedDocument),
@@ -154,7 +157,7 @@ function binLink(kind: string, projectId: string, data?: Record<string, unknown>
     }
     if (kind === "agreement" || kind === "sub-invoice" || kind === "sub-agreement") return `${base}?tab=subs`;
     if (kind === "invoice") return `${base}?tab=finances`;
-    if (kind === "schedule-entry") return `${base}?tab=pm`;
+    if (kind === "schedule-entry" || kind === "work-package") return `${base}?tab=pm`;
     if (kind === "document") {
       const tab = sectionToTabId(String(data?.section || ""));
       if (tab) return `${base}?tab=${encodeURIComponent(tab)}`;

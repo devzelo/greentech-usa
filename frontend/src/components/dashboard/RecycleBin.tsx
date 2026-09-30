@@ -47,6 +47,7 @@ const KIND_META: Record<string, { label: string; icon: typeof Briefcase; cls: st
   "saved-document": { label: "Saved version", icon: FileText, cls: "bg-slate-100 text-slate-500" },
   // CR 300 - a schedule baseline, revision or uploaded schedule.
   "schedule-entry": { label: "Schedule", icon: CalendarRange, cls: "bg-emerald-50 text-emerald-600" },
+  "work-package": { label: "Work package", icon: CalendarRange, cls: "bg-blue-50 text-blue-600" },
 };
 const metaFor = (k: string) => KIND_META[k] || { label: k, icon: FileText, cls: "bg-slate-100 text-slate-500" };
 

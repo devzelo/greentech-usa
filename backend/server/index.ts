@@ -58,6 +58,7 @@ import reminderRoutes, { fireDueReminders } from "./routes/reminders";
 import stickyNoteRoutes from "./routes/stickyNotes";
 import toolboxRoutes from "./routes/toolbox";
 import scheduleRoutes from "./routes/schedule";
+import workPackageRoutes from "./routes/workPackages";
 import projectCategoryRoutes from "./routes/projectCategories";
 import myProfileRoutes from "./routes/myProfile";
 import draftRoutes from "./routes/drafts";
@@ -92,6 +93,7 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/projects/:id/expenses", expenseRoutes);
 app.use("/api/projects/:id/board", boardRoutes);
 app.use("/api/projects/:id/schedule", scheduleRoutes);       // CR 188-192 timeline versions / draft
+app.use("/api/projects/:id/work-packages", workPackageRoutes);   // CR 328 work packages
 app.use("/api/projects/:id/minutes", meetingMinuteRoutes);   // CR 208/209 minutes and progress reports
 app.use("/api/projects/:id/sub-invoices", subInvoiceRoutes);
 app.use("/api/projects/:id/purchase-orders", purchaseOrderRoutes);
