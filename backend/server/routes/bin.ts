@@ -92,7 +92,7 @@ router.get("/archive", async (_req: AuthedRequest, res: Response, next: NextFunc
       Rfq.find({ archived: true }).select("rfqNo title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
       Company.find({ archived: true }).select("name category updatedAt").sort({ updatedAt: -1 }).lean(),
       SavedDocument.find({ archived: true }).select("kind refId version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
-      ScheduleRevision.find({ archived: true }).select("kind baselineNo version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
+      ScheduleRevision.find({ archived: true }).select("kind baselineNo b1 version title projectId updatedAt").sort({ updatedAt: -1 }).lean(),
     ]);
     const items = [
       ...projects.map((p) => ({ kind: "project", id: String(p._id), refId: p.projectId, name: p.name || "Untitled project", subtitle: [p.category, p.location].filter(Boolean).join(" · ") || "Project", projectId: p.projectId, projectName: p.name || "", origin: "Projects", updatedAt: (p as { updatedAt?: unknown }).updatedAt, link: `/dashboard/projects/${p.projectId}` })),

@@ -1,7 +1,9 @@
 import { Router, Response, NextFunction } from "express";
 import Project, { type MilestoneRecord } from "../models/Project";
 import mongoose from "mongoose";
-import ScheduleRevision, { scheduleEntryName, type ScheduleEntryFile } from "../models/ScheduleRevision";
+import bcrypt from "bcryptjs";
+import ScheduleRevision, { baselineNumber, scheduleEntryName, type ScheduleEntryFile } from "../models/ScheduleRevision";
+import ClassifiedAccess from "../models/ClassifiedAccess";
 import ProjectDocument from "../models/ProjectDocument";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
@@ -142,7 +144,7 @@ function cleanPhaseInfo(input: unknown, categories: string[], milestones: Milest
 
 type Draft = { milestones: MilestoneRecord[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt: string; savedBy: string } | null;
 type Plain = {
-  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[]; phaseInfo?: PhaseInfo[];
+  milestones?: MilestoneRecord[]; draft?: Draft; extensions?: unknown[]; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt?: string; savedBy?: string;
   subs?: Array<{ id: string; name: string; categories: string[]; milestones: MilestoneRecord[]; draft: Draft; own: boolean; filed?: boolean }>;
 };
 // 2026-09-21 - every call names its schedule (?sched=<id>); none means the master. The master's
@@ -160,7 +162,7 @@ function scheduleOf(project: InstanceType<typeof Project>, id: string) {
     draft: (cur.draft || null) as Draft,
     categories: cur.categories || [],
     phaseInfo: (cur.phaseInfo || []) as PhaseInfo[],
-    apply(patch: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[]; phaseInfo?: PhaseInfo[] }) {
+    apply(patch: { milestones?: MilestoneRecord[]; draft?: Draft; categories?: string[]; phaseInfo?: PhaseInfo[]; savedAt?: string; savedBy?: string }) {
       const next: Plain = id
         ? { ...s, subs: subs.map((x, k) => (k === at ? { ...x, ...patch } : x)) }
         : { ...s, ...patch };
@@ -238,9 +240,15 @@ router.post("/save", async (req: AuthedRequest, res: Response, next: NextFunctio
     const categories = req.body?.categories !== undefined ? cleanCategories(req.body.categories) : target.categories;
     const progress = overallProgress(milestones);
     const phaseInfo = cleanPhaseInfo(req.body?.phaseInfo !== undefined ? req.body.phaseInfo : target.phaseInfo, categories, milestones);
-    target.apply({ milestones, categories, phaseInfo, draft: null });
+    target.apply({ milestones, categories, phaseInfo, draft: null, ...(id ? {} : { savedAt: new Date().toISOString(), savedBy: req.user!.name || "" }) });
     if (!id && milestones.length) project.progress = progress;
     await project.save();
+    /**
+     * CR 317 (2026-09-28): a plain Save updates Current and nothing else. It used to file a
+     * numbered revision every time; a record in History is now made on purpose ("Save for
+     * submittal / history", or a baseline).
+     */
+    if (req.body?.plain === true) return res.json({ schedule: project.schedule, progress: project.progress });
     const last = await ScheduleRevision.findOne({ projectId: req.params.id, scheduleId: id || { $in: ["", null] }, kind: { $in: ["revision", null] } }).sort({ version: -1 }).select("version").lean();
     const rev = await ScheduleRevision.create({
       projectId: req.params.id,
@@ -380,8 +388,40 @@ function entryDetails(body: Record<string, unknown>) {
   return out;
 }
 
-// A new baseline: the live schedule (or a saved revision of it) frozen as B0, B1, B2... The tasks
-// are copied once and never edited afterwards; only the details around them can change.
+/**
+ * CR 315 - the passkey that guards a locked baseline: the PIN the classified documents use, set by
+ * an administrator. Until one is set, only an administrator may delete a locked baseline.
+ */
+async function passkeyError(req: AuthedRequest): Promise<string> {
+  const doc = await ClassifiedAccess.findOne({ key: "singleton" }).select("pinHash").lean();
+  const hash = (doc as { pinHash?: string } | null)?.pinHash || "";
+  if (!hash) return req.user?.role === "admin" ? "" : "No passkey has been set yet. An administrator sets it on the Classified Documents page.";
+  const pin = String(req.headers["x-passkey"] || "");
+  if (!pin) return "Enter the passkey to delete a locked baseline.";
+  return (await bcrypt.compare(pin, hash)) ? "" : "Incorrect passkey.";
+}
+const sameSchedule = (a: MilestoneRecord[], b: MilestoneRecord[]) => JSON.stringify(a || []) === JSON.stringify(b || []);
+/** What Current holds, filed in History before something else takes its place, so it is never lost. */
+async function fileCurrent(projectId: string, target: { milestones: MilestoneRecord[]; categories: string[]; phaseInfo: unknown[] }, why: string, by: string) {
+  if (!target.milestones.length) return null;
+  return ScheduleRevision.create({
+    projectId, scheduleId: "", version: 0, kind: "submittal",
+    title: `Current schedule, ${new Date().toISOString().slice(0, 10)}`,
+    description: why,
+    milestones: target.milestones, categories: target.categories, phaseInfo: target.phaseInfo,
+    progress: overallProgress(target.milestones), savedBy: by, dataDate: new Date().toISOString().slice(0, 10), cadence: "oneoff",
+  });
+}
+
+/**
+ * CR 315 (2026-09-28): the baseline workflow.
+ *
+ * A baseline is made from the current schedule as a DRAFT. It goes to the client, comes back with
+ * comments, is changed and saved again as often as it takes: each save replaces the draft, the
+ * rounds are not kept. Approving it locks it for good. A baseline made outside the platform
+ * (Primavera, MS Project) is filed the same way with its file and no table (`upload`).
+ * They are numbered B1, B2, B3...; a new number is only taken once the one before is approved.
+ */
 router.post("/baselines", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const project = await Project.findOne({ projectId: req.params.id });
@@ -389,35 +429,135 @@ router.post("/baselines", async (req: AuthedRequest, res: Response, next: NextFu
     const id = schedId(req);
     const target = scheduleOf(project, id);
     if (!target) return res.status(404).json(noSchedule);
-    let milestones = target.milestones, categories = target.categories, phaseInfo: unknown[] = target.phaseInfo;
-    const fromId = str(req.body?.fromId, 40);
-    if (fromId) {
-      if (!mongoose.isValidObjectId(fromId)) return res.status(400).json({ error: "That revision was not found." });
-      const from = await ScheduleRevision.findOne({ _id: fromId, ...entryQuery(req) }).lean();
-      if (!from || from.kind === "upload") return res.status(400).json({ error: "That revision was not found." });
-      milestones = from.milestones; categories = from.categories; phaseInfo = from.phaseInfo || [];
-    }
-    if (!milestones.length) return res.status(400).json({ error: "The schedule is empty. Add its tasks before freezing a baseline." });
-    const last = await ScheduleRevision.findOne({ ...entryQuery(req), kind: "baseline" }).sort({ baselineNo: -1 }).select("baselineNo").lean();
-    const baselineNo = last ? last.baselineNo + 1 : 0;
+    const upload = req.body?.upload === true;
+    const files = await entryFiles(req.params.id, req.body?.files, req.user!.name || "");
+    if (upload && !files.length) return res.status(400).json({ error: "Attach the baseline's file first." });
+    if (!upload && !target.milestones.length) return res.status(400).json({ error: "The schedule is empty. Add its tasks before creating a baseline." });
+    const milestones = upload ? [] : target.milestones;
     const details = entryDetails(req.body || {});
+    delete details.status; delete details.approvedAt; delete details.archived;
+    const all = await ScheduleRevision.find({ ...entryQuery(req), kind: "baseline" }).select("baselineNo b1 status archived").lean();
+    // The draft in hand is saved over; only an approved baseline is final.
+    const open = all.find((e) => e.status !== "approved" && !e.archived);
+    if (open) {
+      const entry = await ScheduleRevision.findById(open._id);
+      if (entry) {
+        entry.set({ ...details, milestones, categories: upload ? [] : target.categories, phaseInfo: upload ? [] : target.phaseInfo, progress: overallProgress(milestones), savedBy: req.user!.name || "", status: "draft", submittedAt: "", submittedBy: "" });
+        entry.files = upload || files.length ? files : [];
+        entry.markModified("milestones"); entry.markModified("files"); entry.markModified("phaseInfo");
+        await entry.save();
+        return res.json(entry);
+      }
+    }
+    const baselineNo = all.reduce((n, e) => Math.max(n, baselineNumber(e)), 0) + 1;
     const entry = await ScheduleRevision.create({
       projectId: req.params.id,
       scheduleId: id,
       version: 0,
       kind: "baseline",
       baselineNo,
+      b1: true,
       milestones,
-      categories,
-      phaseInfo,
+      categories: upload ? [] : target.categories,
+      phaseInfo: upload ? [] : target.phaseInfo,
       progress: overallProgress(milestones),
       savedBy: req.user!.name || "",
-      status: "approved",
       title: `Baseline B${baselineNo}`,
       ...details,
-      files: await entryFiles(req.params.id, req.body?.files, req.user!.name || ""),
+      status: "draft",
+      files,
     });
     res.json(entry);
+  } catch (err) { next(err); }
+});
+
+// The client has approved it: the baseline is locked, and Current can start again as a copy of it.
+router.post("/baselines/:rid/approve", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
+    const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req), kind: "baseline" });
+    if (!entry) return res.status(404).json({ error: "Not found" });
+    if (entry.status === "approved") return res.status(400).json({ error: "This baseline is already approved." });
+    const today = new Date().toISOString().slice(0, 10);
+    entry.status = "approved";
+    entry.approvedAt = date(req.body?.approvedAt) || today;
+    if (req.body?.contractCompletion !== undefined) entry.contractCompletion = date(req.body.contractCompletion);
+    if (req.body?.relatedDocument !== undefined) entry.relatedDocument = str(req.body.relatedDocument, 200).trim();
+    if (Array.isArray(req.body?.files) && req.body.files.length) {
+      const added = await entryFiles(req.params.id, req.body.files, req.user!.name || "");
+      entry.files = [...(entry.files || []), ...added.filter((f) => !(entry.files || []).some((x) => x.docId === f.docId))];
+      entry.markModified("files");
+    }
+    await entry.save();
+    // CR 316 - Current opens as an editable copy of the approved baseline. What it held is filed first.
+    let filed = null, replaced = false;
+    const project = await Project.findOne({ projectId: req.params.id });
+    const target = project ? scheduleOf(project, "") : null;
+    if (project && target && req.body?.copyToCurrent === true && entry.milestones.length && !sameSchedule(target.milestones, entry.milestones)) {
+      filed = await fileCurrent(req.params.id, target, `Filed when baseline B${baselineNumber(entry)} was approved and became the current schedule.`, req.user!.name || "");
+      target.apply({ milestones: entry.milestones, categories: entry.categories || [], phaseInfo: (entry.phaseInfo || []) as PhaseInfo[], draft: null, savedAt: new Date().toISOString(), savedBy: req.user!.name || "" });
+      project.progress = overallProgress(entry.milestones);
+      await project.save();
+      replaced = true;
+    }
+    res.json({ entry, filed, replaced, schedule: project?.schedule, progress: project?.progress ?? 0 });
+  } catch (err) { next(err); }
+});
+
+/**
+ * CR 317 - "Save for submittal / history": a locked, dated snapshot of Current, filed on purpose
+ * with its title (Week 12 update, September 2026 update, Update 4), reporting period and notes.
+ */
+router.post("/submittals", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const target = scheduleOf(project, "");
+    if (!target || !target.milestones.length) return res.status(400).json({ error: "The schedule is empty. Add its tasks first." });
+    const cadence = ["weekly", "monthly"].includes(String(req.body?.cadence)) ? String(req.body.cadence) : "oneoff";
+    const toClient = req.body?.submittedToClient === true;
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = await ScheduleRevision.create({
+      projectId: req.params.id, scheduleId: "", version: 0, kind: "submittal",
+      title: str(req.body?.title, 160).trim() || "Schedule update",
+      note: str(req.body?.note, 500).trim(),
+      period: str(req.body?.period, 80).trim(),
+      cadence,
+      seq: Math.max(0, Math.min(100000, Math.round(Number(req.body?.seq) || 0))),
+      dataDate: date(req.body?.dataDate) || today,
+      submittedToClient: toClient,
+      status: toClient ? "submitted" : "draft",
+      submittedAt: toClient ? today : "",
+      submittedBy: toClient ? req.user!.name || "" : "",
+      client: str(req.body?.client, 160).trim(),
+      milestones: target.milestones, categories: target.categories, phaseInfo: target.phaseInfo,
+      progress: overallProgress(target.milestones),
+      savedBy: req.user!.name || "",
+    });
+    res.json(entry);
+  } catch (err) { next(err); }
+});
+
+/**
+ * CR 318 - "Create current schedule from this version": an editable copy of a record becomes
+ * Current. The record stays locked, and what Current held is filed in History first.
+ */
+router.post("/entries/:rid/make-current", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
+    const entry = await ScheduleRevision.findOne({ _id: req.params.rid, projectId: req.params.id }).lean();
+    if (!entry || !entry.milestones?.length) return res.status(400).json({ error: "This record has no schedule table to copy." });
+    const project = await Project.findOne({ projectId: req.params.id });
+    const target = project ? scheduleOf(project, "") : null;
+    if (!project || !target) return res.status(404).json({ error: "Project not found" });
+    const filed = sameSchedule(target.milestones, entry.milestones) ? null
+      : await fileCurrent(req.params.id, target, `Filed when "${scheduleEntryName(entry)}" was made the current schedule.`, req.user!.name || "");
+    const milestones = cleanMilestones(entry.milestones);
+    const categories = cleanCategories(entry.categories?.length ? entry.categories : milestones.map((m) => m.category));
+    target.apply({ milestones, categories, phaseInfo: cleanPhaseInfo(entry.phaseInfo || [], categories, milestones), draft: null, savedAt: new Date().toISOString(), savedBy: req.user!.name || "" });
+    project.progress = overallProgress(milestones);
+    await project.save();
+    res.json({ schedule: project.schedule, progress: project.progress, filed });
   } catch (err) { next(err); }
 });
 
@@ -451,6 +591,12 @@ router.patch("/entries/:rid", async (req: AuthedRequest, res: Response, next: Ne
     const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req) });
     if (!entry) return res.status(404).json({ error: "Not found" });
     const details = entryDetails(req.body || {});
+    // CR 315 - an approved baseline is locked: it can be archived and have files added, no more.
+    // Approving one goes through its own route, which asks for the approval details.
+    if (entry.kind === "baseline") {
+      if (entry.status === "approved") for (const k of Object.keys(details)) if (k !== "archived") delete details[k];
+      else if (details.status === "approved") return res.status(400).json({ error: "Approve the baseline from the Baseline tab, with its approval date." });
+    }
     if (details.status === "submitted" && entry.status !== "submitted") {
       entry.submittedBy = req.user!.name || "";
       if (!details.submittedAt && !entry.submittedAt) entry.submittedAt = new Date().toISOString().slice(0, 10);
@@ -477,6 +623,12 @@ router.delete("/entries/:rid", async (req: AuthedRequest, res: Response, next: N
     if (!mongoose.isValidObjectId(req.params.rid)) return res.status(404).json({ error: "Not found" });
     const entry = await ScheduleRevision.findOne({ _id: req.params.rid, ...entryQuery(req) });
     if (!entry) return res.status(404).json({ error: "Not found" });
+    // CR 315 - a locked baseline is only deleted with the passkey. (400, not 401: a wrong passkey
+    // is not a session failure.)
+    if (entry.kind === "baseline" && entry.status === "approved") {
+      const why = await passkeyError(req);
+      if (why) return res.status(400).json({ error: why });
+    }
     const project = await Project.findOne({ projectId: req.params.id }).select("name").lean();
     await recycleAndDelete(entry, {
       kind: "schedule-entry",

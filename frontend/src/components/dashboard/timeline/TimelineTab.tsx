@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
-  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimeline, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements,
+  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimelinePlain, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements, approveScheduleBaseline, createScheduleSubmittal, makeScheduleCurrent,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiSchedulePhase, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
@@ -21,9 +21,10 @@ import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttCha
 import { ItemForm, MilestoneMark, PhaseForm, phaseColorOf } from "./ScheduleForms";
 import ToolMenu, { MENU_ITEM } from "./ToolMenu";
 import {
-  BaselineTab, CurrentSummary, EarlierRevisions, EntryDialog, FrozenSchedule, HistoryTab, currentBaseline, entryCode, entryTitle, kindOf,
+  BaselineTab, CurrentSummary, EntryDialog, FrozenSchedule, HistoryTab, baselineNumber, currentBaseline, draftBaseline, entryCode, entryTitle, isFileOnly, isLocked, kindOf,
   type EntryDialogMode, type EntryHandlers,
 } from "./ScheduleRegister";
+import { ApproveDialog, PasskeyDialog, SubmittalDialog, type ApproveDetails, type SubmittalDetails } from "./ScheduleWorkflow";
 import { readScheduleFile, scheduleTemplate, type ImportResult } from "../../../lib/scheduleImport";
 import { criticalPath, dependentsOf, overrunsDeadline, parsePreds, predLabel, predsOf, relinkAll, setScheduleHolidays, withItem, withPreds, wouldCycle, type PlanContext, type Pred } from "../../../lib/scheduleLinks";
 import { TIMELINE_PAPERS, type TimelinePaper } from "../../../lib/timelinePdf";
@@ -88,11 +89,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const [pickerOpen, setPickerOpen] = useState(live.length === 0);
   const [pickQuery, setPickQuery] = useState("");
   const [busy, setBusy] = useState<"" | "save" | "draft" | "pdf" | "import">("");
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const [revisions, setRevisions] = useState<ApiScheduleRevision[] | null>(null);
-  // CR 300 - the whole register (revisions, baselines, uploaded schedules); `revisions` above is the
-  // saved revisions alone, newest first, as the editor has always used them.
+  // CR 300 - the register: baselines, saved versions and uploaded schedules, newest first.
   const [register, setRegister] = useState<ApiScheduleRevision[]>([]);
+  // CR 315 to 317 - the workflow's dialogs: approve a baseline, the passkey, save for history.
+  const [approving, setApproving] = useState<ApiScheduleRevision | null>(null);
+  const [passkeyFor, setPasskeyFor] = useState<ApiScheduleRevision | null>(null);
+  const [submittalOpen, setSubmittalOpen] = useState(false);
   type RegTab = "baseline" | "current" | "history";
   const [regTab, setRegTabState] = useState<RegTab>(() => { try { const v = localStorage.getItem("gt-schedule-tab"); return v === "baseline" || v === "history" ? v : "current"; } catch { return "current"; } });
   const setRegTab = (t: RegTab) => { setRegTabState(t); try { localStorage.setItem("gt-schedule-tab", t); } catch { /* ignore */ } };
@@ -135,16 +137,13 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const takeRegister = (raw: ApiScheduleRevision[]) => {
     const all = raw.map((e) => ({ ...e, milestones: normalizeDurations(e.milestones || []) }));
     setRegister(all);
-    // The editor's revisions are the project schedule's own; records of the old separate schedules
-    // (CR 314) are history only.
-    setRevisions(all.filter((e) => kindOf(e) === "revision" && !e.scheduleId).sort((a, b) => b.version - a.version));
   };
   const loadRevisions = () => fetchTimelineRevisions(project.id, sched).then(takeRegister).catch(() => takeRegister([]));
   // Opening another schedule starts clean on that schedule's own tasks, categories and revisions.
   useEffect(() => {
     setRows(live); setBase(live); setCats(liveCats); setBaseCats(liveCats); setPhases(livePhases); setBasePhases(livePhases);
     setLoadedFrom(""); setCreating(false); setDraftRows(null); setEditing(null); setPhaseEdit(null); setCollapsed(new Set());
-    setRevisions(null); setRegister([]);
+    setRegister([]);
     void loadRevisions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
@@ -316,7 +315,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const deleteCategory = async (c: string) => {
     const inIt = (m: ApiMilestone) => ((m.category || "").trim() || UNCATEGORISED) === c;
     const n = rows.filter(inIt).length;
-    if (n && !(await confirm({ title: `Delete "${c}"?`, message: `The category and its ${n} milestone${n === 1 ? "" : "s"} are taken off this schedule when you save. Saved revisions keep them.`, confirmLabel: "Delete category", danger: true }))) return;
+    if (n && !(await confirm({ title: `Delete "${c}"?`, message: `The category and its ${n} milestone${n === 1 ? "" : "s"} are taken off this schedule when you save. Records already in History keep them.`, confirmLabel: "Delete category", danger: true }))) return;
     const gone = new Set(rows.filter(inIt).map((m) => m.id));
     // Whatever waited on the phase, or on one of its items, stands alone.
     const nextPhases = phases.filter((x) => x.name.toLowerCase() !== c.toLowerCase())
@@ -330,52 +329,31 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const sortByDate = () => setRows((p) => [...p].sort((a, b) => (parseDate(a.plannedStart)?.getTime() ?? Infinity) - (parseDate(b.plannedStart)?.getTime() ?? Infinity)));
 
   // ── Save / draft / cancel ──
-  const save = async (): Promise<boolean> => {
+  /** The schedule as the server now holds it, taken as Current's clean state. */
+  const takeSchedule = (sc: NonNullable<ApiProject["schedule"]>, progress: number) => {
+    const r = normalizeDurations(sc.milestones || []);
+    onScheduleSaved(sc, progress);
+    setRows(r); setBase(r); setCats(sc.categories || []); setBaseCats(sc.categories || []); setPhases(sc.phaseInfo || []); setBasePhases(sc.phaseInfo || []);
+    setLoadedFrom(""); setDraftRows(null);
+  };
+  /**
+   * CR 317 (2026-09-28): a plain Save updates Current and nothing else. It used to ask for a
+   * confirmation and file a numbered revision each time; a record is now filed on purpose, with
+   * "Save for submittal / history" or a baseline.
+   */
+  const save = async (quiet = false): Promise<boolean> => {
     const bad = rows.find((r) => { const s = parseDate(r.plannedStart), e = parseDate(r.plannedEnd); return s && e && e < s; });
     if (bad) { toast(`"${bad.name}" ends before it starts. Fix its dates first.`, "error"); return false; }
-    // CR 236 - list what changed since the last revision (row saves included) and save that as the
-    // revision's note, instead of asking the PM to remember it.
-    const since = revisions?.[0]?.milestones || [];
-    const changes = timelineChanges(since, rows);
-    if (!changes.length && (catsChanged || phasesChanged)) changes.push("Phases updated");
-    if (!changes.length && revisions?.length) { toast("Nothing has changed since the last revision.", "info"); return false; }
-    const shownChanges = changes.length ? changes : ["First version of this timeline"];
-    const list = shownChanges.slice(0, 14).map((c) => `• ${c}`).join("\n") + (shownChanges.length > 14 ? `\n• and ${shownChanges.length - 14} more` : "");
-    if (!(await confirm({
-      title: `Save revision ${(revisions?.[0]?.version || 0) + 1}?`,
-      message: `In this revision:\n${list}`,
-      confirmLabel: "Save revision",
-      danger: false,
-    }))) return false;
-    const note = shownChanges.join("; ").slice(0, 500);
     setBusy("save");
     try {
-      const r = await saveTimeline(project.id, rows, note, sched, catList, phases);
-      const savedRows = r.revision.milestones;
-      const savedPhases = r.revision.phaseInfo || phases;
-      onScheduleSaved(r.schedule, r.progress);
-      setRows(savedRows); setBase(savedRows); setCats(catList); setBaseCats(catList); setPhases(savedPhases); setBasePhases(savedPhases); setLoadedFrom(""); setDraftRows(null);
-      setRevisions((p) => [r.revision, ...(p || [])]);
-      setRegister((p) => [r.revision, ...p]);
-      // CR 244 - file the revision as a PDF in this schedule's folder, and say where it went.
-      // CR 300 - and list it with the revision, so the History tab has it to open and share.
-      try {
-        const { name, doc } = await fileRevision(scheduleName, r.revision.version, savedRows);
-        void updateScheduleEntry(project.id, r.revision._id, { files: [doc._id] }, sched).then(replaceEntry).catch(() => undefined);
-        toast(`Saved as revision ${r.revision.version}. Filed in Schedule files › ${scheduleName} as "${name}".`, "success");
-      } catch {
-        toast(`Saved as revision ${r.revision.version}. The PDF could not be filed; use PDF to download it.`, "info");
-      }
+      const r = await saveTimelinePlain(project.id, rows, catList, phases);
+      takeSchedule(r.schedule, r.progress);
+      if (!quiet) toast("Saved. To keep a dated copy, use Save for submittal / history.", "success");
       return true;
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the timeline.", "error"); return false; }
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the schedule.", "error"); return false; }
     finally { setBusy(""); }
   };
   // CR 235 - save one task: its edits go live straight away, without filing a revision.
-  // Changes not yet filed as a revision (row saves included).
-  const sinceRevision = useMemo(
-    () => (revisions ? timelineChanges(revisions[0]?.milestones || [], rows).length : 0),
-    [revisions, rows],
-  );
   const baseRow = (id: string) => base.find((r) => r.id === id);
   const rowDirty = (m: ApiMilestone) => { const b = baseRow(m.id); return !b || JSON.stringify(b) !== JSON.stringify(m); };
   const [rowBusy, setRowBusy] = useState("");
@@ -389,7 +367,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       setBase((p) => (p.some((x) => x.id === saved.id) ? p.map((x) => (x.id === saved.id ? saved : x)) : [...p, saved]));
       setRows((p) => p.map((x) => (x.id === saved.id ? saved : x)));
       onScheduleSaved(r.schedule, r.progress);
-      toast(`"${saved.name}" saved. Save the timeline when you are done to file a revision.`, "success");
+      toast(`"${saved.name}" saved.`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save this row.", "error"); }
     finally { setRowBusy(""); }
   };
@@ -425,7 +403,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     try { const r = await discardTimelineDraft(project.id, sched); onScheduleSaved(r.schedule, r.progress); setDraftRows(null); if (loadedFrom === "Draft") { setRows(base); setLoadedFrom(""); } toast("Draft deleted.", "success"); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete the draft.", "error"); }
   };
-  const loadVersion = (v: ApiScheduleRevision) => { setRows(v.milestones); setPhases(v.phaseInfo || []); setCats(v.categories?.length ? v.categories : categoryList([], v.milestones)); setLoadedFrom(`Version ${v.version}`); setVersionsOpen(false); toast(`Version ${v.version} loaded. Save to make it the live timeline again.`, "success"); };
 
   // ── Import from another project ──
   const importFrom = async (src: ApiProject) => {
@@ -457,7 +434,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   });
   const versionLabel = subject
     ? `${entryCode(subject)} · ${entryTitle(subject)}`
-    : dirty ? "Unsaved changes" : revisions?.[0] ? `Version ${revisions[0].version}` : "";
+    : dirty ? "Unsaved changes" : "";
   const buildPdf = async () => {
     const { buildTimelinePdf } = await import("../../../lib/timelinePdf");
     return buildTimelinePdf(pdfInput(versionLabel));
@@ -551,11 +528,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
 
   // ── CR 300 - the register: baselines, revisions and schedules kept as files ──
   const fileNameFor = (e: ApiScheduleRevision) => `${safe(project.name)} - ${scheduleName} ${safe(entryCode(e))} ${safe(entryTitle(e))}.pdf`;
-  const replaceEntry = (e: ApiScheduleRevision) => {
-    setRegister((p) => p.map((x) => (x._id === e._id ? { ...e, scheduleName: x.scheduleName } : x)));
-    if (kindOf(e) === "revision") setRevisions((p) => (p ? p.map((x) => (x._id === e._id ? e : x)) : p));
+  const tidy = (e: ApiScheduleRevision): ApiScheduleRevision => ({ ...e, milestones: normalizeDurations(e.milestones || []) });
+  const replaceEntry = (raw: ApiScheduleRevision) => {
+    const e = tidy(raw);
+    setRegister((p) => (p.some((x) => x._id === e._id) ? p.map((x) => (x._id === e._id ? { ...e, scheduleName: x.scheduleName } : x)) : [e, ...p]));
   };
   const curBase = useMemo(() => currentBaseline(register), [register]);
+  // The latest dated copy of Current filed in History.
+  const lastFiled = useMemo(() => register.find((e) => (kindOf(e) === "submittal" || kindOf(e) === "revision") && !e.scheduleId && !e.archived) || null, [register]);
   const overallPct = useMemo(() => planSchedule(rows, contractStart, new Date(), deadline).progress, [rows, contractStart, deadline]); // eslint-disable-line react-hooks/exhaustive-deps
   const baselineMap = useMemo(
     () => (curBase ? new Map(curBase.milestones.map((m) => [m.id, { s: m.plannedStart || "", e: m.plannedEnd || m.plannedStart || "" }])) : undefined),
@@ -574,7 +554,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     else window.open(scheduleEntryFileUrl(f), "_blank", "noopener");
   };
   const entryOut = (e: ApiScheduleRevision, how: "preview" | "download") => {
-    if (kindOf(e) === "upload") { openEntryFile(e, how === "download"); return; }
+    if (isFileOnly(e)) { openEntryFile(e, how === "download"); return; }
     setSubject(e); setAskRemarks(how);
   };
   const registerFolder = (kind: string) => `${scheduleName}/${kind === "baseline" ? "Baselines" : "Submissions"}`;
@@ -584,24 +564,45 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (files.length) filesRef.current?.reload();
     return ids;
   };
-  const nextBaseline = register.filter((e) => kindOf(e) === "baseline").reduce((n, e) => Math.max(n, (e.baselineNo ?? -1) + 1), 0);
-  const submitEntry = async (details: ScheduleEntryDetails & { fromId?: string }, newFiles: File[], keep: string[]): Promise<boolean> => {
+  const nextBaseline = register.filter((e) => kindOf(e) === "baseline").reduce((n, e) => Math.max(n, baselineNumber(e)), 0) + 1;
+  const draftBase = useMemo(() => draftBaseline(register), [register]);
+  /**
+   * CR 315 - a baseline is made from Current (saved first, so it is what the PM sees) or uploaded
+   * as a file. With one already approved, a new revision is asked for on purpose: B2, B3...
+   */
+  const startBaseline = async (upload: boolean) => {
+    if (!draftBase && curBase && !(await confirm({
+      title: `${entryCode(curBase)} is already approved`,
+      message: `This project already has approved baseline ${entryCode(curBase)}. Create a new revision?\n\nUse this when the client has formally changed the scope. It will be B${nextBaseline}, a draft until the client approves it. ${entryCode(curBase)} stays for reference.`,
+      confirmLabel: `Create B${nextBaseline}`,
+      danger: false,
+    }))) return;
+    if (!upload) {
+      if (!rows.length) { toast("The schedule is empty. Add its tasks first.", "error"); return; }
+      if ((dirty || loadedFrom) && !(await save(true))) return;
+    }
+    setEntryDialog({ mode: upload ? "baseline-upload" : "baseline" });
+  };
+  const submitEntry = async (details: ScheduleEntryDetails, newFiles: File[], keep: string[]): Promise<boolean> => {
     const state = entryDialog;
     if (!state) return false;
     try {
-      if (state.mode === "baseline") {
+      if (state.mode === "baseline" || state.mode === "baseline-upload") {
+        const upload = state.mode === "baseline-upload";
         const ids = await uploadAll(newFiles, "baseline");
-        let entry = await createScheduleBaseline(project.id, { ...details, fromId: details.fromId || undefined, files: ids }, sched);
-        // The frozen schedule is filed as a PDF with it, so it can be sent as it is.
-        try {
-          const blob = await entryPdf(entry);
-          const doc = await uploadDocument(project.id, new File([blob], fileNameFor(entry), { type: "application/pdf" }), SCHEDULE_SECTION, false, registerFolder("baseline"));
-          entry = await updateScheduleEntry(project.id, entry._id, { files: [doc._id, ...ids] }, sched);
-          filesRef.current?.reload();
-        } catch { /* the baseline stands without its PDF; Download makes one */ }
-        setRegister((p) => [entry, ...p]);
+        let entry = await createScheduleBaseline(project.id, { ...details, upload, files: ids }, sched);
+        // The baseline is filed as a PDF with it, so it can be sent to the client as it is.
+        if (!upload) {
+          try {
+            const blob = await entryPdf(tidy(entry));
+            const doc = await uploadDocument(project.id, new File([blob], fileNameFor(entry), { type: "application/pdf" }), SCHEDULE_SECTION, false, registerFolder("baseline"));
+            entry = await updateScheduleEntry(project.id, entry._id, { files: [doc._id, ...ids] }, sched);
+            filesRef.current?.reload();
+          } catch { /* the baseline stands without its PDF; Download makes one */ }
+        }
+        replaceEntry(entry);
         setRegTab("baseline");
-        toast(`Baseline ${entryCode(entry)} frozen. The current schedule is now compared with it.`, "success");
+        toast(`Baseline ${entryCode(entry)} saved as a draft. Send it to the client; approve it here once they agree.`, "success");
       } else if (state.mode === "upload") {
         const ids = await uploadAll(newFiles, "upload");
         const entry = await createScheduleUpload(project.id, { ...details, files: ids }, sched);
@@ -618,10 +619,60 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       return false;
     }
   };
+  // Current against a record: the same schedule, or one that has moved on since.
+  const sig = (ms: ApiMilestone[]) => JSON.stringify(ms.map((m) => [m.id, m.name, m.plannedStart || "", m.plannedEnd || "", m.actualStart || "", m.actualEnd || "", m.percent || 0]));
+  /** CR 315 / 316 - the client approved the baseline: it is locked, and Current can start again from it. */
+  const approveBaseline = async (d: ApproveDetails, files: File[]): Promise<boolean> => {
+    const e = approving;
+    if (!e) return false;
+    try {
+      const ids = await uploadAll(files, "baseline");
+      const r = await approveScheduleBaseline(project.id, e._id, { ...d, files: ids });
+      replaceEntry(r.entry);
+      if (r.filed) replaceEntry(r.filed);
+      if (r.replaced) { takeSchedule(r.schedule, r.progress); setEditing(null); setPhaseEdit(null); }
+      toast(`Baseline ${entryCode(r.entry)} approved and locked.${r.replaced ? " Current now starts from it; what it held is in History." : ""}`, "success");
+      return true;
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not approve it.", "error"); return false; }
+  };
+  /** CR 317 - a locked, dated snapshot of Current, filed in History (Current is saved first). */
+  const saveSubmittal = async (d: SubmittalDetails): Promise<boolean> => {
+    if ((dirty || loadedFrom) && !(await save(true))) return false;
+    try {
+      let entry = await createScheduleSubmittal(project.id, { ...d, client: project.clientInfo?.name || "" });
+      try {
+        const { doc } = await fileSnapshot(entry.title || d.title, entry.milestones);
+        entry = await updateScheduleEntry(project.id, entry._id, { files: [doc._id] });
+      } catch { /* the record stands without its PDF; Export PDF makes one */ }
+      replaceEntry(entry);
+      toast(`"${entryTitle(entry)}" filed in History${d.submittedToClient ? ", marked as submitted to the client" : ""}.`, "success");
+      return true;
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not file it.", "error"); return false; }
+  };
+  /** CR 318 - an editable copy of a record becomes Current. The record stays locked. */
+  const makeCurrent = async (e: ApiScheduleRevision) => {
+    if (isFileOnly(e)) return;
+    const name = `${entryCode(e)} · ${entryTitle(e)}`;
+    if (!(await confirm({
+      title: "Create current schedule from this version?",
+      message: `An editable copy of ${name} becomes Current. The record itself stays locked.\n\nWhat Current holds now is filed in History first, so it is not lost.${dirty ? "\n\nYour unsaved edits in Current are NOT kept. Cancel and Save first if you need them." : ""}`,
+      confirmLabel: "Make it Current",
+      danger: false,
+    }))) return;
+    try {
+      const r = await makeScheduleCurrent(project.id, e._id);
+      if (r.filed) replaceEntry(r.filed);
+      takeSchedule(r.schedule, r.progress);
+      setEditing(null); setPhaseEdit(null);
+      setRegTab("current");
+      toast(`Current is now a copy of ${name}.${r.filed ? " The schedule it replaced is in History." : ""}`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not make it Current.", "error"); }
+  };
+  const dropEntry = (e: ApiScheduleRevision) => setRegister((p) => p.filter((x) => x._id !== e._id));
   const handlers: EntryHandlers = {
     canEdit,
     projectName: project.name,
-    fileName: (e) => (kindOf(e) === "upload" ? e.files?.[0]?.name || fileNameFor(e) : fileNameFor(e)),
+    fileName: (e) => (isFileOnly(e) ? e.files?.[0]?.name || fileNameFor(e) : fileNameFor(e)),
     preview: (e) => entryOut(e, "preview"),
     print: (e) => entryOut(e, "preview"),
     downloadPdf: (e) => entryOut(e, "download"),
@@ -644,38 +695,47 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         .catch((err) => toast(err instanceof Error ? err.message : "Could not update it.", "error"));
     },
     remove: async (e) => {
-      const isBase = kindOf(e) === "baseline";
+      // CR 315 - a locked baseline is only deleted with the passkey.
+      if (isLocked(e)) { setPasskeyFor(e); return; }
       if (!(await confirm({
         title: `Delete ${entryCode(e)} · ${entryTitle(e)}?`,
-        message: isBase && curBase?._id === e._id
-          ? "This is the baseline the schedule is measured against; the one before it takes its place. It goes to the Recycle Bin, where it can be restored. Its files stay in Schedule files."
-          : "It goes to the Recycle Bin, where it can be restored. Its files stay in Schedule files.",
+        message: "It goes to the Recycle Bin, where it can be restored. Its files stay in Schedule files.",
         confirmLabel: "Delete",
         danger: true,
       }))) return;
       try {
         await deleteScheduleEntry(project.id, e._id, e.scheduleId || undefined);
-        setRegister((p) => p.filter((x) => x._id !== e._id));
-        setRevisions((p) => (p ? p.filter((x) => x._id !== e._id) : p));
+        dropEntry(e);
         toast(`${entryCode(e)} deleted. Restore it from the Recycle Bin if needed.`, "success");
       } catch (err) { toast(err instanceof Error ? err.message : "Could not delete it.", "error"); }
     },
-    load: (e) => { loadVersion(e); setRegTab("current"); },
+    approve: (e) => setApproving(e),
+    makeCurrent: (e) => void makeCurrent(e),
+  };
+  const deleteLocked = async (passkey: string): Promise<boolean> => {
+    const e = passkeyFor;
+    if (!e) return false;
+    try {
+      await deleteScheduleEntry(project.id, e._id, e.scheduleId || undefined, passkey);
+      dropEntry(e);
+      toast(`${entryCode(e)} deleted. Restore it from the Recycle Bin if needed.`, "success");
+      return true;
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not delete it.", "error"); return false; }
   };
   const frozen = (e: ApiScheduleRevision) => (
     <FrozenSchedule milestones={e.milestones} categories={catsOf(e)} phases={e.phaseInfo} contractStart={contractStart} deadline={deadline} originalDeadline={project.endDate} zoom={zoom}
-      baseline={kindOf(e) === "revision" ? baselineMap : new Map()} />
+      baseline={kindOf(e) === "baseline" ? new Map() : baselineMap} />
   );
 
   // ── CR 244 - every revision is filed as a PDF in its schedule's folder ──
   const filesRef = useRef<ScheduleFilesHandle>(null);
   const [filedTo, setFiledTo] = useState("");
-  const fileRevision = async (folder: string, revision: number, milestones: ApiMilestone[]) => {
+  const fileSnapshot = async (title: string, milestones: ApiMilestone[]) => {
     const { buildTimelinePdf } = await import("../../../lib/timelinePdf");
-    const blob = await buildTimelinePdf({ ...pdfInput(`Revision ${revision}`), milestones, scheduleName: folder });
-    const name = `${folder} - Revision ${revision}.pdf`;
-    const doc = await uploadDocument(project.id, new File([blob], name, { type: "application/pdf" }), SCHEDULE_SECTION, false, folder);
-    setFiledTo(folder);
+    const blob = await buildTimelinePdf({ ...pdfInput(title), milestones, categories: catList, phaseInfo: phases });
+    const name = `${scheduleName} - ${safe(title)}.pdf`;
+    const doc = await uploadDocument(project.id, new File([blob], name, { type: "application/pdf" }), SCHEDULE_SECTION, false, registerFolder("submittal"));
+    setFiledTo(scheduleName);
     filesRef.current?.reload();
     return { name, doc };
   };
@@ -689,7 +749,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const n = `${rows.length} task${rows.length === 1 ? "" : "s"}`;
     if (!(await confirm({
       title: "Clear the whole schedule?",
-      message: `All ${n} are taken off this schedule, categories included. Nothing changes until you Save, and every saved revision is kept.`,
+      message: `All ${n} are taken off this schedule, categories included. Nothing changes until you Save, and every record in History is kept.`,
       confirmLabel: "Continue",
       danger: true,
     }))) return;
@@ -853,10 +913,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         {curBase && regTab !== "baseline" && <span className="ml-auto hidden text-[11px] text-slate-400 sm:inline">Measured against baseline <b className="text-slate-600">{entryCode(curBase)}</b></span>}
       </div>
 
-      {regTab === "baseline" && <BaselineTab entries={register} h={handlers} onCreate={() => setEntryDialog({ mode: "baseline" })} frozen={frozen} />}
+      {regTab === "baseline" && <BaselineTab entries={register} h={handlers} onCreate={() => void startBaseline(false)} onUpload={() => void startBaseline(true)} frozen={frozen} />}
       {regTab === "history" && (
-        <HistoryTab entries={register} h={handlers} onUpload={() => setEntryDialog({ mode: "upload" })}
-          currentRevisionId={revisions?.[0]?._id} currentBaselineId={curBase?._id} />
+        <HistoryTab entries={register} h={handlers} onUpload={() => setEntryDialog({ mode: "upload" })} currentBaselineId={curBase?._id} frozen={frozen} />
       )}
 
       {/* CR 237 - no schedule yet: create one on purpose, instead of a half-empty editor. */}
@@ -884,8 +943,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       {regTab === "current" && started && (
       <div className="space-y-4">
         <CurrentSummary
-          label={loadedFrom ? `${loadedFrom} (open in the editor)` : revisions?.[0] ? `Revision ${revisions[0].version} (${fmtDay(revisions[0].createdAt.slice(0, 10))})` : "Not saved yet"}
-          dataDate={revisions?.[0]?.dataDate || (revisions?.[0] ? revisions[0].createdAt.slice(0, 10) : "")}
+          label={loadedFrom ? `${loadedFrom} (open in the editor)` : lastFiled ? `last filed as "${entryTitle(lastFiled)}"` : project.schedule?.savedAt || live.length ? "working schedule" : "Not saved yet"}
+          dataDate={(project.schedule?.savedAt || "").slice(0, 10)}
           finish={cpm.finish}
           progress={overallPct}
           baseline={curBase}
@@ -903,7 +962,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </button>
             )}
             {loadedFrom && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Editing: {loadedFrom}</span>}
-            {!loadedFrom && revisions?.[0] && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">Version {revisions[0].version}</span>}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <label className="relative">
@@ -912,9 +970,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
               </select>
               <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </label>
-            <button type="button" onClick={() => { setVersionsOpen(true); void loadRevisions(); }} className={btn} title="Saved versions of this schedule">
-              <History size={13} /> Versions{revisions?.length ? ` (${revisions.length})` : ""}
-            </button>
 
             {/* CR 300 - the critical path, the tasks with no float, marked in red; off for a plain view. */}
             <button
@@ -970,6 +1025,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                   </button>
                   <button type="button" onClick={() => setImportOpen(true)} className={MENU_ITEM}><Import size={13} /> Import from another project</button>
                   <button type="button" onClick={() => void downloadTemplate()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Excel template</button>
+                </ToolMenu>
+                {/* CR 317 - the three ways to save: Current only, a dated record in History, or the baseline. */}
+                <ToolMenu label="Save" icon={<Save size={13} />} title="Save, save for submittal / history, or save as baseline">
+                  <button type="button" onClick={() => void save()} disabled={!!busy || (!dirty && !loadedFrom)} className={MENU_ITEM} title="Updates Current. Nothing is filed in History."><Save size={13} /> Save</button>
+                  <button type="button" onClick={() => (rows.length ? setSubmittalOpen(true) : toast("The schedule is empty. Add its tasks first.", "error"))} className={MENU_ITEM} title="Files a locked, dated copy in History"><BookmarkCheck size={13} /> Save for submittal / history</button>
+                  <button type="button" onClick={() => void startBaseline(false)} className={MENU_ITEM} title="Create the baseline from the current schedule"><CalendarCheck2 size={13} /> Save as baseline</button>
                 </ToolMenu>
                 {rows.length > 0 && (
                   <button
@@ -1328,7 +1389,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           <GanttLegend />
         </div>
       )}
-        <EarlierRevisions entries={(revisions || []).slice(1)} h={handlers} frozen={frozen} />
       </div>
       )}
 
@@ -1342,7 +1402,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
             <button type="button" onClick={saveDraft} disabled={!!busy || !unsaved} className={btn}>{busy === "draft" ? <Loader2 size={13} className="animate-spin" /> : <Copy size={13} />} Save as draft</button>
             {/* CR 235 / 236 - rows saved one by one are live but not yet a revision: Save stays on
                 until they are filed. */}
-            <button type="button" onClick={save} disabled={!!busy || (!dirty && !loadedFrom && !sinceRevision)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
+            <button type="button" onClick={() => void save()} disabled={!!busy || (!dirty && !loadedFrom)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
               {busy === "save" ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save
             </button>
           </div>
@@ -1381,18 +1441,23 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           onClose={() => setPhaseEdit(null)}
         /></Fragment>
       )}
-      {versionsOpen && <VersionsPanel revisions={revisions} canEdit={canEdit} onLoad={loadVersion} onClose={() => setVersionsOpen(false)} />}
       {importOpen && <ImportPanel currentId={project.id} onPick={importFrom} onClose={() => setImportOpen(false)} />}
       {dialogs}
       {entryDialog && (
         <EntryDialog
           state={entryDialog}
-          revisions={revisions || []}
-          defaults={{ client: project.clientInfo?.name || "", contractCompletion: deadline || "", nextBaseline, unsaved: dirty }}
+          defaults={{ client: project.clientInfo?.name || "", contractCompletion: deadline || "", nextBaseline, draft: draftBase }}
           onSubmit={submitEntry}
           onClose={() => setEntryDialog(null)}
         />
       )}
+
+      {approving && (
+        <ApproveDialog entry={approving} contractCompletion={deadline || ""} differs={sig(base) !== sig(approving.milestones)} unsaved={dirty}
+          onSubmit={approveBaseline} onClose={() => setApproving(null)} />
+      )}
+      {passkeyFor && <PasskeyDialog entry={passkeyFor} onSubmit={deleteLocked} onClose={() => setPasskeyFor(null)} />}
+      {submittalOpen && <SubmittalDialog entries={register} unsaved={dirty || !!loadedFrom} onSubmit={saveSubmittal} onClose={() => setSubmittalOpen(false)} />}
 
       {/* CR 275 - no "fit to one page" here: the schedule runs section by section down the sheet
           and carries on to the next page when it runs out, which is what was asked for. */}
@@ -1400,8 +1465,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         <PdfPreviewModal title={`${scheduleName}${subject ? ` · ${entryCode(subject)}` : ""} · ${project.name}`} fileName={fileName} build={buildPdf} onClose={() => { setPreviewOpen(false); setSubject(null); }}
           toggles={[{ key: "remarks", label: "Print remarks", title: "Print each row's remark in its own column on that row", icon: <StickyNote size={12} />, value: printRemarks, onChange: setPrintRemarks }]}
           rebuildKey={printRemarks ? "remarks" : "plain"}
-          actions={canEdit && !subject && (dirty || !!loadedFrom || sinceRevision > 0) ? [{ label: `Save revision ${(revisions?.[0]?.version || 0) + 1}`, icon: <Save size={12} />, onClick: save }] : undefined}
-          hint={canEdit && !subject && (dirty || !!loadedFrom || sinceRevision > 0) ? "This is how the revision will print. Save it from here once it looks right." : undefined} />
+          actions={canEdit && !subject && (dirty || !!loadedFrom) ? [{ label: "Save", icon: <Save size={12} />, onClick: () => save() }] : undefined}
+          hint={canEdit && !subject && (dirty || !!loadedFrom) ? "This is how the schedule will print. Save it from here once it looks right." : undefined} />
       )}
 
       {/* CR 241 / 244 - the schedule files, by schedule, searchable. */}
@@ -1549,52 +1614,6 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         </div>,
         document.body,
       )}
-    </div>
-  );
-}
-
-function VersionsPanel({ revisions, canEdit, onLoad, onClose }: { revisions: ApiScheduleRevision[] | null; canEdit: boolean; onLoad: (v: ApiScheduleRevision) => void; onClose: () => void }) {
-  const [open, setOpen] = useState<string>("");
-  return (
-    <div className="fixed inset-0 z-[200] flex justify-end bg-slate-900/40" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <h3 className="flex items-center gap-2 font-display text-base font-bold text-slate-900"><History size={16} /> Timeline versions</h3>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          {!revisions ? <Loader2 className="mx-auto animate-spin text-slate-400" /> : revisions.length === 0 ? (
-            <p className="text-center text-xs text-slate-400">No saved versions yet. Each Save keeps one.</p>
-          ) : (
-            <ol className="space-y-2">
-              {revisions.map((v, i) => (
-                <li key={v._id} className="rounded-xl border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-bold text-slate-800">Version {v.version}{i === 0 && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Live</span>}</p>
-                    <span className="text-[11px] font-bold text-blue-600">{v.progress}% complete</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">{new Date(v.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{v.savedBy ? ` · ${v.savedBy}` : ""} · {v.milestones.length} phases</p>
-                  {v.note && <p className="mt-1 text-xs text-slate-700">{v.note}</p>}
-                  <div className="mt-2 flex gap-1.5">
-                    <button type="button" onClick={() => setOpen(open === v._id ? "" : v._id)} className="rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">{open === v._id ? "Hide" : "View"}</button>
-                    {canEdit && i > 0 && <button type="button" onClick={() => onLoad(v)} className="rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">Load into editor</button>}
-                  </div>
-                  {open === v._id && (
-                    <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                      {v.milestones.map((m, k) => (
-                        <li key={m.id} className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: phaseColor(m, k) }} /><span className="truncate">{m.name}</span></span>
-                          <span className="shrink-0 text-slate-500">{m.plannedStart ? `${fmtDay(m.plannedStart)} to ${fmtDay(m.plannedEnd)}` : "no dates"} · {phasePercent(m)}%</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

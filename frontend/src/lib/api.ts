@@ -214,7 +214,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[] };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[]; /** CR 317 - when Current was last saved. */ savedAt?: string; savedBy?: string };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */
@@ -1183,6 +1183,13 @@ export interface ApiScheduleRevision {
   /** CR 314 - set on records that came from a separate schedule (before there was only one). */
   scheduleName?: string;
   baselineNo?: number;
+  /** CR 315 - numbered from B1. A baseline without it was counted from 0 and reads one higher. */
+  b1?: boolean;
+  /** CR 317 - a snapshot filed for the record: its reporting period, rhythm and running number. */
+  period?: string;
+  cadence?: "" | "weekly" | "monthly" | "oneoff";
+  seq?: number;
+  submittedToClient?: boolean;
   title?: string;
   description?: string;
   dataDate?: string;
@@ -1204,6 +1211,22 @@ const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : 
 export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
   return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories, phaseInfo }) });
 }
+/** CR 317 - a plain Save: Current is updated and no history record is filed. */
+export async function saveTimelinePlain(projectId: string, milestones: ApiMilestone[], categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult> {
+  return request(`/projects/${projectId}/schedule/save`, { method: "POST", body: JSON.stringify({ milestones, categories, phaseInfo, plain: true }) });
+}
+/** CR 317 - "Save for submittal / history": a locked, dated snapshot of Current. */
+export async function createScheduleSubmittal(projectId: string, body: { title: string; period: string; cadence: "weekly" | "monthly" | "oneoff"; seq: number; note: string; submittedToClient: boolean; dataDate?: string; client?: string }): Promise<ApiScheduleRevision> {
+  return request(`/projects/${projectId}/schedule/submittals`, { method: "POST", body: JSON.stringify(body) });
+}
+/** CR 315 - the client approved the baseline: it is locked, and Current can become a copy of it. */
+export async function approveScheduleBaseline(projectId: string, entryId: string, body: { approvedAt: string; contractCompletion: string; relatedDocument: string; files: string[]; copyToCurrent: boolean }): Promise<ScheduleResult & { entry: ApiScheduleRevision; filed: ApiScheduleRevision | null; replaced: boolean }> {
+  return request(`/projects/${projectId}/schedule/baselines/${encodeURIComponent(entryId)}/approve`, { method: "POST", body: JSON.stringify(body) });
+}
+/** CR 318 - an editable copy of a record becomes Current; what Current held is filed first. */
+export async function makeScheduleCurrent(projectId: string, entryId: string): Promise<ScheduleResult & { filed: ApiScheduleRevision | null }> {
+  return request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}/make-current`, { method: "POST" });
+}
 /** CR 243 - a sub-schedule: a named extract of the master schedule, by category. */
 /** A schedule beside the master: its own tasks, categories, draft and revisions. */
 export interface ApiSubSchedule { id: string; name: string; categories: string[]; milestones?: ApiMilestone[]; draft?: ApiScheduleDraft | null; own?: boolean }
@@ -1224,7 +1247,7 @@ export async function fetchTimelineRevisions(projectId: string, sched?: string):
   return request(`/projects/${projectId}/schedule/revisions${sq(sched)}`);
 }
 /** CR 300 - freeze the live schedule (or the revision `fromId`) as the next baseline. */
-export async function createScheduleBaseline(projectId: string, details: ScheduleEntryDetails & { fromId?: string }, sched?: string): Promise<ApiScheduleRevision> {
+export async function createScheduleBaseline(projectId: string, details: ScheduleEntryDetails & { upload?: boolean }, sched?: string): Promise<ApiScheduleRevision> {
   return request(`/projects/${projectId}/schedule/baselines${sq(sched)}`, { method: "POST", body: JSON.stringify(details) });
 }
 /** CR 300 - a schedule kept as a file only (`files` are document ids already uploaded to the project). */
@@ -1234,8 +1257,9 @@ export async function createScheduleUpload(projectId: string, details: ScheduleE
 export async function updateScheduleEntry(projectId: string, entryId: string, details: ScheduleEntryDetails, sched?: string): Promise<ApiScheduleRevision> {
   return request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}${sq(sched)}`, { method: "PATCH", body: JSON.stringify(details) });
 }
-export async function deleteScheduleEntry(projectId: string, entryId: string, sched?: string): Promise<void> {
-  await request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}${sq(sched)}`, { method: "DELETE" });
+export async function deleteScheduleEntry(projectId: string, entryId: string, sched?: string, passkey?: string): Promise<void> {
+  // CR 315 - a locked baseline is only deleted with the passkey.
+  await request(`/projects/${projectId}/schedule/entries/${encodeURIComponent(entryId)}${sq(sched)}`, { method: "DELETE", ...(passkey ? { headers: { "x-passkey": passkey } } : {}) });
 }
 /** A register file's link, to open or to download. */
 export function scheduleEntryFileUrl(f: ApiScheduleEntryFile, download = false): string {

@@ -30,8 +30,18 @@ export interface IScheduleRevision extends Document {
   note: string;
   savedBy: string;
   kind: ScheduleEntryKind;
-  /** B0, B1... for a baseline; -1 otherwise. */
+  /** B1, B2... for a baseline; -1 otherwise. */
   baselineNo: number;
+  /**
+   * CR 315 - baselines are numbered from B1. One made before that counted from 0 and has no `b1`;
+   * it is read one higher (its B0 is B1), so nothing already filed has to be rewritten.
+   */
+  b1: boolean;
+  /** CR 317 - a snapshot filed for the record: its reporting period, rhythm and running number. */
+  period: string;
+  cadence: string;
+  seq: number;
+  submittedToClient: boolean;
   title: string;
   description: string;
   /** yyyy-mm-dd: the day progress was measured to. */
@@ -61,6 +71,11 @@ const ScheduleRevisionSchema = new Schema<IScheduleRevision>(
     savedBy: { type: String, default: "" },
     kind: { type: String, enum: ["revision", "baseline", "upload", "submittal"], default: "revision" },
     baselineNo: { type: Number, default: -1 },
+    b1: { type: Boolean, default: false },
+    period: { type: String, default: "" },
+    cadence: { type: String, enum: ["", "weekly", "monthly", "oneoff"], default: "" },
+    seq: { type: Number, default: 0 },
+    submittedToClient: { type: Boolean, default: false },
     title: { type: String, default: "" },
     description: { type: String, default: "" },
     dataDate: { type: String, default: "" },
@@ -81,10 +96,12 @@ ScheduleRevisionSchema.index({ projectId: 1, version: -1 });
 export default mongoose.model<IScheduleRevision>("ScheduleRevision", ScheduleRevisionSchema);
 
 /** How an entry is named wherever it is listed on its own (the Recycle Bin, the Archive). */
-export function scheduleEntryName(e: { kind?: string; baselineNo?: number; version?: number; title?: string }): string {
+/** A baseline's number as people see it: B1 for the first. */
+export const baselineNumber = (e: { baselineNo?: number; b1?: boolean }) => (e.b1 ? e.baselineNo ?? 1 : (e.baselineNo ?? 0) + 1);
+export function scheduleEntryName(e: { kind?: string; baselineNo?: number; b1?: boolean; version?: number; title?: string }): string {
   if (e.kind === "baseline") {
-    const code = `Baseline B${e.baselineNo ?? 0}`;
-    return e.title && e.title !== code ? `${code} - ${e.title}` : code;
+    const code = `Baseline B${baselineNumber(e)}`;
+    return e.title && !/^Baseline B\d+$/.test(e.title) ? `${code} - ${e.title}` : code;
   }
   if (e.kind === "upload") return e.title || "Uploaded schedule";
   if (e.kind === "submittal") return e.title || "Saved schedule";

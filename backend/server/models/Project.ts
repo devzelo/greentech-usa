@@ -133,6 +133,9 @@ export interface IProject extends Document {
     categories: string[];
     /** CR 321 - each phase's details (colour, dates set by hand, what it waits on), by name. */
     phaseInfo?: unknown[];
+    /** CR 317 - when Current was last saved, and by whom (a plain Save files no history record). */
+    savedAt?: string;
+    savedBy?: string;
     // Schedules beside the master (a Design schedule, a Construction schedule...). Since the client's
     // 2026-09-21 review each is separate: its own tasks, categories, draft and revisions, made from
     // scratch. `own` marks the ones already moved off the old "view of the master" model.
@@ -340,6 +343,8 @@ const ProjectSchema = new Schema<IProject>(
         default: null,
       },
       phaseInfo: { type: [Schema.Types.Mixed], default: [] },
+      savedAt: { type: String, default: "" },
+      savedBy: { type: String, default: "" },
       extensions: {
         type: [{
           id: { type: String, default: "" },
