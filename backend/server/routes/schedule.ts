@@ -114,7 +114,7 @@ function cleanCategories(input: unknown): string[] {
  */
 type PhaseInfo = {
   name: string; color: string; description: string; startMode: string; manualStart: string; finishMode: string; targetFinish: string;
-  pred: { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number } | null; status: string; assignedTo: string[];
+  pred: { kind: "phase" | "item"; ref: string; type: "FS" | "SS" | "FF" | "SF"; lag: number } | null; status: string; assignedTo: string[];
 };
 function cleanPhaseInfo(input: unknown, categories: string[], milestones: MilestoneRecord[]): PhaseInfo[] {
   if (!Array.isArray(input)) return [];
@@ -136,7 +136,7 @@ function cleanPhaseInfo(input: unknown, categories: string[], milestones: Milest
       manualStart: date(p.manualStart),
       finishMode: p.finishMode === "manual" ? "manual" : "auto",
       targetFinish: date(p.targetFinish),
-      pred: refOk ? { kind, ref, type: pr!.type === "SS" ? "SS" : "FS", lag: Math.max(-3650, Math.min(3650, Math.round(Number(pr!.lag) || 0))) } : null,
+      pred: refOk ? { kind, ref, type: (["SS", "FF", "SF"].includes(String(pr!.type)) ? String(pr!.type) : "FS") as "FS" | "SS" | "FF" | "SF", lag: Math.max(-3650, Math.min(3650, Math.round(Number(pr!.lag) || 0))) } : null,
       status: STATUSES.has(String(p.status)) ? String(p.status) : "not_started",
       assignedTo: Array.isArray(p.assignedTo) ? p.assignedTo.map((r) => str(r, 120).trim()).filter(Boolean).slice(0, 30) : [],
     });

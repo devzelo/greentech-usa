@@ -220,7 +220,7 @@ export function startFromLink(pred: ApiMilestone, link: LinkType, lag: number, t
  *     of the two applies, so a date set by hand never breaks a dependency.
  *   - A task on "auto" with nothing to wait on starts when the project does.
  */
-export interface PhaseLink { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number }
+export interface PhaseLink { kind: "phase" | "item"; ref: string; type: LinkType; lag: number }
 export interface PhaseRule { name: string; startMode?: "auto" | "manual"; manualStart?: string; pred?: PhaseLink | null }
 export interface PlanContext { phases?: PhaseRule[]; projectStart?: string }
 const phaseKey = (s?: string) => (s || "").trim().toLowerCase();
@@ -229,8 +229,8 @@ const phaseKey = (s?: string) => (s || "").trim().toLowerCase();
 export function phaseLinkTargets(rows: ApiMilestone[], link: PhaseLink): string[] {
   if (link.kind === "item") return rows.some((r) => r.id === link.ref) ? [link.ref] : [];
   const items = rows.filter((r) => phaseKey(r.category) === phaseKey(link.ref) && r.status !== "cancelled");
-  if (link.type !== "SS") return items.map((r) => r.id);
-  // A phase starts when its earliest item does.
+  // A phase finishes when all its items have (FS, FF); it starts when its earliest item does (SS, SF).
+  if (link.type === "FS" || link.type === "FF") return items.map((r) => r.id);
   const dated = items.filter((r) => parseDate(r.plannedStart)).sort((a, b) => parseDate(a.plannedStart)!.getTime() - parseDate(b.plannedStart)!.getTime());
   return dated.length ? [dated[0].id] : [];
 }
@@ -245,12 +245,22 @@ export function withPhaseLinks(rows: ApiMilestone[], ctx?: PlanContext): ApiMile
     const targets = phaseLinkTargets(rows, link);
     if (!targets.length) continue;
     const cur = out;
+    /**
+     * CR 321 / GT Comments 2 page 3 - which of the phase's items the link is written onto.
+     *   FS, SS: the phase cannot start before the link allows, so every item waits on it.
+     *   FF, SF: the phase cannot FINISH before the link allows. A phase finishes with its last
+     *           items (those nothing else in the phase follows), so those are the ones timed.
+     */
+    const inPhase = cur.filter((r) => phaseKey(r.category) === phaseKey(rule.name));
+    const ids = new Set(inPhase.map((r) => r.id));
+    const followed = new Set(inPhase.flatMap((r) => predsOf(r).map((q) => q.id)).filter((id) => ids.has(id)));
+    const finishLink = link.type === "FF" || link.type === "SF";
     out = cur.map((r) => {
-      if (phaseKey(r.category) !== phaseKey(rule.name)) return r;
+      if (!ids.has(r.id) || (finishLink && followed.has(r.id))) return r;
       const own = predsOf(r);
       const extra = targets
         .filter((id) => id !== r.id && !own.some((q) => q.id === id) && !wouldCycle(cur, r.id, id))
-        .map((id) => ({ id, type: (link.type === "SS" ? "SS" : "FS") as LinkType, lag: Math.round(link.lag || 0) }));
+        .map((id) => ({ id, type: link.type, lag: Math.round(link.lag || 0) }));
       return extra.length ? withPreds(r, [...own, ...extra]) : r;
     });
   }

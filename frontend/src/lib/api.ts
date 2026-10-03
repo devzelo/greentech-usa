@@ -1164,7 +1164,7 @@ export interface ApiSchedulePhase {
   finishMode?: "auto" | "manual";
   targetFinish?: string;
   /** What the phase waits on: another phase (by name) or a milestone (by id). */
-  pred?: { kind: "phase" | "item"; ref: string; type: "FS" | "SS"; lag: number } | null;
+  pred?: { kind: "phase" | "item"; ref: string; type: "FS" | "SS" | "FF" | "SF"; lag: number } | null;
   status?: MilestoneStatus;
   assignedTo?: string[];
 }

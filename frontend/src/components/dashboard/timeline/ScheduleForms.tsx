@@ -558,7 +558,7 @@ export function PhaseForm({ initial, oldName, number, catList, rows, phases, can
 }) {
   const [p, setP] = useState<ApiSchedulePhase>({ startMode: "auto", finishMode: "auto", status: "not_started", assignedTo: [], ...initial, color: initial.color || PHASE_COLORS[(number - 1) % PHASE_COLORS.length] });
   const [no, setNo] = useState(number);
-  const [link, setLink] = useState<{ value: string; type: "FS" | "SS"; mode: "" | "lead" | "lag"; days: number }>(() => {
+  const [link, setLink] = useState<{ value: string; type: LinkType; mode: "" | "lead" | "lag"; days: number }>(() => {
     const q = initial.pred;
     return q ? { value: `${q.kind}:${q.ref}`, type: q.type, mode: q.lag < 0 ? "lead" : q.lag > 0 ? "lag" : "", days: Math.abs(q.lag) } : { value: "", type: "FS", mode: "", days: 0 };
   });
@@ -678,13 +678,19 @@ export function PhaseForm({ initial, oldName, number, catList, rows, phases, can
             <>
               <label className="block">
                 <span className={lbl}>Relationship</span>
-                <select value={link.type} onChange={(e) => setLink((l) => ({ ...l, type: e.target.value as "FS" | "SS" }))} className={inp}>
+                <select value={link.type} onChange={(e) => setLink((l) => ({ ...l, type: e.target.value as LinkType }))} className={inp}>
                   <option value="FS">FS - Finish to start (starts after it finishes)</option>
                   <option value="SS">SS - Start to start (starts when it starts)</option>
+                  <option value="FF">FF - Finish to finish (finishes when it finishes)</option>
+                  <option value="SF">SF - Start to finish (finishes when it starts)</option>
                 </select>
               </label>
               <LeadLag row={link} onChange={(x) => setLink((l) => ({ ...l, ...x }))} />
-              <p className={hint}>Every item in this phase waits on it, so none can start before the link allows.</p>
+              <p className={hint}>
+                {link.type === "FS" || link.type === "SS"
+                  ? "Every item in this phase waits on it, so none can start before the link allows."
+                  : "The phase cannot finish before the link allows: its last items (those nothing else in the phase follows) are timed to it."}
+              </p>
             </>
           )}
         </Section>
