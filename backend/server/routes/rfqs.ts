@@ -6,6 +6,10 @@ import path from "path";
 import Rfq from "../models/Rfq";
 import WorkPackage from "../models/WorkPackage";
 import { locksOf } from "../lib/workPackageLocks";
+import Company from "../models/Company";
+import Project from "../models/Project";
+import User from "../models/User";
+import { sendMail } from "../lib/mailer";
 import Vendor from "../models/Vendor";
 import VendorQuote from "../models/VendorQuote";
 import ProcurementEvent from "../models/ProcurementEvent";
@@ -352,6 +356,57 @@ router.delete("/:rid/attachments/:aid", async (req: AuthedRequest, res: Response
     rfq.attachments = (rfq.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
     await rfq.save();
     res.json(rfq);
+  } catch (err) { next(err); }
+});
+
+/**
+ * CR 338 - email a vendor its own copy of the RFQ (the PDF is made in the browser and sent here).
+ * GreenTech staff only. The mail goes only to an address the vendor's Directory record holds (its
+ * email or a contact person's), so this can never be used to mail anyone else; replies go to the
+ * person who sent it.
+ */
+const mailUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+router.post("/:rid/email", mailUpload.single("pdf"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Only GreenTech staff can email an RFQ." });
+    if (!req.file) return res.status(400).json({ error: "The RFQ document is missing." });
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!rfq) return res.status(404).json({ error: "RFQ not found." });
+    const vendorId = String(req.body?.vendorId || "");
+    const vendor = mongoose.isValidObjectId(vendorId) ? await Vendor.findOne({ _id: vendorId, projectId: req.params.id }).lean() : null;
+    if (!vendor) return res.status(404).json({ error: "That vendor is not on this project." });
+    const company = vendor.companyId && mongoose.isValidObjectId(vendor.companyId) ? await Company.findById(vendor.companyId).select("name email contactPersons").lean() : null;
+    const allowed = [company?.email, ...(company?.contactPersons || []).map((c) => c.email), vendor.email]
+      .map((e) => String(e || "").trim().toLowerCase()).filter((e) => EMAIL.test(e));
+    const wanted = String(req.body?.to || "").trim().toLowerCase();
+    const to = wanted || allowed[0] || "";
+    if (!to) return res.status(400).json({ error: `${vendor.name} has no email in the Directory. Add one to its Directory record, or download the copy and send it yourself.` });
+    if (!allowed.includes(to)) return res.status(400).json({ error: "That address is not on the vendor's Directory record." });
+    const [project, me] = await Promise.all([
+      Project.findOne({ projectId: req.params.id }).select("name").lean(),
+      User.findById(req.user!.userId).select("name email").lean(),
+    ]);
+    const contact = (company?.contactPersons || []).find((c) => String(c.email || "").trim().toLowerCase() === to)?.name || vendor.contactName || vendor.name;
+    const due = rfq.dueDate ? new Date(`${rfq.dueDate}T12:00:00`).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
+    const senderName = (me as { name?: string } | null)?.name || req.user!.name || "GreenTech USA";
+    const senderEmail = (me as { email?: string } | null)?.email || "";
+    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.5">
+      <p>Dear ${esc(contact)},</p>
+      <p>GreenTech USA invites you to quote for the items in the attached Request for Quotation <b>RFQ ${esc(rfq.rfqNo)}</b>${rfq.title ? `, <b>${esc(rfq.title)}</b>` : ""}${project?.name ? `, for the project ${esc(project.name)}` : ""}.</p>
+      ${due ? `<p>Please send your quotation${rfq.currency ? `, with prices in ${esc(rfq.currency)},` : ""} by <b>${esc(due)}</b>.</p>` : ""}
+      ${rfq.notes ? `<p style="white-space:pre-wrap">${esc(rfq.notes.slice(0, 3000))}</p>` : ""}
+      <p>Reply to this email with your quotation or any questions.</p>
+      <p>Kind regards,<br/>${esc(senderName)}<br/>GreenTech USA${senderEmail ? `<br/>${esc(senderEmail)}` : ""}</p>
+    </div>`;
+    const fileName = String(req.body?.fileName || `RFQ_${rfq.rfqNo}.pdf`).replace(/[^\w.\- ]/g, "_").slice(0, 120);
+    const ok = await sendMail({ to, subject: `Request for Quotation ${rfq.rfqNo}${rfq.title ? `: ${rfq.title}` : ""}`, html, attachments: [{ filename: fileName, content: req.file.buffer }], replyTo: senderEmail || undefined });
+    rfq.emails = [...(rfq.emails || []), { vendorId, to, at: new Date(), byName: senderName, ok }];
+    await rfq.save();
+    if (ok) await logEvent(req, { entityId: String(rfq._id), action: "emailed", toValue: to });
+    if (!ok) return res.status(503).json({ error: "Email is not set up on the server, so nothing was sent. Download the vendor's copy and send it yourself.", emails: rfq.emails });
+    res.json({ ok, to, emails: rfq.emails });
   } catch (err) { next(err); }
 });
 

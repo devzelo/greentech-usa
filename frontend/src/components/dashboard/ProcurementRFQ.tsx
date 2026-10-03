@@ -3,7 +3,7 @@ import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Buil
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
-  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument, uploadRfqAttachment, deleteRfqAttachment, RFQ_REQUESTS,
+  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument, uploadRfqAttachment, deleteRfqAttachment, RFQ_REQUESTS, emailRfqToVendor,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
   fetchCompanies, COMPANY_CATEGORIES,
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
@@ -281,13 +281,33 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     for (const aid of r.removeAttachmentIds) { try { await deleteRfqAttachment(projectId, rfq._id, aid); } catch { problems.push("removing a document"); } }
     for (const f of r.newFiles) { try { await uploadRfqAttachment(projectId, rfq._id, f); } catch { problems.push(f.name); } }
     if (r.send) { try { await sendRfq(projectId, rfq._id); } catch { problems.push("sending"); } }
-    const fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || null;
+    let fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || null;
     if (fresh) setRfqs(fresh);
-    const saved = fresh?.find((x) => x._id === rfq._id) || rfq;
+    let saved = fresh?.find((x) => x._id === rfq._id) || rfq;
+    // CR 338 - each vendor emailed its own copy, when asked.
+    let mailNote = "";
+    if (r.email && r.vendors.length) {
+      const vlist = await fetchVendors(projectId).catch(() => vendors);
+      setVendors(vlist);
+      let sent = 0; const missed: string[] = []; let setupMissing = false;
+      for (const c of r.vendors) {
+        const v = vlist.find((x) => x.companyId === c._id);
+        if (!v) { missed.push(c.name); continue; }
+        try {
+          const blob = await buildRfqWithSubmittals(saved, v);
+          await emailRfqToVendor(projectId, saved._id, v._id, blob, `RFQ_${saved.rfqNo}_${v.name.replace(/\s+/g, "_")}.pdf`);
+          sent++;
+        } catch (e) { if (/not set up/i.test(e instanceof Error ? e.message : "")) setupMissing = true; missed.push(c.name); if (setupMissing) break; }
+      }
+      mailNote = setupMissing ? " Email is not set up on the server, so nothing was emailed: download each vendor's copy from the RFQ." : ` Emailed ${sent} of ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}.${missed.length ? ` Not emailed (no email in the Directory): ${missed.join(", ")}.` : ""}`;
+      fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || fresh;
+      if (fresh) setRfqs(fresh);
+      saved = fresh?.find((x) => x._id === rfq._id) || saved;
+    }
     void autoSaveRfqDoc(saved);   // the documents copy follows every save
     if (!base) setOpenId(rfq._id);
     if (problems.length) toast(`RFQ ${saved.rfqNo} saved, but these did not go through: ${[...new Set(problems)].join(", ")}. Open it to try again.`, "error");
-    else toast(r.send ? `RFQ ${saved.rfqNo} sent to ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}. Download each vendor's copy from the RFQ to send it.` : base ? `RFQ ${saved.rfqNo} saved.` : `RFQ ${saved.rfqNo} saved as a draft.`, "success");
+    else toast(r.send ? `RFQ ${saved.rfqNo} sent to ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}.${r.email ? mailNote : " Download each vendor's copy from the RFQ to send it."}` : base ? `RFQ ${saved.rfqNo} saved.` : `RFQ ${saved.rfqNo} saved as a draft.`, r.email && /not set up|Not emailed/.test(mailNote) ? "info" : "success");
     return true;
   };
   // CR-PR-02 — create a shell RFQ so an already-made RFQ document can be uploaded to it.
@@ -448,6 +468,22 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       toast(vendor ? `Saved ${vendor.name}'s RFQ to documents.` : "Saved to project documents (Procurement → RFQs).", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
     finally { setSavingDoc(null); }
+  };
+  // CR 338 - email one vendor its own copy of the RFQ.
+  const [mailing, setMailing] = useState<string | null>(null);
+  const emailVendorCopy = async (rfq: ApiRfq, vendor: ApiVendor) => {
+    if (!(await confirm({ title: `Email RFQ ${rfq.rfqNo} to ${vendor.name}?`, message: "Their own copy (PDF) goes to the email on their Directory record. Replies come to you.", confirmLabel: "Email" }))) return;
+    setMailing(`${rfq._id}:${vendor._id}`);
+    try {
+      const blob = await buildRfqWithSubmittals(rfq, vendor);
+      const r = await emailRfqToVendor(projectId, rfq._id, vendor._id, blob, `RFQ_${rfq.rfqNo}_${vendor.name.replace(/\s+/g, "_")}.pdf`);
+      setRfqs((p) => p.map((x) => (x._id === rfq._id ? { ...x, emails: r.emails } : x)));
+      toast(`Emailed to ${r.to}.`, "success");
+    } catch (e) {
+      const emails = (e as { emails?: ApiRfq["emails"] }).emails;
+      if (emails) setRfqs((p) => p.map((x) => (x._id === rfq._id ? { ...x, emails } : x)));
+      toast(e instanceof Error ? e.message : "Could not email it.", "error");
+    } finally { setMailing(null); }
   };
   // Inline "new vendor" from within an RFQ — creates the vendor and immediately attaches it.
   // CR-PR-08 — "New company" opens the Directory's own form on top of this modal. Whatever is
@@ -768,6 +804,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                               <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo} · ${vendor.name}`, fileName: `RFQ_${rfq.rfqNo}_${vendor.name.replace(/\s+/g, "_")}.pdf`, build: () => buildRfqWithSubmittals(rfq, vendor) })} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-100"><Eye size={11} /> Preview</button>
                               <button onClick={() => downloadRfqPdf(rfq, vendor._id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-100"><Download size={11} /> Download</button>
                               {canEdit && <button onClick={() => saveRfqToDocuments(rfq, vendor)} disabled={savingDoc === busyKey} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-primary hover:bg-primary/5 disabled:opacity-50">{savingDoc === busyKey ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />} Save</button>}
+                              {/* CR 338 - email this vendor its copy (again). */}
+                              {canEdit && <button onClick={() => void emailVendorCopy(rfq, vendor)} disabled={mailing === busyKey} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-600 hover:bg-blue-50 disabled:opacity-50">{mailing === busyKey ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Email</button>}
+                              {(() => { const last = [...(rfq.emails || [])].reverse().find((m) => m.vendorId === vendor._id); return last ? <span className={`basis-full text-[10px] ${last.ok ? "text-emerald-600" : "text-amber-600"}`}>{last.ok ? `Emailed to ${last.to}` : `Not emailed (${last.to})`} · {new Date(last.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}{last.byName ? ` by ${last.byName}` : ""}</span> : null; })()}
                             </div>
                           );
                         })}

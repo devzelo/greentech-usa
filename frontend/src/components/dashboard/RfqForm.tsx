@@ -25,6 +25,8 @@ export type RfqFormResult = {
   newFiles: File[];
   removeAttachmentIds: string[];
   send: boolean;
+  /** CR 338 - email each vendor its own copy when sent. */
+  email: boolean;
 };
 
 type Row = RfqLineItem & { key: string };
@@ -34,6 +36,8 @@ const inTwoWeeks = () => { const d = new Date(); d.setDate(d.getDate() + 14); re
 const newLineId = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
 const rowKey = () => Math.random().toString(36).slice(2);
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "AED", "SAR", "QAR", "KWD", "TRY", "PKR", "BDT", "INR", "SLE", "NGN", "KES", "ZAR", "CNY", "JPY"];
+/** CR 338 - the company has an address its RFQ copy can be emailed to. */
+const hasEmail = (c: ApiCompany) => [c.email, ...(c.contactPersons || []).map((p) => p.email)].some((e) => /\S+@\S+\.\S+/.test(String(e || "")));
 /** A company's place, short: the last two parts of its address ("Ankara, Türkiye"). */
 const placeOf = (c: ApiCompany) => (c.address || "").split(",").map((x) => x.trim()).filter(Boolean).slice(-2).join(", ");
 
@@ -76,6 +80,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [removed, setRemoved] = useState<string[]>([]);
   const [busy, setBusy] = useState<"" | "draft" | "send" | "preview">("");
+  const [emailVendors, setEmailVendors] = useState(true);
   const [tried, setTried] = useState(false);
 
   // The project's work packages (hidden for someone without the Project Management tab).
@@ -180,10 +185,17 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
     setTried(true);
     const p = problems(send);
     if (p.length) { toast(p[0], "error"); return; }
-    if (send && !(await confirm({ title: `Send this RFQ to ${chosen.length} vendor${chosen.length === 1 ? "" : "s"}?`, message: `It is marked as sent today. Each vendor gets a price column for their quote. Download each vendor's copy from the RFQ to send it.`, confirmLabel: "Send RFQ" }))) return;
+    const mailable = chosen.filter(hasEmail).length;
+    if (send && !(await confirm({
+      title: `Send this RFQ to ${chosen.length} vendor${chosen.length === 1 ? "" : "s"}?`,
+      message: emailVendors
+        ? `It is marked as sent today, and each vendor is emailed its own copy (PDF)${mailable < chosen.length ? `. ${chosen.length - mailable} ha${chosen.length - mailable === 1 ? "s" : "ve"} no email in the Directory: download their copies from the RFQ instead` : ""}. Each vendor gets a price column for their quote.`
+        : "It is marked as sent today. Each vendor gets a price column for their quote. Download each vendor's copy from the RFQ to send it.",
+      confirmLabel: emailVendors && mailable ? "Send and email" : "Send RFQ",
+    }))) return;
     setBusy(send ? "send" : "draft");
     try {
-      const ok = await onSave({ fields: fields(), vendors: chosen, newFiles, removeAttachmentIds: removed, send });
+      const ok = await onSave({ fields: fields(), vendors: chosen, newFiles, removeAttachmentIds: removed, send, email: send && emailVendors });
       if (ok) onClose();
     } finally { setBusy(""); }
   };
@@ -302,12 +314,16 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                     <div key={c._id} className="flex items-center gap-3 px-3 py-2">
                       <Check size={14} className="text-blue-600 shrink-0" />
                       <Logo c={c} />
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-800 truncate">{c.name}</span><span className="block text-[10px] text-slate-400 truncate">{placeOf(c) || c.category}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-800 truncate">{c.name}</span><span className="block text-[10px] text-slate-400 truncate">{placeOf(c) || c.category}{!hasEmail(c) && <span className="text-amber-600"> · no email</span>}</span></span>
                       <button onClick={() => setVendorIds((v) => v.filter((x) => x !== c._id))} className="p-1 rounded text-slate-300 hover:text-red-500" aria-label={`Remove ${c.name}`}><X size={14} /></button>
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400">Each vendor gets a price column to compare quotes, and a copy of the RFQ with their details.</p>
+                <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={emailVendors} onChange={(e) => setEmailVendors(e.target.checked)} className="accent-blue-600" />
+                  Email each vendor its own copy when sent
+                </label>
+                <p className="text-[10px] text-slate-400 -mt-1.5">Each vendor gets a price column to compare quotes, and a copy of the RFQ with their details. Replies come to you.</p>
               </div>
             </section>
           </div>

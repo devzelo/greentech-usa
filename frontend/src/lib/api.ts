@@ -2259,7 +2259,10 @@ export interface ApiRfq {
   /** CR 335 - the Create RFQ form: dates, currency, what vendors are asked for, documents, the work package. */
   date?: string; dueDate?: string; currency?: string; requests?: RfqRequestKey[]; showTargetPrices?: boolean;
   attachments?: RfqLineFile[]; workPackageId?: string;
+  /** CR 338 - each copy emailed to a vendor. */
+  emails?: RfqEmail[];
 }
+export interface RfqEmail { vendorId: string; to: string; at: string; byName: string; ok: boolean }
 /** CR 335 - what each vendor is asked to include with the quotation. */
 export type RfqRequestKey = "leadTime" | "dataSheets" | "alternatives" | "warranty" | "other";
 export const RFQ_REQUESTS: Array<{ key: RfqRequestKey; label: string }> = [
@@ -2337,6 +2340,17 @@ export async function saveLibraryItems(items: LibraryItemInput[]): Promise<ApiLi
 export async function updateLibraryItem(id: string, body: Partial<LibraryItemInput>): Promise<ApiLibraryItem> { return request(`/item-library/${id}`, { method: 'PATCH', body: JSON.stringify(body) }); }
 export async function deleteLibraryItem(id: string): Promise<void> { await request(`/item-library/${id}`, { method: 'DELETE' }); }
 export async function markLibraryItemsUsed(ids: string[]): Promise<void> { await request(`/item-library/used`, { method: 'POST', body: JSON.stringify({ ids }) }); }
+/** CR 338 - email a vendor its own copy of the RFQ, to an address on its Directory record. */
+export async function emailRfqToVendor(projectId: string, rid: string, vendorId: string, pdf: Blob, fileName: string, to = ""): Promise<{ ok: boolean; to: string; emails: RfqEmail[] }> {
+  const fd = new FormData();
+  fd.append('vendorId', vendorId); fd.append('fileName', fileName); if (to) fd.append('to', to);
+  fd.append('pdf', new File([pdf], fileName, { type: 'application/pdf' }));
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${rfqBase(projectId)}/${rid}/email`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { emails: data.emails as RfqEmail[] | undefined });
+  return data;
+}
 // CR 335 - the RFQ's supporting documents (for every vendor).
 export async function uploadRfqAttachment(projectId: string, rid: string, file: File): Promise<ApiRfq> {
   const fd = new FormData(); fd.append('file', file);
