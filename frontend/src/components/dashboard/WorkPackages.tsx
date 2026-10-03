@@ -242,9 +242,9 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
         });
       }
       if (!out.length) { toast("No work packages were found in that sheet.", "error"); return; }
-      const made = await importWorkPackages(projectId, out);
+      const { packages: made, unmatched } = await importWorkPackages(projectId, out);
       setList((l) => [...(l || []), ...made]);
-      toast(`${made.length} work package${made.length === 1 ? "" : "s"} imported.`, "success");
+      toast(`${made.length} work package${made.length === 1 ? "" : "s"} imported.${unmatched.length ? ` Not in the Directory, so left for you to pick: ${unmatched.join(", ")}.` : ""}`, unmatched.length ? "info" : "success");
     } catch (e) { toast(e instanceof Error ? e.message : "Could not read that file.", "error"); }
     finally { setBusy(false); }
   };
@@ -605,6 +605,8 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
   const setCo = (i: number, c: Partial<ApiChangeOrder>) => set({ changeOrders: cos.map((x, j) => (j === i ? { ...x, ...c } : x)) });
   const approved = cos.filter((c) => c.status === "approved").reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const outside = who.kind === "company";
+  // CR 328 (GT Comments 3, page 1) - an outside company must be a Directory record, never loose text.
+  const looseCompany = outside && !!who.name.trim() && !who.companyId;
   const small = "rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-primary focus:outline-none";
   const linkBtn = "inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline";
 
@@ -615,7 +617,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
       narrow={narrow} onNarrow={onNarrow} onClose={onClose}
       footer={<>
         <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100">{canEdit ? "Cancel" : "Close"}</button>
-        {canEdit && <button type="button" onClick={() => void onSave(f)} disabled={busy || !(f.name || "").trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 size={14} className="animate-spin" />} Save work package</button>}
+        {canEdit && <button type="button" onClick={() => void onSave(f)} disabled={busy || !(f.name || "").trim() || looseCompany} title={looseCompany ? "Pick the company from the Directory first" : undefined} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 size={14} className="animate-spin" />} Save work package</button>}
       </>}
     >
       <fieldset disabled={!canEdit} className="space-y-5">
@@ -640,7 +642,9 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
             <div>
               <span className={lbl}>Company (from the Directory)</span>
               <div className="mt-1"><CompanyPicker size="sm" value={who.name} category="vendor" categories={["vendor", "subcontractor", "supplier", "manufacturer", "consultant"]} onNameChange={(v) => set({ responsible: { kind: "company", companyId: "", name: v } })} onSelectCompany={(c) => set({ responsible: { kind: "company", companyId: c._id, name: c.name } })} placeholder="Search the Directory, or add a company to it" /></div>
-              <p className={`mt-1 ${hint}`}>{who.name && !who.companyId ? "Pick it from the list (or add it to the Directory from the list) so the company is a Directory record." : "Leave it empty until a quote is awarded: the winner of the linked RFQ then shows here."}</p>
+              {looseCompany
+                ? <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600">"{who.name}" is not picked from the Directory. Choose it from the list, or add it to the Directory from the list, to save.</p>
+                : <p className={`mt-1 ${hint}`}>{who.companyId ? "From the Directory." : "Leave it empty until a quote is awarded: the winner of the linked RFQ then shows here."}</p>}
             </div>
           ) : (
             <label className="block"><span className={lbl}>Done by</span><input value={who.name} onChange={(e) => set({ responsible: { kind: "internal", companyId: "", name: e.target.value } })} placeholder="GT, or the JV's name" className={inp} /></label>
@@ -657,7 +661,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.rfqId
                   ? <Link to={`${base}?tab=procurement&proc=rfqs&rfq=${f.rfqId}`} className={linkBtn}><FileText size={11} /> Open the RFQ</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
+                  : pkg && canEdit && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
               </div>
               {!f.rfqId && pkg && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
             </div>
@@ -668,7 +672,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.poId
                   ? <Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
+                  : pkg && canEdit && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
               </div>
               {!f.poId && pkg && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
             </div>
@@ -679,7 +683,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.agreementId
                   ? <Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
+                  : pkg && canEdit && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
               </div>
               {!f.agreementId && pkg && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
             </div>

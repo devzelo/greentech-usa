@@ -39,9 +39,20 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
   if (body.type !== undefined) out.type = (WP_TYPES as readonly string[]).includes(String(body.type)) ? String(body.type) : "other";
   if (body.responsible !== undefined) {
     const r = (body.responsible || {}) as Record<string, unknown>;
-    out.responsible = r.kind === "internal"
-      ? { kind: "internal", companyId: "", name: str(r.name, 160).trim() || "GT" }
-      : { kind: "company", companyId: oid(r.companyId), name: str(r.name, 160).trim() };
+    if (r.kind === "internal") out.responsible = { kind: "internal", companyId: "", name: str(r.name, 160).trim() || "GT" };
+    else {
+      /**
+       * CR 328 (GT Comments 3, page 1): "Vendors/subcontractors must be selected directly from the
+       * Company/Vendor Directory; if a company does not exist, it must first be created in the
+       * Directory." The company is kept by its Directory record; a name typed without one is
+       * matched to the Directory, and refused when it is not there.
+       */
+      const id = oid(r.companyId), name = str(r.name, 160).trim();
+      let c = id ? await Company.findById(id).select("name").lean() : null;
+      if (!c && name) c = await Company.findOne({ name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"), archived: { $ne: true } }).select("name").lean();
+      out.responsible = c ? { kind: "company", companyId: String(c._id), name: c.name } : { kind: "company", companyId: "", name: "" };
+      if (name && !c) out.notInDirectory = name;
+    }
   }
   if (body.rfqId !== undefined) {
     const id = oid(body.rfqId);
@@ -79,6 +90,8 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
   if (body.archived !== undefined) out.archived = body.archived === true;
   return out;
 }
+
+const notInDirectory = (name: unknown) => `"${String(name)}" is not in the Directory. Pick the company from the list, or add it to the Directory first (the list offers to).`;
 
 type Plain = Record<string, unknown> & { _id: unknown };
 /** The packages with what the linked records say about them. */
@@ -168,6 +181,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const showMoney = await figures(req);
     const body = await clean(req.params.id, req.body || {});
     if (!body.name) return res.status(400).json({ error: "Give the work package a name." });
+    if (body.notInDirectory) return res.status(400).json({ error: notInDirectory(body.notInDirectory) });
     // Someone who cannot see the figures cannot set them either.
     if (!showMoney) { delete body.budget; delete body.changeOrders; }
     const last = await WorkPackage.findOne({ projectId: req.params.id }).sort({ order: -1 }).select("order").lean();
@@ -184,14 +198,17 @@ router.post("/import", async (req: AuthedRequest, res: Response, next: NextFunct
     const last = await WorkPackage.findOne({ projectId: req.params.id }).sort({ order: -1 }).select("order").lean();
     let order = last?.order ?? 0;
     const made: IWorkPackage[] = [];
+    const unmatched: string[] = [];
     for (const raw of rows) {
       // Links are never taken from a sheet.
       const body = await clean(req.params.id, { ...(raw as Record<string, unknown>), rfqId: undefined, poId: undefined, agreementId: undefined });
       if (!body.name) continue;
+      // A company that is not in the Directory is left for the PM to pick; the package still comes in.
+      if (body.notInDirectory) { if (!unmatched.includes(String(body.notInDirectory))) unmatched.push(String(body.notInDirectory)); delete body.notInDirectory; }
       if (!showMoney) { delete body.budget; delete body.changeOrders; }
       made.push(await WorkPackage.create({ ...body, projectId: req.params.id, order: ++order, createdByName: req.user!.name || "" }));
     }
-    res.status(201).json(await shape(req.params.id, made, showMoney));
+    res.status(201).json({ packages: await shape(req.params.id, made, showMoney), unmatched });
   } catch (err) { next(err); }
 });
 
@@ -212,6 +229,7 @@ router.patch("/:wid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const showMoney = await figures(req);
     const body = await clean(req.params.id, req.body || {});
     if (body.name === "") delete body.name;
+    if (body.notInDirectory) return res.status(400).json({ error: notInDirectory(body.notInDirectory) });
     // Someone who cannot see the figures cannot change them either.
     if (!showMoney) { delete body.budget; delete body.changeOrders; }
     doc.set(body);

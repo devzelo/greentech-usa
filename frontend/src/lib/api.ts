@@ -3473,4 +3473,4 @@ export async function createWorkPackage(projectId: string, body: WorkPackageInpu
 export async function updateWorkPackage(projectId: string, id: string, body: WorkPackageInput): Promise<ApiWorkPackage> { return request(`${wpBase(projectId)}/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteWorkPackage(projectId: string, id: string): Promise<void> { await request(`${wpBase(projectId)}/${id}`, { method: "DELETE" }); }
 export async function reorderWorkPackages(projectId: string, ids: string[]): Promise<void> { await request(`${wpBase(projectId)}/order`, { method: "PUT", body: JSON.stringify({ ids }) }); }
-export async function importWorkPackages(projectId: string, packages: WorkPackageInput[]): Promise<ApiWorkPackage[]> { return request(`${wpBase(projectId)}/import`, { method: "POST", body: JSON.stringify({ packages }) }); }
+export async function importWorkPackages(projectId: string, packages: WorkPackageInput[]): Promise<{ packages: ApiWorkPackage[]; unmatched: string[] }> { return request(`${wpBase(projectId)}/import`, { method: "POST", body: JSON.stringify({ packages }) }); }
