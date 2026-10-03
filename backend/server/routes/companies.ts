@@ -238,7 +238,9 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const login = await User.findOne(email
       ? { $or: [{ companyId: req.params.id }, { email: email.toLowerCase() }] }
       : { companyId: req.params.id }).select("_id").lean();
-    const links = await buildCompanyLinks(req.params.id, name, email, login ? String(login._id) : "", true) as Record<string, unknown> & {
+    // The internal lists (work packages, change orders, payments) are GreenTech's own: an outside login never gets them.
+    const internal = req.user!.role === "admin" || req.user!.role === "employee";
+    const links = await buildCompanyLinks(req.params.id, name, email, login ? String(login._id) : "", internal) as Record<string, unknown> & {
       changeOrders?: Array<{ projectId: string; amount?: unknown }>; payments?: Array<{ projectId: string; amount?: unknown }>;
     };
     // CR 328 - change order and payment amounts only for projects whose figures this person may see.
