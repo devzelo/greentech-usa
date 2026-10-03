@@ -365,13 +365,18 @@ router.delete("/:rid/attachments/:aid", async (req: AuthedRequest, res: Response
  * email or a contact person's), so this can never be used to mail anyone else; replies go to the
  * person who sent it.
  */
-const mailUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+// Only the RFQ's PDF is ever attached: checked by type here and by its first bytes below.
+const mailUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => cb(null, file.mimetype === "application/pdf" && /\.pdf$/i.test(file.originalname)),
+});
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 router.post("/:rid/email", mailUpload.single("pdf"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Only GreenTech staff can email an RFQ." });
-    if (!req.file) return res.status(400).json({ error: "The RFQ document is missing." });
+    if (!req.file || req.file.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") return res.status(400).json({ error: "The RFQ document (a PDF) is missing." });
     const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
     if (!rfq) return res.status(404).json({ error: "RFQ not found." });
     const vendorId = String(req.body?.vendorId || "");
@@ -400,7 +405,7 @@ router.post("/:rid/email", mailUpload.single("pdf"), async (req: AuthedRequest, 
       <p>Reply to this email with your quotation or any questions.</p>
       <p>Kind regards,<br/>${esc(senderName)}<br/>GreenTech USA${senderEmail ? `<br/>${esc(senderEmail)}` : ""}</p>
     </div>`;
-    const fileName = String(req.body?.fileName || `RFQ_${rfq.rfqNo}.pdf`).replace(/[^\w.\- ]/g, "_").slice(0, 120);
+    const fileName = `${String(req.body?.fileName || `RFQ_${rfq.rfqNo}`).replace(/[^\w.\- ]/g, "_").slice(0, 116).replace(/\.pdf$/i, "")}.pdf`;
     const ok = await sendMail({ to, subject: `Request for Quotation ${rfq.rfqNo}${rfq.title ? `: ${rfq.title}` : ""}`, html, attachments: [{ filename: fileName, content: req.file.buffer }], replyTo: senderEmail || undefined });
     rfq.emails = [...(rfq.emails || []), { vendorId, to, at: new Date(), byName: senderName, ok }];
     await rfq.save();
