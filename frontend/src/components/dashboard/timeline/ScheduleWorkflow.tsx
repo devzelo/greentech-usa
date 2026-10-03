@@ -137,9 +137,11 @@ const iso = (d: Date) => toIso(d);
 const monday = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
 const local = (v: string) => { const [y, m, d] = v.split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
 
-export function SubmittalDialog({ entries, unsaved, onSubmit, onClose }: {
-  /** The register, to carry on the rhythm and the numbering from the last record. */
+export function SubmittalDialog({ entries, projectCadence, unsaved, onSubmit, onClose }: {
+  /** The register, to carry on the numbering from the last record. */
   entries: ApiScheduleRevision[];
+  /** CR 317 - the project's rhythm, set the first time a record is filed and kept from then on. */
+  projectCadence?: "" | Cadence;
   unsaved: boolean;
   onSubmit: (d: SubmittalDetails) => Promise<boolean>;
   onClose: () => void;
@@ -147,12 +149,13 @@ export function SubmittalDialog({ entries, unsaved, onSubmit, onClose }: {
   const past = useMemo(() => entries.filter((e) => kindOf(e) === "submittal" && !!e.cadence && (e.seq || 0) > 0), [entries]);
   const nextSeq = (c: Cadence) => past.filter((e) => e.cadence === c).reduce((n, e) => Math.max(n, e.seq || 0), 0) + 1;
   const today = new Date();
-  // The PM picks the rhythm once; after that it follows the last record.
-  const [cadence, setCadence] = useState<Cadence>(() => (past[0]?.cadence as Cadence) || "weekly");
+  // The PM picks the rhythm once for the project; before it was a setting, the last record decided.
+  const first: Cadence = projectCadence || (past[0]?.cadence as Cadence) || "weekly";
+  const [cadence, setCadence] = useState<Cadence>(first);
   const [week, setWeek] = useState(iso(monday(today)));
   const [month, setMonth] = useState(iso(today).slice(0, 7));
   const [day, setDay] = useState(iso(today));
-  const [seq, setSeq] = useState(() => nextSeq((past[0]?.cadence as Cadence) || "weekly"));
+  const [seq, setSeq] = useState(() => nextSeq(first));
   const [title, setTitle] = useState("");
   const [typed, setTyped] = useState(false);
   const [note, setNote] = useState("");
@@ -191,6 +194,11 @@ export function SubmittalDialog({ entries, unsaved, onSubmit, onClose }: {
             </button>
           ))}
         </div>
+        <span className="block text-[11px] text-slate-500">
+          {projectCadence
+            ? cadence === projectCadence ? "This project's rhythm." : "Saving changes this project's rhythm for the next records too."
+            : "Picked once for this project: the next record starts from it."}
+        </span>
       </div>
       <div className="grid grid-cols-[1fr_6rem] gap-3">
         <label className="block space-y-1">

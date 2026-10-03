@@ -598,6 +598,8 @@ router.post("/submittals", async (req: AuthedRequest, res: Response, next: NextF
       progress: overallProgress(target.milestones),
       savedBy: req.user!.name || "",
     });
+    // The rhythm is the project's: picked once, it is what the next record starts from.
+    await Project.updateOne({ projectId: req.params.id }, { $set: { "schedule.historyCadence": cadence } });
     res.json(entry);
   } catch (err) { next(err); }
 });

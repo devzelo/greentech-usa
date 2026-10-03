@@ -214,7 +214,7 @@ export interface ApiProject {
   };
   timeline: { phases: Array<{ name: string; start: string; end: string }> };
   /** CR-P (121)-(125) - milestones run one after another from the start date. */
-  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[]; /** CR 317 - when Current was last saved. */ savedAt?: string; savedBy?: string; /** CR 326 */ description?: string };
+  schedule?: { milestones: ApiMilestone[]; extensions?: ApiExtension[]; draft?: ApiScheduleDraft | null; subs?: ApiSubSchedule[]; /** The master's categories, in order. */ categories?: string[]; /** CR 321 - each phase's details. */ phaseInfo?: ApiSchedulePhase[]; /** CR 317 - when Current was last saved. */ savedAt?: string; savedBy?: string; /** CR 326 */ description?: string; /** CR 317 - weekly, monthly or one-off. */ historyCadence?: "" | "weekly" | "monthly" | "oneoff" };
   /** Financial figures access - per userId, who sees the value and the totals (sent to the owner only). */
   figuresAccess?: Record<string, boolean>;
   /** Set by the server: may the requester see this project's financial figures? */

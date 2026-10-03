@@ -746,6 +746,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
         entry = await updateScheduleEntry(project.id, entry._id, { files: [doc._id] });
       } catch { /* the record stands without its PDF; Export PDF makes one */ }
       replaceEntry(entry);
+      // CR 317 - the rhythm is now the project's (the server keeps it the same way).
+      if (project.schedule && project.schedule.historyCadence !== d.cadence) onScheduleSaved({ ...project.schedule, historyCadence: d.cadence }, project.progress);
       toast(`"${entryTitle(entry)}" filed in History${d.submittedToClient ? ", marked as submitted to the client" : ""}.`, "success");
       return true;
     } catch (err) { toast(err instanceof Error ? err.message : "Could not file it.", "error"); return false; }
@@ -1658,7 +1660,7 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
           onSubmit={approveBaseline} onClose={() => setApproving(null)} />
       )}
       {passkeyFor && <PasskeyDialog entry={passkeyFor} onSubmit={deleteLocked} onClose={() => setPasskeyFor(null)} />}
-      {submittalOpen && <SubmittalDialog entries={register} unsaved={dirty || !!loadedFrom} onSubmit={saveSubmittal} onClose={() => setSubmittalOpen(false)} />}
+      {submittalOpen && <SubmittalDialog entries={register} projectCadence={project.schedule?.historyCadence || ""} unsaved={dirty || !!loadedFrom} onSubmit={saveSubmittal} onClose={() => setSubmittalOpen(false)} />}
 
       {/* CR 275 - no "fit to one page" here: the schedule runs section by section down the sheet
           and carries on to the next page when it runs out, which is what was asked for. */}

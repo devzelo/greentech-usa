@@ -138,6 +138,8 @@ export interface IProject extends Document {
     savedBy?: string;
     /** CR 326 - a line describing the schedule, shown under its title. */
     description?: string;
+    /** CR 317 - how often this project's schedule is filed in History: weekly, monthly or one-off. */
+    historyCadence?: string;
     // Schedules beside the master (a Design schedule, a Construction schedule...). Since the client's
     // 2026-09-21 review each is separate: its own tasks, categories, draft and revisions, made from
     // scratch. `own` marks the ones already moved off the old "view of the master" model.
@@ -348,6 +350,7 @@ const ProjectSchema = new Schema<IProject>(
       savedAt: { type: String, default: "" },
       savedBy: { type: String, default: "" },
       description: { type: String, default: "" },
+      historyCadence: { type: String, enum: ["", "weekly", "monthly", "oneoff"], default: "" },
       extensions: {
         type: [{
           id: { type: String, default: "" },
