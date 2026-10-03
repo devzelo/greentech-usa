@@ -8,7 +8,8 @@ export interface IExpenseAttachment {
 }
 
 // CR-P (154) — one expense can hold several items (laptop, mouse, 4 monitors …).
-export interface IExpenseItem { description: string; qty: string; unit: string; unitPrice: string }
+// CR 331 - each item is booked to an account of the chart (lib/expenseCategories), set by GreenTech staff only.
+export interface IExpenseItem { description: string; qty: string; unit: string; unitPrice: string; category: string }
 // CR-P (157) — the conversation on an expense (e.g. why it was rejected, "receipt added").
 export interface IExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: Date }
 
@@ -60,7 +61,7 @@ const ExpenseSchema = new Schema<IExpense>(
     approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     attachments: { type: [AttachmentSchema], default: [] },
     items: {
-      type: [{ description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, _id: false }],
+      type: [{ description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, category: { type: String, default: "" }, _id: false }],
       default: [],
     },
     rejectReason: { type: String, default: "" },

@@ -168,6 +168,8 @@ router.get("/my-expenses", async (req: AuthedRequest, res: Response, next: NextF
       const inv = e.invoiceId ? invById.get(e.invoiceId) : undefined;
       return {
         ...e,
+        // CR 331 - the account categories are GreenTech's; an outside login does not get them.
+        ...(staff ? {} : { items: (e.items || []).map(({ category: _c, ...i }) => { void _c; return i; }) }),
         projectName: nameById[e.projectId] || e.projectId,
         ...(inv ? { invoiceNo: inv.number || "", invoiceParty: inv.party || "", poNo: inv.poId ? poNoById.get(inv.poId) || "" : "" } : {}),
       };

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Eye, FolderUp, History, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, Search, Send, Settings2, Trash2, Upload, X, XCircle } from "lucide-react";
-import { fetchWorkPackages,
+import { fetchWorkPackages, fetchExpenseCategories,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
   attachmentUrl, fetchBoardMembers, getAuthUser, invoicePaid,
-  type ApiExpense, type ApiExpenseItem, type ApiInvoice, type BoardMember,
+  type ApiExpense, type ApiExpenseCategory, type ApiExpenseItem, type ApiInvoice, type BoardMember,
 } from "../../lib/api";
 import type { FiveNumbers } from "../../lib/projectFinance";
 import { fmtMoney } from "../../lib/projectFinance";
@@ -63,6 +63,10 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "no", dir: 1 });
   const [editor, setEditor] = useState<{ id: string | null; historic: boolean } | null>(null);
   const [viewFile, setViewFile] = useState<{ name: string; url: string; fileType: string } | null>(null);
+  // CR 331 (GT Comments 4) - the chart of accounts, for GreenTech staff only (an outside login never loads it).
+  const [cats, setCats] = useState<ApiExpenseCategory[]>([]);
+  useEffect(() => { if (isStaff) fetchExpenseCategories(projectId).then(setCats).catch(() => setCats([])); }, [projectId, isStaff]);
+  const catName = useMemo(() => new Map(cats.map((c) => [c.code, c.name])), [cats]);
 
   // The payables come from Invoice Received, which can change on its own tab.
   useEffect(() => { onRefreshReceived(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -86,10 +90,10 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const filtered = entries.filter((x) => (status === "all" || x.status === status) && (!q || [x.description, x.addedBy, x.kind === "expense" ? x.e.remarks : x.inv.number].some((v) => String(v || "").toLowerCase().includes(q))));
+    const filtered = entries.filter((x) => (status === "all" || x.status === status) && (!q || [x.description, x.addedBy, x.kind === "expense" ? x.e.remarks : x.inv.number, ...(x.kind === "expense" ? (x.e.items || []).flatMap((i) => (i.category ? [i.category, catName.get(i.category) || ""] : [])) : [])].some((v) => String(v || "").toLowerCase().includes(q))));
     const val = (x: Entry): string | number => (sort.key === "no" ? x.no : sort.key === "total" ? x.total : String(x[sort.key] || "").toLowerCase());
     return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
-  }, [entries, search, status, sort]);
+  }, [entries, search, status, sort, catName]);
 
   const counts = useMemo(() => ({
     all: entries.length,
@@ -209,6 +213,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
                     <button onClick={() => openEntry(x)} className="text-left font-bold text-slate-800 hover:text-primary">{x.description || <span className="text-slate-300 italic">No description</span>}</button>
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
                       {e && (e.items?.length || 0) > 1 && <span className="text-[10px] text-slate-400">{e.items!.length} items</span>}
+                      {e && isStaff && !fromInvoice && catChip(e, catName)}
                       {e?.historic && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wide">Past expenses</span>}
                       {fromInvoice && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">From Invoice Received</span>}
                       {x.kind === "payable" && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">{x.inv.poId ? "From Procurement" : "From Invoice Received"} · {x.inv.number || "invoice"}</span>}
@@ -255,6 +260,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
           canEdit={canEdit}
           canApprove={canApprove && isStaff}
           isStaff={isStaff}
+          cats={cats}
           myId={me?.id || ""}
           confirm={confirm}
           onSaved={(u) => { replace(u); setEditor((ed) => (ed ? { ...ed, id: u._id } : ed)); }}
@@ -269,17 +275,45 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
 }
 
 type Row = ApiExpenseItem & { key: string };
+/** CR 331 - an expense's category in the list: its account, "n categories", or a nudge when none is set. */
+function catChip(e: ApiExpense, names: Map<string, string>) {
+  const codes = [...new Set((e.items || []).map((i) => i.category || ""))];
+  const set = codes.filter(Boolean);
+  if (!set.length) return <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[9px] font-bold text-amber-700 uppercase tracking-wide">No category</span>;
+  const label = set.length === 1 ? `${set[0]} ${names.get(set[0]) || ""}`.trim() : `${set.length} categories`;
+  return <span title={set.map((c) => `${c} ${names.get(c) || ""}`).join("\n") + (codes.includes("") ? "\nAn item has no category yet" : "")} className="px-1.5 py-0.5 rounded bg-sky-50 text-[10px] font-bold text-sky-700">{label}{codes.includes("") ? " +?" : ""}</span>;
+}
+/** The chart as a dropdown: each heading groups the accounts that can be chosen under it. */
+function CategorySelect({ cats, value, onChange, disabled, className }: { cats: ApiExpenseCategory[]; value: string; onChange: (v: string) => void; disabled: boolean; className: string }) {
+  const groups: Array<{ head: ApiExpenseCategory; items: ApiExpenseCategory[] }> = [];
+  for (const c of cats) {
+    if (c.heading) groups.push({ head: c, items: [] });
+    else if (groups.length) groups[groups.length - 1].items.push(c);
+  }
+  return (
+    <select disabled={disabled} value={value} onChange={(e) => onChange(e.target.value)} aria-label="Category" className={`${className} ${value ? "" : "!text-slate-400"}`}>
+      <option value="">Select category</option>
+      {groups.filter((g) => g.items.length).map((g) => (
+        <optgroup key={g.head.code} label={`${g.head.code} ${g.head.name}`}>
+          {g.items.map((c) => <option key={c.code} value={c.code} className="text-slate-800">{c.code} {c.name}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
 const blankItem = (): Row => ({ key: Math.random().toString(36).slice(2), description: "", qty: "1", unit: "", unitPrice: "" });
 const FOLDER_INPUT = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
 // CR-P (154)-(158) — add / manage one expense: the items, the receipts, the approval and the talk.
-function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, myId, confirm, onSaved, onOpenReceived, onClose }: {
+function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, cats, myId, confirm, onSaved, onOpenReceived, onClose }: {
   projectId: string;
   expense: ApiExpense | null;
   historic: boolean;
   canEdit: boolean;
   canApprove: boolean;
   isStaff: boolean;
+  /** CR 331 - the chart of accounts; empty for an outside login, who gets no Category column. */
+  cats: ApiExpenseCategory[];
   myId: string;
   confirm: ReturnType<typeof useDialogs>["confirm"];
   onSaved: (e: ApiExpense) => void;
@@ -319,6 +353,8 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   }, [expense]);
 
   const total = items.reduce((s, i) => s + (num(i.qty) || 0) * num(i.unitPrice), 0);
+  // CR 331 (GT Comments 4) - "when sub/vendors want to log expense for a project, they can't see the category dropdown. It's only for GT team."
+  const showCat = isStaff && cats.length > 0;
   const setItem = (key: string, patch: Partial<Row>) => setItems((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
 
   const payload = () => ({
@@ -328,11 +364,11 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     workPackageId,
     qty: "1",
     amount: total.toFixed(2),
-    items: items.filter((i) => i.description.trim() || num(i.unitPrice)).map(({ key: _k, ...i }) => { void _k; return i; }),
+    items: items.filter((i) => i.description.trim() || num(i.unitPrice)).map(({ key: _k, category, ...i }) => { void _k; return showCat ? { ...i, category: category || "" } : i; }),
   });
   const dirty = !expense || JSON.stringify(payload()) !== JSON.stringify({
     description: expense.description || "", date: expense.date || "", remarks: expense.remarks || "", workPackageId: expense.workPackageId || "", qty: "1", amount: expTotal(expense).toFixed(2),
-    items: (expense.items?.length ? expense.items : [{ description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }]).filter((i) => i.description.trim() || num(i.unitPrice)).map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice })),
+    items: (expense.items?.length ? expense.items : [{ description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }]).filter((i) => i.description.trim() || num(i.unitPrice)).map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, ...(showCat ? { category: (i as ApiExpenseItem).category || "" } : {}) })),
   });
 
   const save = async (close: boolean) => {
@@ -388,7 +424,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
 
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-10" onClick={(e) => e.stopPropagation()}>
+      <div className={`bg-white rounded-3xl shadow-2xl w-full ${showCat ? "max-w-4xl" : "max-w-3xl"} my-10`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate">{expense ? `Expense · ${expense.description || "No description"}` : historic ? "Record past expenses" : "Add expense"}</p>
@@ -423,11 +459,12 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Items</p>
             <div className="overflow-x-auto border border-slate-100 rounded-xl">
-              <table className="w-full min-w-[560px] text-xs">
+              <table className={`w-full ${showCat ? "min-w-[760px]" : "min-w-[560px]"} text-xs`}>
                 <thead>
                   <tr className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
                     <th className="text-left px-2 py-2 w-8">#</th>
                     <th className="text-left px-2 py-2">Description</th>
+                    {showCat && <th className="text-left px-2 py-2 w-52">Category (code)</th>}
                     <th className="text-left px-2 py-2 w-16">Qty</th>
                     <th className="text-left px-2 py-2 w-20">Unit</th>
                     <th className="text-left px-2 py-2 w-28">Unit price</th>
@@ -440,6 +477,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                     <tr key={it.key}>
                       <td className="px-2 py-1.5 text-slate-400 font-bold">{i + 1}</td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.description} onChange={(e) => setItem(it.key, { description: e.target.value })} placeholder="e.g. Monitor" /></td>
+                      {showCat && <td className="px-1 py-1"><CategorySelect cats={cats} value={it.category || ""} onChange={(v) => setItem(it.key, { category: v })} disabled={!editable} className={inp} /></td>}
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.qty} onChange={(e) => setItem(it.key, { qty: e.target.value })} inputMode="decimal" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unit} onChange={(e) => setItem(it.key, { unit: e.target.value })} placeholder="pcs" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unitPrice} onChange={(e) => setItem(it.key, { unitPrice: e.target.value })} placeholder="0.00" inputMode="decimal" /></td>
@@ -450,7 +488,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-50">
-                    <td colSpan={5} className="px-2 py-2">
+                    <td colSpan={showCat ? 6 : 5} className="px-2 py-2">
                       {editable && <button onClick={() => setItems((l) => [...l, blankItem()])} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add item</button>}
                     </td>
                     <td className="px-2 py-2 text-right text-sm font-display font-bold text-slate-900 whitespace-nowrap">{money(total)}</td>

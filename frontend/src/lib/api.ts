@@ -1421,7 +1421,12 @@ export interface ApiExpense {
   invoiceId?: string;               // set when this is a payment on an invoice received
   createdAt?: string;
 }
-export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string }
+export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string; /** CR 331 - account code; GreenTech staff only (never sent to an outside login). */ category?: string }
+/** CR 331 (GT Comments 4) - an account of GreenTech's chart for expenses. A heading groups the accounts under it and cannot be chosen. */
+export interface ApiExpenseCategory { code: string; name: string; type: "COGS" | "Expense"; heading: boolean }
+export async function fetchExpenseCategories(projectId: string) {
+  return request<ApiExpenseCategory[]>(`/projects/${projectId}/expenses/categories`);
+}
 export interface ApiExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: string }
 type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string; items?: ApiExpenseItem[]; historic?: boolean; workPackageId?: string };
 export async function addExpenseComment(projectId: string, eid: string, body: { text: string; mentions: string[] }) {

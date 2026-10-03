@@ -8,6 +8,7 @@ import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
 import { createNotification } from "../lib/notify";
+import { EXPENSE_CATEGORIES, cleanCategory } from "../lib/expenseCategories";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -27,15 +28,27 @@ const ownRowFilter = (req: AuthedRequest) =>
 const isStaff = (req: AuthedRequest) => req.user!.role !== "subcontractor";
 
 // CR-P (154) — the items of one expense. With items, the expense is qty 1 at the items' total.
-type Item = { description: string; qty: string; unit: string; unitPrice: string };
-const cleanItems = (arr: unknown): Item[] | null => {
+type Item = { description: string; qty: string; unit: string; unitPrice: string; category: string };
+/**
+ * CR 331 (GT Comments 4) - the category (account code) of each item comes from GreenTech staff
+ * only. An outside login cannot set it; when one edits its expense, each item keeps the category
+ * staff gave the item in the same place.
+ */
+const cleanItems = (arr: unknown, staff: boolean, before: Array<{ category?: string }> = []): Item[] | null => {
   if (!Array.isArray(arr)) return null;
-  return (arr as Array<Record<string, unknown>>).slice(0, 100).map((o) => ({
+  return (arr as Array<Record<string, unknown>>).slice(0, 100).map((o, i) => ({
     description: String(o?.description ?? "").slice(0, 500),
     qty: String(o?.qty ?? "1").slice(0, 20),
     unit: String(o?.unit ?? "").slice(0, 30),
     unitPrice: String(o?.unitPrice ?? "").slice(0, 30),
+    category: staff ? cleanCategory(o?.category) : before[i]?.category || "",
   })).filter((i) => i.description.trim() || num(i.unitPrice));
+};
+/** What an outside login gets back: its expense without the categories. */
+const forViewer = (req: AuthedRequest, doc: { toObject: () => Record<string, unknown> }) => {
+  const o = doc.toObject();
+  if (!isStaff(req)) o.items = ((o.items as Array<Record<string, unknown>>) || []).map(({ category: _c, ...i }) => { void _c; return i; });
+  return o;
 };
 function applyItems(target: Record<string, unknown>, items: Item[]) {
   target.items = items;
@@ -54,8 +67,14 @@ async function notify(userId: string, from: AuthedRequest, title: string, messag
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const expenses = await Expense.find({ projectId: req.params.id, ...ownRowFilter(req) }).sort({ createdAt: 1 });
-    res.json(expenses);
+    res.json(expenses.map((e) => forViewer(req, e)));
   } catch (err) { next(err); }
+});
+
+// CR 331 - the chart of accounts an expense item is booked to. GreenTech staff only.
+router.get("/categories", (req: AuthedRequest, res: Response) => {
+  if (!isStaff(req)) return res.status(403).json({ error: "Not available." });
+  res.json(EXPENSE_CATEGORIES);
 });
 
 const APPROVAL_VALUES = ["pending", "approved", "rejected"];
@@ -72,7 +91,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const body: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") body[f] = b[f];
     if (typeof b.workPackageId === "string") body.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
-    const items = cleanItems(b.items);
+    const items = cleanItems(b.items, isStaff(req));
     if (items) applyItems(body, items);
     // CR-P (158) — past expenses (already paid) are recorded by staff straight as approved.
     const historic = isStaff(req) && !!b.historic;
@@ -89,7 +108,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       addedByEmail: req.user!.email || "",
       addedByRole: req.user!.role || "",
     });
-    res.status(201).json(expense);
+    res.status(201).json(forViewer(req, expense));
   } catch (err) { next(err); }
 });
 
@@ -101,7 +120,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const changes: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") changes[f] = b[f];
     if (typeof b.workPackageId === "string") changes.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
-    const items = cleanItems(b.items);
+    const items = cleanItems(b.items, isStaff(req), row.items || []);
     // CR-P (160) — an expense recorded from an invoice payment is changed on that invoice.
     if (row.invoiceId && (Object.keys(changes).length || items)) {
       return res.status(400).json({ error: "This expense comes from a payment on an invoice received. Change it in Invoice Received." });
@@ -131,7 +150,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (b.resend && row.approval === "rejected" && String(row.addedById || "") === req.user!.userId) row.approval = "pending";
 
     await row.save();
-    res.json(row);
+    res.json(forViewer(req, row));
   } catch (err) { next(err); }
 });
 
@@ -162,7 +181,7 @@ router.post("/:eid/comments", async (req: AuthedRequest, res: Response, next: Ne
     const who = new Set<string>([...mentions, String(row.addedById || ""), ...row.comments.map((c) => c.userId)]);
     const title = `${req.user!.name || "Someone"} commented on an expense`;
     for (const uid of who) await notify(uid, req, title, `"${row.description || "Expense"}": ${text.slice(0, 140)}`, req.params.id);
-    res.status(201).json(row);
+    res.status(201).json(forViewer(req, row));
   } catch (err) { next(err); }
 });
 
@@ -192,7 +211,7 @@ router.post("/:eid/attachments", upload.single("file"), async (req: AuthedReques
       { new: true }
     );
     if (!row) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "Expense not found." }); }
-    res.status(201).json(row);
+    res.status(201).json(forViewer(req, row));
   } catch (err) { next(err); }
 });
 
@@ -204,7 +223,7 @@ router.delete("/:eid/attachments/:aid", async (req: AuthedRequest, res: Response
     if (att?.filePath) fs.unlink(path.resolve(att.filePath), () => {});
     row.attachments = (row.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
     await row.save();
-    res.json(row);
+    res.json(forViewer(req, row));
   } catch (err) { next(err); }
 });
 
