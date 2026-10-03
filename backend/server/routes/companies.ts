@@ -10,6 +10,7 @@ import User from "../models/User";
 import Project from "../models/Project";
 import Task from "../models/Task";
 import { enrichTasks } from "../lib/taskProfile";
+import { canSeeFigures } from "../lib/access";
 import { buildCompanyLinks } from "../lib/profileLinks";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
@@ -237,7 +238,17 @@ router.get("/:id/links", async (req: AuthedRequest, res: Response, next: NextFun
     const login = await User.findOne(email
       ? { $or: [{ companyId: req.params.id }, { email: email.toLowerCase() }] }
       : { companyId: req.params.id }).select("_id").lean();
-    res.json(await buildCompanyLinks(req.params.id, name, email, login ? String(login._id) : ""));
+    const links = await buildCompanyLinks(req.params.id, name, email, login ? String(login._id) : "", true) as Record<string, unknown> & {
+      changeOrders?: Array<{ projectId: string; amount?: unknown }>; payments?: Array<{ projectId: string; amount?: unknown }>;
+    };
+    // CR 328 - change order and payment amounts only for projects whose figures this person may see.
+    const pids = [...new Set([...(links.changeOrders || []), ...(links.payments || [])].map((x) => x.projectId).filter(Boolean))];
+    if (pids.length) {
+      const rows = await Project.find({ projectId: { $in: pids } }).select("projectId ownerId figuresAccess").lean();
+      const allowed = new Set(rows.filter((p) => canSeeFigures(p as { ownerId?: unknown; figuresAccess?: Record<string, boolean> }, req.user!.userId, req.user!.role)).map((p) => p.projectId));
+      for (const x of [...(links.changeOrders || []), ...(links.payments || [])]) if (!allowed.has(x.projectId)) x.amount = undefined;
+    }
+    res.json(links);
   } catch (err) { next(err); }
 });
 

@@ -716,6 +716,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const rfqOpen = searchParams.get("rfq"), poOpen = searchParams.get("po");
     if (rfqOpen) setOpenRfqId(rfqOpen);
     if (poOpen) setOpenPoId(poOpen);
+    // CR 328 - &pm=<tab> opens that tab of Project Management (a company's profile links to its work packages).
+    const pmTab = searchParams.get("pm");
+    if (pmTab) setPmFocus({ id: pmTab, n: Date.now() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   const [showSectionList, setShowSectionList] = useState(false); // reorder-list panel (kept, hidden by default — on-box arrows are primary)

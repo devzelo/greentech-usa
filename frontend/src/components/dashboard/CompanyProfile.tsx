@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Building2, ArrowLeft, Mail, Phone, Globe, MapPin, Pencil, Archive, RotateCcw, Trash2, Link2,
-  Receipt, FileText, Truck, Award, BookOpen, Download, Eye, Upload, Loader2, Check, X, Landmark,
-  Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck,
-} from "lucide-react";
+import { Building2, ArrowLeft, Mail, Phone, Globe, MapPin, Pencil, Archive, RotateCcw, Trash2, Link2, Receipt, FileText, Truck, Award, BookOpen, Download, Eye, Upload, Loader2, Check, X, Landmark, Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck, Boxes, FilePen, Banknote } from "lucide-react";
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
   fetchCompanyTasks, companyFileUrl, withFileToken,
@@ -30,6 +26,11 @@ const CAT_CLS: Record<string, string> = {
 // CR-P-43 — a full, read-only company profile: identity + everything this company is involved
 // with across the platform (projects, agreements, RFQs, quotes, POs, invoices, shipments,
 // submittals) plus its documents. Opened from the Directory card / title.
+// CR 328 - how a work package's status and a change order's amount read on the profile.
+const WP_STATUS: Record<string, string> = { not_started: "Not started", in_progress: "In progress", complete: "Complete", on_hold: "On hold", cancelled: "Cancelled" };
+const asMoney = (v?: string) => { if (v === undefined || v === null || v === "") return "-"; const n = Number(String(v).replace(/[^0-9.\-]/g, "")); return /^[\s$\d,.\-]+$/.test(String(v)) && Number.isFinite(n) ? n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2, minimumFractionDigits: 0 }) : String(v); };
+const coAmount = (v?: number) => (v === undefined || v === null ? "-" : `${v >= 0 ? "+" : "-"}${Math.abs(v).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2, minimumFractionDigits: 0 })}`);
+
 export default function CompanyProfile({
   company, onBack, onEdit, onArchive, onDelete, onCopyLink, onResolvePending, showArchived,
 }: {
@@ -109,6 +110,9 @@ export default function CompanyProfile({
     invoices: links?.invoices.length ?? 0,
     shipments: links?.shipments?.length ?? 0,
     submittals: links?.submittals?.length ?? 0,
+    workPackages: links?.workPackages?.length ?? 0,
+    changeOrders: links?.changeOrders?.length ?? 0,
+    payments: links?.payments?.length ?? 0,
     documents: files.length,
   }), [links, files]);
 
@@ -177,6 +181,21 @@ export default function CompanyProfile({
           title: "Invoices",
           columns: [{ label: "Number", w: 96 }, { label: "Type", w: 84 }, { label: "Amount", w: 92, align: "right" }, { label: "Date", w: 88 }, { label: "Status", w: 108 }],
           rows: (links?.invoices || []).map((i) => [i.number, i.type, i.amount, i.date, i.status]),
+        },
+        {
+          title: "Work packages",
+          columns: [{ label: "Work package", w: 220, wrap: true }, { label: "Project", w: 120, wrap: true }, { label: "Status", w: 78 }, { label: "Progress", w: 50, align: "right" }],
+          rows: (links?.workPackages || []).map((w) => [w.name, pname(w.projectId), WP_STATUS[w.status] || w.status, `${w.progress}%`]),
+        },
+        {
+          title: "Change orders",
+          columns: [{ label: "Change order", w: 70 }, { label: "Work package", w: 150, wrap: true }, { label: "Reason", w: 140, wrap: true }, { label: "Amount", w: 70, align: "right" }, { label: "Status", w: 38 }],
+          rows: (links?.changeOrders || []).map((c) => [c.no, `${c.packageName} (${pname(c.projectId)})`, c.reason, coAmount(c.amount), c.status === "approved" ? "OK" : "Prop."]),
+        },
+        {
+          title: "Payments",
+          columns: [{ label: "Date", w: 80 }, { label: "Invoice", w: 110 }, { label: "Amount", w: 90, align: "right" }, { label: "Method", w: 100, wrap: true }, { label: "Project", w: 88, wrap: true }],
+          rows: (links?.payments || []).map((p) => [p.date, `#${p.invoiceNo} (${p.type})`, asMoney(p.amount), [p.method, p.reference].filter(Boolean).join(" · "), pname(p.projectId)]),
         },
         {
           title: "Submittals",
@@ -270,6 +289,10 @@ export default function CompanyProfile({
         <StatTile label="Invoices" value={counts.invoices} icon={Receipt} cls="bg-emerald-50 text-emerald-600" onClick={() => goTo("invoices")} />
         <StatTile label="Shipments" value={counts.shipments} icon={Truck} cls="bg-orange-50 text-orange-600" onClick={() => goTo("shipments")} />
         <StatTile label="Submittals" value={counts.submittals} icon={PackageCheck} cls="bg-rose-50 text-rose-600" onClick={() => goTo("submittals")} />
+        {/* CR 328 - GT Comments 3, page 1: a company's change orders and payments appear on its profile, with its work packages. */}
+        <StatTile label="Work packages" value={counts.workPackages} icon={Boxes} cls="bg-sky-50 text-sky-600" onClick={() => goTo("workPackages")} />
+        <StatTile label="Change orders" value={counts.changeOrders} icon={FilePen} cls="bg-yellow-50 text-yellow-700" onClick={() => goTo("changeOrders")} />
+        <StatTile label="Payments" value={counts.payments} icon={Banknote} cls="bg-lime-50 text-lime-700" onClick={() => goTo("payments")} />
         <StatTile label="Documents" value={counts.documents} icon={BookOpen} cls="bg-slate-100 text-slate-500" onClick={() => goTo("documents")} />
       </div>
 
@@ -317,9 +340,18 @@ export default function CompanyProfile({
               <ProfileSection prefix="cp" secKey="submittals" title="Submittals" count={counts.submittals} icon={PackageCheck} highlight={highlight}
                 rows={(links.submittals || []).map((s) => <ActivityRow key={s._id} primary={s.productName || "Submittal"} secondary={s.status || "—"} projectId={s.projectId} query="tab=procurement&proc=submittals" projById={projById} />)}
                 emptyHint="No submittals for this company's products yet." />
+              <ProfileSection prefix="cp" secKey="workPackages" title="Work packages" count={counts.workPackages} icon={Boxes} highlight={highlight}
+                rows={(links.workPackages || []).map((w) => <ActivityRow key={w._id} primary={<>{w.name}{w.archived ? <span className="text-slate-400 font-medium"> · archived</span> : null}</>} secondary={<>{WP_STATUS[w.status] || w.status} · {w.progress}%</>} projectId={w.projectId} query={`tab=pm&pm=work-packages&hl=wp-${w._id}`} projById={projById} />)}
+                emptyHint="No work packages given to this company yet." />
+              <ProfileSection prefix="cp" secKey="changeOrders" title="Change orders" count={counts.changeOrders} icon={FilePen} highlight={highlight}
+                rows={(links.changeOrders || []).map((c) => <ActivityRow key={c._id} primary={<>{c.no} <span className="text-slate-400 font-medium">· {c.packageName}</span></>} secondary={<>{coAmount(c.amount)} · {c.status === "approved" ? "Approved" : "Proposed"}{c.reason ? ` · ${c.reason}` : ""}</>} projectId={c.projectId} query={`tab=pm&pm=work-packages&hl=wp-${c.packageId}`} projById={projById} />)}
+                emptyHint="No change orders on this company's work packages." />
+              <ProfileSection prefix="cp" secKey="payments" title="Payments" count={counts.payments} icon={Banknote} highlight={highlight}
+                rows={(links.payments || []).map((p) => <ActivityRow key={p._id} primary={<>{asMoney(p.amount)} <span className="text-slate-400 font-medium">· #{p.invoiceNo}</span></>} secondary={<>{p.date || "—"}{p.method ? ` · ${p.method}` : ""}{p.reference ? ` · ${p.reference}` : ""}</>} projectId={p.projectId} query="tab=finances" projById={projById} />)}
+                emptyHint="No payments recorded on this company's invoices yet." />
             </div>
           )}
-          <p className="text-[10px] text-slate-400 mt-6">Records link here automatically when this company is chosen on an invoice / RFQ / PO / agreement / shipment, or matches a product's manufacturer. Click any row to open its project.</p>
+          <p className="text-[10px] text-slate-400 mt-6">Records link here automatically when this company is chosen on an invoice / RFQ / PO / agreement / shipment / work package, or matches a product's manufacturer. Click any row to open its project.</p>
         </div>
       )}
 

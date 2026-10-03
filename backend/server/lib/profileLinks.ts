@@ -9,6 +9,7 @@ import Rfq from "../models/Rfq";
 import Shipment from "../models/Shipment";
 import Vendor from "../models/Vendor";
 import VendorQuote from "../models/VendorQuote";
+import WorkPackage from "../models/WorkPackage";
 
 export const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -51,7 +52,7 @@ export async function buildUserLinks(uid: string, name: string) {
 // CR-P (16): `linkedUserId` (the company's login) pulls in projects where that login is a guest
 // and projects that list the company under subcontractors[] — previously invisible here, which
 // left the Access tab unaware of grants made from the project side.
-export async function buildCompanyLinks(companyId: string, name: string, email = "", linkedUserId = "") {
+export async function buildCompanyLinks(companyId: string, name: string, email = "", linkedUserId = "", internal = false) {
   const nameRx = name ? new RegExp(`^${escapeRegex(name)}$`, "i") : null;
   // Received quotes: vendors picked from the Directory carry a hard companyId link; legacy rows
   // entered by hand only match on name, so we accept either.
@@ -106,7 +107,45 @@ export async function buildCompanyLinks(companyId: string, name: string, email =
     : [];
   const projects = [...memberProjects, ...referenced];
 
-  return { invoices, rfqs, pos, shipments, quotes, agreements, submittals, projects };
+  if (!internal) return { invoices, rfqs, pos, shipments, quotes, agreements, submittals, projects };
+
+  /**
+   * CR 328 (GT Comments 3, page 1: "All RFQs, quotations, POs, agreements, change orders, invoices,
+   * and payments associated with a company should also automatically appear under that company's
+   * profile"). Only on GreenTech's own view of the profile, not on the company's login: the work
+   * packages are an internal list.
+   *
+   * Its work packages: it is the package's responsible company, or it won the package through its
+   * awarded quote, its PO or its agreement. Their change orders come with them, and the payments
+   * recorded on its invoices are listed one by one.
+   */
+  const awardedRfqIds = (quotes as Array<{ rfqId?: string; status?: string }>).filter((q) => q.status === "Awarded").map((q) => String(q.rfqId || "")).filter(Boolean);
+  const wpMatch: Record<string, unknown>[] = [{ "responsible.companyId": companyId }];
+  if (nameRx) wpMatch.push({ "responsible.kind": "company", "responsible.name": nameRx });
+  if (pos.length) wpMatch.push({ poId: { $in: pos.map((p) => String(p._id)) } });
+  if (agreements.length) wpMatch.push({ agreementId: { $in: agreements.map((a) => String(a._id)) } });
+  if (awardedRfqIds.length) wpMatch.push({ rfqId: { $in: awardedRfqIds } });
+  const [packageRows, paidInvoices] = await Promise.all([
+    WorkPackage.find({ $or: wpMatch }).select("name status progress progressMode subtasks changeOrders projectId archived").sort({ updatedAt: -1 }).limit(200).lean(),
+    Invoice.find(nameRx ? { $or: [{ companyId }, { party: nameRx }], "payments.0": { $exists: true } } : { companyId, "payments.0": { $exists: true } })
+      .select("number type payments projectId").sort({ createdAt: -1 }).limit(200).lean(),
+  ]);
+  const workPackages = packageRows.map((p) => {
+    const subs = p.subtasks || [];
+    const progress = p.progressMode === "subtasks" && subs.length ? Math.round(subs.reduce((a, t) => a + (t.progress || 0), 0) / subs.length) : p.progress || 0;
+    return { _id: String(p._id), name: p.name, status: p.status, progress, projectId: p.projectId, archived: !!p.archived };
+  });
+  const changeOrders = packageRows.flatMap((p) => (p.changeOrders || []).map((c) => ({
+    _id: `${p._id}-${c.id}`, no: c.no, date: c.date, reason: c.reason, amount: c.amount, status: c.status, packageId: String(p._id), packageName: p.name, projectId: p.projectId,
+  })));
+  const payments = paidInvoices.flatMap((iv) => (iv.payments || []).map((pm, i) => ({
+    _id: `${iv._id}-${i}`, invoiceId: String(iv._id), invoiceNo: iv.number, type: iv.type, date: pm.date, amount: pm.amount, method: pm.method, reference: pm.reference, projectId: iv.projectId,
+  }))).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  // Their projects are named on the profile too, like those of the records above.
+  const known = new Set((projects as Array<{ projectId?: string }>).map((p) => p.projectId));
+  const more = [...new Set([...workPackages, ...payments].map((x) => x.projectId).filter((id) => id && !known.has(id)))];
+  if (more.length) projects.push(...(await Project.find({ projectId: { $in: more } }).select("projectId name status").limit(200).lean()));
+  return { invoices, rfqs, pos, shipments, quotes, agreements, submittals, projects, workPackages, changeOrders, payments };
 }
 
 export async function resolveProjectNames(pidSet: Set<string>) {

@@ -3026,6 +3026,10 @@ export interface CompanyLinks {
   agreements?: Array<{ _id: string; name: string; status: string; projectId: string }>;
   submittals?: Array<{ _id: string; productName: string; manufacturer: string; status: string; projectId: string }>;
   projects?: Array<{ _id: string; projectId: string; name: string; status: string }>;
+  /** CR 328 - on GreenTech's view of a profile: the packages this company does or won, their change orders, and the payments on its invoices. */
+  workPackages?: Array<{ _id: string; name: string; status: string; progress: number; projectId: string; archived?: boolean }>;
+  changeOrders?: Array<{ _id: string; no: string; date: string; reason: string; amount?: number; status: string; packageId: string; packageName: string; projectId: string }>;
+  payments?: Array<{ _id: string; invoiceId: string; invoiceNo: string; type: string; date: string; amount?: string; method: string; reference: string; projectId: string }>;
 }
 export async function fetchCompanyLinks(id: string): Promise<CompanyLinks> { return request(`/companies/${id}/links`); }
 // CR-P-06c — backfill the Directory from real project data (clients, partners, subcontractors,

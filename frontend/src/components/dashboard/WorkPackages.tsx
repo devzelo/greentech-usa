@@ -11,6 +11,7 @@ import {
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
+import { useHighlight } from "../../lib/useHighlight";
 import { setFiguresShown, useFiguresShown } from "../../lib/figuresPrivacy";
 import { UNCATEGORISED, fmtDay, phasePercent } from "../../lib/projectSchedule";
 import { Fig } from "./FiguresPrivacy";
@@ -87,6 +88,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
   const [narrow, setNarrow] = useState(false);
   const [busy, setBusy] = useState(false);
   const shown = useFiguresShown();
+  // A link from elsewhere (a company's profile) can point at one package: ?hl=wp-<id>.
+  const flash = useHighlight(list !== null);
   // CR 328 (GT Comments 3, page 1: "view, print, share ...") - the list and each package as a PDF.
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -390,7 +393,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
                     onDragLeave={() => setDragOver((v) => (v === p._id ? "" : v))}
                     onDrop={(e) => { e.preventDefault(); if (dragFrom.current) void move(dragFrom.current, at); dragFrom.current = null; setDragOver(""); }}
                     onDragEnd={() => { dragFrom.current = null; setDragOver(""); }}
-                    className={`border-t border-slate-100 ${dragOver === p._id ? "bg-blue-50" : rowBg} ${p.archived ? "opacity-60" : ""}`}
+                    data-hl={`wp-${p._id}`} id={`wp-${p._id}`}
+                    className={`border-t border-slate-100 ${dragOver === p._id ? "bg-blue-50" : rowBg} ${p.archived ? "opacity-60" : ""} ${flash === `wp-${p._id}` ? "hl-flash" : ""}`}
                   >
                     <td className={`${td} sticky left-0 z-[1] ${dragOver === p._id ? "bg-blue-50" : amber ? "bg-amber-50" : "bg-white"}`}>
                       <span className="flex items-center gap-1 font-bold tabular-nums text-slate-800">
