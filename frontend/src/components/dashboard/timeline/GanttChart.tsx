@@ -377,7 +377,8 @@ export default function GanttChart({
                         {/* A blue summary bar with end caps, as a project schedule prints it. */}
                         {/* CR 321 - in the phase's own colour when it has one; the done part is drawn darker. */}
                         <div className="relative h-2 overflow-hidden rounded-sm" style={{ background: l.color || BLUE }}>
-                          <div className="h-full" style={l.color ? { width: `${done}%`, background: "rgba(15,23,42,0.35)" } : { width: `${done}%`, background: BLUE_DARK }} />
+                          {/* CR 323 - the finished part only when "Show % complete" is ticked. */}
+                          {on("percent") && <div className="h-full" style={l.color ? { width: `${done}%`, background: "rgba(15,23,42,0.35)" } : { width: `${done}%`, background: BLUE_DARK }} />}
                         </div>
                         <div className="absolute -top-0.5 left-0 h-3 w-1" style={{ background: l.color || BLUE_DARK }} />
                         <div className="absolute -top-0.5 right-0 h-3 w-1" style={{ background: l.color || BLUE_DARK }} />
@@ -423,7 +424,8 @@ export default function GanttChart({
                         style={{ top: BAR_TOP, height: BAR_H, left: x(ps) + move, width: Math.max(4, xEnd(pe) - x(ps) + grow), background: color }}
                         onPointerDown={(e) => beginDrag(e, m, "move")}
                       >
-                        <div className="pointer-events-none h-full" style={{ width: `${pct}%`, background: DONE }} />
+                        {/* CR 323 (GT Comments 2, page 6) - bars are plain unless "Show % complete" is ticked. */}
+                        {on("percent") && <div className="pointer-events-none h-full" style={{ width: `${pct}%`, background: DONE }} />}
                         {canResize && (
                           <div
                             className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-black/10 opacity-0 hover:opacity-100"
@@ -484,12 +486,12 @@ export default function GanttChart({
   );
 }
 
-export function GanttLegend({ colors = DEFAULT_COLORS }: { colors?: BarColors }) {
+export function GanttLegend({ colors = DEFAULT_COLORS, progress = false }: { colors?: BarColors; progress?: boolean }) {
   const item = "inline-flex items-center gap-1.5";
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-slate-500">
       <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: colors.critical }} /> Critical task</span>
-      <span className={item}><span className="h-2.5 w-8 overflow-hidden rounded-sm" style={{ background: colors.normal }}><span className="block h-full w-1/2" style={{ background: DONE }} /></span> Non-critical task (darker = done)</span>
+      <span className={item}><span className="h-2.5 w-8 overflow-hidden rounded-sm" style={{ background: colors.normal }}>{progress && <span className="block h-full w-1/2" style={{ background: DONE }} />}</span> Non-critical task{progress ? " (darker = done)" : ""}</span>
       <span className={item}><Mark color={colors.milestone} size={10} /> Milestone</span>
       <span className={item}><span className="h-2 w-8 rounded-sm" style={{ background: BLUE }} /> Phase (its own colour)</span>
       <span className={item}><span className="h-2.5 w-8 rounded-sm" style={{ background: FLOAT_COLOR }} /> Float</span>

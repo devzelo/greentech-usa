@@ -1586,7 +1586,7 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
             onResize={canEdit ? dragResize : undefined}
             onOpen={openItem}
           />
-          <GanttLegend colors={display.colors} />
+          <GanttLegend colors={display.colors} progress={barOn(display, "percent")} />
         </div>
       )}
       </div>

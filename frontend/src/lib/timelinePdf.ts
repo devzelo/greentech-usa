@@ -290,6 +290,8 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
   // CR 323 - what is written beside the bars, and whether the links are drawn, as on screen.
   const bars = o.display?.bars;
   const showLinks = bars ? !!bars.find((x) => x.key === "links")?.on : true;
+  // CR 323 - the finished part of a bar only when "Show % complete" is ticked (always, without display options).
+  const showPct = bars ? !!bars.find((x) => x.key === "percent")?.on : true;
   const isCrit = (id: string) => showCrit && cpm.critical.has(id);
   const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = GANTT_LABEL, CH = W - LABEL, ROW = 15, BOTTOM = 74;
   const zoom = o.zoom || "month";
@@ -448,7 +450,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
               const bx = clampL(x(s0)), bw = Math.max(1.5, clampL(xEnd(e0)) - bx);
               const done = line.items.length ? line.items.reduce((sum, z) => sum + phasePercent(z), 0) / line.items.length : 0;
               page.drawRectangle({ x: bx, y: top - 9.5, width: bw, height: 4.5, color: PHASE });
-              if (done > 0) page.drawRectangle({ x: bx, y: top - 9.5, width: (bw * done) / 100, height: 4.5, color: PHASE_DARK });
+              if (showPct && done > 0) page.drawRectangle({ x: bx, y: top - 9.5, width: (bw * done) / 100, height: 4.5, color: PHASE_DARK });
               if (s0 >= sheetFrom) page.drawRectangle({ x: bx, y: top - 11, width: 1.6, height: 7.5, color: PHASE_DARK });
               if (e0 < sheetTo) page.drawRectangle({ x: bx + bw - 1.6, y: top - 11, width: 1.6, height: 7.5, color: PHASE_DARK });
             }
@@ -483,7 +485,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
             const bx = clampL(x(ps)), bw = Math.max(1.5, clampL(xEnd(pe)) - bx);
             page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: crit ? CRIT : NORMAL });
             const pct = phasePercent(m);
-            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? CRIT_DARK : NORMAL_DARK });
+            if (showPct && pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? CRIT_DARK : NORMAL_DARK });
             // Its float: the days it can slip before the finish moves, as a pale tail.
             const fl = cpm.float.get(m.id);
             let after = clampL(xEnd(pe));
@@ -536,7 +538,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
         page.drawLine({ start: { x: x(t0), y: bodyTop }, end: { x: x(t0), y: bodyTop - bodyH }, thickness: 1, color: BLUE });
         page.drawText("Today", { x: x(t0) - b.bold.widthOfTextAtSize("Today", 6) / 2, y: headTop + 3, size: 6, font: b.bold, color: BLUE });
       }
-      legend(page, b, X, bodyTop - bodyH - 16, colors);
+      legend(page, b, X, bodyTop - bodyH - 16, colors, showPct);
       f = { page, y: bodyTop - bodyH - 30 };
     }
     i += chunk.length;
@@ -545,12 +547,12 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
   return f;
 }
 
-function legend(page: PDFPage, b: Brand, x: number, y: number, colors: BarColors = DEFAULT_COLORS) {
+function legend(page: PDFPage, b: Brand, x: number, y: number, colors: BarColors = DEFAULT_COLORS, progress = true) {
   const TASK = hex(colors.normal), TASK_DONE = darker(colors.normal), RED = hex(colors.critical), INK = hex(colors.milestone);
   const diamond = (cx: number, cy: number, r: number) => `M ${cx} ${-(cy - r)} L ${cx + r} ${-cy} L ${cx} ${-(cy + r)} L ${cx - r} ${-cy} Z`;
   const items: Array<[string, (px: number) => void]> = [
     ["Phase", (px) => { page.drawRectangle({ x: px, y: y, width: 18, height: 3.5, color: PHASE }); page.drawRectangle({ x: px, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); page.drawRectangle({ x: px + 16.6, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); }],
-    ["Task (darker = done)", (px) => { page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: TASK }); page.drawRectangle({ x: px, y: y - 1, width: 9, height: 5, color: TASK_DONE }); }],
+    [progress ? "Task (darker = done)" : "Task", (px) => { page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: TASK }); if (progress) page.drawRectangle({ x: px, y: y - 1, width: 9, height: 5, color: TASK_DONE }); }],
     ["Critical task", (px) => page.drawRectangle({ x: px, y: y - 1, width: 18, height: 5, color: RED })],
     ["Milestone", (px) => page.drawSvgPath(diamond(px + 5, y + 1.5, 3.8), { x: 0, y: 0, color: INK })],
     ["Link", (px) => { page.drawLine({ start: { x: px, y: y + 4 }, end: { x: px + 6, y: y + 4 }, thickness: 0.6, color: LINK_INK }); page.drawLine({ start: { x: px + 6, y: y + 4 }, end: { x: px + 6, y: y }, thickness: 0.6, color: LINK_INK }); page.drawLine({ start: { x: px + 6, y: y }, end: { x: px + 16, y: y }, thickness: 0.6, color: LINK_INK }); page.drawSvgPath(`M ${px + 18} ${-y} L ${px + 15.4} ${-(y + 1.5)} L ${px + 15.4} ${-(y - 1.5)} Z`, { x: 0, y: 0, color: LINK_INK }); }],
