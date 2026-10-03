@@ -501,6 +501,8 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name, contractStart, deadline,
     originalDeadline: project.endDate, milestones: outRows, categories: outCats, phaseInfo: subject ? subject.phaseInfo : phases, version: label, scheduleName, remarks: printRemarks,
     zoom, actual: printActual && display.actual, paper, overview: printOverview, critical: showCritical, float: showFloat,
+    // CR 323 / 324 - print what is shown: columns, bar text, links and colours.
+    display: { columns: display.columns, bars: display.bars, colors: display.colors },
   });
   const versionLabel = subject
     ? `${entryCode(subject)} · ${entryTitle(subject)}`
@@ -581,14 +583,26 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     const nums = wbsNumbers(list, cats);
     const cp = criticalPath(list, entry ? { phases: entry.phaseInfo } : planCtx);
     const esc = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const head = ["#", "Phase", "Task / milestone", "Type", "Description", "Planned start", "Planned end", "Duration (days)", "Predecessors", "Float (days)", "Critical", "Baseline start", "Baseline end", "Actual start", "Actual end", "Status", "% complete", "Days late", "Responsible", "Notes"];
+    // CR 323 - the columns shown on screen, in the same order, after the phase each row sits in.
+    // The internal notes are never exported, as they are never printed.
+    const keys: ColKey[] = cols.includes("name") ? cols : ["name", ...cols];
+    const HEAD: Record<ColKey, string> = {
+      id: "#", name: "Task / milestone", type: "Type", start: "Start", finish: "Finish", duration: "Duration (days)", actualStart: "Actual start", actualFinish: "Actual finish",
+      float: "Float (days)", critical: "Critical", predecessors: "Predecessors", relationship: "Relationship", status: "Status", assigned: "Assigned to", tags: "Tags", percent: "% complete",
+    };
+    const head = ["Phase", ...keys.map((k) => HEAD[k])];
     const ordered = groupByCategory(list.map((m) => ({ m })), cats).flatMap((g) => g.items.map((x) => x.m));
     const lines = ordered.map((m) => {
-      const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd);
+      const ms = !!m.isMilestone || isMilestonePoint(m);
       const fl = cp.float.get(m.id);
-      return [nums.task.get(m.id) || "", m.category || "", m.name, m.isMilestone ? "Milestone" : "Task", m.description, m.plannedStart, m.isMilestone ? m.plannedStart : m.plannedEnd, m.isMilestone ? 0 : ps && pe ? daysBetween(ps, pe) : "",
-        predsOf(m).map((q) => predLabel(q, nums.task.get(q.id) || "?")).join(", "), fl ?? "", fl !== undefined && fl <= 0 ? "Yes" : "",
-        m.baselineStart, m.baselineEnd, m.actualStart, m.actualEnd, STATUS_META[m.status || "not_started"].label, phasePercent(m), delayDays(m, today) || "", (m.responsible || []).join("; "), m.notes].map(esc).join(",");
+      const preds = predsOf(m);
+      const value: Record<ColKey, unknown> = {
+        id: nums.task.get(m.id) || "", name: m.name, type: ms ? "Milestone" : "Task", start: m.plannedStart, finish: ms ? m.plannedStart : m.plannedEnd,
+        duration: ms ? 0 : plannedDays(m) ?? "", actualStart: m.actualStart, actualFinish: m.actualEnd, float: fl ?? "", critical: fl === undefined ? "" : fl <= 0 ? "Yes" : "No",
+        predecessors: preds.map((q) => predLabel(q, nums.task.get(q.id) || "?")).join(", "), relationship: preds.map((q) => q.type).join(", "),
+        status: STATUS_META[m.status || "not_started"].label, assigned: (m.responsible || []).join("; "), tags: (m.tags || []).join("; "), percent: phasePercent(m),
+      };
+      return [m.category || "", ...keys.map((k) => value[k])].map(esc).join(",");
     });
     const blob = new Blob(["\ufeff" + [head.join(","), ...lines].join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");

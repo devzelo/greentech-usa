@@ -6,6 +6,7 @@ import {
   DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, fmtShort, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule, wbsNumbers,
 } from "./projectSchedule";
 import { criticalPath, predLabel, predsOf, type CpmInfo } from "./scheduleLinks";
+import { DEFAULT_COLORS, barLabel, type BarColors, type ColKey, type ScheduleDisplay } from "./scheduleDisplay";
 
 /**
  * CR 190: the project timeline as a document for the monthly report: summary figures, the phases
@@ -43,8 +44,8 @@ const EMERALD = rgb(0.06, 0.73, 0.51);
 // milestones, grey links.
 const PHASE = rgb(0.23, 0.51, 0.96), PHASE_DARK = rgb(0.11, 0.31, 0.85);
 // CR 324 - the document's colours: critical red, non-critical blue, a black diamond, float pale blue.
-const TASK = rgb(0.145, 0.388, 0.922), TASK_DONE = rgb(0.11, 0.27, 0.66), CRIT_DONE = rgb(0.6, 0.1, 0.1);
-const INK = rgb(0.06, 0.09, 0.16), FLOAT = rgb(0.75, 0.86, 0.996);
+// (Task, critical and milestone colours come from the display options; DEFAULT_COLORS otherwise.)
+const FLOAT = rgb(0.75, 0.86, 0.996);
 const LINK_INK = rgb(0.58, 0.64, 0.72);
 
 const hex = (h: string) => { const n = parseInt(h.replace("#", ""), 16); return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
@@ -77,7 +78,18 @@ export interface TimelinePdfInput {
   critical?: boolean;
   /** CR 319 - draw each task's float after its bar. Off unless asked for. */
   float?: boolean;
+  /**
+   * CR 323 / 324 - print what is shown: the table's columns in the order chosen, the text beside
+   * the bars, whether links are drawn, and the bar colours. Left out, the table prints its full
+   * standard set and the chart its standard look.
+   */
+  display?: Pick<ScheduleDisplay, "columns" | "bars" | "colors">;
 }
+
+/** The columns printed when no display options are given: everything the table used to print. */
+const STANDARD_COLUMNS: ColKey[] = ["id", "name", "type", "start", "finish", "actualStart", "actualFinish", "duration", "predecessors", "float", "critical", "status", "percent"];
+/** A colour a shade darker, for the finished part of a bar. */
+const darker = (h: string, k = 0.68) => { const n = parseInt(h.replace("#", ""), 16); return rgb((((n >> 16) & 255) * k) / 255, (((n >> 8) & 255) * k) / 255, ((n & 255) * k) / 255); };
 
 /**
  * CR 288 - the calendar the chart has to cover, so the number of sheets can be worked out before
@@ -154,6 +166,31 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const cpm = criticalPath(rows, { phases: o.phaseInfo });
   const showCrit = o.critical !== false;
   const showActual = o.actual !== false;
+  const colors: BarColors = o.display?.colors || DEFAULT_COLORS;
+  const critInk = hex(colors.critical);
+  // CR 323 - the columns as chosen on screen, in that order. Leaving out the actual dates in the
+  // print options also leaves out their columns.
+  const keys = (o.display ? o.display.columns.filter((c) => c.on).map((c) => c.key) : STANDARD_COLUMNS)
+    .filter((k) => showActual || (k !== "actualStart" && k !== "actualFinish"));
+  if (!keys.includes("name")) keys.unshift("name");
+  const COL: Record<ColKey, TableCol> = {
+    id: { label: "#", w: 30 },
+    name: { label: "Task / milestone", w: 200, wrap: true },
+    type: { label: "Type", w: 54 },
+    start: { label: "Start", w: 74 },
+    finish: { label: "Finish", w: 74 },
+    actualStart: { label: "Actual start", w: 74, tint: SKY },
+    actualFinish: { label: "Actual finish", w: 80, tint: SKY, wrap: true },
+    duration: { label: "Duration", w: 74, align: "right" },
+    predecessors: { label: "Predecessors", w: 96, wrap: true },
+    relationship: { label: "Relationship", w: 70 },
+    float: { label: "Float", w: 40, align: "right" },
+    critical: { label: "Critical", w: 44 },
+    status: { label: "Status", w: 80 },
+    assigned: { label: "Assigned to", w: 110, wrap: true },
+    tags: { label: "Tags", w: 100, wrap: true },
+    percent: { label: "% complete", w: 62 },
+  };
   const tableRows: TableRow[] = rows.map((m, i) => {
     const lateBy = delayDays(m, today);
     const pct = phasePercent(m);
@@ -162,34 +199,38 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
     const fl = cpm.float.get(m.id);
     const crit = showCrit && fl !== undefined && fl <= 0;
     const ms = !!m.isMilestone;
-    const cells = [
-      wbs.task.get(m.id) || String(i + 1),
-      m.name + (m.responsible?.length ? `\n${m.responsible.join(", ")}` : ""),
-      ms ? "Milestone" : "Task",
-      fmtDay(m.plannedStart) || "-",
-      ms ? "-" : fmtDay(m.plannedEnd) || "-",
-      ...(showActual ? [
-        fmtDay(m.actualStart) || "-",
-        actualEnd + (lateBy && m.actualEnd ? `\n${lateBy} days late` : ""),
-      ] : []),
-      ms ? "0 days" : ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? " (actual)" : ""}`,
-      predsOf(m).map((q) => predLabel(q, wbs.task.get(q.id) || "?")).join(", ") || "-",
-      fl === undefined ? "-" : String(fl),
-      fl === undefined ? "-" : fl <= 0 ? "Yes" : "No",
-      STATUS_META[m.status || "not_started"].label,
-      `${pct}%`,
-      ...(o.remarks ? [m.notes || ""] : []),
-    ];
-    // The columns shift left by two when the Actual pair is left out.
-    const shift = showActual ? 0 : 2;
+    const preds = predsOf(m);
+    const cell: Record<ColKey, string> = {
+      id: wbs.task.get(m.id) || String(i + 1),
+      // Who it is assigned to goes under the name, unless it has a column of its own.
+      name: m.name + (!keys.includes("assigned") && m.responsible?.length ? `\n${m.responsible.join(", ")}` : ""),
+      type: ms ? "Milestone" : "Task",
+      start: fmtDay(m.plannedStart) || "-",
+      finish: ms ? fmtDay(m.plannedStart) || "-" : fmtDay(m.plannedEnd) || "-",
+      actualStart: fmtDay(m.actualStart) || "-",
+      actualFinish: actualEnd + (lateBy && m.actualEnd ? `\n${lateBy} days late` : ""),
+      duration: ms ? "0 days" : ed.days === null ? "-" : `${ed.days} day${ed.days === 1 ? "" : "s"}${ed.actual ? " (actual)" : ""}`,
+      predecessors: preds.map((q) => predLabel(q, wbs.task.get(q.id) || "?")).join(", ") || "-",
+      relationship: preds.map((q) => q.type).join(", ") || "-",
+      float: fl === undefined ? "-" : String(fl),
+      critical: fl === undefined ? "-" : fl <= 0 ? "Yes" : "No",
+      status: STATUS_META[m.status || "not_started"].label,
+      assigned: (m.responsible || []).join(", ") || "-",
+      tags: (m.tags || []).join(", ") || "-",
+      percent: `${pct}%`,
+    };
+    const cells = [...keys.map((k) => cell[k]), ...(o.remarks ? [m.notes || ""] : [])];
     const cellColors: Array<ReturnType<typeof rgb> | undefined> = [];
-    if (showActual) cellColors[6] = lateBy && m.actualEnd ? RED : undefined;   // a late finish, red as on screen
-    if (crit) { cellColors[10 - shift] = RED; cellColors[11 - shift] = RED; }   // no float: the critical path
-    cellColors[12 - shift] = statusInk(m.status);                               // the status chip's colour
+    keys.forEach((k, n) => {
+      if (k === "actualFinish" && lateBy && m.actualEnd) cellColors[n] = RED;            // a late finish, red as on screen
+      if ((k === "float" || k === "critical") && crit) cellColors[n] = critInk;          // no float: the critical path
+      if (k === "status") cellColors[n] = statusInk(m.status);                           // the status chip's colour
+    });
+    const pctCol = keys.indexOf("percent");
     return {
       cells,
       cellColors,
-      bar: { col: 13 - shift, pct, color: pct >= 100 ? EMERALD : BLUE },
+      ...(pctCol >= 0 ? { bar: { col: pctCol, pct, color: pct >= 100 ? EMERALD : BLUE } } : {}),
       color: lateBy && !m.actualEnd ? RED : undefined,
     };
   });
@@ -198,32 +239,16 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
   const grouped: TableRow[] = hasCats
     ? groupByCategory(rows.map((m, i) => ({ m, row: tableRows[i] })), o.categories, true).flatMap((g) => [{ group: `${wbs.phase.get(g.category) || ""}   ${g.category}  (${g.items.length})`.trim() }, ...g.items.map((x) => x.row)])
     : tableRows;
-  const fixed: TableCol[] = [
-    { label: "#", w: 30 },
-    { label: "Task / milestone", w: 200, wrap: true },
-    { label: "Type", w: 54 },
-    { label: "Start", w: 74, band: "Planned" },
-    { label: "End", w: 74, band: "Planned" },
-    // CR 288 - the actual dates are the site's record; they print unless they were left out.
-    ...(showActual ? [
-      { label: "Start", w: 74, band: "Actual", tint: SKY },
-      { label: "End", w: 74, band: "Actual", tint: SKY, wrap: true },
-    ] as TableCol[] : []),
-    { label: "Duration", w: 74, align: "right" as const },
-    { label: "Predecessors", w: 96, wrap: true },
-    { label: "Float", w: 40, align: "right" as const },
-    { label: "Critical", w: 44 },
-    { label: "Status", w: 80 },
-    { label: "% complete", w: 62 },
-  ];
+  const fixed: TableCol[] = keys.map((k) => COL[k]);
   const used = fixed.reduce((s2, c) => s2 + c.w, 0);
-  const cols: TableCol[] = o.remarks ? [...fixed, { label: "Remark", w: W - used, wrap: true }] : fixed;
+  const cols: TableCol[] = o.remarks ? [...fixed, { label: "Remark", w: Math.max(120, W - used), wrap: true }] : fixed;
   // Without the remark column the table would float; widen the name instead.
-  if (!o.remarks) cols[1] = { ...cols[1], w: cols[1].w + (W - used) };
+  const nameAt = keys.indexOf("name");
+  if (!o.remarks && W > used) cols[nameAt] = { ...cols[nameAt], w: cols[nameAt].w + (W - used) };
   f = drawTable(b, f, X, cols, grouped.length ? grouped : [{ cells: ["", "No phases yet."] }], { newPage, size: 7.8, maxLines: 4 });
 
   // ── Gantt ──
-  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE, { wbs, cpm, showCrit, showFloat: o.float === true });
+  if (rows.some((m) => m.plannedStart && m.plannedEnd)) f = drawGantt(doc, b, newPage, f, rows, o, today, PAGE, { wbs, cpm, showCrit, showFloat: o.float === true, colors });
 
   // CR 299 - the overview strip, as it reads at the top of the schedule, when it was asked for.
   if (o.overview) f = drawOverview(b, newPage, f, rows, o, today, PAGE);
@@ -258,8 +283,13 @@ const PDF_PX_PER_DAY = { month: 2.3, week: 8, day: 12 } as const;
 const GANTT_LABEL = 250;
 
 function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilestone[], o: TimelinePdfInput, today: Date, PAGE: { w: number; h: number },
-  plan: { wbs: ReturnType<typeof wbsNumbers>; cpm: CpmInfo; showCrit: boolean; showFloat: boolean }): Flow {
-  const { wbs, cpm, showCrit, showFloat } = plan;
+  plan: { wbs: ReturnType<typeof wbsNumbers>; cpm: CpmInfo; showCrit: boolean; showFloat: boolean; colors: BarColors }): Flow {
+  const { wbs, cpm, showCrit, showFloat, colors } = plan;
+  // CR 324 - the bar colours chosen on screen (the document's by default).
+  const CRIT = hex(colors.critical), CRIT_DARK = darker(colors.critical), NORMAL = hex(colors.normal), NORMAL_DARK = darker(colors.normal), MILESTONE = hex(colors.milestone);
+  // CR 323 - what is written beside the bars, and whether the links are drawn, as on screen.
+  const bars = o.display?.bars;
+  const showLinks = bars ? !!bars.find((x) => x.key === "links")?.on : true;
   const isCrit = (id: string) => showCrit && cpm.critical.has(id);
   const X = NARROW, W = PAGE.w - NARROW * 2, LABEL = GANTT_LABEL, CH = W - LABEL, ROW = 15, BOTTOM = 74;
   const zoom = o.zoom || "month";
@@ -431,8 +461,8 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
         const crit = isCrit(m.id);
         if (k % 2 === 1) page.drawRectangle({ x: X, y: top - ROW, width: LABEL, height: ROW, color: C.mist });
         const cy0 = top - ROW / 2;
-        if (point) page.drawSvgPath(`M ${X + 25} ${-(cy0 + 2.8)} L ${X + 27.8} ${-cy0} L ${X + 25} ${-(cy0 - 2.8)} L ${X + 22.2} ${-cy0} Z`, { x: 0, y: 0, color: INK });
-        else page.drawRectangle({ x: X + 22.6, y: cy0 - 2.3, width: 4.6, height: 4.6, color: crit ? RED : TASK });
+        if (point) page.drawSvgPath(`M ${X + 25} ${-(cy0 + 2.8)} L ${X + 27.8} ${-cy0} L ${X + 25} ${-(cy0 - 2.8)} L ${X + 22.2} ${-cy0} Z`, { x: 0, y: 0, color: MILESTONE });
+        else page.drawRectangle({ x: X + 22.6, y: cy0 - 2.3, width: 4.6, height: 4.6, color: crit ? CRIT : NORMAL });
         page.drawText(wbs.task.get(m.id) || String(idx + 1), { x: X + 3, y: top - ROW / 2 - 2.3, size: 6.2, font: b.regular, color: C.s500 });
         page.drawText(fitOneLine(b.regular, m.name, 7, LABEL - 36), { x: X + 32, y: top - ROW / 2 - 2.4, size: 7, font: b.regular, color: C.slate });
         page.drawLine({ start: { x: X, y: top - ROW }, end: { x: X + W, y: top - ROW }, thickness: 0.25, color: C.border });
@@ -442,24 +472,29 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
         if (ps && pe) at.set(m.id, { y: top - 6.25, s: x(ps), e: point ? x(ps) : xEnd(pe), point });
         if (ps && pe && pe >= sheetFrom && ps < sheetTo) {
           if (point) {
-            // A milestone: a red diamond, named beside it.
+            // A milestone: a diamond in the milestone colour, with its label beside it.
             const cx = clampL(x(ps)), cy = top - 6.5;
-            page.drawSvgPath(`M ${cx} ${-(cy - 3.8)} L ${cx + 3.8} ${-cy} L ${cx} ${-(cy + 3.8)} L ${cx - 3.8} ${-cy} Z`, { x: 0, y: 0, color: INK });
-            const lab = m.name;
+            page.drawSvgPath(`M ${cx} ${-(cy - 3.8)} L ${cx + 3.8} ${-cy} L ${cx} ${-(cy + 3.8)} L ${cx - 3.8} ${-cy} Z`, { x: 0, y: 0, color: MILESTONE });
+            const lab = bars ? barLabel(m, bars, wbs.task.get(m.id) || "") : m.name;
             const room = X + LABEL + CH - (cx + 6);
-            if (room > 20) page.drawText(fitOneLine(b.regular, lab, 5.8, room), { x: cx + 6, y: top - 8.6, size: 5.8, font: b.regular, color: C.s500 });
+            if (lab && room > 20) page.drawText(fitOneLine(b.regular, lab, 5.8, room), { x: cx + 6, y: top - 8.6, size: 5.8, font: b.regular, color: C.s500 });
           } else {
             // A task: blue (red on the critical path), its finished part drawn darker.
             const bx = clampL(x(ps)), bw = Math.max(1.5, clampL(xEnd(pe)) - bx);
-            page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: crit ? RED : TASK });
+            page.drawRectangle({ x: bx, y: top - 9, width: bw, height: 5.5, color: crit ? CRIT : NORMAL });
             const pct = phasePercent(m);
-            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? CRIT_DONE : TASK_DONE });
-            // Its float: the days it can slip before the finish moves, as a dashed tail.
+            if (pct > 0) page.drawRectangle({ x: bx, y: top - 9, width: (bw * pct) / 100, height: 5.5, color: crit ? CRIT_DARK : NORMAL_DARK });
+            // Its float: the days it can slip before the finish moves, as a pale tail.
             const fl = cpm.float.get(m.id);
+            let after = clampL(xEnd(pe));
             if (showFloat && fl && fl > 0 && pe < sheetTo) {
               const fx = clampL(xEnd(pe)), fw = clampL(xEnd(pe) + fl * pxPerDay) - fx;
-              if (fw > 1) page.drawRectangle({ x: fx, y: top - 9, width: fw, height: 5.5, color: FLOAT });
+              if (fw > 1) { page.drawRectangle({ x: fx, y: top - 9, width: fw, height: 5.5, color: FLOAT }); after = fx + fw; }
             }
+            // CR 323 - the text the display options put beside the bar, after its float.
+            const lab = bars ? barLabel(m, bars, wbs.task.get(m.id) || "") : "";
+            const room = X + LABEL + CH - (after + 3);
+            if (lab && pe < sheetTo && room > 20) page.drawText(fitOneLine(b.regular, lab, 5.8, room), { x: after + 3, y: top - 8.6, size: 5.8, font: b.regular, color: C.s500 });
           }
         }
         if (as && ae && ae >= sheetFrom && as < sheetTo) {
@@ -471,7 +506,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
 
       // ── the links: an arrow from one bar to the next, for each FS, SS, FF and SF ──
       const inside = (v: number) => v >= X + LABEL - 0.5 && v <= X + LABEL + CH + 0.5;
-      for (const line of chunk) {
+      for (const line of showLinks ? chunk : []) {
         if (line.kind !== "row") continue;
         const to = at.get(line.m.id);
         if (!to) continue;
@@ -481,7 +516,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
           const fromEnd = q.type === "FS" || q.type === "FF", toStart = q.type === "FS" || q.type === "SS";
           const ax = from.point ? from.s + 3.8 : fromEnd ? from.e : from.s, bx = to.point ? to.s - (toStart ? 3.8 : -3.8) : toStart ? to.s : to.e;
           if (!inside(ax) || !inside(bx)) continue;
-          const ink = isCrit(q.id) && isCrit(line.m.id) ? RED : LINK_INK;
+          const ink = isCrit(q.id) && isCrit(line.m.id) ? CRIT : LINK_INK;
           const outX = ax + (fromEnd ? 3 : -3), inX = bx - (toStart ? 3 : -3);
           const midY = to.y < from.y ? from.y - 5.5 : from.y + 5.5;
           const pts = (toStart ? inX >= outX : inX <= outX)
@@ -501,7 +536,7 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
         page.drawLine({ start: { x: x(t0), y: bodyTop }, end: { x: x(t0), y: bodyTop - bodyH }, thickness: 1, color: BLUE });
         page.drawText("Today", { x: x(t0) - b.bold.widthOfTextAtSize("Today", 6) / 2, y: headTop + 3, size: 6, font: b.bold, color: BLUE });
       }
-      legend(page, b, X, bodyTop - bodyH - 16);
+      legend(page, b, X, bodyTop - bodyH - 16, colors);
       f = { page, y: bodyTop - bodyH - 30 };
     }
     i += chunk.length;
@@ -510,7 +545,8 @@ function drawGantt(doc: PDFDocument, b: Brand, newPage: () => Flow, flow: Flow, 
   return f;
 }
 
-function legend(page: PDFPage, b: Brand, x: number, y: number) {
+function legend(page: PDFPage, b: Brand, x: number, y: number, colors: BarColors = DEFAULT_COLORS) {
+  const TASK = hex(colors.normal), TASK_DONE = darker(colors.normal), RED = hex(colors.critical), INK = hex(colors.milestone);
   const diamond = (cx: number, cy: number, r: number) => `M ${cx} ${-(cy - r)} L ${cx + r} ${-cy} L ${cx} ${-(cy + r)} L ${cx - r} ${-cy} Z`;
   const items: Array<[string, (px: number) => void]> = [
     ["Phase", (px) => { page.drawRectangle({ x: px, y: y, width: 18, height: 3.5, color: PHASE }); page.drawRectangle({ x: px, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); page.drawRectangle({ x: px + 16.6, y: y - 1.5, width: 1.4, height: 6.5, color: PHASE_DARK }); }],

@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Circle, Diamond, Flag, Star } from "lucide-r
 import type { ApiMilestone, MilestoneIcon } from "../../../lib/api";
 import { DAY, delayDays, fmtDay, isMilestonePoint, parseDate, phasePercent, plannedDays } from "../../../lib/projectSchedule";
 import { predsOf, type CpmInfo, type LinkType } from "../../../lib/scheduleLinks";
-import { DEFAULT_COLORS, FLOAT_COLOR, defaultDisplay, type BarColors, type BarKey, type ScheduleDisplay } from "../../../lib/scheduleDisplay";
+import { DEFAULT_COLORS, FLOAT_COLOR, barLabel, defaultDisplay, type BarColors, type BarKey, type ScheduleDisplay } from "../../../lib/scheduleDisplay";
 
 /**
  * CR 189: the timeline as a Gantt chart: each task's planned bar (with its % complete filled in),
@@ -216,31 +216,8 @@ export default function GanttChart({
 
   const isPoint = (m: ApiMilestone) => !!m.isMilestone || isMilestonePoint(m);
   const critical = (id: string) => !!(showCritical && on("critical") && cpm?.critical.has(id));
-  const short = (d: Date | null) => (d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
-  /** The text beside a bar, from the display options, in their order: "1.2 Develop recipe (3d) · 2 Sep". */
-  const labelOf = (m: ApiMilestone): string => {
-    const point = isPoint(m);
-    if (point && !on("milestoneLabel")) return "";
-    const out: string[] = [];
-    for (const b of barList) {
-      if (!b.on) continue;
-      const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd) || ps;
-      const t = b.key === "name" ? m.name
-        : b.key === "id" ? numbers?.get(m.id) || ""
-        : b.key === "duration" ? (point ? "" : plannedDays(m) !== null ? `${plannedDays(m)}d` : "")
-        : b.key === "start" ? short(ps)
-        : b.key === "finish" ? (point ? "" : short(pe))
-        : b.key === "percent" ? (point ? "" : `${phasePercent(m)}%`)
-        : b.key === "assigned" ? (m.responsible || []).join(", ")
-        : "";
-      if (!t) continue;
-      if (b.key === "duration") { if (out.length) out[out.length - 1] += ` (${t})`; else out.push(`(${t})`); }
-      else out.push(t);
-    }
-    // A milestone is always named when its label is on, whatever else is off.
-    if (point && !out.length) return m.name;
-    return out.join(" · ");
-  };
+  /** The text beside a bar (shared with the print, so both say the same). */
+  const labelOf = (m: ApiMilestone): string => barLabel(m, barList, numbers?.get(m.id) || "");
 
   // ── the month stepper ─────────────────────────────────────────────────────────────────────
   const scroller = useRef<HTMLDivElement>(null);

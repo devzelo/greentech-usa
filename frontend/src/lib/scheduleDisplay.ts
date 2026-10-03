@@ -1,3 +1,6 @@
+import type { ApiMilestone } from "./api";
+import { isMilestonePoint, parseDate, phasePercent, plannedDays } from "./projectSchedule";
+
 /**
  * CR 323 / 324 (2026-09-28): what the schedule shows.
  *
@@ -103,3 +106,33 @@ export function saveDisplay(projectId: string, d: ScheduleDisplay) {
 
 export const barOn = (d: Pick<ScheduleDisplay, "bars">, key: BarKey) => !!d.bars.find((b) => b.key === key)?.on;
 export const shownColumns = (d: Pick<ScheduleDisplay, "columns">): ColKey[] => d.columns.filter((c) => c.on).map((c) => c.key);
+
+/**
+ * The text beside a bar, from the display options and in their order, e.g.
+ * "1.2 Develop New Chicken Recipe (3d) · 2 Sep". The screen and the print both use it, so they
+ * always say the same thing. A milestone with its label on is always named.
+ */
+export function barLabel(m: ApiMilestone, bars: ScheduleDisplay["bars"], number = ""): string {
+  const point = !!m.isMilestone || isMilestonePoint(m);
+  const on = (k: BarKey) => !!bars.find((b) => b.key === k)?.on;
+  if (point && !on("milestoneLabel")) return "";
+  const short = (d: Date | null) => (d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
+  const ps = parseDate(m.plannedStart), pe = parseDate(m.plannedEnd) || ps;
+  const out: string[] = [];
+  for (const b of bars) {
+    if (!b.on) continue;
+    const t = b.key === "name" ? m.name
+      : b.key === "id" ? number
+      : b.key === "duration" ? (point ? "" : plannedDays(m) !== null ? `${plannedDays(m)}d` : "")
+      : b.key === "start" ? short(ps)
+      : b.key === "finish" ? (point ? "" : short(pe))
+      : b.key === "percent" ? (point ? "" : `${phasePercent(m)}%`)
+      : b.key === "assigned" ? (m.responsible || []).join(", ")
+      : "";
+    if (!t) continue;
+    if (b.key === "duration") { if (out.length) out[out.length - 1] += ` (${t})`; else out.push(`(${t})`); }
+    else out.push(t);
+  }
+  if (point && !out.length) return m.name;
+  return out.join(" · ");
+}
