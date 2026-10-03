@@ -2,11 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { Link, useNavigate } from "react-router-dom";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
-  FileUp, Filter, GripVertical, HardHat, HelpCircle, Loader2, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
+  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
-  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq,
+  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq, uploadDocument, documentUrl,
   type ApiAgreement, type ApiChangeOrder, type ApiProcurementPO, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -18,6 +18,8 @@ import CompanyPicker from "./CompanyPicker";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { Fold, Section, SidePanel } from "./timeline/ScheduleForms";
 import { GREENTECH } from "../../lib/poPdf";
+import PdfPreviewModal from "./PdfPreviewModal";
+import ShareMenu from "./ShareMenu";
 
 /**
  * CR 328 (2026-09-28): Work Packages. The project manager's master list of everything the project
@@ -85,6 +87,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
   const [narrow, setNarrow] = useState(false);
   const [busy, setBusy] = useState(false);
   const shown = useFiguresShown();
+  // CR 328 (GT Comments 3, page 1: "view, print, share ...") - the list and each package as a PDF.
+  const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState("");
@@ -165,6 +169,31 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
     } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); return false; }
     finally { setBusy(false); }
   };
+
+  // ── PDF: the rows shown, and one package's sheet ──
+  const safeName = (v: string) => v.replace(/[\\/:*?"<>|]/g, "_");
+  const listFile = `${safeName(project.name)} - Work packages.pdf`;
+  const sheetFile = (p: ApiWorkPackage) => `${safeName(project.name)} - Work package ${numberOf.get(p._id) || ""} ${safeName(p.name)}.pdf`;
+  const pdfBase = () => ({ projectName: project.name, projectNo: project.id, clientName: project.clientInfo?.name || "", money: canMoney, masked: !shown });
+  const listPdf = async () => {
+    const { buildWorkPackagesPdf } = await import("../../lib/workPackagesPdf");
+    return buildWorkPackagesPdf({
+      ...pdfBase(),
+      packages: rows.map((p) => ({ p, no: numberOf.get(p._id) || 0, progress: progressOf(p) })),
+      note: filtering ? `Filtered: ${rows.length} of ${live.length} work packages.` : "",
+    });
+  };
+  const sheetPdf = async (p: ApiWorkPackage) => {
+    const { buildWorkPackageSheet } = await import("../../lib/workPackagesPdf");
+    return buildWorkPackageSheet({ ...pdfBase(), item: { p, no: numberOf.get(p._id) || 0, progress: progressOf(p) } });
+  };
+  const download = async (blob: Blob, name: string) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+  // Shared as a file in the project's documents (Project Management), as the schedule is.
+  const shareFile = async (blob: Blob, name: string) => documentUrl(await uploadDocument(projectId, new File([blob], name, { type: "application/pdf" }), "pm-work-packages", true, "Shared"));
 
   // ── Excel: out, and in ──
   const exportExcel = async () => {
@@ -304,7 +333,11 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
             </div>
           </ToolMenu>
           <ToolMenu label="Export" icon={<Download size={13} />}>
+            <button type="button" onClick={() => setPreview({ title: `Work packages · ${project.name}`, fileName: listFile, build: listPdf })} className={MENU_ITEM}><Printer size={13} /> Print / preview</button>
+            <button type="button" onClick={() => void listPdf().then((b) => download(b, listFile)).catch(() => toast("Could not make the PDF.", "error"))} className={MENU_ITEM}><Download size={13} /> Download PDF</button>
             <button type="button" onClick={() => void exportExcel()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Download for Excel</button>
+            <ShareMenu variant="button" fileName={listFile} fileUrl="" projectName={project.name} prepareFile={async () => shareFile(await listPdf(), listFile)} className={MENU_ITEM} />
+            <div className="my-1 border-t border-slate-100" />
             {canEdit && <button type="button" onClick={() => fileInput.current?.click()} disabled={busy} className={MENU_ITEM}><FileUp size={13} /> Import from Excel</button>}
           </ToolMenu>
           <ToolMenu label="View" icon={<Settings2 size={13} />}>
@@ -379,6 +412,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
                     <td className={`${td} text-right`}>
                       <ToolMenu label={`Actions for ${p.name}`} icon={<MoreVertical size={14} />} tone="ghost">
                         <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className={MENU_ITEM}><Pencil size={13} /> {canEdit ? "Open / edit" : "Open"}</button>
+                        <button type="button" onClick={() => setPreview({ title: `Work package ${n || ""}.0 · ${p.name}`, fileName: sheetFile(p), build: () => sheetPdf(p) })} className={MENU_ITEM}><Printer size={13} /> Print package sheet</button>
+                        <ShareMenu variant="button" fileName={sheetFile(p)} fileUrl="" projectName={project.name} prepareFile={async () => shareFile(await sheetPdf(p), sheetFile(p))} className={MENU_ITEM} />
                         {canEdit && (
                           <>
                             <button type="button" onClick={() => void move(p._id, at - 1)} disabled={at <= 0 || filtering} className={MENU_ITEM}><ArrowUp size={13} /> Move up</button>
@@ -445,6 +480,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} />
         </Fragment>
       )}
+      {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
       {dialogs}
     </div>
   );
