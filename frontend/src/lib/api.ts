@@ -1211,6 +1211,10 @@ const sq = (sched?: string) => (sched ? `?sched=${encodeURIComponent(sched)}` : 
 export async function saveTimeline(projectId: string, milestones: ApiMilestone[], note = "", sched?: string, categories?: string[], phaseInfo?: ApiSchedulePhase[]): Promise<ScheduleResult & { revision: ApiScheduleRevision }> {
   return request(`/projects/${projectId}/schedule/save${sq(sched)}`, { method: "POST", body: JSON.stringify({ milestones, note, categories, phaseInfo }) });
 }
+/** CR 326 - archive the schedule: Current is filed in History as an archived record, then left empty. */
+export async function archiveSchedule(projectId: string, body: { title?: string; note?: string } = {}): Promise<ScheduleResult & { entry: ApiScheduleRevision }> {
+  return request(`/projects/${projectId}/schedule/archive`, { method: "POST", body: JSON.stringify(body) });
+}
 /** CR 326 - the line describing the schedule, under its title. */
 export async function saveScheduleDescription(projectId: string, description: string): Promise<ScheduleResult> {
   return request(`/projects/${projectId}/schedule/description`, { method: "PUT", body: JSON.stringify({ description }) });

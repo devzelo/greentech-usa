@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, CheckCircle2, CloudOff, RefreshCw, SlidersHorizontal, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
+  AlertTriangle, Archive, ArrowDown, ArrowUp, BookmarkCheck, CheckCircle2, CloudOff, MoreVertical, RefreshCw, SlidersHorizontal, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
-  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimelinePlain, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements, approveScheduleBaseline, createScheduleSubmittal, makeScheduleCurrent, saveScheduleDescription,
+  discardTimelineDraft, fetchProjects, fetchTimelineRevisions, createScheduleBaseline, createScheduleUpload, updateScheduleEntry, deleteScheduleEntry, scheduleEntryFileUrl, type ScheduleEntryDetails, type ScheduleEntryStatus, saveTimelinePlain, saveTimelineDraft, saveTimelineRow, uploadDocument, documentUrl, fetchAnnouncements, approveScheduleBaseline, createScheduleSubmittal, makeScheduleCurrent, saveScheduleDescription, archiveSchedule,
   type ApiExtension, type ApiMilestone, type ApiProject, type ApiSchedulePhase, type ApiScheduleRevision, type MilestoneStatus,
 } from "../../../lib/api";
 import { toast } from "../../../lib/toast";
@@ -755,6 +755,30 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       toast(`Current is now a copy of ${name}.${r.filed ? " The schedule it replaced is in History." : ""}`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not make it Current.", "error"); }
   };
+  /**
+   * CR 326 - archive the schedule: filed in History as an archived record (pending edits saved
+   * first), then Current is left empty. Restorable from the Archive page, and "Create current
+   * schedule from this version" brings it back.
+   */
+  const archiveCurrent = async () => {
+    if (!rows.length) { toast("The schedule is empty: there is nothing to archive.", "info"); return; }
+    if (!(await confirm({
+      title: "Archive this schedule?",
+      message: `The current schedule (${rows.length} item${rows.length === 1 ? "" : "s"}) is filed in History as an archived record, and Current is left empty for a new schedule.
+
+Nothing is lost: tick "Show archived" in History, or open the Archive page, to find it. "Create current schedule from this version" brings it back. Baselines are not touched.`,
+      confirmLabel: "Archive schedule",
+      danger: false,
+    }))) return;
+    if ((dirty || loadedFrom) && !(await save(true))) return;
+    try {
+      const r = await archiveSchedule(project.id);
+      replaceEntry(r.entry);
+      takeSchedule(r.schedule, r.progress);
+      setEditing(null); setPhaseEdit(null); setCreating(false);
+      toast(`Schedule archived as "${entryTitle(r.entry)}". Find it in History under Show archived, or on the Archive page.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not archive the schedule.", "error"); }
+  };
   const dropEntry = (e: ApiScheduleRevision) => setRegister((p) => p.filter((x) => x._id !== e._id));
   const handlers: EntryHandlers = {
     canEdit,
@@ -1168,6 +1192,12 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                     <Eraser size={13} /> Clear schedule
                   </button>
                 )}
+                {/* CR 326 - less frequent actions on the whole schedule. */}
+                <ToolMenu label="More actions on the schedule" icon={<MoreVertical size={15} />} tone="ghost">
+                  <button type="button" onClick={() => void archiveCurrent()} disabled={!rows.length || !!busy} className={MENU_ITEM} title="File it in History as an archived record and start Current afresh">
+                    <Archive size={13} /> Archive schedule
+                  </button>
+                </ToolMenu>
               </>
             )}
           </div>

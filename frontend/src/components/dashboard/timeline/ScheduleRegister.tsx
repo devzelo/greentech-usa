@@ -508,7 +508,7 @@ export function HistoryTab({ entries, h, onUpload, currentBaselineId, frozen }: 
           </thead>
           <tbody>
             {shown.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-slate-400">{entries.length ? "Nothing matches." : "No schedules recorded yet. Each baseline, each schedule saved for submittal or history, and each uploaded schedule is listed here."}</td></tr>
+              <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-slate-400">{entries.length ? (live.length ? "Nothing matches." : "Only archived records here. Tick Show archived to see them.") : "No schedules recorded yet. Each baseline, each schedule saved for submittal or history, and each uploaded schedule is listed here."}</td></tr>
             )}
             {shown.map((e) => {
               const k = KIND[kindOf(e)];

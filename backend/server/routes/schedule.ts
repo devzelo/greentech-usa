@@ -322,6 +322,40 @@ router.put("/subs", async (req: AuthedRequest, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
+/**
+ * CR 326 - archive the schedule (GT Comments 2, page 6: "archive"). As everywhere else in the
+ * platform, archiving puts a thing away without losing it: Current is filed in History as an
+ * archived record (hidden from the list until "Show archived", listed on the Archive page, and
+ * restorable from there), then Current is left empty for a new schedule. "Create current schedule
+ * from this version" on the record brings it back. Baselines are not touched.
+ */
+router.post("/archive", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const target = scheduleOf(project, "");
+    if (!target || !target.milestones.length) return res.status(400).json({ error: "The schedule is empty: there is nothing to archive." });
+    const s = ((project.toObject() as { schedule?: Plain }).schedule || {}) as Plain;
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = await ScheduleRevision.create({
+      projectId: req.params.id, scheduleId: "", version: 0, kind: "submittal",
+      title: str(req.body?.title, 160).trim() || `Archived schedule, ${today}`,
+      description: s.description || "",
+      note: str(req.body?.note, 500).trim(),
+      cadence: "oneoff", dataDate: today, archived: true,
+      milestones: target.milestones, categories: target.categories, phaseInfo: target.phaseInfo,
+      progress: overallProgress(target.milestones),
+      savedBy: req.user!.name || "",
+    });
+    // The project's progress is left as it was: it is the last figure the schedule gave.
+    target.apply({ milestones: [], categories: [], phaseInfo: [], draft: null, savedAt: new Date().toISOString(), savedBy: req.user!.name || "" });
+    project.schedule = { ...(project.toObject() as { schedule?: Plain }).schedule, description: "" } as unknown as typeof project.schedule;
+    project.markModified("schedule");
+    await project.save();
+    res.json({ schedule: project.schedule, progress: project.progress, entry });
+  } catch (err) { next(err); }
+});
+
 // CR 326 - the schedule's description: a line under its title, saved on its own.
 router.put("/description", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
