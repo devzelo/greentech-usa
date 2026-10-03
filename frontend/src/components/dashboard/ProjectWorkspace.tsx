@@ -297,14 +297,13 @@ const PROC_PERM_BY_KEY: Record<string, string> = Object.fromEntries(PROC_SUBTABS
 
 // ── Main component ─────────────────────────────────────────────────────────
 /**
- * CR 334 - the project details card on the project picture: a light glass that lets the picture
- * show through (only a slight blur), with the card's grey text darkened and a faint white edge on
- * all text, so the text, icons and tags stay readable over any picture.
+ * CR 334 / 336 - the project details card on the project picture: a frosted glass, clear enough
+ * for the picture to show around and through it, solid enough that the text stays crisp (no glow
+ * behind the text), with the card's grey text one step darker.
  */
 const GLASS = [
-  "bg-white/45 backdrop-blur-[3px] backdrop-saturate-150 ring-1 ring-white/70 shadow-xl shadow-slate-900/10",
-  "[text-shadow:0_0_6px_rgba(255,255,255,0.9),0_1px_1px_rgba(255,255,255,0.8)]",
-  "[&_.text-slate-300]:text-slate-600 [&_.text-slate-400]:text-slate-700 [&_.text-slate-500]:text-slate-800",
+  "bg-white/75 backdrop-blur-md backdrop-saturate-150 ring-1 ring-white/60 shadow-lg shadow-slate-900/15",
+  "[&_.text-slate-300]:text-slate-500 [&_.text-slate-400]:text-slate-600 [&_.text-slate-500]:text-slate-700",
 ].join(" ");
 
 export default function ProjectWorkspace() {
@@ -1644,6 +1643,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   });
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  // CR 336 - a project picture that does not load is treated as no picture (the plain card shows).
+  const [coverBroken, setCoverBroken] = useState(false);
+  useEffect(() => { setCoverBroken(false); }, [project?.image]);
   const [contractUploading, setContractUploading] = useState(false);
   // The signed contract lives on the project itself (one per project) — saved immediately,
   // not via Save Workspace, so the file can't be lost.
@@ -3897,21 +3899,27 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             identity sits in its own box at the top, on the project picture when it has one, with
             the contract time and the actions in the column beside it. */}
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5">
-          <div className={`relative flex-1 min-w-0 rounded-3xl overflow-hidden border ${project.image ? "border-slate-200 bg-slate-800" : "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50"}`}>
-            {project.image && (
+          {/* CR 336 - two states. With a picture: the picture is the cover and the details sit on a
+              frosted card on it. Without one (or one that fails to load): no picture area at all,
+              just the details in a plain white card like the rest of the page, with a quiet "Add
+              cover picture" for the owner. */}
+          {(() => { const hasCover = !!project.image && !coverBroken; return (
+          <div className={`relative flex-1 min-w-0 overflow-hidden border ${hasCover ? "rounded-3xl border-slate-200 bg-slate-200" : "rounded-2xl border-slate-100 bg-white shadow-sm"}`}>
+            {hasCover && (
               <>
-                <img src={assetSrc(project.image)} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-white/5 to-transparent" />
+                <img src={assetSrc(project.image)} alt="" aria-hidden onError={() => setCoverBroken(true)} className="absolute inset-0 w-full h-full object-cover" />
+                {/* a soft shade at the top, so the picture button reads on any photo */}
+                <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-900/30 to-transparent" />
               </>
             )}
-            {isOwner && (
-              <label className={`absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer shadow-sm transition-colors ${project.image ? "bg-white/90 text-slate-700 hover:bg-white" : "bg-white border border-slate-200 text-slate-500 hover:text-primary"}`} title="The project picture, shown behind the project's details">
+            {isOwner && hasCover && (
+              <label className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-700 shadow-sm hover:bg-white cursor-pointer transition-colors" title="Change the cover picture behind the project's details">
                 {imageUploading ? <Loader2 size={12} className="animate-spin" /> : <FileImage size={12} />}
-                {imageUploading ? "Uploading…" : project.image ? "Change picture" : "Add a picture"}
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void handleProjectImageUpload(f); }} />
+                {imageUploading ? "Uploading…" : "Change picture"}
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
               </label>
             )}
-          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 m-3 sm:m-4 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)] ${project.image ? `${GLASS} mt-14 sm:mt-16` : isOwner ? "mt-12 sm:mt-4 sm:mr-36" : ""}`}>
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-4 mt-14 sm:mt-16 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : "p-4 sm:p-5"}`}>
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
@@ -3957,6 +3965,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   projectId={project.id}
                   projectName={project.name}
                 />
+                {/* CR 336 - with no cover picture, adding one is a quiet action beside the others. */}
+                {isOwner && !(project.image && !coverBroken) && (
+                  <label className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50 cursor-pointer transition-all" title="Add a cover picture behind the project's details" aria-label="Add a cover picture">
+                    {imageUploading ? <Loader2 size={16} className="animate-spin" /> : <FileImage size={16} />}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
+                  </label>
+                )}
               </div>
               {/* CR 182: subcontractors and vendors get the project name and their tabs only. */}
               {!isGuest && (<>
@@ -4039,6 +4054,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             </div>
           </div>
           </div>
+          ); })()}
 
           <div className="flex flex-col gap-2 flex-shrink-0 items-stretch xl:items-end">
             {/* CR 192: contract time at the top right. */}
