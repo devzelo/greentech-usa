@@ -296,6 +296,17 @@ const PROC_SUBTABS = [
 const PROC_PERM_BY_KEY: Record<string, string> = Object.fromEntries(PROC_SUBTABS.map((t) => [t.key, t.permId]));
 
 // ── Main component ─────────────────────────────────────────────────────────
+/**
+ * CR 334 - the project details card on the project picture: a light glass that lets the picture
+ * show through (only a slight blur), with the card's grey text darkened and a faint white edge on
+ * all text, so the text, icons and tags stay readable over any picture.
+ */
+const GLASS = [
+  "bg-white/45 backdrop-blur-[3px] backdrop-saturate-150 ring-1 ring-white/70 shadow-xl shadow-slate-900/10",
+  "[text-shadow:0_0_6px_rgba(255,255,255,0.9),0_1px_1px_rgba(255,255,255,0.8)]",
+  "[&_.text-slate-300]:text-slate-600 [&_.text-slate-400]:text-slate-700 [&_.text-slate-500]:text-slate-800",
+].join(" ");
+
 export default function ProjectWorkspace() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -3879,6 +3890,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {wsDialogs}
       {/* ── Header ── */}
       <div className="flex flex-col gap-5">
+        {/* CR 334 - the details card on the project picture is a light glass: the picture shows
+            through clearly, with only a slight blur. Its grey text is darkened and every line gets a
+            faint white edge, so all text, icons and tags stay readable whatever is behind them. */}
         {/* CR 333 - "Back" lives in the top bar now (beside Overview > Projects). The project's
             identity sits in its own box at the top, on the project picture when it has one, with
             the contract time and the actions in the column beside it. */}
@@ -3887,7 +3901,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             {project.image && (
               <>
                 <img src={assetSrc(project.image)} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-900/50 via-slate-900/20 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-white/5 to-transparent" />
               </>
             )}
             {isOwner && (
@@ -3897,7 +3911,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void handleProjectImageUpload(f); }} />
               </label>
             )}
-          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 m-3 sm:m-4 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)] ${project.image ? "bg-white/90 backdrop-blur-md shadow-lg mt-14 sm:mt-16" : isOwner ? "mt-12 sm:mt-4 sm:mr-36" : ""}`}>
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 m-3 sm:m-4 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)] ${project.image ? `${GLASS} mt-14 sm:mt-16` : isOwner ? "mt-12 sm:mt-4 sm:mr-36" : ""}`}>
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
