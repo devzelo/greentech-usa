@@ -43,8 +43,8 @@ const STATUS: Record<WorkPackageStatus, { label: string; cls: string }> = {
 const STATUSES = Object.keys(STATUS) as WorkPackageStatus[];
 const TYPES: Array<{ v: WorkPackageType; label: string; icon: typeof Package }> = [
   { v: "design", label: "Design", icon: PenTool }, { v: "equipment", label: "Equipment", icon: Package }, { v: "civil", label: "Civil", icon: HardHat },
-  { v: "installation", label: "Installation", icon: Wrench }, { v: "controls", label: "Controls / BAS", icon: Cog }, { v: "lifting", label: "Lifting", icon: Boxes },
-  { v: "transport", label: "Transport", icon: Truck }, { v: "testing", label: "Testing", icon: ClipboardCheck }, { v: "commissioning", label: "Commissioning", icon: Settings2 },
+  { v: "installation", label: "Installation", icon: Wrench }, { v: "controls", label: "Controls / BAS", icon: Cog }, { v: "lifting", label: "Crane / lifting", icon: Boxes },
+  { v: "transport", label: "Tanker / transport", icon: Truck }, { v: "testing", label: "Testing", icon: ClipboardCheck }, { v: "commissioning", label: "Commissioning", icon: Settings2 },
   { v: "other", label: "Other", icon: Boxes },
 ];
 const typeIcon = (t: WorkPackageType) => TYPES.find((x) => x.v === t)?.icon || Boxes;
