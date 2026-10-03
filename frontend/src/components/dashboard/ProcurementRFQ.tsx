@@ -3,13 +3,14 @@ import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Buil
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
-  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument,
+  uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument, uploadRfqAttachment, deleteRfqAttachment, RFQ_REQUESTS,
   fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
   fetchCompanies, COMPANY_CATEGORIES,
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
 } from "../../lib/api";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import CompanyEditorModal from "./CompanyEditorModal";
+import RfqForm, { type RfqFormResult } from "./RfqForm";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -61,21 +62,15 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [submittals, setSubmittals] = useState<ApiSubmittal[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
-  const [approvedOnly, setApprovedOnly] = useState(true); // Step-1 default: RFQ off approved submittals
   const [secNames, setSecNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [newCompanyFor, setNewCompanyFor] = useState<string | null>(null); // RFQ awaiting a brand-new company
-  const [creating, setCreating] = useState(false);
   const [chooseNew, setChooseNew] = useState(false); // CR-PR-02 — "New RFQ" choice popup (build vs upload)
-  const [rTitle, setRTitle] = useState("");
-  const [rShipTo, setRShipTo] = useState("");
-  const [rDelivery, setRDelivery] = useState("Delivery");
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [rRecv, setRRecv] = useState<Record<string, boolean>>({}); // CR-PR-08 — Directory companies the new RFQ goes to
-  const [rRecvSearch, setRRecvSearch] = useState("");
+  // CR 335 - the Create RFQ window (rfq null), or the same window editing an RFQ.
+  const [form, setForm] = useState<{ rfq: ApiRfq | null } | null>(null);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
   const [manageId, setManageId] = useState<string | null>(null); // §A1 — actions via popup
@@ -119,7 +114,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // package. Each item is introduced by a labelled divider page.
   const buildRfqWithSubmittals = async (rfq: ApiRfq, vendor?: ApiVendor): Promise<Blob> => {
     const lines = rfq.lineItems || [];
-    const hasExtras = lines.some((li) => li.includeSubmittal || (li.attachments && li.attachments.length));
+    const hasExtras = lines.some((li) => li.includeSubmittal || (li.attachments && li.attachments.length)) || !!(rfq.attachments || []).length;
     if (!hasExtras) return buildRfqPdf(pdfRfq(rfq), vendor, projectInfo);
     // The merged package is numbered as a whole below, so the RFQ itself is built without numbers.
     const base = await buildRfqPdf(pdfRfq(rfq), vendor, projectInfo, undefined, { pageNumbers: false });
@@ -162,6 +157,12 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
             (await merged.copyPages(pkg, pkg.getPageIndices())).forEach((p) => merged.addPage(p));
           }
         }
+      }
+      // CR 335 - the RFQ's supporting documents (drawings, BOQ, specs), for every vendor.
+      const docs = (rfq.attachments || []).filter((a) => ["pdf", "png", "jpg", "jpeg"].includes((a.fileType || a.name.split(".").pop() || "").toLowerCase()));
+      if (docs.length) {
+        dividerPage(merged, b, LETTER, "Supporting documents", docs.map((a) => a.name).join(" · ").slice(0, 160), "RFQ");
+        for (const a of docs) await appendFile(a.filePath, a.fileType, a.name);
       }
       stampPageNumbers(merged, b, asIs);   // one numbering across the RFQ, dividers and submittals
       return new Blob([await merged.save()], { type: "application/pdf" });
@@ -252,35 +253,48 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Could not update vendor.", "error"); }
   };
 
-  // ── RFQ create ──
-  const create = async () => {
-    const chosen = items.filter((it) => picked[it._id]);
-    if (!chosen.length) { toast("Select at least one BOQ item.", "error"); return; }
-    // Snapshot the BOQ line; the approved brand + on-site date are enriched onto the PDF at build time.
-    const lineItems: RfqLineItem[] = chosen.map((it) => ({ itemId: it._id, description: it.description, qty: it.qty, unit: it.unit, spec: it.spec }));
+  // ── RFQ create / edit (CR 335 - the Create RFQ window) ──
+  // The RFQ is saved first; the vendors (with their price columns), the supporting documents and
+  // the send follow. Once the RFQ exists the window closes even if one of those later steps fails,
+  // so saving again never makes a second RFQ; what failed is said.
+  const saveForm = async (base: ApiRfq | null, r: RfqFormResult): Promise<boolean> => {
+    let rfq: ApiRfq;
     try {
-      const rfq = await createRfq(projectId, { title: rTitle, lineItems, shipToLocation: rShipTo, deliveryMethod: rDelivery });
-      // CR-PR-08 — the chosen Directory companies become both the receivers and the Step-2
-      // price columns, so the two can never drift apart.
-      const chosenCompanies = companies.filter((c) => rRecv[c._id]);
-      if (chosenCompanies.length) {
-        const recipients: RfqRecipient[] = chosenCompanies.map((c) => ({ companyId: c._id, name: c.name, category: c.category, expectsQuote: true }));
-        try { await updateRfq(projectId, rfq._id, { recipients }); } catch { /* receivers are best-effort */ }
-        for (const c of chosenCompanies) {
-          const vid = await ensureVendorForCompany(c);
-          if (vid) { try { await addVendorQuote(projectId, rfq._id, vid); } catch { /* skip */ } }
-        }
+      rfq = base ? { ...base, ...(await updateRfq(projectId, base._id, r.fields)) } : await createRfq(projectId, r.fields);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save the RFQ.", "error"); return false; }
+    const problems: string[] = [];
+    try {
+      // CR-PR-08 - the chosen Directory companies are both the receivers and the price columns.
+      const before = base?.recipients || [];
+      const recipients: RfqRecipient[] = r.vendors.map((c) => before.find((x) => x.companyId === c._id) || { companyId: c._id, name: c.name, category: c.category, expectsQuote: true });
+      if (base) for (const old of before) {
+        if (r.vendors.some((c) => c._id === old.companyId)) continue;
+        if (!(await dropQuoteFor(base, old.companyId, old.name))) recipients.push(old);   // kept: it had prices
       }
-      setCreating(false); setPicked({}); setRRecv({}); setRRecvSearch(""); setRTitle(""); setRShipTo(""); setRDelivery("Delivery"); setOpenId(rfq._id);
-      void autoSaveRfqDoc(rfq); // documents copy exists whether or not "Save to documents" is clicked
-      void load(); // pulls the RFQ back with its vendor quote columns
-    } catch (err) { toast(err instanceof Error ? err.message : "Could not create RFQ.", "error"); }
+      await updateRfq(projectId, rfq._id, { recipients });
+      for (const c of r.vendors) {
+        if (recipients.find((x) => x.companyId === c._id)?.expectsQuote === false) continue;
+        const vid = await ensureVendorForCompany(c);
+        if (vid && !(base?.quotes || []).some((q) => q.vendorId === vid)) { try { await addVendorQuote(projectId, rfq._id, vid); } catch { /* exists */ } }
+      }
+    } catch { problems.push("the vendors"); }
+    for (const aid of r.removeAttachmentIds) { try { await deleteRfqAttachment(projectId, rfq._id, aid); } catch { problems.push("removing a document"); } }
+    for (const f of r.newFiles) { try { await uploadRfqAttachment(projectId, rfq._id, f); } catch { problems.push(f.name); } }
+    if (r.send) { try { await sendRfq(projectId, rfq._id); } catch { problems.push("sending"); } }
+    const fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || null;
+    if (fresh) setRfqs(fresh);
+    const saved = fresh?.find((x) => x._id === rfq._id) || rfq;
+    void autoSaveRfqDoc(saved);   // the documents copy follows every save
+    if (!base) setOpenId(rfq._id);
+    if (problems.length) toast(`RFQ ${saved.rfqNo} saved, but these did not go through: ${[...new Set(problems)].join(", ")}. Open it to try again.`, "error");
+    else toast(r.send ? `RFQ ${saved.rfqNo} sent to ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}. Download each vendor's copy from the RFQ to send it.` : base ? `RFQ ${saved.rfqNo} saved.` : `RFQ ${saved.rfqNo} saved as a draft.`, "success");
+    return true;
   };
   // CR-PR-02 — create a shell RFQ so an already-made RFQ document can be uploaded to it.
   const createUploadRfq = async () => {
     try {
       const rfq = await createRfq(projectId, { title: "Uploaded RFQ", lineItems: [] });
-      setRfqs((p) => [...p, rfq]); setOpenId(rfq._id); setCreating(false);
+      setRfqs((p) => [...p, rfq]); setOpenId(rfq._id);
       toast("RFQ created — upload your ready-made document in the panel below.", "success");
       void load();
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create RFQ.", "error"); }
@@ -564,6 +578,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                         <p className="text-sm font-bold text-slate-800">Request — send to vendors</p>
                         <p className="text-[10px] text-slate-400">Items (from the approved submittals &amp; BOQ) plus where and how they ship.</p>
                       </div>
+                      {canEdit && <button onClick={() => setForm({ rfq })} className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Settings2 size={11} /> Edit RFQ</button>}
                     </div>
                     {/* Manage the request status directly (Quoting/Awarded usually set automatically). */}
                     {canEdit ? (
@@ -574,6 +589,27 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${STATUS_META[st].cls}`}>{STATUS_META[st].label}</span>
                     )}
                   </div>
+
+                  {/* CR 335 - what the Create RFQ window holds: dates, currency, the work package, what vendors are asked for, documents. */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                    <span><b className="text-slate-700">Date</b> {rfq.date || rfq.createdAt?.slice(0, 10) || "-"}</span>
+                    <span><b className="text-slate-700">Reply by</b> {rfq.dueDate || <span className="text-amber-600">not set</span>}</span>
+                    <span><b className="text-slate-700">Currency</b> {rfq.currency || "USD"}</span>
+                    {rfq.workPackageId && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-700">Work package linked</span>}
+                    {(rfq.requests || []).length > 0 && <span title={RFQ_REQUESTS.filter((q) => (rfq.requests || []).includes(q.key)).map((q) => q.label).join("\n")}><b className="text-slate-700">Asks for</b> {RFQ_REQUESTS.filter((q) => (rfq.requests || []).includes(q.key)).map((q) => q.label.split(/[ (/,]/)[0].toLowerCase()).join(", ")}</span>}
+                    {rfq.showTargetPrices && <span className="text-violet-600 font-bold">Target prices shown to vendors</span>}
+                  </div>
+                  {(rfq.attachments || []).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supporting documents</span>
+                      {(rfq.attachments || []).map((a) => (
+                        <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                          <FileText size={10} /> <span className="max-w-[12rem] truncate" title={a.name}>{a.name}</span>
+                          <FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={projectInfo?.name} size={11} />
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Items being requested (from the approved submittal + BOQ) — mirrors the RFQ PDF */}
                   <div className="rounded-xl border border-slate-100 overflow-x-auto">
@@ -594,7 +630,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                             <td className="px-2 py-1.5 text-slate-500">{li.manufacturer || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li.qty || "—"}</td>
                             <td className="px-2 py-1.5 text-slate-500">{li.unit || "—"}</td>
-                            <td className="px-2 py-1.5 text-slate-500">{li.spec || "—"}</td>
+                            <td className="px-2 py-1.5 text-slate-500">{li.spec || "—"}{li0.vendorNote && <span className="block text-[10px] text-slate-400">Note: {li0.vendorNote}</span>}</td>
                             <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li.needOnSiteDate || "—"}</td>
                             <td className="px-2 py-1.5 text-right whitespace-nowrap">
                               <button onClick={() => toggleDocs(li0._id)} disabled={!li0._id} className={`inline-flex items-center gap-1 mr-1 px-1.5 py-0.5 rounded ${docCount || docsOpen ? "text-primary" : "text-slate-300 hover:text-primary"} disabled:opacity-30`} title="Per-item documents / include submittal package"><Paperclip size={11} />{docCount > 0 ? docCount : ""}</button>
@@ -1002,10 +1038,10 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
               <button onClick={() => setChooseNew(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button onClick={() => { setChooseNew(false); setCreating(true); }} className="text-left p-4 rounded-2xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all">
+              <button onClick={() => { setChooseNew(false); setForm({ rfq: null }); }} className="text-left p-4 rounded-2xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2"><Plus size={18} className="text-primary" /></div>
                 <p className="text-sm font-bold text-slate-900">Build on the platform</p>
-                <p className="text-[11px] text-slate-500 mt-1">Pick approved BOQ items, choose vendors, and generate the RFQ document here.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Dates, items (from the BOQ or typed), vendors from the Directory, documents; the RFQ document is made here.</p>
               </button>
               <button onClick={() => { setChooseNew(false); void createUploadRfq(); }} className="text-left p-4 rounded-2xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all">
                 <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-2"><Upload size={18} className="text-emerald-600" /></div>
@@ -1016,83 +1052,6 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           </div>
         </div>
       )}
-
-      {/* Create RFQ — Step 1: pick approved BOQ items + shipping */}
-      {creating && canEdit && (() => {
-        const pickList = approvedOnly ? items.filter((it) => approvalOf(it._id).state === "approved") : items;
-        return (
-        <div className="bg-primary/5 border border-primary/10 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
-            <p className="text-sm font-bold text-slate-800">New request — from approved submittals</p>
-          </div>
-          <p className="text-[11px] text-slate-500">Request quotes for products the client has already approved. The approved brand from each submittal is carried into the request.</p>
-          <input className={inp} placeholder="RFQ title (optional)" value={rTitle} onChange={(e) => setRTitle(e.target.value)} />
-          {/* Shipping — how they deliver and where (carried onto the PO automatically) */}
-          <div className="flex flex-wrap items-center gap-2">
-            <select className={`${inp} font-bold max-w-[10rem]`} value={rDelivery} onChange={(e) => setRDelivery(e.target.value)}>
-              <option value="Delivery">Delivery</option>
-              <option value="Pickup">Pickup</option>
-            </select>
-            <AddressPicker value={rShipTo} projectSite={projectInfo?.siteAddress || projectInfo?.location} onChange={setRShipTo} />
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select items</p>
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer">
-              <input type="checkbox" checked={approvedOnly} onChange={(e) => setApprovedOnly(e.target.checked)} /> Approved submittals only
-            </label>
-          </div>
-          <div className="max-h-64 overflow-y-auto space-y-1">
-            {pickList.length === 0 ? (
-              <p className="text-[11px] text-slate-400 italic">{approvedOnly ? "No items with an approved submittal yet. Get client approval in the Submittals tab, or untick “Approved submittals only” to request anyway." : "No BOQ items. Add them in the BOQ tab first."}</p>
-            ) : pickList.map((it) => {
-              const ap = approvalOf(it._id);
-              const apCls = ap.state === "approved" ? "bg-emerald-50 text-emerald-600" : ap.state === "pending" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400";
-              return (
-              <label key={it._id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer text-xs">
-                <input type="checkbox" checked={!!picked[it._id]} onChange={(e) => setPicked((p) => ({ ...p, [it._id]: e.target.checked }))} />
-                <span className="font-bold text-slate-700">{it.description || "(no description)"}</span>
-                <span className="text-slate-400">· {[it.qty, it.unit].filter(Boolean).join(" ")} · {secNames[it.sectionId] || "—"}</span>
-                <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap ${apCls}`}>{ap.label}{ap.state === "approved" && ap.brand ? ` · ${ap.brand}` : ""}</span>
-              </label>
-              );
-            })}
-          </div>
-          {/* CR-PR-08 — receivers come from the Companies Directory, exactly as on an existing
-              RFQ. Each one chosen here gets its Step-2 price column straight away.
-              (This list is NOT printed on the RFQ PDF.) */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Send to <span className="font-medium normal-case text-slate-400">— from the Directory; each gets a price column in Step 2</span></p>
-            {companies.length === 0 ? (
-              <p className="text-[11px] text-slate-400 italic">No companies in the Directory yet — add them under <strong>Directory</strong> in the left menu.</p>
-            ) : (
-              <>
-                <div className="relative mb-1.5">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                  <input value={rRecvSearch} onChange={(e) => setRRecvSearch(e.target.value)} placeholder="Search vendors, subs, manufacturers…" className={`${inp} pl-9`} />
-                </div>
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                  {companies
-                    .filter((c) => { const q = rRecvSearch.trim().toLowerCase(); return !q || `${c.name} ${c.category} ${c.email || ""}`.toLowerCase().includes(q); })
-                    .map((c) => {
-                      const on = !!rRecv[c._id];
-                      return (
-                        <button key={c._id} onClick={() => setRRecv((p) => ({ ...p, [c._id]: !p[c._id] }))} title={COMPANY_CATEGORIES.find((x) => x.v === c.category)?.label || c.category} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"}`}>
-                          {on && <Check size={11} />}{c.name}
-                        </button>
-                      );
-                    })}
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setCreating(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold">Cancel</button>
-            <button onClick={create} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Create request ({Object.values(picked).filter(Boolean).length}){Object.values(rRecv).filter(Boolean).length ? ` → ${Object.values(rRecv).filter(Boolean).length} receiver(s)` : ""}</button>
-          </div>
-        </div>
-        );
-      })()}
 
       {/* Search */}
       {rfqs.length > 0 && (
@@ -1146,6 +1105,22 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         );
       })()}
 
+      {form && canEdit && (
+        <RfqForm
+          projectId={projectId}
+          projectName={projectInfo?.name || ""}
+          projectSite={projectInfo?.siteAddress || projectInfo?.location}
+          rfq={form.rfq}
+          companies={companies}
+          onCompanyAdded={(c) => setCompanies((p) => (p.some((x) => x._id === c._id) ? p : [...p, c]))}
+          boqItems={items}
+          approvalOf={approvalOf}
+          secNames={secNames}
+          onClose={() => setForm(null)}
+          onSave={(r) => saveForm(form.rfq, r)}
+          buildPreview={(draft) => buildRfqWithSubmittals(draft)}
+        />
+      )}
       {dialogs}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
 

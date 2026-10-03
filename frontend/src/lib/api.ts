@@ -2232,7 +2232,9 @@ export interface ApiVendor { _id: string; projectId: string; name: string; count
   /** CR-PR-08 — the Directory company this vendor is. Empty on legacy hand-entered rows. */
   companyId?: string }
 export interface RfqLineFile { _id?: string; name: string; filePath: string; fileType: string; size: string }
-export interface RfqLineItem { _id?: string; itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; manufacturer?: string; modelNo?: string; needOnSiteDate?: string; includeSubmittal?: boolean; attachments?: RfqLineFile[] }
+export interface RfqLineItem { _id?: string; itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; manufacturer?: string; modelNo?: string; needOnSiteDate?: string; includeSubmittal?: boolean; attachments?: RfqLineFile[];
+  /** CR 335 - an optional target unit price (internal unless the RFQ shows target prices), and a note to the vendor. */
+  targetUnitPrice?: string; vendorNote?: string }
 export interface QuoteLine { itemId: string; unitPrice: string }
 export type QuoteStatus = "Received" | "NotSelected" | "Awarded";
 export interface ApiVendorQuote {
@@ -2254,7 +2256,21 @@ export interface ApiRfq {
   uploadedDocument?: RfqLineFile | null;
   addedByName: string; quotes: ApiVendorQuote[];
   archived?: boolean; assignedTo?: string;
+  /** CR 335 - the Create RFQ form: dates, currency, what vendors are asked for, documents, the work package. */
+  date?: string; dueDate?: string; currency?: string; requests?: RfqRequestKey[]; showTargetPrices?: boolean;
+  attachments?: RfqLineFile[]; workPackageId?: string;
 }
+/** CR 335 - what each vendor is asked to include with the quotation. */
+export type RfqRequestKey = "leadTime" | "dataSheets" | "alternatives" | "warranty" | "other";
+export const RFQ_REQUESTS: Array<{ key: RfqRequestKey; label: string }> = [
+  { key: "leadTime", label: "Lead time" },
+  { key: "dataSheets", label: "Data sheets / technical information" },
+  { key: "alternatives", label: "Equivalent alternatives, if applicable" },
+  { key: "warranty", label: "Warranty information" },
+  { key: "other", label: "Other (see the notes)" },
+];
+/** CR 335 - the fields the Create RFQ form sets, on create and on edit. */
+export type RfqFormFields = { title: string; notes: string; shipToLocation: string; deliveryMethod: string; lineItems: RfqLineItem[]; date: string; dueDate: string; currency: string; requests: RfqRequestKey[]; showTargetPrices: boolean; workPackageId: string };
 
 export async function fetchVendors(projectId: string): Promise<ApiVendor[]> { return request(`/projects/${projectId}/vendors`); }
 export async function addVendor(projectId: string, body: Partial<ApiVendor>): Promise<ApiVendor> { return request(`/projects/${projectId}/vendors`, { method: 'POST', body: JSON.stringify(body) }); }
@@ -2263,10 +2279,10 @@ export async function deleteVendor(projectId: string, vid: string): Promise<void
 
 const rfqBase = (projectId: string) => `/projects/${projectId}/rfqs`;
 export async function fetchRfqs(projectId: string, archived = false): Promise<ApiRfq[]> { return request(`${rfqBase(projectId)}${archived ? '?archived=true' : ''}`); }
-export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string }): Promise<ApiRfq> {
+export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string } & Partial<RfqFormFields>): Promise<ApiRfq> {
   return request(rfqBase(projectId), { method: 'POST', body: JSON.stringify(body) });
 }
-export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean; assignedTo: string }>): Promise<ApiRfq> {
+export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean; assignedTo: string } & RfqFormFields>): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 /** CR-PR-07 — archive or restore an RFQ (archived RFQs are hidden from the normal list). */
@@ -2309,6 +2325,17 @@ export async function uploadRfqLineFile(projectId: string, rid: string, lid: str
 }
 export async function deleteRfqLineFile(projectId: string, rid: string, lid: string, aid: string): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}/line-items/${lid}/attachments/${aid}`, { method: 'DELETE' });
+}
+// CR 335 - the RFQ's supporting documents (for every vendor).
+export async function uploadRfqAttachment(projectId: string, rid: string, file: File): Promise<ApiRfq> {
+  const fd = new FormData(); fd.append('file', file);
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${rfqBase(projectId)}/${rid}/attachments`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function deleteRfqAttachment(projectId: string, rid: string, aid: string): Promise<ApiRfq> {
+  return request(`${rfqBase(projectId)}/${rid}/attachments/${aid}`, { method: 'DELETE' });
 }
 // CR-PR-02 — upload / remove an already-made RFQ document.
 export async function uploadRfqDocument(projectId: string, rid: string, file: File): Promise<ApiRfq> {

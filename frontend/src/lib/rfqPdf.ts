@@ -1,5 +1,5 @@
 import { PDFDocument } from "pdf-lib";
-import type { ApiRfq, ApiVendor } from "./api";
+import { RFQ_REQUESTS, type ApiRfq, type ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { GREENTECH } from "./poPdf";
 import { drawWrapped, wrappedHeight } from "./pdfText";
@@ -19,9 +19,14 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const note = [refText, projectInfo?.name].filter(Boolean).join("  ·  ");
   const newPage = (): Flow => brandPage(doc, b, LETTER, note);
   let f = newPage();
-  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  // CR 335 - the RFQ's own date and the date replies are due, and its currency.
+  const day = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00`) : new Date()).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const cur = rfq.currency || "USD";
+  const meta: Array<[string, string]> = [["RFQ number", ref], ["Date", day(rfq.date || rfq.createdAt?.slice(0, 10))]];
+  if (rfq.dueDate) meta.push(["Reply by", day(rfq.dueDate)]);
+  meta.push(["Currency", cur]);
 
-  let y = titleBlock(f.page, b, { x: X, y: f.y, w: W, eyebrow: "Request for quotation", title: rfq.title || "Items requested for quotation", meta: [["RFQ number", ref], ["Date", today]] });
+  let y = titleBlock(f.page, b, { x: X, y: f.y, w: W, eyebrow: "Request for quotation", title: rfq.title || "Items requested for quotation", meta });
   y = drawProjectInfo(f.page, b.regular, projectInfo, X, y, W) - 4; // H1 (no client — H2)
 
   // Three party blocks (as on the PO): GreenTech | vendor | delivery details.
@@ -33,27 +38,40 @@ export async function buildRfqPdf(rfq: ApiRfq, vendor?: ApiVendor, projectInfo?:
   const dEnd = partyBlock(f.page, b, X + (colW + gap) * 2, y, colW, "Delivery", [rfq.deliveryMethod || "Delivery", rfq.shipToLocation || ""]);
   f.y = Math.min(gtEnd, vEnd, dEnd) - 12;
 
-  // The items. Description, Brand and Spec wrap.
-  const fixed = 20 + 64 + 32 + 34 + 58;
-  const rest = W - fixed, descW = Math.round(rest * 0.56);
+  // The items. Description, Brand and Spec wrap. CR 335 - each item's note to the vendor sits under
+  // its specification; the target unit price is printed only when the RFQ shows target prices.
+  const targets = !!rfq.showTargetPrices && rfq.lineItems.some((li) => li.targetUnitPrice);
+  const tW = targets ? 58 : 0;
+  const fixed = 20 + 64 + 32 + 34 + 58 + tW;
+  const rest = W - fixed, descW = Math.round(rest * 0.48);
   const cols: TableCol[] = [
     { label: "#", w: 20 }, { label: "Description", w: descW, wrap: true }, { label: "Brand", w: 64, wrap: true },
-    { label: "Qty", w: 32, align: "right" }, { label: "Unit", w: 34 }, { label: "Spec", w: rest - descW, wrap: true }, { label: "Need by", w: 58 },
+    { label: "Qty", w: 32, align: "right" }, { label: "Unit", w: 34 }, { label: "Specification / notes", w: rest - descW, wrap: true }, { label: "Need by", w: 58 },
+    ...(targets ? [{ label: `Target (${cur})`, w: tW, align: "right" as const }] : []),
   ];
+  const specOf = (li: ApiRfq["lineItems"][number]) => [li.spec || "", li.vendorNote ? `Note: ${li.vendorNote}` : ""].filter(Boolean).join("\n");
   f = drawTable(b, f, X, cols, rfq.lineItems.map((li, i) => ({
-    cells: [String(i + 1), li.description || "", li.manufacturer || "", li.qty || "", li.unit || "", li.spec || "", li.needOnSiteDate || ""],
+    cells: [String(i + 1), li.description || "", li.manufacturer || "", li.qty || "", li.unit || "", specOf(li), li.needOnSiteDate || "", ...(targets ? [li.targetUnitPrice || ""] : [])],
   })), { newPage });
 
-  // Notes and the closing request, kept together.
+  // Notes, what to include, the supporting documents and the closing request.
   f.y -= 16;
-  const notes = (rfq.notes || "").slice(0, 400);
-  const tailH = (notes ? 13 + wrappedHeight(b.regular, notes, 9, W, 12.5) + 10 : 0) + 16;
-  if (f.y - tailH < BOTTOM) f = newPage();
-  if (notes) {
-    label(f.page, b, "Notes", X, f.y); f.y -= 13;
-    f.y = drawWrapped(f.page, b.regular, notes, { x: X, y: f.y, size: 9, maxW: W, lineHeight: 12.5, color: C.s700 }) - 8;
-  }
-  f.page.drawText("Kindly provide your quotation and delivery lead time for the items listed above.", { x: X, y: f.y, size: 8.5, font: b.regular, color: C.s500 });
+  const block = (title: string, text: string) => {
+    if (!text) return;
+    const h = 13 + wrappedHeight(b.regular, text, 9, W, 12.5) + 10;
+    if (f.y - h < BOTTOM) f = newPage();
+    label(f.page, b, title, X, f.y); f.y -= 13;
+    f.y = drawWrapped(f.page, b.regular, text, { x: X, y: f.y, size: 9, maxW: W, lineHeight: 12.5, color: C.s700 }) - 8;
+  };
+  block("Notes", (rfq.notes || "").slice(0, 3000));
+  const asked = RFQ_REQUESTS.filter((q) => (rfq.requests || []).includes(q.key)).map((q) => `•  ${q.label}`);
+  block("Please include with your quotation", asked.join("\n"));
+  block("Supporting documents (attached)", (rfq.attachments || []).map((a) => `•  ${a.name}`).join("\n"));
+  if (f.y - 16 < BOTTOM) f = newPage();
+  const closing = rfq.dueDate
+    ? `Kindly send your quotation, with prices in ${cur}, by ${day(rfq.dueDate)}.`
+    : "Kindly provide your quotation and delivery lead time for the items listed above.";
+  f.page.drawText(closing, { x: X, y: f.y, size: 8.5, font: b.regular, color: C.s500 });
 
   if (opts.pageNumbers !== false) stampPageNumbers(doc, b);
   const out = await doc.save();

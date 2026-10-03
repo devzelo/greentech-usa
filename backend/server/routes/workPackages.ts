@@ -13,6 +13,7 @@ import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard, canSeeFigures, fetchRequesterAccess } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
+import { poLock, agrLock, locksOf, type Lock } from "../lib/workPackageLocks";
 
 // CR 328 - Work Packages (Project Management). Behind the "pm" tab permission like the schedule
 // and the task board. The list comes back with everything it shows about the linked RFQ, quotes,
@@ -100,26 +101,6 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
 }
 
 const notInDirectory = (name: unknown) => `"${String(name)}" is not in the Directory. Pick the company from the list, or add it to the Directory first (the list offers to).`;
-
-/**
- * CR 328 (GT Comments 3, page 1: "... subject to user permissions and record status"). Once a signed
- * PO (or one the vendor has confirmed) or a signed agreement is linked, the package is bound to it:
- * the company and the links stay as they are until that document is unlinked first.
- */
-const PO_BOUND = ["Confirmed", "InvoiceReceived", "Paid"];
-const poLock = (po: { poNo?: string; status?: string; signatureUrl?: string } | null | undefined) =>
-  po && (po.signatureUrl || PO_BOUND.includes(String(po.status))) ? { kind: "po" as const, no: po.poNo || "the PO", label: po.signatureUrl ? "signed" : "confirmed by the vendor" } : null;
-const agrLock = (a: { agreementNo?: string; name?: string; status?: string } | null | undefined) =>
-  a && a.status === "Signed" ? { kind: "agreement" as const, no: a.agreementNo || a.name || "the agreement", label: "signed" } : null;
-type Lock = NonNullable<ReturnType<typeof poLock> | ReturnType<typeof agrLock>>;
-
-async function locksOf(projectId: string, doc: { poId?: string; agreementId?: string }): Promise<Lock[]> {
-  const [po, agr] = await Promise.all([
-    doc.poId && mongoose.isValidObjectId(doc.poId) ? ProcurementPO.findOne({ _id: doc.poId, projectId }).select("poNo status signatureUrl").lean() : null,
-    doc.agreementId && mongoose.isValidObjectId(doc.agreementId) ? Agreement.findById(doc.agreementId).select("agreementNo name status").lean() : null,
-  ]);
-  return [poLock(po), agrLock(agr)].filter((x): x is Lock => !!x);
-}
 
 /** Only the project's own team (its owner and employees) may unlink a signed document; a guest may not. */
 async function mayUnlink(req: AuthedRequest): Promise<boolean> {

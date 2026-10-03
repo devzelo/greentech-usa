@@ -6,7 +6,9 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IRfqLineFile { name: string; filePath: string; fileType: string; size: string }
 // includeSubmittal (CR-PR-03) — attach the item's current submittal package to the RFQ PDF.
 // attachments (CR-PR-03) — per-item reference docs (specs, data sheet, drawings) for the vendor.
-export interface IRfqLineItem { itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; includeSubmittal?: boolean; attachments?: IRfqLineFile[] }
+// CR 335 - targetUnitPrice (optional, internal unless the RFQ shows target prices) and a note to
+// the vendor on each item.
+export interface IRfqLineItem { itemId: string; description: string; qty: string; unit: string; spec: string; cancelled?: boolean; includeSubmittal?: boolean; attachments?: IRfqLineFile[]; targetUnitPrice?: string; vendorNote?: string }
 
 export interface IRfq extends Document {
   projectId: string;
@@ -28,6 +30,15 @@ export interface IRfq extends Document {
   // An already-made RFQ document uploaded instead of building on the platform (CR-PR-02).
   uploadedDocument: IRfqLineFile | null;
   notes: string;
+  // CR 335 - the Create RFQ form: the request's date and the date replies are due, its currency,
+  // what each vendor is asked to include (lead time, data sheets, ...), the supporting documents,
+  // and whether the target prices are printed for the vendor.
+  date: string;
+  dueDate: string;
+  currency: string;
+  requests: string[];
+  showTargetPrices: boolean;
+  attachments: IRfqLineFile[];
   assignedTo: string;       // CR-B-19 — colleague tagged to edit/review/verify this RFQ
   addedByName: string;
   archived: boolean;        // CR-PR-07 — archived RFQs are hidden from the normal list.
@@ -35,7 +46,7 @@ export interface IRfq extends Document {
 
 const RfqLineFileSchema = new Schema<IRfqLineFile>({ name: String, filePath: String, fileType: String, size: String }, { _id: true });
 const LineItemSchema = new Schema<IRfqLineItem>(
-  { itemId: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" }, spec: { type: String, default: "" }, cancelled: { type: Boolean, default: false }, includeSubmittal: { type: Boolean, default: false }, attachments: { type: [RfqLineFileSchema], default: [] } },
+  { itemId: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" }, spec: { type: String, default: "" }, cancelled: { type: Boolean, default: false }, includeSubmittal: { type: Boolean, default: false }, attachments: { type: [RfqLineFileSchema], default: [] }, targetUnitPrice: { type: String, default: "" }, vendorNote: { type: String, default: "" } },
   { _id: true }
 );
 
@@ -54,6 +65,12 @@ const RfqSchema = new Schema<IRfq>(
     recipients: { type: [{ companyId: { type: String, default: "" }, name: { type: String, default: "" }, category: { type: String, default: "" }, expectsQuote: { type: Boolean, default: true } }], default: [] },
     uploadedDocument: { type: RfqLineFileSchema, default: null },
     notes: { type: String, default: "" },
+    date: { type: String, default: "" },
+    dueDate: { type: String, default: "" },
+    currency: { type: String, default: "USD" },
+    requests: { type: [String], default: [] },
+    showTargetPrices: { type: Boolean, default: false },
+    attachments: { type: [RfqLineFileSchema], default: [] },
     assignedTo: { type: String, default: "" },
     addedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false },

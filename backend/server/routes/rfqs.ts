@@ -1,8 +1,11 @@
+import mongoose from "mongoose";
 import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
 import Rfq from "../models/Rfq";
+import WorkPackage from "../models/WorkPackage";
+import { locksOf } from "../lib/workPackageLocks";
 import Vendor from "../models/Vendor";
 import VendorQuote from "../models/VendorQuote";
 import ProcurementEvent from "../models/ProcurementEvent";
@@ -37,9 +40,50 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const quotes = await VendorQuote.find({ projectId: req.params.id }).lean();
     const byRfq: Record<string, unknown[]> = {};
     for (const q of quotes) (byRfq[String(q.rfqId)] ||= []).push(q);
-    res.json(rfqs.map((r) => ({ ...r, quotes: byRfq[String(r._id)] || [] })));
+    // CR 335 - the work package each RFQ is for (the package holds the link).
+    const pk = await WorkPackage.find({ projectId: req.params.id, rfqId: { $in: rfqs.map((r) => String(r._id)) } }).select("rfqId").lean();
+    const pkOf = new Map(pk.map((p) => [p.rfqId, String(p._id)]));
+    res.json(rfqs.map((r) => ({ ...r, quotes: byRfq[String(r._id)] || [], workPackageId: pkOf.get(String(r._id)) || "" })));
   } catch (err) { next(err); }
 });
+
+// CR 335 - the Create RFQ form's fields, cleaned. Only what was sent is returned.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const REQUESTS = ["leadTime", "dataSheets", "alternatives", "warranty", "other"];
+function formFields(b: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (typeof b.date === "string") out.date = ISO_DAY.test(b.date) ? b.date : "";
+  if (typeof b.dueDate === "string") out.dueDate = ISO_DAY.test(b.dueDate) ? b.dueDate : "";
+  if (typeof b.currency === "string") out.currency = b.currency.trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "USD";
+  if (Array.isArray(b.requests)) out.requests = [...new Set(b.requests.map(String).filter((x) => REQUESTS.includes(x)))];
+  if (typeof b.showTargetPrices === "boolean") out.showTargetPrices = b.showTargetPrices;
+  return out;
+}
+
+/** The work package an RFQ is for ("" when none). */
+async function packageOf(projectId: string, rid: string): Promise<string> {
+  const p = await WorkPackage.findOne({ projectId, rfqId: rid }).select("_id").lean();
+  return p ? String(p._id) : "";
+}
+/**
+ * CR 335 - link the RFQ to a work package ("" unlinks it). The package holds the link (its rfqId),
+ * as when the RFQ is made from the package. A package bound to a signed PO or agreement keeps its
+ * links (CR 328), and a package already on another RFQ is not taken over.
+ */
+async function linkPackage(projectId: string, rid: string, wpId: string): Promise<string> {
+  const target = wpId ? await WorkPackage.findOne({ _id: mongoose.isValidObjectId(wpId) ? wpId : null, projectId }) : null;
+  if (wpId && !target) return "That work package is not in this project.";
+  if (target && target.rfqId === rid) return "";
+  if (target?.rfqId) return `"${target.name}" is already linked to another RFQ. Unlink it on the work package first.`;
+  const current = await WorkPackage.find({ projectId, rfqId: rid });
+  for (const p of [...current, ...(target ? [target] : [])]) {
+    const locks = await locksOf(projectId, p);
+    if (locks.length) return `"${p.name}" is locked: ${locks[0].no} is ${locks[0].label}. Its links stay as they are.`;
+  }
+  for (const p of current) { p.rfqId = ""; await p.save(); }
+  if (target) { target.rfqId = rid; await target.save(); }
+  return "";
+}
 
 // STEP 1a — Create an RFQ (a DRAFT request) from selected BOQ items (line items snapshot).
 // Items are NOT advanced yet; that happens when the request is actually sent to vendors (see /send).
@@ -47,6 +91,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
   try {
     if (block(req, res)) return;
     const { title, lineItems, includesShipping, includesTax, notes, shipToLocation, deliveryMethod } = req.body || {};
+    // CR 335 - the Create RFQ form's own fields (dates, currency, requests, target prices).
+    const extra = formFields(req.body || {});
     // G — numbers-only, per-project, RFQ range starts at 7000. Use max-existing+1 (not count+1)
     // so deleting an RFQ never lets the next one reuse a number (CR-PR-06 durable uniqueness).
     const existingRfqs = await Rfq.find({ projectId: req.params.id }).select("rfqNo").lean();
@@ -57,11 +103,20 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       lineItems: Array.isArray(lineItems) ? lineItems.slice(0, 500) : [],
       includesShipping: includesShipping !== false, includesTax: includesTax !== false,
       shipToLocation: shipToLocation || "", deliveryMethod: deliveryMethod || "", notes: notes || "",
+      date: new Date().toISOString().slice(0, 10),
+      ...extra,
       status: "Draft",
       addedByName: req.user!.name || "",
     });
     await logEvent(req, { entityId: String(rfq._id), action: "created", toValue: rfqNo });
-    res.status(201).json({ ...rfq.toObject(), quotes: [] });
+    // The work package it is for (optional): the package keeps the link (its rfqId).
+    let workPackageId = "";
+    if (typeof req.body?.workPackageId === "string" && req.body.workPackageId && req.user!.role !== "subcontractor") {
+      const err = await linkPackage(req.params.id, String(rfq._id), req.body.workPackageId);
+      if (err) { await rfq.deleteOne(); return res.status(409).json({ error: err }); }
+      workPackageId = req.body.workPackageId;
+    }
+    res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId });
   } catch (err) { next(err); }
 });
 
@@ -87,6 +142,12 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (block(req, res)) return;
     const patch: Record<string, unknown> = {};
     for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients", "archived", "assignedTo"]) if (f in (req.body || {})) patch[f] = req.body[f];
+    Object.assign(patch, formFields(req.body || {}));
+    // Work packages are GreenTech's internal list (CR 328): an outside login cannot relink one.
+    if (typeof req.body?.workPackageId === "string" && req.user!.role !== "subcontractor") {
+      const err = await linkPackage(req.params.id, req.params.rid, req.body.workPackageId);
+      if (err) return res.status(409).json({ error: err });
+    }
     // Per-item docs (CR-PR-03) are uploaded separately, so a wholesale lineItems PATCH must NOT
     // wipe them — preserve each existing line's attachments by _id when the client omits them.
     if (Array.isArray(patch.lineItems)) {
@@ -99,7 +160,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     }
     const rfq = await Rfq.findOneAndUpdate({ _id: req.params.rid, projectId: req.params.id }, patch, { new: true });
     if (!rfq) return res.status(404).json({ error: "Not found" });
-    res.json(rfq);
+    res.json({ ...rfq.toObject(), workPackageId: await packageOf(req.params.id, req.params.rid) });
   } catch (err) { next(err); }
 });
 
@@ -263,6 +324,32 @@ router.delete("/:rid/line-items/:lid/attachments/:aid", async (req: AuthedReques
     const att = (line.attachments || []).find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
     if (att?.filePath) fs.unlink(path.resolve(att.filePath), () => {});
     line.attachments = (line.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
+    await rfq.save();
+    res.json(rfq);
+  } catch (err) { next(err); }
+});
+
+// CR 335 - the RFQ's supporting documents (drawings, BOQ, specs) for every vendor.
+router.post("/:rid/attachments", lineUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!rfq) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: "RFQ not found." }); }
+    const fileType = (req.file.originalname.split(".").pop() || "").toLowerCase();
+    rfq.attachments = rfq.attachments || [];
+    rfq.attachments.push({ name: req.file.originalname, filePath: req.file.path.replace(/\\/g, "/"), fileType, size: humanSize(req.file.size) });
+    await rfq.save();
+    res.status(201).json(rfq);
+  } catch (err) { next(err); }
+});
+router.delete("/:rid/attachments/:aid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (block(req, res)) return;
+    const rfq = await Rfq.findOne({ _id: req.params.rid, projectId: req.params.id });
+    if (!rfq) return res.status(404).json({ error: "Not found" });
+    const att = (rfq.attachments || []).find((a) => String((a as { _id?: unknown })._id) === req.params.aid);
+    if (att?.filePath) fs.unlink(path.resolve(att.filePath), () => {});
+    rfq.attachments = (rfq.attachments || []).filter((a) => String((a as { _id?: unknown })._id) !== req.params.aid);
     await rfq.save();
     res.json(rfq);
   } catch (err) { next(err); }
