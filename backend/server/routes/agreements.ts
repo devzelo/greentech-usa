@@ -216,7 +216,7 @@ function ownerFilter(ctx: Ctx, req: AuthedRequest): Record<string, string> {
 // Plain string fields an editor may change. `linkedProjects` used to be listed here, but the loop
 // below coerces every entry with String(), which turned the array into "[object Object]" — it is
 // handled on its own now (CR-P (27)).
-const EDIT_FIELDS = ["name", "title", "description", "remark", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
+const EDIT_FIELDS = ["name", "title", "description", "remark", "contractValue", "agreementType", "templateId", "effectiveDate", "startDate", "endDate"] as const;
 
 function buildAgreementRouter(ctx: Ctx): Router {
   const router = Router({ mergeParams: true });
@@ -346,6 +346,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
         title: String(b.title || "").slice(0, 200),
         description: String(b.description || "").slice(0, 4000),
         remark: String(b.remark || "").slice(0, 4000),   // CR-P (60)
+        contractValue: String(b.contractValue || "").slice(0, 40),   // CR 328
         agreementType: String(b.agreementType || "Custom").slice(0, 60),
         templateId: String(b.templateId || ""),
         linkedProjects: cleanLinkedProjects(b.linkedProjects),

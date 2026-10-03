@@ -1,3 +1,4 @@
+import WorkPackage from "../models/WorkPackage";
 import { Router, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import multer from "multer";
@@ -58,13 +59,19 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
 });
 
 const APPROVAL_VALUES = ["pending", "approved", "rejected"];
-const EDITABLE = ["description", "date", "qty", "amount", "remarks", "subId"] as const;
+const EDITABLE = ["description", "date", "qty", "amount", "remarks", "subId", "workPackageId"] as const;
+// CR 328 - an expense may be tagged to one of the project's work packages (its Paid counts it).
+async function cleanPackage(projectId: string, v: unknown): Promise<string> {
+  const id = String(v || "");
+  return mongoose.isValidObjectId(id) && (await WorkPackage.exists({ _id: id, projectId })) ? id : "";
+}
 
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const b = req.body || {};
     const body: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") body[f] = b[f];
+    if (typeof b.workPackageId === "string") body.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
     const items = cleanItems(b.items);
     if (items) applyItems(body, items);
     // CR-P (158) — past expenses (already paid) are recorded by staff straight as approved.
@@ -93,6 +100,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const b = req.body || {};
     const changes: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") changes[f] = b[f];
+    if (typeof b.workPackageId === "string") changes.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
     const items = cleanItems(b.items);
     // CR-P (160) — an expense recorded from an invoice payment is changed on that invoice.
     if (row.invoiceId && (Object.keys(changes).length || items)) {

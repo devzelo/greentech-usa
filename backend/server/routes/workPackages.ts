@@ -9,6 +9,7 @@ import Company from "../models/Company";
 import ProcurementPO from "../models/ProcurementPO";
 import Agreement from "../models/Agreement";
 import Invoice from "../models/Invoice";
+import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard, canSeeFigures } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
@@ -103,11 +104,16 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
     rfqIds.length ? Rfq.find({ _id: { $in: rfqIds }, projectId }).select("rfqNo title status sentAt recipients createdAt").lean() : [],
     rfqIds.length ? VendorQuote.find({ rfqId: { $in: rfqIds }, projectId }).select("rfqId vendorId status").lean() : [],
     poIds.length ? ProcurementPO.find({ _id: { $in: poIds }, projectId }).select("poNo status total vendorId vendorName signatureUrl createdAt").lean() : [],
-    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt ownerContextType").lean() : [],
+    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt ownerContextType contractValue").lean() : [],
     showMoney && (poIds.length || agrIds.length)
       ? Invoice.find({ projectId, type: "received", $or: [{ poId: { $in: poIds } }, { "contractRef.agreementId": { $in: agrIds } }] }).select("poId contractRef payments").lean()
       : [],
   ]);
+  // CR 328 - approved expenses tagged to a package are paid on it too. An expense made by a payment
+  // on an invoice is left out: that payment is already counted from the invoice.
+  const expenses = showMoney
+    ? await Expense.find({ projectId, workPackageId: { $in: rows.map((r) => String(r._id)) }, approval: "approved", invoiceId: { $in: ["", null] } }).select("workPackageId qty amount").lean()
+    : [];
   const vendorIds = [...new Set([...quotes.map((q) => q.vendorId), ...pos.map((p) => p.vendorId)].filter((x) => mongoose.isValidObjectId(x)))];
   const vendors = vendorIds.length ? await Vendor.find({ _id: { $in: vendorIds } }).select("name city country companyId").lean() : [];
   const vendorOf = new Map(vendors.map((v) => [String(v._id), v]));
@@ -155,10 +161,14 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
       out.money = null;
       return out;
     }
-    const original = po ? money(po.total) : r.budget || 0;
+    // The original value comes from the record that carries it: the PO's total, else the agreement's
+    // contract value, else the figure typed on the package.
+    const agrValue = agr ? money((agr as { contractValue?: string }).contractValue) : 0;
+    const original = po ? money(po.total) : agrValue || r.budget || 0;
     const changes = (r.changeOrders || []).filter((c) => c.status === "approved").reduce((a, c) => a + (c.amount || 0), 0);
-    const paid = invoices.filter((i) => (r.poId && i.poId === r.poId) || (r.agreementId && i.contractRef?.agreementId === r.agreementId)).reduce((a, i) => a + paidOf(i), 0);
-    out.money = { original, source: po ? "po" : r.budget ? "budget" : "", changes, changeCount: (r.changeOrders || []).filter((c) => c.status === "approved").length, current: original + changes, paid, remaining: original + changes - paid };
+    const paid = invoices.filter((i) => (r.poId && i.poId === r.poId) || (r.agreementId && i.contractRef?.agreementId === r.agreementId)).reduce((a, i) => a + paidOf(i), 0)
+      + expenses.filter((e) => e.workPackageId === String(r._id)).reduce((a, e) => a + (money(e.qty) || 1) * money(e.amount), 0);
+    out.money = { original, source: po ? "po" : agrValue ? "agreement" : r.budget ? "budget" : "", changes, changeCount: (r.changeOrders || []).filter((c) => c.status === "approved").length, current: original + changes, paid, remaining: original + changes - paid };
     return out;
   });
 }

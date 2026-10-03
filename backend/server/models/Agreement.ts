@@ -36,6 +36,8 @@ export interface IAgreement extends Document {
   // CR-P (60) — "Remark": an internal note about the agreement for our own team. Never printed and
   // never sent to a party; the printed text is the description above.
   remark: string;
+  /** CR 328 - what the agreement is worth: a figure for finance and the work packages, never printed. */
+  contractValue: string;
   agreementType: string;      // Employment | Service | Supply | Partnership | NDA | Custom
   templateId: string;
   // CR-PR-11 — projects this agreement covers. A general agreement may span several, or none.
@@ -160,6 +162,7 @@ const AgreementSchema = new Schema<IAgreement>(
     title: { type: String, default: "" },        // CR-P-45
     description: { type: String, default: "" },   // CR-P-45
     remark: { type: String, default: "" },        // CR-P (60) — internal, never printed
+    contractValue: { type: String, default: "" }, // CR 328 — internal, never printed
     agreementType: { type: String, default: "Custom" },
     templateId: { type: String, default: "" },
     linkedProjects: { type: [{ id: { type: String, default: "" }, name: { type: String, default: "" }, location: { type: String, default: "" } }], default: [] },

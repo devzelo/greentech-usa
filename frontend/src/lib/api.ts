@@ -1405,6 +1405,8 @@ export interface ApiExpense {
   amount: string; // unit price
   remarks: string;
   subId: string;
+  /** CR 328 - the work package this expense is spent on, if any. */
+  workPackageId?: string;
   approval: ApprovalStatus;
   attachments: ExpenseAttachment[];
   addedById: string | null;
@@ -1421,7 +1423,7 @@ export interface ApiExpense {
 }
 export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string }
 export interface ApiExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: string }
-type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string; items?: ApiExpenseItem[]; historic?: boolean };
+type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string; items?: ApiExpenseItem[]; historic?: boolean; workPackageId?: string };
 export async function addExpenseComment(projectId: string, eid: string, body: { text: string; mentions: string[] }) {
   return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}/comments`, { method: 'POST', body: JSON.stringify(body) });
 }
@@ -2665,6 +2667,8 @@ export interface ApiAgreement {
   ownerContextType: "user" | "project" | "general";
   ownerUserId: string; ownerProjectId: string; ownerEntityType: "" | AgreementEntityType; ownerEntityId: string;
   name: string; title?: string; description?: string; agreementType: string; templateId: string;
+  /** CR 328 - what the agreement is worth (internal, never printed): the work packages read it. */
+  contractValue?: string;
   /** CR-P (23) — AG-0001, AG-0002, … Assigned by the server at creation, never reused, read-only. */
   agreementNo?: string;
   /** CR-PR-11 — projects this agreement covers (a general agreement may span several). */
@@ -2751,7 +2755,7 @@ export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archi
   return request(`${agrBase(ctx)}/${aid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
 export interface AgreementInput {
-  name?: string; title?: string; description?: string; agreementType?: string; templateId?: string;
+  name?: string; title?: string; description?: string; agreementType?: string; templateId?: string; contractValue?: string;
   linkedProjects?: Array<{ id: string; name: string; location?: string }>;
   effectiveDate?: string; startDate?: string; endDate?: string;
   docStatus?: string;
@@ -3463,7 +3467,7 @@ export interface ApiWorkPackage {
   winner: { name: string; place: string; logoUrl: string; companyId: string; internal: boolean; from: string } | null;
   po: { id: string; no: string; status: string; signed: boolean; date: string } | null;
   agreement: { id: string; no: string; title: string; status: string; date: string; general?: boolean } | null;
-  money: { original: number; source: "po" | "budget" | ""; changes: number; changeCount: number; current: number; paid: number; remaining: number } | null;
+  money: { original: number; source: "po" | "agreement" | "budget" | ""; changes: number; changeCount: number; current: number; paid: number; remaining: number } | null;
 }
 export type WorkPackageInput = Partial<Pick<ApiWorkPackage,
   "name" | "description" | "type" | "responsible" | "rfqId" | "poId" | "agreementId" | "status" | "progressMode" | "progress" | "scheduleRef" | "subtasks" | "budget" | "changeOrders" | "remarks" | "archived">>;

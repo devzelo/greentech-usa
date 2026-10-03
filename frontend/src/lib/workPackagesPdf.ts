@@ -163,7 +163,7 @@ export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packa
     f.y = sectionHeading(f.page, b, "Money", X, f.y, W);
     const cw = (W - 4 * 8) / 5;
     const cards: Array<[string, string]> = [
-      [m.source === "po" ? "Original (PO)" : "Original value", fig(o, m.original)],
+      [m.source === "po" ? "Original (PO)" : m.source === "agreement" ? "Original (agreement)" : "Original value", fig(o, m.original)],
       ["Change orders", m.changeCount ? `${m.changes >= 0 ? "+" : "-"}${fig(o, Math.abs(m.changes))}` : "-"],
       ["Current value", fig(o, m.current)],
       ["Paid", fig(o, m.paid)],

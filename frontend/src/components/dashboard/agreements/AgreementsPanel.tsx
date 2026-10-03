@@ -143,6 +143,7 @@ const BLANK_SECTIONS: ApiAgreementSections = {
 type Draft = {
   name: string; title: string; description: string; agreementType: string; templateId: string;
   remark: string;   // CR-P (60) — internal, never printed
+  contractValue: string;   // CR 328 — internal, never printed
   linkedProjects: Array<{ id: string; name: string; location?: string }>;
   effectiveDate: string; startDate: string; endDate: string;
   datesShown: { effective: boolean; start: boolean; end: boolean };   // CR-P (21)
@@ -463,7 +464,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     const firstName = autoNameFor(defaults?.party2?.name || "", new Date().toISOString().slice(0, 10));
     autoNameRef.current = firstName;
     setDraft({
-      name: firstName, title: "", description: "", remark: "",
+      name: firstName, title: "", description: "", remark: "", contractValue: "",
       // CR-P (69) — names from the one grouped type list every agreement now uses.
       agreementType: ctx.kind === "user" ? "Employment Agreement" : ctx.kind === "general" ? "Service Agreement" : ctx.entityType === "vendor" ? "Supplier Agreement" : ctx.entityType === "partner" ? "Partnership Agreement" : "Subcontract Agreement",
       // A project's own agreement covers that project from the start (it can be changed).
@@ -504,6 +505,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     setDraft(withAutoStatus({
       name: ag.name, title: ag.title || "", description: ag.description || "", agreementType: ag.agreementType, templateId: ag.templateId,
       remark: ag.remark || "",
+      contractValue: ag.contractValue || "",
       linkedProjects: ag.linkedProjects || [],
       effectiveDate: ag.effectiveDate, startDate: ag.startDate, endDate: ag.endDate,
       // CR-P (21) — an agreement saved before this existed has no flags, so each date is ticked on
@@ -579,7 +581,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     const d = dd || draft!;
     return {
       name: d.name || autoName(d.agreementType),
-      title: d.title, description: d.description, remark: d.remark,
+      title: d.title, description: d.description, remark: d.remark, contractValue: d.contractValue,
       agreementType: d.agreementType, templateId: d.templateId,
       linkedProjects: d.linkedProjects,
       effectiveDate: d.effectiveDate, startDate: d.startDate, endDate: d.endDate,
@@ -721,6 +723,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       adopt("title", fresh.title || "", base.title || "");
       adopt("description", fresh.description || "", base.description || "");
       adopt("remark", fresh.remark || "", base.remark || "");
+      adopt("contractValue", fresh.contractValue || "", base.contractValue || "");
       adopt("agreementType", fresh.agreementType, base.agreementType);
       adopt("docStatus", (fresh.docStatus || "") as DocStatus, base.docStatus || "");
       adopt("effectiveDate", fresh.effectiveDate, base.effectiveDate);
@@ -1631,6 +1634,12 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     description, which prints; the remark never prints and never reaches a party. */}
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remark <span className="font-medium normal-case text-slate-400">(internal, not printed)</span>
                   <textarea rows={2} className={`${inp} mt-1`} value={draft.remark} onChange={(e) => setDraft({ ...draft, remark: e.target.value })} placeholder="e.g. Waiting for the bank's wording on clause 4." />
+                </label>
+                {/* CR 328 (GT Comments 3) - what the agreement is worth, so a work package on it takes its
+                    original value from here instead of a figure typed twice. Internal, never printed. */}
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract value <span className="font-medium normal-case text-slate-400">(internal, not printed)</span>
+                  <input inputMode="decimal" className={`${inp} mt-1`} value={draft.contractValue} onChange={(e) => setDraft({ ...draft, contractValue: e.target.value.replace(/[^0-9.,$ ]/g, "") })} placeholder="e.g. 45,000" />
+                  <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">A work package linked to this agreement takes its original value from here.</span>
                 </label>
               </>
               </EditorBox>

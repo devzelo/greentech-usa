@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Eye, FolderUp, History, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, Search, Send, Settings2, Trash2, Upload, X, XCircle } from "lucide-react";
-import {
+import { fetchWorkPackages,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
   attachmentUrl, fetchBoardMembers, getAuthUser, invoicePaid,
   type ApiExpense, type ApiExpenseItem, type ApiInvoice, type BoardMember,
@@ -298,6 +298,10 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   const [description, setDescription] = useState(expense?.description || (historic ? "Past expenses, January to August" : ""));
   const [date, setDate] = useState(expense?.date || new Date().toISOString().slice(0, 10));
   const [remarks, setRemarks] = useState(expense?.remarks || "");
+  // CR 328 - the work package it is spent on (only offered when the project has packages this person can see).
+  const [workPackageId, setWorkPackageId] = useState(expense?.workPackageId || "");
+  const [packages, setPackages] = useState<Array<{ _id: string; name: string; order: number }>>([]);
+  useEffect(() => { fetchWorkPackages(projectId).then((r) => setPackages(r.packages.filter((p) => !p.archived || p._id === expense?.workPackageId))).catch(() => setPackages([])); }, [projectId, expense?.workPackageId]);
   const [items, setItems] = useState<Row[]>(initItems);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
@@ -321,12 +325,13 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     description: description.trim(),
     date,
     remarks,
+    workPackageId,
     qty: "1",
     amount: total.toFixed(2),
     items: items.filter((i) => i.description.trim() || num(i.unitPrice)).map(({ key: _k, ...i }) => { void _k; return i; }),
   });
   const dirty = !expense || JSON.stringify(payload()) !== JSON.stringify({
-    description: expense.description || "", date: expense.date || "", remarks: expense.remarks || "", qty: "1", amount: expTotal(expense).toFixed(2),
+    description: expense.description || "", date: expense.date || "", remarks: expense.remarks || "", workPackageId: expense.workPackageId || "", qty: "1", amount: expTotal(expense).toFixed(2),
     items: (expense.items?.length ? expense.items : [{ description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }]).filter((i) => i.description.trim() || num(i.unitPrice)).map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice })),
   });
 
@@ -460,6 +465,15 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remark
             <input className={`${inp} mt-1`} disabled={!editable} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Anything finance should know" />
           </label>
+          {packages.length > 0 && (
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Work package
+              <select className={`${inp} mt-1`} disabled={!editable} value={workPackageId} onChange={(e) => setWorkPackageId(e.target.value)}>
+                <option value="">None</option>
+                {packages.map((p, i) => <option key={p._id} value={p._id}>{i + 1}.0 {p.name}</option>)}
+              </select>
+              <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">Once approved, it counts in that package's Paid.</span>
+            </label>
+          )}
 
           {/* Receipts */}
           <div>

@@ -59,10 +59,10 @@ const COLS: Array<{ key: ColKey; label: string; help: string; money?: boolean }>
   { key: "po", label: "PO / agreement", help: "The purchase order or agreement the work is contracted under" },
   { key: "status", label: "Status", help: "Where the work stands" },
   { key: "progress", label: "Progress", help: "Typed, the average of the subtasks, or read from the schedule" },
-  { key: "original", label: "Original value", help: "The contracted amount: the PO's total, or the value typed on the package", money: true },
+  { key: "original", label: "Original value", help: "The contracted amount: the PO's total, the agreement's contract value, or the value typed on the package", money: true },
   { key: "changes", label: "Change orders", help: "Approved change orders on this package", money: true },
   { key: "current", label: "Total value (current)", help: "Original value plus approved change orders", money: true },
-  { key: "paid", label: "Paid", help: "Payments recorded in Finances on the vendor's invoices for this PO or agreement", money: true },
+  { key: "paid", label: "Paid", help: "Payments recorded in Finances on the vendor's invoices for this PO or agreement, and approved expenses tagged to this package", money: true },
   { key: "remaining", label: "Remaining", help: "Current value minus paid", money: true },
   { key: "remarks", label: "Remarks", help: "A free note" },
 ];
@@ -293,7 +293,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} /></span>
         </span>
       );
-      case "original": return m && (m.original || m.source) ? <span className={`tabular-nums ${m.changes ? "text-slate-400 line-through" : "font-semibold text-slate-800"}`} title={m.source === "po" ? "The PO's total" : "The value typed on the package"}><Fig>{usd(m.original)}</Fig></span> : <span className="text-slate-300">-</span>;
+      case "original": return m && (m.original || m.source) ? <span className={`tabular-nums ${m.changes ? "text-slate-400 line-through" : "font-semibold text-slate-800"}`} title={m.source === "po" ? "The PO's total" : m.source === "agreement" ? "The agreement's contract value" : "The value typed on the package"}><Fig>{usd(m.original)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "changes": return m && m.changeCount ? <><span className={`font-bold tabular-nums ${m.changes >= 0 ? "text-red-600" : "text-emerald-600"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></span>{canEdit ? <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className="block text-[10px] font-bold text-blue-600 hover:underline">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</button> : <span className="block text-[10px] text-slate-400">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</span>}</> : <span className="text-slate-300">-</span>;
       case "current": return m && (m.current || m.source) ? <span className="font-bold tabular-nums text-slate-900"><Fig>{usd(m.current)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "paid": return m && (m.paid || m.source) ? <span className="tabular-nums text-slate-700"><Fig>{usd(m.paid)}</Fig></span> : <span className="text-slate-300">-</span>;
@@ -562,6 +562,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
     finally { setMaking(""); }
   };
   const linkedRfq = rfqs.find((r) => r._id === f.rfqId);
+  const linkedAgrValue = (agrs.find((a) => a._id === f.agreementId)?.contractValue || "").replace(/[^0-9.]/g, "");
   const awarded = linkedRfq?.quotes?.find((q) => q.status === "Awarded");
   const makePo = async () => {
     if (!pkg) return;
@@ -735,10 +736,11 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
         </Section>
 
         {canMoney && (
-          <Section n={outside ? 5 : 4} title="Money" note="The original value is the linked PO's total. Without a PO (an agreement, or work done in-house), type the contract value or budget here. Paid is read from the payments recorded in Finances and cannot be typed.">
+          <Section n={outside ? 5 : 4} title="Money" note="The original value is the linked PO's total, else the linked agreement's contract value. For work done in-house, type a budget here. Paid is read from Finances (payments on the vendor's invoices, and approved expenses tagged to this package) and cannot be typed.">
             <label className="block">
-              <span className={lbl}>{f.poId ? "Contract value / budget (not used: the PO's total applies)" : "Contract value / budget"}</span>
-              <input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} disabled={!!f.poId} placeholder="0" className={inp} />
+              <span className={lbl}>{f.poId ? "Contract value / budget (not used: the PO's total applies)" : linkedAgrValue ? "Contract value / budget (not used: the agreement's contract value applies)" : "Contract value / budget"}</span>
+              <input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} disabled={!!f.poId || !!linkedAgrValue} placeholder="0" className={inp} />
+              {!f.poId && f.agreementId && !linkedAgrValue && <span className={`mt-1 block ${hint}`}>The linked agreement has no contract value yet. Enter it on the agreement (Contract value) and it is used here instead.</span>}
             </label>
             <div>
               <span className={lbl}>Change orders</span>
