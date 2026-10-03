@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ArrowLeft, Globe, Clock, ExternalLink, MapPin,
+  Globe, Clock, ExternalLink, MapPin,
   Upload, Download, Eye, FileText, FileImage, FileCode,
   Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Search,
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
@@ -1828,7 +1828,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const urlTab = searchParams.get("tab") || "";
     const urlOpens = (FIN_PERM_BY_KEY as Record<string, string>)[urlTab] ? "finances" : urlTab === "client" ? "project-info" : urlTab;
     const filling = urlOpens === activeTab && (urlTab !== activeTab || (!!subKey && !searchParams.get(subKey)));
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: first || filling });
+    // CR 333 - an address with no tab yet (the tab is only known once the project has loaded) is
+    // filled in too, never a step of its own, so Back leaves the project instead of landing on it again.
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: first || filling || !urlTab });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, procSub, finSub, subsSubTab]);
   // Vendors (shared with the RFQ tab) — listed here so each vendor record can hold agreements.
@@ -3877,21 +3879,25 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {wsDialogs}
       {/* ── Header ── */}
       <div className="flex flex-col gap-5">
-        {/* CR 192: contract time sits on its own at the top right, level with Back to Projects. */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-slate-400 hover:text-slate-900 transition-colors font-bold text-xs uppercase tracking-widest w-fit sm:mt-2.5"
-          >
-            <ArrowLeft size={16} /> Back to Projects
-          </button>
-          {!isGuest && (
-            <TimelineBar variant="time" project={project} canEdit={canManage} userName={currentUser?.name || ""} onSaveExtensions={saveExtensions} />
-          )}
-        </div>
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="flex items-center gap-5">
+        {/* CR 333 - "Back" lives in the top bar now (beside Overview > Projects). The project's
+            identity sits in its own box at the top, on the project picture when it has one, with
+            the contract time and the actions in the column beside it. */}
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5">
+          <div className={`relative flex-1 min-w-0 rounded-3xl overflow-hidden border ${project.image ? "border-slate-200 bg-slate-800" : "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50"}`}>
+            {project.image && (
+              <>
+                <img src={assetSrc(project.image)} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-900/50 via-slate-900/20 to-transparent" />
+              </>
+            )}
+            {isOwner && (
+              <label className={`absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer shadow-sm transition-colors ${project.image ? "bg-white/90 text-slate-700 hover:bg-white" : "bg-white border border-slate-200 text-slate-500 hover:text-primary"}`} title="The project picture, shown behind the project's details">
+                {imageUploading ? <Loader2 size={12} className="animate-spin" /> : <FileImage size={12} />}
+                {imageUploading ? "Uploading…" : project.image ? "Change picture" : "Add a picture"}
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void handleProjectImageUpload(f); }} />
+              </label>
+            )}
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 m-3 sm:m-4 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)] ${project.image ? "bg-white/90 backdrop-blur-md shadow-lg mt-14 sm:mt-16" : isOwner ? "mt-12 sm:mt-4 sm:mr-36" : ""}`}>
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
@@ -4018,11 +4024,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               </>)}
             </div>
           </div>
+          </div>
 
-          <div className="flex flex-col gap-2 flex-shrink-0 items-stretch lg:items-end">
+          <div className="flex flex-col gap-2 flex-shrink-0 items-stretch xl:items-end">
+            {/* CR 192: contract time at the top right. */}
+            {!isGuest && (
+              <TimelineBar variant="time" project={project} canEdit={canManage} userName={currentUser?.name || ""} onSaveExtensions={saveExtensions} />
+            )}
             {/* Row 1 — Public website controls (owner only), in a distinct "publish" format */}
             {isOwner && (
-              <div className="flex flex-wrap items-center gap-2 bg-indigo-50/60 border border-indigo-100 rounded-xl px-3 py-1.5 lg:justify-end">
+              <div className="flex flex-wrap items-center gap-2 bg-indigo-50/60 border border-indigo-100 rounded-xl px-3 py-1.5 xl:justify-end">
                 <div className="flex items-center gap-2">
                   <Globe size={14} className={isPublished ? "text-indigo-500" : "text-slate-300"} />
                   <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap">Preview on website</span>
@@ -4067,7 +4078,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             )}
 
             {/* Row 2 — Project actions */}
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               {canManage && (
                 <button
                   onClick={handleExport}
@@ -4119,7 +4130,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
             {/* Row 3 — Tab structure controls (below Save Workspace) */}
             {canManage && (
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                 <button
                   onClick={openAddTab}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-dashed border-slate-200 bg-white text-slate-500 hover:text-primary hover:border-primary text-xs font-bold transition-all"

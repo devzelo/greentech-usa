@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   ChevronRight,
+  ArrowLeft,
   ChevronLeft,
   Handshake,
   Bell,
@@ -92,6 +93,21 @@ export default function DashboardLayout() {
   const { confirm, dialogs } = useDialogs();
   // CR-P-12 — warn before in-app navigation (sidebar / logo) when a builder has unsaved work.
   // beforeunload covers refresh / browser-back / close; this covers clicks inside the app.
+  // CR 333 - Back in the top bar: the last page, with the same unsaved-work check as the menu.
+  const goBack = async () => {
+    if (isAppDirty()) {
+      const ok = await confirm({
+        title: "Leave without saving?",
+        message: "You have unsaved changes on this page. If you leave now they'll be lost. Save (or save as draft) first to keep them.",
+        confirmLabel: "Leave", cancelLabel: "Stay", danger: true,
+      });
+      if (!ok) return;
+      clearAppDirty();
+    }
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate(location.pathname.startsWith("/dashboard/projects/") ? "/dashboard/my-projects" : "/dashboard");
+  };
   const guardedGo = async (e: ReactMouseEvent, to: string) => {
     if (isMobile) setIsSidebarOpen(false);
     if (!isAppDirty()) return;                 // no unsaved work — let the <Link> navigate normally
@@ -396,6 +412,13 @@ export default function DashboardLayout() {
                 <Menu size={20} />
               </button>
             )}
+            {/* CR 333 - "Back" takes you to the page you came from (My Projects or Overview when there is none). */}
+            {!isOverview && (
+              <button onClick={() => void goBack()} className="inline-flex items-center gap-1.5 px-2 py-1.5 -ml-1 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors" title="Back to the last page">
+                <ArrowLeft size={16} /> Back
+              </button>
+            )}
+            {!isOverview && <span className="hidden sm:block h-5 w-px bg-slate-200" aria-hidden />}
             <div className="hidden sm:flex items-center gap-2 text-sm">
                 {isOverview ? (
                   <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">Overview</Link>
