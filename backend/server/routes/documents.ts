@@ -163,6 +163,36 @@ router.put("/folders", async (req: AuthedRequest, res: Response, next: NextFunct
   } catch (err) { next(err); }
 });
 
+// POST /api/projects/:id/documents/folders/move { section, from, to } — rename a folder, or move it
+// into another folder (or to the top level). Its subfolders and files go with it. CR 332.
+router.post("/folders/move", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const section = String(req.body?.section || "");
+    const from = cleanFolder(req.body?.from);
+    const to = cleanFolder(req.body?.to);
+    if (!section || !from || !to) return res.status(400).json({ error: "Which folder, and where to?" });
+    if (!(await canEditSection(req, req.params.id, section))) return res.status(403).json({ error: "Not allowed." });
+    if (to === from) return res.json({ moved: 0 });
+    if (to.startsWith(`${from}/`)) return res.status(400).json({ error: "A folder cannot go inside itself." });
+    const pid = req.params.id;
+    const under = (p: string) => ({ $in: [p, new RegExp(`^${escapeRx(p)}/`)] });
+    // Never merge two folders by accident: the new place must be free.
+    const taken = await DocumentFolder.exists({ projectId: pid, section, path: under(to) })
+      || await ProjectDocument.exists({ projectId: pid, section, folder: under(to) });
+    if (taken) return res.status(409).json({ error: `There is already a folder called "${to.split("/").pop()}" there.` });
+    const moveTo = (p: string) => to + p.slice(from.length);
+    const [folders, docs] = await Promise.all([
+      DocumentFolder.find({ projectId: pid, section, path: under(from) }),
+      ProjectDocument.find({ projectId: pid, section, folder: under(from) }),
+    ]);
+    for (const f of folders) { f.path = moveTo(f.path); await f.save(); }
+    for (const d of docs) { d.folder = moveTo(d.folder || from); await d.save(); }
+    // The folder keeps existing in its new place even when it held no saved record of its own.
+    if (!folders.some((f) => f.path === to)) await DocumentFolder.updateOne({ projectId: pid, section, path: to }, { $setOnInsert: { description: "" } }, { upsert: true });
+    res.json({ moved: docs.length });
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/projects/:id/documents/folders?section=&path= — the folder with everything in it.
 // Each file goes to the recycle bin, like a single deleted file.
 router.delete("/folders", async (req: AuthedRequest, res: Response, next: NextFunction) => {
@@ -216,6 +246,11 @@ router.patch("/:did", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (!allowed) return res.status(403).json({ error: "Not allowed." });
     if (typeof req.body?.description === "string") target.description = req.body.description.slice(0, 500);
     if (typeof req.body?.archived === "boolean") target.archived = req.body.archived;
+    // CR 332 - move the file into another folder of the same section ("" = the top level).
+    if (typeof req.body?.folder === "string") {
+      if (target.projectId !== req.params.id) return res.status(404).json({ error: "Document not found." });
+      target.folder = cleanFolder(req.body.folder);
+    }
     await target.save();
     res.json(target);
   } catch (err) {

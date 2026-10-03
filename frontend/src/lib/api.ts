@@ -1836,6 +1836,14 @@ export async function fetchDocFolders(projectId: string, section: string): Promi
 export async function saveDocFolder(projectId: string, section: string, path: string, description = ""): Promise<ApiDocFolder> {
   return request<ApiDocFolder>(`/projects/${projectId}/documents/folders`, { method: "PUT", body: JSON.stringify({ section, path, description }) });
 }
+/** CR 332 - rename a folder, or move it into another one ("to" is its new full path). */
+export async function moveDocFolder(projectId: string, section: string, from: string, to: string): Promise<void> {
+  await request(`/projects/${projectId}/documents/folders/move`, { method: "POST", body: JSON.stringify({ section, from, to }) });
+}
+/** CR 332 - move a file into a folder of its section ("" = the top level). */
+export async function moveDocument(projectId: string, did: string, folder: string): Promise<ApiDocument> {
+  return request<ApiDocument>(`/projects/${projectId}/documents/${did}`, { method: "PATCH", body: JSON.stringify({ folder }) });
+}
 /** Delete a folder with everything in it (its files and subfolders). */
 export async function deleteDocFolder(projectId: string, section: string, path: string): Promise<void> {
   await request(`/projects/${projectId}/documents/folders?section=${encodeURIComponent(section)}&path=${encodeURIComponent(path)}`, { method: "DELETE" });

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw, Plus, Folder, FolderOpen, FolderPlus, FolderUp, ChevronRight, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw, Plus, Folder, FolderOpen, FolderPlus, FolderUp, ChevronRight, Trash2, Pencil, Scissors, ClipboardPaste, Move } from "lucide-react";
 import {
   fetchDocuments,
   fetchDocFolders,
   saveDocFolder,
   deleteDocFolder,
+  moveDocFolder,
+  moveDocument,
   uploadDocument,
   deleteDocument,
   setDocumentPublic,
@@ -61,6 +63,11 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
   const [descSaving, setDescSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false); // CR-P-10
   const folderInput = useRef<HTMLInputElement>(null);
+  // CR 332 - files and folders are moved into each other by dragging, or with Cut and Paste here.
+  const [clip, setClip] = useState<{ files: string[]; folders: string[] }>({ files: [], folders: [] });
+  const [moving, setMoving] = useState(false);
+  const dragging = useRef<{ kind: "file" | "folder"; id: string } | null>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -139,6 +146,79 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
     catch (err) { toast(err instanceof Error ? err.message : "Could not create the folder.", "error"); }
   };
 
+  /**
+   * CR 332 - move files and folders into `dest` ("" = the top of this tab). A folder takes its
+   * subfolders and files with it; a file already inside a folder being moved simply goes along.
+   */
+  const moveInto = async (items: { files: string[]; folders: string[] }, dest: string): Promise<boolean> => {
+    const bad = items.folders.find((f) => dest === f || dest.startsWith(`${f}/`));
+    if (bad) { toast(`"${leafOf(bad)}" cannot go inside itself.`, "error"); return false; }
+    const folders = items.folders.filter((f) => parentOf(f) !== dest);
+    const files = items.files.filter((id) => {
+      const f = docs.find((d) => d._id === id)?.folder || "";
+      return f !== dest && !items.folders.some((x) => f === x || f.startsWith(`${x}/`));
+    });
+    if (!folders.length && !files.length) { toast("Already in this folder.", "info"); return true; }
+    setMoving(true);
+    let failed = 0, lastErr = "";
+    for (const f of folders) {
+      try { await moveDocFolder(projectId, section, f, join(dest, leafOf(f))); }
+      catch (err) { failed++; lastErr = err instanceof Error ? err.message : ""; }
+    }
+    for (const id of files) {
+      try { await moveDocument(projectId, id, dest); }
+      catch (err) { failed++; lastErr = err instanceof Error ? err.message : ""; }
+    }
+    setMoving(false);
+    await refresh();
+    const n = folders.length + files.length - failed;
+    if (failed) toast(lastErr || `${failed} item${failed === 1 ? "" : "s"} could not be moved.`, "error");
+    if (n) toast(`${n} item${n === 1 ? "" : "s"} moved to ${dest ? `"${leafOf(dest)}"` : title}.`, "success");
+    return !failed;
+  };
+  const canMove = canEdit && !showArchived;
+  const isCut = (kind: "file" | "folder", id: string) => (kind === "file" ? clip.files : clip.folders).includes(id);
+  const toggleCut = (kind: "file" | "folder", id: string) => setClip((c) => kind === "file"
+    ? { ...c, files: c.files.includes(id) ? c.files.filter((x) => x !== id) : [...c.files, id] }
+    : { ...c, folders: c.folders.includes(id) ? c.folders.filter((x) => x !== id) : [...c.folders, id] });
+  const clipCount = clip.files.length + clip.folders.length;
+  const paste = async () => { if (await moveInto(clip, here)) setClip({ files: [], folders: [] }); };
+  // Drag a file or a folder onto a folder (or onto the path at the top) to move it there.
+  const dragProps = (kind: "file" | "folder", id: string) => canMove ? {
+    draggable: true,
+    onDragStart: (e: DragEvent) => { dragging.current = { kind, id }; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); },
+    onDragEnd: () => { dragging.current = null; setDropOn(null); },
+  } : {};
+  const dropProps = (dest: string) => canMove ? {
+    onDragOver: (e: DragEvent) => {
+      const d = dragging.current;
+      if (!d || (d.kind === "folder" && (dest === d.id || dest.startsWith(`${d.id}/`)))) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      if (dropOn !== dest) setDropOn(dest);
+    },
+    onDragLeave: (e: DragEvent) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropOn((v) => (v === dest ? null : v)); },
+    onDrop: (e: DragEvent) => {
+      e.preventDefault();
+      const d = dragging.current;
+      dragging.current = null; setDropOn(null);
+      if (d) void moveInto(d.kind === "file" ? { files: [d.id], folders: [] } : { files: [], folders: [d.id] }, dest);
+    },
+  } : {};
+
+  const renameFolder = async (p: string) => {
+    const name = await prompt({ title: "Rename folder", label: "Folder name", initialValue: leafOf(p), confirmLabel: "Rename" });
+    const next = (name || "").trim().replace(/[\\/]+/g, " ");
+    if (!next || next === leafOf(p)) return;
+    const to = join(parentOf(p), next);
+    try {
+      await moveDocFolder(projectId, section, p, to);
+      if (cwd === p || cwd.startsWith(`${p}/`)) setCwd(to + cwd.slice(p.length));
+      setClip((c) => ({ ...c, folders: c.folders.map((f) => (f === p || f.startsWith(`${p}/`) ? to + f.slice(p.length) : f)) }));
+      await refresh();
+      toast(`Folder renamed to "${next}".`, "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not rename the folder.", "error"); }
+  };
+
   const removeFolder = async (p: string) => {
     const n = docs.filter((d) => inFolder(d, p)).length;
     if (!(await confirm({ title: "Delete folder?", message: `Delete "${leafOf(p)}"${n ? ` and the ${n} file${n === 1 ? "" : "s"} in it (they go to the Recycle Bin)` : ""}?`, confirmLabel: "Delete", danger: true }))) return;
@@ -208,15 +288,16 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
       {/* The path to the open folder; click a part to go back up. */}
       {here && (
         <nav className="flex flex-wrap items-center gap-1 mb-3 text-xs font-bold">
-          <button onClick={() => setCwd("")} className="text-slate-500 hover:text-primary">{title}</button>
+          <button onClick={() => setCwd("")} {...dropProps("")} className={`rounded px-1 -mx-1 text-slate-500 hover:text-primary ${dropOn === "" ? "bg-primary/10 ring-2 ring-primary/40 text-primary" : ""}`}>{title}</button>
           {here.split("/").map((part, i, arr) => {
             const p = arr.slice(0, i + 1).join("/");
             return (
               <span key={p} className="inline-flex items-center gap-1">
                 <ChevronRight size={12} className="text-slate-300" />
                 {i === arr.length - 1
-                  ? <span className="text-slate-800 inline-flex items-center gap-1"><FolderOpen size={13} className="text-amber-500" /> {part}</span>
-                  : <button onClick={() => setCwd(p)} className="text-slate-500 hover:text-primary">{part}</button>}
+                  ? <span className="text-slate-800 inline-flex items-center gap-1"><FolderOpen size={13} className="text-amber-500" /> {part}
+                      {canMove && <button onClick={() => renameFolder(p)} className="p-0.5 rounded text-slate-300 hover:text-primary" title="Rename this folder"><Pencil size={11} /></button>}</span>
+                  : <button onClick={() => setCwd(p)} {...dropProps(p)} className={`rounded px-1 -mx-1 text-slate-500 hover:text-primary ${dropOn === p ? "bg-primary/10 ring-2 ring-primary/40 text-primary" : ""}`}>{part}</button>}
               </span>
             );
           })}
@@ -228,65 +309,85 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
           <div className="flex items-center gap-2 text-slate-300 text-xs"><Loader2 size={12} className="animate-spin" /> Loading…</div>
         )}
 
-        {/* Folders first, like a file explorer. Click (or double-click) to open. */}
+        {/* CR 332 - what has been cut, waiting to be pasted into the folder that is open. */}
+        {canMove && clipCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/20 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-600"><Scissors size={13} className="text-primary" /> {clipCount} item{clipCount === 1 ? "" : "s"} cut. Open the folder {clipCount === 1 ? "it goes" : "they go"} to, then paste.</span>
+            <span className="flex items-center gap-1.5">
+              <button onClick={() => setClip({ files: [], folders: [] })} disabled={moving} className="px-2.5 py-1 rounded-lg text-slate-500 font-bold hover:bg-white disabled:opacity-50">Cancel</button>
+              <button onClick={() => void paste()} disabled={moving} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white font-bold disabled:opacity-50">{moving ? <Loader2 size={12} className="animate-spin" /> : <ClipboardPaste size={12} />} Paste into {here ? `"${leafOf(here)}"` : title}</button>
+            </span>
+          </div>
+        )}
+        {canMove && !loading && (subfolders.length > 0 || here) && (filesHere.length > 0 || subfolders.length > 1) && clipCount === 0 && (
+          <p className="flex items-center gap-1 text-[10px] text-slate-400"><Move size={11} /> Drag a file or folder onto a folder{here ? " (or onto the path above)" : ""} to move it, or use Cut and paste.</p>
+        )}
+
+        {/* Folders first, like a file explorer. Click (or double-click) to open. CR 332 - the description
+            sits beside the name, not under it, so a long list stays short. */}
         {!loading && subfolders.map((p) => {
           const count = docs.filter((d) => inFolder(d, p)).length;
           const desc = folderDesc(p);
+          const cut = isCut("folder", p);
           return (
-            <div key={p} onDoubleClick={() => setCwd(p)} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 p-3 bg-amber-50/40 border border-amber-100/70 rounded-xl group">
-              <div className="flex items-start gap-3 flex-grow min-w-0">
-                <button onClick={() => setCwd(p)} className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-amber-500 flex-shrink-0 border border-amber-100 mt-0.5" title="Open folder">
+            <div key={p} onDoubleClick={() => setCwd(p)} {...dragProps("folder", p)} {...dropProps(p)}
+              className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 border rounded-xl group transition-colors ${dropOn === p ? "bg-primary/10 border-primary ring-2 ring-primary/30" : "bg-amber-50/40 border-amber-100/70"} ${cut ? "opacity-50" : ""} ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}>
+              <div className="flex items-center gap-3 min-w-0 sm:w-72 sm:shrink-0">
+                <button onClick={() => setCwd(p)} className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-amber-500 flex-shrink-0 border border-amber-100" title="Open folder">
                   <Folder size={16} fill="currentColor" fillOpacity={0.15} />
                 </button>
-                <div className="flex-grow min-w-0">
-                  <button onClick={() => setCwd(p)} className="block text-left w-full" title="Open folder">
-                    <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{leafOf(p)}</p>
-                    <p className="text-[10px] text-slate-400 font-medium">Folder · {count} file{count === 1 ? "" : "s"}</p>
-                  </button>
-                  {desc ? (
-                    canEdit
-                      ? <button onClick={() => setDescEdit({ folder: p, value: desc, had: true })} className="mt-1 text-left text-xs font-medium text-slate-600 hover:text-primary py-0.5" title="Edit description">{desc}</button>
-                      : <p className="mt-0.5 text-xs text-slate-600 font-medium">{desc}</p>
-                  ) : canEdit ? (
-                    <button onClick={() => setDescEdit({ folder: p, value: "", had: false })} className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary py-0.5"><Plus size={11} /> Add description</button>
-                  ) : null}
-                </div>
+                <button onClick={() => setCwd(p)} className="block text-left min-w-0" title="Open folder">
+                  <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{leafOf(p)}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Folder · {count} file{count === 1 ? "" : "s"}{cut ? " · cut" : ""}</p>
+                </button>
+              </div>
+              <div className="flex-1 min-w-0 pl-12 sm:pl-0">
+                {desc ? (
+                  canEdit
+                    ? <button onClick={() => setDescEdit({ folder: p, value: desc, had: true })} className="text-left text-xs font-medium text-slate-600 hover:text-primary line-clamp-2" title={`${desc}\n(click to edit)`}>{desc}</button>
+                    : <p className="text-xs text-slate-600 font-medium line-clamp-2" title={desc}>{desc}</p>
+                ) : canEdit ? (
+                  <button onClick={() => setDescEdit({ folder: p, value: "", had: false })} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary py-0.5"><Plus size={11} /> Add description</button>
+                ) : null}
               </div>
               <div className="flex gap-1 shrink-0 justify-end opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
                 <button onClick={() => setCwd(p)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Open"><FolderOpen size={13} /></button>
                 {count > 0 && <button onClick={() => downloadAll(docs.filter((d) => inFolder(d, p)))} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download all files in this folder"><Download size={13} /></button>}
+                {canMove && <button onClick={() => renameFolder(p)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Rename folder"><Pencil size={13} /></button>}
+                {canMove && <button onClick={() => toggleCut("folder", p)} className={`p-1.5 rounded-lg hover:bg-white ${cut ? "text-primary" : "text-slate-400 hover:text-primary"}`} title={cut ? "Cancel cut" : "Cut (then paste it into another folder)"}><Scissors size={13} /></button>}
                 {canEdit && <button onClick={() => removeFolder(p)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-red-500" title="Delete folder"><Trash2 size={13} /></button>}
               </div>
             </div>
           );
         })}
 
-        {!loading && filesHere.map((d) => (
-          <div key={d._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 p-3 bg-slate-50 rounded-xl group">
-            <div className="flex items-start gap-3 flex-grow min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-primary flex-shrink-0 border border-slate-100 mt-0.5">
+        {!loading && filesHere.map((d) => {
+          const cut = isCut("file", d._id);
+          return (
+          <div key={d._id} {...dragProps("file", d._id)} className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 bg-slate-50 rounded-xl group ${cut ? "opacity-50" : ""} ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}>
+            <div className="flex items-center gap-3 min-w-0 sm:w-72 sm:shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center text-primary flex-shrink-0 border border-slate-100">
                 <FileText size={15} />
               </div>
-              <div className="flex-grow min-w-0">
-                <button onClick={() => setPreview(d)} className="block text-left w-full" title="Preview">
-                  <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}{showArchived && d.folder ? ` · ${d.folder}` : ""}</p>
+              <button onClick={() => setPreview(d)} className="block text-left min-w-0" title="Preview">
+                <p className="text-sm font-bold text-slate-900 truncate hover:text-primary transition-colors">{d.name}</p>
+                <p className="text-[10px] text-slate-400 font-medium">{d.size} · {new Date(d.uploadedAt).toLocaleDateString()}{showArchived && d.folder ? ` · ${d.folder}` : ""}{cut ? " · cut" : ""}</p>
+              </button>
+            </div>
+            {/* CR-P (130) — every file carries a description of what it is (e.g. which appendix),
+                added in a popup with Save. CR 332 - shown beside the file name, to save space. */}
+            <div className="flex-1 min-w-0 pl-12 sm:pl-0">
+              {d.description ? (
+                canEdit ? (
+                  <button onClick={() => setDescEdit({ doc: d, value: d.description || "", had: true })} className="text-left text-xs font-medium text-slate-600 hover:text-primary line-clamp-2 transition-colors" title={`${d.description}\n(click to edit)`}>{d.description}</button>
+                ) : (
+                  <p className="text-xs text-slate-600 font-medium line-clamp-2" title={d.description}>{d.description}</p>
+                )
+              ) : canEdit && !showArchived ? (
+                <button onClick={() => setDescEdit({ doc: d, value: "", had: false })} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary py-0.5 transition-colors">
+                  <Plus size={11} /> Add description
                 </button>
-                {/* CR-P (130) — every file carries a description of what it is (e.g. which appendix),
-                    added in a popup with Save and shown under the file name. (CR-P-07 had removed
-                    the "Add description" line; the client now wants it back.) */}
-                {d.description ? (
-                  canEdit ? (
-                    <button onClick={() => setDescEdit({ doc: d, value: d.description || "", had: true })} className="mt-1 text-left text-xs font-medium text-slate-600 hover:text-primary py-0.5 transition-colors" title="Edit description">{d.description}</button>
-                  ) : (
-                    <p className="mt-0.5 text-xs text-slate-600 font-medium">{d.description}</p>
-                  )
-                ) : canEdit && !showArchived ? (
-                  <button onClick={() => setDescEdit({ doc: d, value: "", had: false })} className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary py-0.5 transition-colors">
-                    <Plus size={11} /> Add description
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
             </div>
             {/* Actions — full opacity + own right-aligned row on mobile (no hover on touch). */}
             <div className="flex gap-1 shrink-0 justify-end opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
@@ -302,6 +403,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                   <Globe size={13} />
                 </button>
               )}
+              {canMove && <button onClick={() => toggleCut("file", d._id)} className={`p-1.5 rounded-lg hover:bg-white ${cut ? "text-primary" : "text-slate-400 hover:text-primary"}`} title={cut ? "Cancel cut" : "Cut (then paste it into a folder)"}><Scissors size={13} /></button>}
               {canEdit && (
                 <button onClick={() => archiveDoc(d, !showArchived)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
               )}
@@ -310,7 +412,8 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {!loading && here && subfolders.length === 0 && filesHere.length === 0 && (
           <p className="text-xs text-slate-400 text-center py-3">This folder is empty.</p>
