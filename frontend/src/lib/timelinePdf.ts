@@ -600,8 +600,9 @@ function drawOverview(b: Brand, newPage: () => Flow, flow: Flow, rows: ApiMilest
   const AMBER = rgb(0.96, 0.62, 0.04), EMERALD600 = rgb(0.02, 0.59, 0.41);
 
   // ── one line of figures, as in the card's header ──
-  const totalDays = start && end ? Math.max(0, daysBetween(start, end)) : null;
-  const origDays = start && origEnd ? Math.max(0, daysBetween(start, origEnd)) : null;
+  // CR 322 - first and last day both count, as on screen.
+  const totalDays = start && end ? Math.max(0, daysBetween(start, end) + 1) : null;
+  const origDays = start && origEnd ? Math.max(0, daysBetween(start, origEnd) + 1) : null;
   const overdue = !!(end && t0 > end && plan.progress < 100);
   const remaining = end ? (overdue ? `${humanGap(end, t0)} overdue` : `${humanGap(t0, end)} left`) : "No deadline";
   const elapsed = start && end && end > start ? Math.max(0, Math.min(100, Math.round((daysBetween(start, t0) / daysBetween(start, end)) * 100))) : null;

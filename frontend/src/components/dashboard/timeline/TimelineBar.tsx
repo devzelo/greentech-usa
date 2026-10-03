@@ -76,9 +76,11 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
    * CR 287 (2026-09-23): how long the contract runs, all told. Counted the same way a phase's
    * duration is counted on the schedule (start to end), so the two agree. When time has been
    * granted, both numbers are shown: what was signed, and what it now runs to.
+   * CR 322 - first day and last day both count: 1 Sep to 15 Sep is 15 days (GT Comments 2, the
+   * KFC example: "Project Duration: 15 days").
    */
-  const totalDays = contractStart && deadline ? Math.max(0, daysBetween(contractStart, deadline)) : null;
-  const origDays = contractStart && origEnd ? Math.max(0, daysBetween(contractStart, origEnd)) : null;
+  const totalDays = contractStart && deadline ? Math.max(0, daysBetween(contractStart, deadline) + 1) : null;
+  const origDays = contractStart && origEnd ? Math.max(0, daysBetween(contractStart, origEnd) + 1) : null;
   const addedDays = extended && totalDays !== null && origDays !== null ? totalDays - origDays : 0;
   const durationTitle = totalDays === null ? ""
     : extended && origDays !== null
