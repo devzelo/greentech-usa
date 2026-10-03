@@ -23,6 +23,7 @@ export function fiveFromRaw(expenses: ApiExpense[], sentInvoices: ApiInvoice[], 
   let approvedExpenses = 0, pendingExpenses = 0;
   for (const e of expenses) {
     const val = (n(e.qty) || 1) * n(e.amount);
+    if ((e as { draft?: boolean }).draft) continue;   // CR 340 - a draft counts nowhere until submitted
     if (e.approval === "approved") approvedExpenses += val;
     else if (e.approval !== "rejected") pendingExpenses += val;   // pending (default); rejected ignored
   }

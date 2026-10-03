@@ -86,7 +86,7 @@ router.get("/financials", async (req: AuthedRequest, res: Response, next: NextFu
     // (CR-I-06/09). Draft/Cancelled/Rejected sent invoices are not real billed revenue.
     const NON_REVENUE = ["Draft", "Cancelled", "Canceled", "Rejected"];
     const [expenses, subInvoices, sentInvoices, receivedInvoices] = await Promise.all([
-      Expense.find({ projectId: { $in: ids } }).select("projectId qty amount invoiceId description approval").lean(),
+      Expense.find({ projectId: { $in: ids }, draft: { $ne: true } }).select("projectId qty amount invoiceId description approval").lean(),   // CR 340 - drafts count nowhere
       SubInvoice.find({ projectId: { $in: ids } }).select("projectId amount").lean(),
       Invoice.find({ projectId: { $in: ids }, type: "sent", status: { $nin: NON_REVENUE }, isTemplate: { $ne: true } })
         .select("projectId amount lineItems payments").lean(),

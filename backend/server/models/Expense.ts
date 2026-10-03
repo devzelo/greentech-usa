@@ -5,11 +5,13 @@ export interface IExpenseAttachment {
   filePath: string;
   fileType: string;
   size: string;
+  itemIds?: string[];   // CR 340 - the lines this file belongs to (none: the whole expense)
 }
 
 // CR-P (154) — one expense can hold several items (laptop, mouse, 4 monitors …).
 // CR 331 - each item is booked to an account of the chart (lib/expenseCategories), set by GreenTech staff only.
-export interface IExpenseItem { description: string; qty: string; unit: string; unitPrice: string; category: string }
+// CR 340 - each item has an id (its files point to it) and a remark of its own.
+export interface IExpenseItem { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string }
 // CR-P (157) — the conversation on an expense (e.g. why it was rejected, "receipt added").
 export interface IExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: Date }
 
@@ -30,6 +32,19 @@ export interface IExpense extends Document {
   rejectReason: string;         // CR-P (156) — required when rejected
   comments: IExpenseComment[];  // CR-P (157)
   historic: boolean;            // CR-P (158) — past expenses recorded in bulk, already approved and paid
+  // CR 340 (GT Comments 4, the GT "Add Expense" form): its number, the invoice / receipt and PO it
+  // goes with, the vendor (from the Directory), the currency it was paid in and the rate to USD.
+  // `amount` stays in USD (every total reads it); `totalOriginal` is the total in the currency paid.
+  expenseNo: string;
+  receiptNo: string;
+  poNo: string;
+  vendorName: string;
+  vendorCompanyId: string;
+  currency: string;
+  exchangeRate: string;
+  totalOriginal: string;
+  reference: string;            // CR 341 - the vendor's own reference
+  draft: boolean;               // CR 340 / 341 - saved, not yet submitted: in no total, not for approval
   // CR 339 (GT Comments 4) - "if approved, manager signature is needed. If it's JV, 2 signatures are
   // needed, one from each partner." Approving is signing; the expense is approved once every side
   // the project needs has signed (GreenTech; and the partner on a joint venture).
@@ -47,6 +62,7 @@ const AttachmentSchema = new Schema<IExpenseAttachment>(
     filePath: { type: String, default: "" },
     fileType: { type: String, default: "" },
     size: { type: String, default: "" },
+    itemIds: { type: [String], default: [] },
   },
   { _id: true }
 );
@@ -65,7 +81,7 @@ const ExpenseSchema = new Schema<IExpense>(
     approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     attachments: { type: [AttachmentSchema], default: [] },
     items: {
-      type: [{ description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, category: { type: String, default: "" }, _id: false }],
+      type: [{ id: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, category: { type: String, default: "" }, remark: { type: String, default: "" }, _id: false }],
       default: [],
     },
     rejectReason: { type: String, default: "" },
@@ -74,6 +90,16 @@ const ExpenseSchema = new Schema<IExpense>(
       default: [],
     },
     historic: { type: Boolean, default: false },
+    expenseNo: { type: String, default: "" },
+    receiptNo: { type: String, default: "" },
+    poNo: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
+    vendorCompanyId: { type: String, default: "" },
+    currency: { type: String, default: "USD" },
+    exchangeRate: { type: String, default: "" },
+    totalOriginal: { type: String, default: "" },
+    reference: { type: String, default: "" },
+    draft: { type: Boolean, default: false },
     signatures: {
       type: [{ side: { type: String, enum: ["gt", "partner"] }, userId: { type: String, default: "" }, name: { type: String, default: "" }, title: { type: String, default: "" }, signatureUrl: { type: String, default: "" }, at: { type: Date, default: Date.now }, appliedById: { type: String, default: "" }, appliedByName: { type: String, default: "" }, _id: false }],
       default: [],

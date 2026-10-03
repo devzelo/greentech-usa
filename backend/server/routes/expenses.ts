@@ -30,33 +30,47 @@ const ownRowFilter = (req: AuthedRequest) =>
 const isStaff = (req: AuthedRequest) => req.user!.role !== "subcontractor";
 
 // CR-P (154) — the items of one expense. With items, the expense is qty 1 at the items' total.
-type Item = { description: string; qty: string; unit: string; unitPrice: string; category: string };
+type Item = { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string };
+const newItemId = () => `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 /**
  * CR 331 (GT Comments 4) - the category (account code) of each item comes from GreenTech staff
  * only. An outside login cannot set it; when one edits its expense, each item keeps the category
  * staff gave the item in the same place.
  */
-const cleanItems = (arr: unknown, staff: boolean, before: Array<{ category?: string }> = []): Item[] | null => {
+const cleanItems = (arr: unknown, staff: boolean, before: Array<{ id?: string; category?: string }> = []): Item[] | null => {
   if (!Array.isArray(arr)) return null;
-  return (arr as Array<Record<string, unknown>>).slice(0, 100).map((o, i) => ({
-    description: String(o?.description ?? "").slice(0, 500),
-    qty: String(o?.qty ?? "1").slice(0, 20),
-    unit: String(o?.unit ?? "").slice(0, 30),
-    unitPrice: String(o?.unitPrice ?? "").slice(0, 30),
-    category: staff ? cleanCategory(o?.category) : before[i]?.category || "",
-  })).filter((i) => i.description.trim() || num(i.unitPrice));
+  return (arr as Array<Record<string, unknown>>).slice(0, 100).map((o, i) => {
+    const id = String(o?.id ?? "").slice(0, 40) || newItemId();
+    // The item staff categorised: the same line (by its id; by its place for lines saved before ids).
+    const prev = before.find((x) => x.id && x.id === id) || (before[i] && !before[i].id ? before[i] : undefined);
+    return {
+      id,
+      description: String(o?.description ?? "").slice(0, 500),
+      qty: String(o?.qty ?? "1").slice(0, 20),
+      unit: String(o?.unit ?? "").slice(0, 30),
+      unitPrice: String(o?.unitPrice ?? "").slice(0, 30),
+      category: staff ? cleanCategory(o?.category) : prev?.category || "",
+      remark: String(o?.remark ?? "").slice(0, 500),
+    };
+  }).filter((i) => i.description.trim() || num(i.unitPrice));
 };
+/** CR 340 - the rate to USD for a currency ("" or USD: 1). */
+const rateOf = (currency: unknown, rate: unknown) => (String(currency || "USD").toUpperCase() === "USD" ? 1 : num(rate) || 0);
+const cleanCurrency = (v: unknown) => String(v ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "USD";
 /** What an outside login gets back: its expense without the categories. */
 const forViewer = (req: AuthedRequest, doc: { toObject: () => Record<string, unknown> }) => {
   const o = doc.toObject();
   if (!isStaff(req)) o.items = ((o.items as Array<Record<string, unknown>>) || []).map(({ category: _c, ...i }) => { void _c; return i; });
   return o;
 };
-function applyItems(target: Record<string, unknown>, items: Item[]) {
+function applyItems(target: Record<string, unknown>, items: Item[], rate = 1) {
   target.items = items;
   if (!items.length) return;
   target.qty = "1";
-  target.amount = items.reduce((s, i) => s + (num(i.qty) || 0) * num(i.unitPrice), 0).toFixed(2);
+  // CR 340 - the items are priced in the currency paid; the amount every total reads is in USD.
+  const sum = items.reduce((s, i) => s + (num(i.qty) || 0) * num(i.unitPrice), 0);
+  target.totalOriginal = sum.toFixed(2);
+  target.amount = (sum * (rate || 1)).toFixed(2);
   if (!String(target.description || "").trim()) target.description = items.length === 1 ? items[0].description : `${items[0].description} + ${items.length - 1} more`;
 }
 
@@ -107,7 +121,14 @@ router.get("/categories", (req: AuthedRequest, res: Response) => {
 });
 
 const APPROVAL_VALUES = ["pending", "approved", "rejected"];
-const EDITABLE = ["description", "date", "qty", "amount", "remarks", "subId", "workPackageId"] as const;
+const EDITABLE = ["description", "date", "qty", "amount", "remarks", "subId", "workPackageId", "receiptNo", "poNo", "vendorName", "vendorCompanyId", "exchangeRate", "reference"] as const;
+/** CR 340 - the next expense number in the project: EXP-2026-001, EXP-2026-002, ... per year. */
+async function nextExpenseNo(projectId: string): Promise<string> {
+  const year = new Date().getFullYear();
+  const rows = await Expense.find({ projectId, expenseNo: new RegExp(`^EXP-${year}-`) }).select("expenseNo").lean();
+  const n = rows.reduce((m, r) => Math.max(m, parseInt(String(r.expenseNo).split("-")[2] || "0", 10) || 0), 0) + 1;
+  return `EXP-${year}-${String(n).padStart(3, "0")}`;
+}
 // CR 328 - an expense may be tagged to one of the project's work packages (its Paid counts it).
 async function cleanPackage(projectId: string, v: unknown): Promise<string> {
   const id = String(v || "");
@@ -120,8 +141,13 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const body: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") body[f] = b[f];
     if (typeof b.workPackageId === "string") body.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
+    body.currency = cleanCurrency(b.currency);
+    const rate = rateOf(body.currency, body.exchangeRate);
+    if (!rate) return res.status(400).json({ error: `Enter the exchange rate from ${body.currency} to USD.` });
     const items = cleanItems(b.items, isStaff(req));
-    if (items) applyItems(body, items);
+    if (items) applyItems(body, items, rate);
+    body.expenseNo = await nextExpenseNo(req.params.id);
+    body.draft = !!b.draft && !b.historic;
     // CR-P (158) — past expenses (already paid) are recorded by staff straight as approved.
     const historic = isStaff(req) && !!b.historic;
     // New expenses wait for approval, which is given by signing (CR 339); past records come in approved.
@@ -154,6 +180,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (signing) {
       if (row.invoiceId) return res.status(400).json({ error: "This expense comes from a payment on an invoice received." });
       if (row.approval === "rejected") return res.status(400).json({ error: "A rejected expense is sent again by the person who added it before it can be approved." });
+      if (row.draft) return res.status(400).json({ error: "This expense is still a draft: it is approved once it has been submitted." });
       const side = b.sign === "partner" ? "partner" : "gt";
       if (side === "partner" && !ctx.joint) return res.status(400).json({ error: "This project is not a joint venture." });
       let sig: { side: "gt" | "partner"; userId: string; name: string; title: string; signatureUrl: string; at: Date; appliedById: string; appliedByName: string };
@@ -190,7 +217,15 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (row.invoiceId && (Object.keys(changes).length || items)) {
       return res.status(400).json({ error: "This expense comes from a payment on an invoice received. Change it in Invoice Received." });
     }
-    if (items) applyItems(changes, items);
+    // CR 340 - the currency and rate; a change to either re-prices the items in USD.
+    if (typeof b.currency === "string") changes.currency = cleanCurrency(b.currency);
+    const cur = String(changes.currency ?? row.currency ?? "USD");
+    const rate = rateOf(cur, changes.exchangeRate ?? row.exchangeRate);
+    if ((items || "currency" in changes || "exchangeRate" in changes) && !rate) return res.status(400).json({ error: `Enter the exchange rate from ${cur} to USD.` });
+    if (items) applyItems(changes, items, rate);
+    else if (("currency" in changes || "exchangeRate" in changes) && (row.items || []).length) applyItems(changes, (row.items as unknown as Item[]), rate);
+    // A draft is submitted (or taken back to draft) by the person who added it, or by staff.
+    if (typeof b.draft === "boolean" && (isStaff(req) || String(row.addedById || "") === req.user!.userId) && !row.historic && row.approval !== "approved") changes.draft = b.draft;
     const moneyChanged = !!items || ["qty", "amount", "description"].some((k) => k in changes && String(changes[k]) !== String((row as unknown as Record<string, unknown>)[k] ?? ""));
     Object.assign(row, changes);
     // CR-P (153) — an outside login may edit its expense, but a changed expense needs approving again.
@@ -275,6 +310,8 @@ router.post("/:eid/attachments", upload.single("file"), async (req: AuthedReques
       filePath: req.file.path.replace(/\\/g, "/"),
       fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(),
       size: humanSize(req.file.size),
+      // CR 340 - the lines this file belongs to (none: the whole expense).
+      itemIds: String(req.body?.itemIds || "").split(",").map((x: string) => x.trim()).filter(Boolean).slice(0, 100),
     };
     const row = await Expense.findOneAndUpdate(
       { _id: req.params.eid, projectId: req.params.id, ...ownRowFilter(req) },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Eye, FolderUp, History, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, Search, Send, Settings2, Trash2, Upload, X, XCircle } from "lucide-react";
-import { fetchWorkPackages, fetchExpenseCategories,
+import { fetchWorkPackages, fetchExpenseCategories, fetchProcurementPOs,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
   attachmentUrl, fetchBoardMembers, getAuthUser, invoicePaid,
   type ApiExpense, type ApiExpenseCategory, type ExpenseJv, type ExpenseSignature, type ApiExpenseItem, type ApiInvoice, type BoardMember,
@@ -10,6 +10,9 @@ import { fmtMoney } from "../../lib/projectFinance";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import DocumentViewer from "./DocumentViewer";
+import CompanyPicker from "./CompanyPicker";
+import PdfPreviewModal from "./PdfPreviewModal";
+import { buildExpensePdf } from "../../lib/expensePdf";
 import { Fig } from "./FiguresPrivacy";
 
 /**
@@ -210,7 +213,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
               const files = e?.attachments || [];
               return (
                 <tr key={x.id} className={`hover:bg-slate-50/40 align-top ${x.kind === "payable" ? "bg-amber-50/20" : ""}`}>
-                  <td className="px-3 py-2.5 text-slate-400 font-bold text-[11px]">{x.kind === "expense" ? x.no : "—"}</td>
+                  <td className="px-3 py-2.5 text-slate-400 font-bold text-[11px] whitespace-nowrap">{x.kind === "expense" ? (e?.expenseNo || x.no) : "-"}</td>
                   <td className="px-3 py-2.5 min-w-[220px]">
                     <button onClick={() => openEntry(x)} className="text-left font-bold text-slate-800 hover:text-primary">{x.description || <span className="text-slate-300 italic">No description</span>}</button>
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
@@ -218,6 +221,10 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
                       {e && isStaff && !fromInvoice && catChip(e, catName)}
                       {/* CR 339 - signed by GreenTech, waiting for the joint venture partner. */}
                       {e && jointVenture?.enabled && e.approval === "pending" && (e.signatures || []).some((x) => x.side === "gt") && !(e.signatures || []).some((x) => x.side === "partner") && <span className="px-1.5 py-0.5 rounded bg-violet-50 text-[9px] font-bold text-violet-700 uppercase tracking-wide">Awaiting partner signature</span>}
+                      {/* CR 340 - a draft is counted nowhere until submitted; the vendor it was paid to. */}
+                      {e?.draft && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wide border border-dashed border-slate-300">Draft</span>}
+                      {e?.vendorName && <span className="text-[10px] text-slate-500">{e.vendorName}</span>}
+                      {e && e.currency && e.currency !== "USD" && e.totalOriginal && <span className="text-[10px] text-slate-400">{e.currency} {Number(e.totalOriginal).toLocaleString()}</span>}
                       {e?.historic && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wide">Past expenses</span>}
                       {fromInvoice && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">From Invoice Received</span>}
                       {x.kind === "payable" && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">{x.inv.poId ? "From Procurement" : "From Invoice Received"} · {x.inv.number || "invoice"}</span>}
@@ -307,7 +314,10 @@ function CategorySelect({ cats, value, onChange, disabled, className }: { cats: 
     </select>
   );
 }
-const blankItem = (): Row => ({ key: Math.random().toString(36).slice(2), description: "", qty: "1", unit: "", unitPrice: "" });
+const newLineId = () => `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const blankItem = (): Row => ({ key: Math.random().toString(36).slice(2), id: newLineId(), description: "", qty: "1", unit: "", unitPrice: "", remark: "" });
+// CR 340 - the currencies an expense is paid in; anything not USD needs its rate to USD.
+const EXP_CURRENCIES = ["USD", "EUR", "GBP", "AED", "SAR", "QAR", "KWD", "TRY", "PKR", "BDT", "INR", "SLE", "NGN", "KES", "ZAR", "CNY", "CAD", "AUD"];
 const FOLDER_INPUT = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
 // CR-P (154)-(158) — add / manage one expense: the items, the receipts, the approval and the talk.
@@ -332,14 +342,25 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   const mine = !!expense && String(expense.addedById || "") === myId;
   const editable = canEdit && !fromInvoice && (!expense || isStaff || mine);
   const initItems = (): Row[] => {
-    if (expense?.items?.length) return expense.items.map((i) => ({ ...i, key: Math.random().toString(36).slice(2) }));
-    if (expense) return [{ key: "x", description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }];
-    if (historic) return [{ key: "h", description: "Total of past expenses", qty: "1", unit: "", unitPrice: "" }];
+    if (expense?.items?.length) return expense.items.map((i) => ({ ...i, id: i.id || newLineId(), remark: i.remark || "", key: Math.random().toString(36).slice(2) }));
+    if (expense) return [{ key: "x", id: newLineId(), description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "", remark: "" }];
+    if (historic) return [{ key: "h", id: newLineId(), description: "Total of past expenses", qty: "1", unit: "", unitPrice: "", remark: "" }];
     return [blankItem()];
   };
   const [description, setDescription] = useState(expense?.description || (historic ? "Past expenses, January to August" : ""));
   const [date, setDate] = useState(expense?.date || new Date().toISOString().slice(0, 10));
   const [remarks, setRemarks] = useState(expense?.remarks || "");
+  // CR 340 - the GT form's references, vendor and currency. CR 341 - a vendor's own reference.
+  const [receiptNo, setReceiptNo] = useState(expense?.receiptNo || "");
+  const [poNo, setPoNo] = useState(expense?.poNo || "");
+  const [vendorName, setVendorName] = useState(expense?.vendorName || "");
+  const [vendorCompanyId, setVendorCompanyId] = useState(expense?.vendorCompanyId || "");
+  const [currency, setCurrency] = useState(expense?.currency || "USD");
+  const [exchangeRate, setExchangeRate] = useState(expense?.exchangeRate || "");
+  const [reference, setReference] = useState(expense?.reference || "");
+  const [poList, setPoList] = useState<string[]>([]);
+  useEffect(() => { if (isStaff) fetchProcurementPOs(projectId).then((l) => setPoList(l.map((p) => p.poNo).filter(Boolean))).catch(() => setPoList([])); }, [projectId, isStaff]);
+  const [preview, setPreview] = useState(false);
   // CR 328 - the work package it is spent on (only offered when the project has packages this person can see).
   const [workPackageId, setWorkPackageId] = useState(expense?.workPackageId || "");
   const [packages, setPackages] = useState<Array<{ _id: string; name: string; order: number }>>([]);
@@ -361,33 +382,46 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   }, [expense]);
 
   const total = items.reduce((s, i) => s + (num(i.qty) || 0) * num(i.unitPrice), 0);
+  const fmtCur = (v: number) => { try { return v.toLocaleString(undefined, { style: "currency", currency: currency || "USD" }); } catch { return `${currency} ${v.toFixed(2)}`; } };
   // CR 331 (GT Comments 4) - "when sub/vendors want to log expense for a project, they can't see the category dropdown. It's only for GT team."
   const showCat = isStaff && cats.length > 0;
   const setItem = (key: string, patch: Partial<Row>) => setItems((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
 
+  const rateNum = currency === "USD" ? 1 : num(exchangeRate);
   const payload = () => ({
     description: description.trim(),
     date,
     remarks,
     workPackageId,
+    receiptNo: receiptNo.trim(), reference: reference.trim(),
+    ...(isStaff ? { poNo: poNo.trim(), vendorName: vendorName.trim(), vendorCompanyId, currency, exchangeRate: currency === "USD" ? "" : exchangeRate.trim() } : {}),
     qty: "1",
-    amount: total.toFixed(2),
+    amount: (total * (rateNum || 1)).toFixed(2),
     items: items.filter((i) => i.description.trim() || num(i.unitPrice)).map(({ key: _k, category, ...i }) => { void _k; return showCat ? { ...i, category: category || "" } : i; }),
   });
-  const dirty = !expense || JSON.stringify(payload()) !== JSON.stringify({
-    description: expense.description || "", date: expense.date || "", remarks: expense.remarks || "", workPackageId: expense.workPackageId || "", qty: "1", amount: expTotal(expense).toFixed(2),
-    items: (expense.items?.length ? expense.items : [{ description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }]).filter((i) => i.description.trim() || num(i.unitPrice)).map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, ...(showCat ? { category: (i as ApiExpenseItem).category || "" } : {}) })),
+  const typed = (x: ReturnType<typeof payload>) => ({ ...x, items: x.items.map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, remark: i.remark || "", ...(showCat ? { category: (i as ApiExpenseItem).category || "" } : {}) })) });
+  const dirty = !expense || JSON.stringify(typed(payload())) !== JSON.stringify({
+    description: expense.description || "", date: expense.date || "", remarks: expense.remarks || "", workPackageId: expense.workPackageId || "",
+    receiptNo: expense.receiptNo || "", reference: expense.reference || "",
+    ...(isStaff ? { poNo: expense.poNo || "", vendorName: expense.vendorName || "", vendorCompanyId: expense.vendorCompanyId || "", currency: expense.currency || "USD", exchangeRate: (expense.currency || "USD") === "USD" ? "" : expense.exchangeRate || "" } : {}),
+    qty: "1", amount: expTotal(expense).toFixed(2),
+    items: (expense.items?.length ? expense.items : [{ description: expense.description || "", qty: expense.qty || "1", unit: "", unitPrice: expense.amount || "" }]).filter((i) => i.description.trim() || num(i.unitPrice)).map((i) => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, remark: (i as ApiExpenseItem).remark || "", ...(showCat ? { category: (i as ApiExpenseItem).category || "" } : {}) })),
   });
 
-  const save = async (close: boolean) => {
+  // CR 340 / 341 - "Save as draft" keeps it out of every total and away from approval; Save / Submit sends it in.
+  const isDraft = !!expense?.draft;
+  const save = async (close: boolean, asDraft?: boolean) => {
     if (!editable) { onClose(); return; }
     const p = payload();
     if (!p.description && !p.items.length) { toast("Describe the expense or add an item.", "error"); return; }
+    if (isStaff && currency !== "USD" && !(num(exchangeRate) > 0)) { toast(`Enter the exchange rate from ${currency} to USD.`, "error"); return; }
+    const draft = historic ? undefined : asDraft === undefined ? (expense ? undefined : false) : asDraft;
     setSaving(true);
     try {
-      const u = expense ? await updateExpense(projectId, expense._id, p) : await addExpense(projectId, { ...p, historic });
+      const body = { ...p, ...(draft === undefined ? {} : { draft }) };
+      const u = expense ? await updateExpense(projectId, expense._id, body) : await addExpense(projectId, { ...body, historic });
       onSaved(u);
-      toast(expense ? "Expense saved." : historic ? "Past expenses recorded as approved. Attach the receipts below." : "Expense added. Attach the receipt below.", "success");
+      toast(draft ? "Saved as a draft. It is not counted or sent for approval until you submit it." : draft === false && isDraft ? "Submitted for approval." : expense ? "Expense saved." : historic ? "Past expenses recorded as approved. Attach the receipts below." : "Expense added. Attach the receipt below.", "success");
       if (close) onClose();
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
     finally { setSaving(false); }
@@ -399,12 +433,12 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     onClose();
   };
 
-  const upload = async (files: File[]) => {
+  const upload = async (files: File[], itemIds: string[] = []) => {
     if (!expense || !files.length) return;
     setUploading({ done: 0, total: files.length });
     let latest: ApiExpense | null = null;
     for (let i = 0; i < files.length; i++) {
-      try { latest = await uploadExpenseAttachment(projectId, expense._id, files[i]); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
+      try { latest = await uploadExpenseAttachment(projectId, expense._id, files[i], itemIds); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
       setUploading({ done: i + 1, total: files.length });
     }
     setUploading(null);
@@ -451,7 +485,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
 
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
-      <div className={`bg-white rounded-3xl shadow-2xl w-full ${showCat ? "max-w-4xl" : "max-w-3xl"} my-10`} onClick={(e) => e.stopPropagation()}>
+      <div className={`bg-white rounded-3xl shadow-2xl w-full ${showCat ? "max-w-6xl" : "max-w-4xl"} my-10`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate">{expense ? `Expense · ${expense.description || "No description"}` : historic ? "Record past expenses" : "Add expense"}</p>
@@ -460,7 +494,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {expense && <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${BADGE[status]}`}>{status}</span>}
+            {expense && (isDraft ? <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Draft</span> : <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${BADGE[status]}`}>{status}</span>)}
             <button onClick={requestClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100" title="Close"><X size={18} /></button>
           </div>
         </div>
@@ -482,20 +516,67 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
             </label>
           </div>
 
+          {/* CR 340 (GT Comments 4) - the GT form's references, vendor and currency. CR 341 - a vendor's receipt no. and reference. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {isStaff && (
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Expense no.
+                <input className={`${inp} mt-1`} disabled value={expense?.expenseNo || "Given on save"} />
+              </label>
+            )}
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoice / receipt no.
+              <input className={`${inp} mt-1`} disabled={!editable} value={receiptNo} onChange={(e) => setReceiptNo(e.target.value)} placeholder="e.g. INV-4587" />
+            </label>
+            {isStaff ? (
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">PO no. <span className="normal-case tracking-normal font-medium">(optional)</span>
+                <input className={`${inp} mt-1`} disabled={!editable} value={poNo} onChange={(e) => setPoNo(e.target.value)} placeholder="e.g. PO-8012" list="exp-po-list" />
+                <datalist id="exp-po-list">{poList.map((n2) => <option key={n2} value={n2} />)}</datalist>
+              </label>
+            ) : (
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reference <span className="normal-case tracking-normal font-medium">(optional)</span>
+                <input className={`${inp} mt-1`} disabled={!editable} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Your own reference" />
+              </label>
+            )}
+            {isStaff && (
+              <>
+                <div className="sm:col-span-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor
+                  <div className="mt-1 normal-case tracking-normal font-normal">
+                    {editable
+                      ? <CompanyPicker size="sm" value={vendorName} category="vendor" categories={["vendor", "supplier", "subcontractor", "manufacturer", "consultant"]} onNameChange={(v) => { setVendorName(v); setVendorCompanyId(""); }} onSelectCompany={(c) => { setVendorName(c.name); setVendorCompanyId(c._id); }} placeholder="From the Directory" />
+                      : <input className={inp} disabled value={vendorName || "-"} />}
+                  </div>
+                </div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Currency
+                  <select className={`${inp} mt-1`} disabled={!editable} value={currency} onChange={(e) => setCurrency(e.target.value)}>{[...new Set([currency, ...EXP_CURRENCIES])].map((c) => <option key={c} value={c}>{c}</option>)}</select>
+                </label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Exchange rate <span className="normal-case tracking-normal font-medium">(1 {currency} = ? USD)</span>
+                  <input className={`${inp} mt-1`} disabled={!editable || currency === "USD"} value={currency === "USD" ? "1" : exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} inputMode="decimal" placeholder="e.g. 0.92" />
+                </label>
+              </>
+            )}
+          </div>
+
           {/* The items */}
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Items</p>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items{currency !== "USD" ? ` (prices in ${currency})` : ""}</p>
+              {/* CR 340 - one file for every line (e.g. one invoice covering them all). */}
+              {expense && editable && items.length > 1 && (
+                <label className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"><Paperclip size={11} /> Attach the same file to all lines<input type="file" className="hidden" onChange={(e) => { const f = Array.from(e.target.files || []) as File[]; e.target.value = ""; void upload(f, items.map((i) => i.id || "").filter(Boolean)); }} /></label>
+              )}
+            </div>
             <div className="overflow-x-auto border border-slate-100 rounded-xl">
-              <table className={`w-full ${showCat ? "min-w-[760px]" : "min-w-[560px]"} text-xs`}>
+              <table className={`w-full ${showCat ? "min-w-[1000px]" : "min-w-[760px]"} text-xs`}>
                 <thead>
                   <tr className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
                     <th className="text-left px-2 py-2 w-8">#</th>
-                    <th className="text-left px-2 py-2">Description</th>
+                    <th className="text-left px-2 py-2 min-w-[12rem]">Description</th>
                     {showCat && <th className="text-left px-2 py-2 w-52">Category (code)</th>}
                     <th className="text-left px-2 py-2 w-16">Qty</th>
                     <th className="text-left px-2 py-2 w-20">Unit</th>
                     <th className="text-left px-2 py-2 w-28">Unit price</th>
                     <th className="text-right px-2 py-2 w-28">Total</th>
+                    <th className="text-left px-2 py-2 w-40">Remark</th>
+                    <th className="text-left px-2 py-2 w-16">Files</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
@@ -508,7 +589,19 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.qty} onChange={(e) => setItem(it.key, { qty: e.target.value })} inputMode="decimal" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unit} onChange={(e) => setItem(it.key, { unit: e.target.value })} placeholder="pcs" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unitPrice} onChange={(e) => setItem(it.key, { unitPrice: e.target.value })} placeholder="0.00" inputMode="decimal" /></td>
-                      <td className="px-2 py-1.5 text-right font-bold text-slate-700 whitespace-nowrap">{money((num(it.qty) || 0) * num(it.unitPrice))}</td>
+                      <td className="px-2 py-1.5 text-right font-bold text-slate-700 whitespace-nowrap">{fmtCur((num(it.qty) || 0) * num(it.unitPrice))}</td>
+                      <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.remark || ""} onChange={(e) => setItem(it.key, { remark: e.target.value })} placeholder="e.g. Diesel for generator" /></td>
+                      <td className="px-1 py-1 whitespace-nowrap">
+                        {(() => {
+                          const mine2 = (expense?.attachments || []).filter((a) => it.id && (a.itemIds || []).includes(it.id));
+                          return (
+                            <span className="inline-flex items-center gap-1">
+                              {mine2.length > 0 && <button onClick={() => setViewFile({ name: mine2[0].name, url: attachmentUrl(mine2[0].filePath), fileType: mine2[0].fileType })} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold" title={mine2.map((a) => a.name).join(", ")}><Paperclip size={10} /> {mine2.length}</button>}
+                              {expense && editable && it.id && <label className="p-1 rounded text-slate-300 hover:text-primary cursor-pointer" title="Attach a file to this line"><Upload size={12} /><input type="file" multiple className="hidden" onChange={(e) => { const f = Array.from(e.target.files || []) as File[]; e.target.value = ""; void upload(f, [it.id!]); }} /></label>}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-1 py-1">{editable && items.length > 1 && <button onClick={() => setItems((l) => l.filter((x) => x.key !== it.key))} className="p-1 rounded text-slate-300 hover:text-red-500" title="Remove item"><X size={13} /></button>}</td>
                     </tr>
                   ))}
@@ -518,13 +611,13 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                     <td colSpan={showCat ? 6 : 5} className="px-2 py-2">
                       {editable && <button onClick={() => setItems((l) => [...l, blankItem()])} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"><Plus size={12} /> Add item</button>}
                     </td>
-                    <td className="px-2 py-2 text-right text-sm font-display font-bold text-slate-900 whitespace-nowrap">{money(total)}</td>
-                    <td />
+                    <td className="px-2 py-2 text-right text-sm font-display font-bold text-slate-900 whitespace-nowrap">{fmtCur(total)}{currency !== "USD" && rateNum > 0 && <span className="block text-[10px] font-medium text-slate-500">{money(total * rateNum)}</span>}</td>
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">Grand total of all items.</p>
+            <p className="text-[10px] text-slate-400 mt-1">Grand total of all items{currency !== "USD" ? `, and in USD at the rate entered (totals across the platform are in USD)` : ""}.{expense ? "" : " Files can be attached to each line once the expense is saved."}</p>
           </div>
 
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remark
@@ -573,7 +666,10 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
           </div>
 
           {/* CR-P (156) — approval, inside Manage. */}
-          {expense && !fromInvoice && (
+          {expense && !fromInvoice && isDraft && (
+            <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-[11px] text-slate-500">A draft: not counted in any total and not sent for approval. Submit it when it is complete.</p>
+          )}
+          {expense && !fromInvoice && !isDraft && (
             <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approval</p>
               {/* CR 339 - "if approved, manager signature is needed. If it's JV, 2 signatures are needed, one from each partner." */}
@@ -642,10 +738,12 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
         <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 border-t border-slate-100 sticky bottom-0 bg-white rounded-b-3xl">
           <p className={`text-[11px] font-bold ${editable && dirty ? "text-amber-600" : "text-slate-400"}`}>{!editable ? "View only" : dirty ? "Unsaved changes" : "All changes saved"}</p>
           <div className="flex items-center gap-2">
+            {expense && <button onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"><Eye size={12} /> Preview</button>}
             {editable ? (
               <>
-                <button onClick={() => save(false)} disabled={saving || !dirty} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">Save</button>
-                <button onClick={() => save(true)} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-50">{saving && <Loader2 size={12} className="animate-spin" />} Save and close</button>
+                {!historic && (!expense || isDraft) && <button onClick={() => save(false, true)} disabled={saving} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">Save as draft</button>}
+                {expense && !isDraft && <button onClick={() => save(false)} disabled={saving || !dirty} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">Save</button>}
+                <button onClick={() => save(true, isDraft || !expense ? false : undefined)} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-50">{saving && <Loader2 size={12} className="animate-spin" />} {historic ? "Save and close" : !expense || isDraft ? (isStaff ? "Save and submit" : "Submit for approval") : "Save and close"}</button>
               </>
             ) : (
               <button onClick={onClose} className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold">Close</button>
@@ -654,6 +752,9 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
         </div>
       </div>
       {viewFile && <DocumentViewer doc={viewFile} onClose={() => setViewFile(null)} />}
+      {preview && expense && (
+        <PdfPreviewModal title={`Expense ${expense.expenseNo || ""}`.trim()} fileName={`${expense.expenseNo || "Expense"}.pdf`} build={() => buildExpensePdf(expense, { categoryName: showCat ? (code: string) => cats.find((c) => c.code === code)?.name || "" : undefined, workPackage: packages.find((p) => p._id === expense.workPackageId)?.name })} onClose={() => setPreview(false)} />
+      )}
     </div>
   );
 }
