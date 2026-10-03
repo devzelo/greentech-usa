@@ -247,29 +247,60 @@ function LeadLag({ row, onChange }: { row: Pick<LinkRow, "mode" | "days">; onCha
   );
 }
 
+/**
+ * GT Comments 2, page 3 (picture 2): each link on one line - the item, its relationship, Lead and
+ * Lag, and the bin - under small column headings. On a narrow screen the line wraps.
+ */
+function LinkBox({ mode, row, onChange, disabled }: { mode: "lead" | "lag"; row: Pick<LinkRow, "mode" | "days">; onChange: (patch: Pick<LinkRow, "mode" | "days">) => void; disabled?: boolean }) {
+  const text = mode === "lead" ? "Lead" : "Lag";
+  return (
+    <label className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500 sm:w-[4.75rem]" title={mode === "lead" ? "Lead: start earlier, overlapping the other item by this many days" : "Lag: wait this many days after the other item"}>
+      <input type="checkbox" checked={row.mode === mode} disabled={disabled} onChange={(e) => onChange({ mode: e.target.checked ? mode : "", days: e.target.checked ? row.days || 1 : 0 })} aria-label={text} className="accent-blue-600" />
+      <input
+        type="number" min={0} step={1} aria-label={`${text} days`}
+        value={row.mode === mode ? row.days : ""}
+        disabled={disabled || row.mode !== mode}
+        onChange={(e) => onChange({ mode, days: Math.max(0, Math.round(Math.abs(Number(e.target.value)) || 0)) })}
+        className="w-9 rounded-md border border-slate-200 px-1 py-1 text-right text-xs text-slate-800 focus:border-primary focus:outline-none disabled:bg-slate-50"
+      />
+      <span className="sm:hidden">{text}</span><span className="hidden sm:inline">d</span>
+    </label>
+  );
+}
+
 function LinkList({ title, rows, onChange, optionsFor, labelOf, addLabel, canEdit }: {
   title: string; rows: LinkRow[]; onChange: (rows: LinkRow[]) => void; optionsFor: (k: number) => PickOption[]; labelOf: (id: string) => string; addLabel: string; canEdit: boolean;
 }) {
   const patch = (k: number, p: Partial<LinkRow>) => onChange(rows.map((r, j) => (j === k ? { ...r, ...p } : r)));
+  const head = "hidden shrink-0 text-[10px] font-bold leading-tight text-slate-400 sm:block";
   return (
     <div>
-      <p className="text-[11px] font-bold text-slate-700">{title}</p>
-      <div className="mt-1.5 space-y-2">
+      {/* The headings line up with the row below them, as in the client's picture. */}
+      <div className="flex items-end gap-1.5">
+        <p className="min-w-0 flex-1 text-[11px] font-bold text-slate-700">{title}</p>
+        {rows.length > 0 && (
+          <>
+            <span className={`${head} w-[4.75rem]`}>Relationship</span>
+            <span className={`${head} w-[4.75rem]`}>Lead<span className="block font-medium">start earlier</span></span>
+            <span className={`${head} w-[4.75rem]`}>Lag<span className="block font-medium">wait after</span></span>
+            {canEdit && <span className="hidden w-7 shrink-0 sm:block" />}
+          </>
+        )}
+      </div>
+      <div className="mt-1 space-y-1">
         {rows.map((r, k) => (
-          <div key={k} className="space-y-1.5 rounded-lg border border-slate-100 bg-slate-50/60 p-2">
-            <div className="flex items-center gap-1.5">
-              <div className="min-w-0 flex-1"><ItemPicker value={r.id} current={labelOf(r.id)} getOptions={() => optionsFor(k)} onChange={(id) => patch(k, { id })} placeholder="Select an item" disabled={!canEdit} /></div>
-              {canEdit && <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== k))} title="Remove this link" aria-label="Remove this link" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <select value={r.type} onChange={(e) => patch(k, { type: e.target.value as LinkType })} aria-label="Relationship" title={LINK_TYPES.find((x) => x.type === r.type)?.label} className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs font-bold text-slate-700 focus:border-primary focus:outline-none">
-                {LINK_TYPES.map((x) => <option key={x.type} value={x.type}>{x.type} - {x.label}</option>)}
-              </select>
-              <LeadLag row={r} onChange={(p) => patch(k, p)} />
-            </div>
+          <div key={k} className="flex flex-wrap items-center gap-1.5">
+            <div className="min-w-0 basis-full sm:min-w-[8rem] sm:flex-1 sm:basis-0" title={r.id ? labelOf(r.id) : undefined}><ItemPicker value={r.id} current={labelOf(r.id)} getOptions={() => optionsFor(k)} onChange={(id) => patch(k, { id })} placeholder="Select an item" disabled={!canEdit} /></div>
+            <select value={r.type} disabled={!canEdit} onChange={(e) => patch(k, { type: e.target.value as LinkType })} aria-label="Relationship" title={`${r.type}: ${LINK_TYPES.find((x) => x.type === r.type)?.label}`} className="w-[4.75rem] shrink-0 rounded-md border border-slate-200 bg-white px-1 py-1.5 text-xs font-bold text-slate-700 focus:border-primary focus:outline-none">
+              {LINK_TYPES.map((x) => <option key={x.type} value={x.type} title={x.label}>{x.type}</option>)}
+            </select>
+            <LinkBox mode="lead" row={r} onChange={(p) => patch(k, p)} disabled={!canEdit} />
+            <LinkBox mode="lag" row={r} onChange={(p) => patch(k, p)} disabled={!canEdit} />
+            {canEdit && <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== k))} title="Remove this link" aria-label="Remove this link" className="ml-auto w-7 shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 sm:ml-0"><Trash2 size={14} /></button>}
           </div>
         ))}
       </div>
+      {rows.length > 0 && <p className="mt-1 text-[10px] text-slate-400">FS finish to start · SS start to start · FF finish to finish · SF start to finish</p>}
       {canEdit && (
         <button type="button" onClick={() => onChange([...rows, { id: "", type: "FS", mode: "", days: 0 }])} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
           <Plus size={12} /> {addLabel}
