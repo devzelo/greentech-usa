@@ -207,7 +207,7 @@ export default function Profile() {
     );
   }
 
-  const initial = (me.name || me.email).charAt(0).toUpperCase();
+  const initial = (me.name || me.email || "?").charAt(0).toUpperCase();
   const isGuest = me.role === "subcontractor";
   const fieldLabel = "flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest";
   const fieldInput = "w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm text-slate-700 focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all";
