@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Ey
 import { fetchWorkPackages, fetchExpenseCategories,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
   attachmentUrl, fetchBoardMembers, getAuthUser, invoicePaid,
-  type ApiExpense, type ApiExpenseCategory, type ApiExpenseItem, type ApiInvoice, type BoardMember,
+  type ApiExpense, type ApiExpenseCategory, type ExpenseJv, type ExpenseSignature, type ApiExpenseItem, type ApiInvoice, type BoardMember,
 } from "../../lib/api";
 import type { FiveNumbers } from "../../lib/projectFinance";
 import { fmtMoney } from "../../lib/projectFinance";
@@ -43,7 +43,7 @@ type Entry =
   | { kind: "expense"; id: string; no: number; description: string; date: string; total: number; status: string; addedBy: string; e: ApiExpense }
   | { kind: "payable"; id: string; no: number; description: string; date: string; total: number; status: string; addedBy: string; inv: ApiInvoice };
 
-export default function ExpenseLog({ projectId, rows, setRows, received, onRefreshReceived, onOpenReceived, canEdit, canApprove, canSeeFigures, five }: {
+export default function ExpenseLog({ projectId, rows, setRows, received, onRefreshReceived, onOpenReceived, canEdit, canApprove, canSeeFigures, five, jointVenture }: {
   projectId: string;
   rows: ApiExpense[];
   setRows: (fn: (prev: ApiExpense[]) => ApiExpense[]) => void;
@@ -54,6 +54,8 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
   canApprove: boolean;
   canSeeFigures: boolean;
   five: FiveNumbers;
+  /** CR 339 - on a joint venture, the partner signs an expense too. */
+  jointVenture?: ExpenseJv;
 }) {
   const { confirm, dialogs } = useDialogs();
   const me = getAuthUser();
@@ -214,6 +216,8 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
                       {e && (e.items?.length || 0) > 1 && <span className="text-[10px] text-slate-400">{e.items!.length} items</span>}
                       {e && isStaff && !fromInvoice && catChip(e, catName)}
+                      {/* CR 339 - signed by GreenTech, waiting for the joint venture partner. */}
+                      {e && jointVenture?.enabled && e.approval === "pending" && (e.signatures || []).some((x) => x.side === "gt") && !(e.signatures || []).some((x) => x.side === "partner") && <span className="px-1.5 py-0.5 rounded bg-violet-50 text-[9px] font-bold text-violet-700 uppercase tracking-wide">Awaiting partner signature</span>}
                       {e?.historic && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wide">Past expenses</span>}
                       {fromInvoice && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">From Invoice Received</span>}
                       {x.kind === "payable" && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 uppercase tracking-wide">{x.inv.poId ? "From Procurement" : "From Invoice Received"} · {x.inv.number || "invoice"}</span>}
@@ -261,6 +265,8 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
           canApprove={canApprove && isStaff}
           isStaff={isStaff}
           cats={cats}
+          jv={jointVenture?.enabled ? jointVenture : undefined}
+          myEmail={me?.email || ""}
           myId={me?.id || ""}
           confirm={confirm}
           onSaved={(u) => { replace(u); setEditor((ed) => (ed ? { ...ed, id: u._id } : ed)); }}
@@ -305,7 +311,7 @@ const blankItem = (): Row => ({ key: Math.random().toString(36).slice(2), descri
 const FOLDER_INPUT = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
 // CR-P (154)-(158) — add / manage one expense: the items, the receipts, the approval and the talk.
-function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, cats, myId, confirm, onSaved, onOpenReceived, onClose }: {
+function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, cats, jv, myEmail, myId, confirm, onSaved, onOpenReceived, onClose }: {
   projectId: string;
   expense: ApiExpense | null;
   historic: boolean;
@@ -314,6 +320,8 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   isStaff: boolean;
   /** CR 331 - the chart of accounts; empty for an outside login, who gets no Category column. */
   cats: ApiExpenseCategory[];
+  jv?: ExpenseJv;
+  myEmail: string;
   myId: string;
   confirm: ReturnType<typeof useDialogs>["confirm"];
   onSaved: (e: ApiExpense) => void;
@@ -412,6 +420,25 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     if (!expense) return;
     try { onSaved(await updateExpense(projectId, expense._id, { approval, ...(why ? { rejectReason: why } : {}) })); setRejecting(false); setReason(""); toast(approval === "approved" ? "Expense approved." : approval === "rejected" ? "Expense rejected. The person who added it is told why." : "Set back to pending.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not update.", "error"); }
+  };
+  // CR 339 - approving is signing (GreenTech's side; the partner's too on a joint venture).
+  const isPartner = !!jv?.email && myEmail.trim().toLowerCase() === jv.email.trim().toLowerCase();
+  const [partnerSig, setPartnerSig] = useState(0);
+  const [signing, setSigning] = useState<"" | "gt" | "partner">("");
+  const sign = async (side: "gt" | "partner") => {
+    if (!expense) return;
+    const what = side === "gt" ? "Approve and sign this expense?" : isPartner ? "Sign this expense for the partner?" : `Apply ${jv?.partnerName || "the partner"}'s signature?`;
+    const message = side === "gt"
+      ? `Your saved signature is put on it${jv ? `. It is approved once ${jv.partnerName || "the partner"} has signed too` : " and it is approved"}.`
+      : isPartner ? "Your saved signature is put on it." : "The chosen signature from the joint venture record is put on it, with your name as the person who applied it.";
+    if (!(await confirm({ title: what, message, confirmLabel: side === "gt" ? "Approve and sign" : "Sign" }))) return;
+    setSigning(side);
+    try {
+      const u = await updateExpense(projectId, expense._id, { sign: side, ...(side === "partner" ? { signatureIndex: partnerSig } : {}) });
+      onSaved(u);
+      toast(u.approval === "approved" ? "Signed. The expense is approved." : "Signed. Waiting for the other signature.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not sign.", "error"); }
+    finally { setSigning(""); }
   };
   const resend = async () => {
     if (!expense) return;
@@ -549,6 +576,33 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
           {expense && !fromInvoice && (
             <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approval</p>
+              {/* CR 339 - "if approved, manager signature is needed. If it's JV, 2 signatures are needed, one from each partner." */}
+              {!expense.historic && status !== "rejected" && (
+                <div className={`grid gap-3 ${jv ? "sm:grid-cols-2" : ""}`}>
+                  {(jv ? (["gt", "partner"] as const) : (["gt"] as const)).map((side) => {
+                    const s = (expense.signatures || []).find((x) => x.side === side);
+                    return (
+                      <div key={side} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{side === "gt" ? "GreenTech manager" : jv?.partnerName || "Joint venture partner"}</p>
+                        {s ? <SignatureMark s={s} /> : side === "gt" ? (
+                          canApprove
+                            ? <button onClick={() => void sign("gt")} disabled={!!signing} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">{signing === "gt" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve and sign</button>
+                            : <p className="mt-2 text-[11px] text-slate-400">Waiting for the project manager's signature.</p>
+                        ) : isPartner ? (
+                          <button onClick={() => void sign("partner")} disabled={!!signing} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">{signing === "partner" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Sign as partner</button>
+                        ) : canApprove && (jv?.signatures || []).length ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <select value={partnerSig} onChange={(e) => setPartnerSig(Number(e.target.value))} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs">{(jv?.signatures || []).map((x, i) => <option key={i} value={i}>{x.name || `Signature ${i + 1}`}</option>)}</select>
+                            <button onClick={() => void sign("partner")} disabled={!!signing} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50 disabled:opacity-50">{signing === "partner" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Apply partner's signature</button>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-[11px] text-slate-400">{canApprove ? "The partner signs from its own login, or add its signature to the joint venture record (Project Info) to apply it here." : "Waiting for the partner's signature."}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {status === "rejected" && expense.rejectReason && (
                 <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2">
                   <AlertTriangle size={14} className="text-red-500 mt-0.5 shrink-0" />
@@ -566,7 +620,6 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
-                    {status !== "approved" && <button onClick={() => setApproval("approved")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"><Check size={13} /> Approve</button>}
                     {status !== "rejected" && <button onClick={() => setRejecting(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50"><XCircle size={13} /> Reject</button>}
                     {status !== "pending" && <button onClick={() => setApproval("pending")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white"><RotateCcw size={12} /> Back to pending</button>}
                   </div>
@@ -577,7 +630,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                   <button onClick={resend} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary/90"><Send size={12} /> Resend for approval</button>
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-500">{status === "approved" ? "Approved by GreenTech." : status === "pending" ? "Waiting for GreenTech to approve it." : "Rejected."}</p>
+                <p className="text-[11px] text-slate-500">{status === "approved" ? "Approved and signed." : status === "pending" ? (jv ? "Waiting for both signatures." : "Waiting for the project manager to approve and sign it.") : "Rejected."}</p>
               )}
             </div>
           )}
@@ -601,6 +654,19 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
         </div>
       </div>
       {viewFile && <DocumentViewer doc={viewFile} onClose={() => setViewFile(null)} />}
+    </div>
+  );
+}
+
+/** CR 339 - a signature on an expense: the image, who, their title, when (and who applied it). */
+function SignatureMark({ s }: { s: ExpenseSignature }) {
+  const src = (() => { const v = (s.signatureUrl || "").replace(/^\/+/, ""); return v.startsWith("uploads/") ? attachmentUrl(v) : s.signatureUrl; })();
+  return (
+    <div className="mt-1">
+      {src && <img src={src} alt={`Signature of ${s.name}`} className="h-12 max-w-[12rem] object-contain" />}
+      <p className="text-xs font-bold text-slate-800">{s.name}</p>
+      <p className="text-[10px] text-slate-500">{[s.title, new Date(s.at).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ")}</p>
+      {s.appliedByName && <p className="text-[10px] text-slate-400">Applied by {s.appliedByName}</p>}
     </div>
   );
 }

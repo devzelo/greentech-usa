@@ -1420,7 +1420,12 @@ export interface ApiExpense {
   historic?: boolean;               // CR-P (158) - past expenses recorded in bulk
   invoiceId?: string;               // set when this is a payment on an invoice received
   createdAt?: string;
+  /** CR 339 - approving is signing: GreenTech's side, and the partner's on a joint venture. */
+  signatures?: ExpenseSignature[];
 }
+export interface ExpenseSignature { side: "gt" | "partner"; userId: string; name: string; title: string; signatureUrl: string; at: string; appliedById?: string; appliedByName?: string }
+/** CR 339 - the joint venture details the expense approval needs (the partner signs too). */
+export type ExpenseJv = { enabled?: boolean; partnerName?: string; contactName?: string; email?: string; signatures?: Array<{ name: string; url: string }> };
 export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string; /** CR 331 - account code; GreenTech staff only (never sent to an outside login). */ category?: string }
 /** CR 331 (GT Comments 4) - an account of GreenTech's chart for expenses. A heading groups the accounts under it and cannot be chosen. */
 export interface ApiExpenseCategory { code: string; name: string; type: "COGS" | "Expense"; heading: boolean }
@@ -1463,7 +1468,7 @@ export async function addExpense(projectId: string, body: ExpenseInput) {
   return request<ApiExpense>(`/projects/${projectId}/expenses`, { method: 'POST', body: JSON.stringify(body) });
 }
 
-export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus; rejectReason?: string; resend?: boolean }) {
+export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus; rejectReason?: string; resend?: boolean; sign?: "gt" | "partner"; signatureIndex?: number }) {
   return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 

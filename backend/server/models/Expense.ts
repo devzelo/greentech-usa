@@ -30,6 +30,10 @@ export interface IExpense extends Document {
   rejectReason: string;         // CR-P (156) — required when rejected
   comments: IExpenseComment[];  // CR-P (157)
   historic: boolean;            // CR-P (158) — past expenses recorded in bulk, already approved and paid
+  // CR 339 (GT Comments 4) - "if approved, manager signature is needed. If it's JV, 2 signatures are
+  // needed, one from each partner." Approving is signing; the expense is approved once every side
+  // the project needs has signed (GreenTech; and the partner on a joint venture).
+  signatures: Array<{ side: "gt" | "partner"; userId: string; name: string; title: string; signatureUrl: string; at: Date; appliedById: string; appliedByName: string }>;
   // Who added this row (employee or subcontractor) — stamped from their profile.
   addedById: mongoose.Types.ObjectId | null;
   addedByName: string;
@@ -70,6 +74,10 @@ const ExpenseSchema = new Schema<IExpense>(
       default: [],
     },
     historic: { type: Boolean, default: false },
+    signatures: {
+      type: [{ side: { type: String, enum: ["gt", "partner"] }, userId: { type: String, default: "" }, name: { type: String, default: "" }, title: { type: String, default: "" }, signatureUrl: { type: String, default: "" }, at: { type: Date, default: Date.now }, appliedById: { type: String, default: "" }, appliedByName: { type: String, default: "" }, _id: false }],
+      default: [],
+    },
     addedById: { type: Schema.Types.ObjectId, ref: "User", default: null },
     addedByName: { type: String, default: "" },
     addedByEmail: { type: String, default: "" },

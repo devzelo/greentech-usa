@@ -6,7 +6,9 @@ import path from "path";
 import fs from "fs";
 import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { tabAccessGuard } from "../lib/access";
+import { tabAccessGuard, fetchRequesterAccess } from "../lib/access";
+import Project from "../models/Project";
+import User from "../models/User";
 import { createNotification } from "../lib/notify";
 import { EXPENSE_CATEGORIES, cleanCategory } from "../lib/expenseCategories";
 
@@ -58,6 +60,30 @@ function applyItems(target: Record<string, unknown>, items: Item[]) {
   if (!String(target.description || "").trim()) target.description = items.length === 1 ? items[0].description : `${items[0].description} + ${items.length - 1} more`;
 }
 
+/**
+ * CR 339 - who may approve (sign) an expense: the project's manager side, meaning its owner, the
+ * employees assigned to it, or an admin. On a joint venture the partner signs too: the partner's
+ * login (the JV record's email) signs with its own signature, or the manager applies one of the
+ * partner's signatures kept on the JV record, and the record says who applied it.
+ */
+async function approvalContext(req: AuthedRequest) {
+  const [project, { access }] = await Promise.all([
+    Project.findOne({ projectId: req.params.id }).select("jointVenture").lean(),
+    fetchRequesterAccess(req),
+  ]);
+  const jv = (project as { jointVenture?: { enabled?: boolean; email?: string; partnerName?: string; contactName?: string; signatures?: Array<{ name: string; url: string }> } } | null)?.jointVenture;
+  const joint = jv?.enabled ? jv : null;
+  const manager = req.user!.role === "admin" || access.role === "owner" || access.role === "employee";
+  const partner = !!joint?.email && String(req.user!.email || "").trim().toLowerCase() === joint.email.trim().toLowerCase();
+  return { manager, partner, joint };
+}
+const sidesNeeded = (joint: unknown) => (joint ? ["gt", "partner"] : ["gt"]);
+async function ownSignature(userId: string) {
+  const u = await User.findById(userId).select("name jobTitle signatureUrl signatures").lean() as { name?: string; jobTitle?: string; signatureUrl?: string; signatures?: Array<{ url: string; isDefault?: boolean }> } | null;
+  const url = u?.signatureUrl || u?.signatures?.find((s) => s.isDefault)?.url || u?.signatures?.[0]?.url || "";
+  return { name: u?.name || "", title: u?.jobTitle || "", url };
+}
+
 const link = (pid: string) => `/dashboard/projects/${pid}?tab=finances`;
 async function notify(userId: string, from: AuthedRequest, title: string, message: string, pid: string) {
   if (!userId || userId === from.user!.userId || !mongoose.isValidObjectId(userId)) return;
@@ -66,7 +92,10 @@ async function notify(userId: string, from: AuthedRequest, title: string, messag
 
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const expenses = await Expense.find({ projectId: req.params.id, ...ownRowFilter(req) }).sort({ createdAt: 1 });
+    const ctx = req.user!.role === "subcontractor" ? await approvalContext(req) : null;
+    // CR 339 - the JV partner's login also sees the expenses GreenTech has signed, to sign them too.
+    const filter: Record<string, unknown> = ctx?.partner ? { $or: [{ addedById: req.user!.userId }, { "signatures.side": "gt" }] } : ownRowFilter(req);
+    const expenses = await Expense.find({ projectId: req.params.id, ...filter }).sort({ createdAt: 1 });
     res.json(expenses.map((e) => forViewer(req, e)));
   } catch (err) { next(err); }
 });
@@ -95,8 +124,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (items) applyItems(body, items);
     // CR-P (158) — past expenses (already paid) are recorded by staff straight as approved.
     const historic = isStaff(req) && !!b.historic;
-    // Subcontractor-added rows are always pending; only employees/owners may set an approval on create.
-    const initialApproval = historic ? "approved" : isStaff(req) && APPROVAL_VALUES.includes(b.approval) ? b.approval : "pending";
+    // New expenses wait for approval, which is given by signing (CR 339); past records come in approved.
+    const initialApproval = historic ? "approved" : "pending";
     const expense = await Expense.create({
       ...body,
       projectId: req.params.id,
@@ -114,9 +143,45 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
 
 router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const row = await Expense.findOne({ _id: req.params.eid, projectId: req.params.id, ...ownRowFilter(req) });
-    if (!row) return res.status(404).json({ error: "Not found" });
     const b = req.body || {};
+    const ctx = await approvalContext(req);
+    const signing = typeof b.sign === "string" || b.approval === "approved";
+    const row = await Expense.findOne({ _id: req.params.eid, projectId: req.params.id, ...(ctx.partner && signing ? {} : ownRowFilter(req)) });
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    // CR 339 - approving is signing. GreenTech's side signs with the approver's own signature; on a
+    // joint venture the partner signs too. Approved once every side needed has signed.
+    if (signing) {
+      if (row.invoiceId) return res.status(400).json({ error: "This expense comes from a payment on an invoice received." });
+      if (row.approval === "rejected") return res.status(400).json({ error: "A rejected expense is sent again by the person who added it before it can be approved." });
+      const side = b.sign === "partner" ? "partner" : "gt";
+      if (side === "partner" && !ctx.joint) return res.status(400).json({ error: "This project is not a joint venture." });
+      let sig: { side: "gt" | "partner"; userId: string; name: string; title: string; signatureUrl: string; at: Date; appliedById: string; appliedByName: string };
+      if (side === "gt") {
+        if (!ctx.manager) return res.status(403).json({ error: "Only the project's owner or its assigned employees can approve an expense." });
+        const own = await ownSignature(req.user!.userId);
+        if (!own.url) return res.status(400).json({ error: "Add your signature first (Profile, Signatures). Approving an expense signs it." });
+        sig = { side, userId: req.user!.userId, name: own.name || req.user!.name || "", title: own.title, signatureUrl: own.url, at: new Date(), appliedById: "", appliedByName: "" };
+      } else if (ctx.partner) {
+        const own = await ownSignature(req.user!.userId);
+        const kept = ctx.joint!.signatures?.[Number(b.signatureIndex)]?.url || "";
+        if (!own.url && !kept) return res.status(400).json({ error: "Add your signature first (Profile, Signatures)." });
+        sig = { side, userId: req.user!.userId, name: own.name || req.user!.name || "", title: ctx.joint!.partnerName || "", signatureUrl: own.url || kept, at: new Date(), appliedById: "", appliedByName: "" };
+      } else if (ctx.manager) {
+        const kept = ctx.joint!.signatures?.[Number(b.signatureIndex)];
+        if (!kept?.url) return res.status(400).json({ error: "Choose one of the partner's signatures on the joint venture record (Project Info, Joint Venture)." });
+        sig = { side, userId: "", name: kept.name || ctx.joint!.contactName || ctx.joint!.partnerName || "Partner", title: ctx.joint!.partnerName || "", signatureUrl: kept.url, at: new Date(), appliedById: req.user!.userId, appliedByName: req.user!.name || "" };
+      } else return res.status(403).json({ error: "Only the joint venture partner, or the project's manager on its behalf, can sign for the partner." });
+      row.signatures = [...(row.signatures || []).filter((s) => s.side !== side), sig];
+      const done = sidesNeeded(ctx.joint).every((s) => row.signatures.some((x) => x.side === s));
+      const was = row.approval;
+      row.approval = done ? "approved" : "pending";
+      await row.save();
+      const what = row.description || "your expense";
+      if (done && was !== "approved") await notify(String(row.addedById || ""), req, "Expense approved", `"${what}" was approved and signed.`, req.params.id);
+      return res.json(forViewer(req, row));
+    }
+
     const changes: Record<string, unknown> = {};
     for (const f of EDITABLE) if (typeof b[f] === "string") changes[f] = b[f];
     if (typeof b.workPackageId === "string") changes.workPackageId = await cleanPackage(req.params.id, b.workPackageId);
@@ -126,13 +191,19 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
       return res.status(400).json({ error: "This expense comes from a payment on an invoice received. Change it in Invoice Received." });
     }
     if (items) applyItems(changes, items);
+    const moneyChanged = !!items || ["qty", "amount", "description"].some((k) => k in changes && String(changes[k]) !== String((row as unknown as Record<string, unknown>)[k] ?? ""));
     Object.assign(row, changes);
     // CR-P (153) — an outside login may edit its expense, but a changed expense needs approving again.
     if (!isStaff(req) && (Object.keys(changes).length || items) && row.approval === "approved") row.approval = "pending";
+    // CR 339 - what was signed is what was approved: a change to the items or amounts after a
+    // signature takes the signatures off, and the expense is approved again.
+    if (!row.historic && moneyChanged && (row.signatures || []).length) { row.signatures = []; if (row.approval === "approved") row.approval = "pending"; }
 
     // Approval: staff only. CR-P (156) — a rejection needs a reason, and the author is told.
     const approval = b.approval;
-    if (isStaff(req) && APPROVAL_VALUES.includes(approval) && approval !== row.approval) {
+    if ((approval === "rejected" || approval === "pending") && approval !== row.approval && !ctx.manager) return res.status(403).json({ error: "Only the project's owner or its assigned employees can change an expense's approval." });
+    if (ctx.manager && APPROVAL_VALUES.includes(approval) && approval !== row.approval) {
+      row.signatures = [];
       if (approval === "rejected") {
         // A reason for THIS rejection (an old one from an earlier rejection does not count).
         const reason = String(b.rejectReason ?? "").trim();

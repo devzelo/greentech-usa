@@ -6400,6 +6400,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               canApprove={canManage}
               canSeeFigures={canSeeFigures}
               five={projectFive}
+              jointVenture={project.jointVenture}
             />
           )}
 
