@@ -30,7 +30,18 @@ const ownRowFilter = (req: AuthedRequest) =>
 const isStaff = (req: AuthedRequest) => req.user!.role !== "subcontractor";
 
 // CR-P (154) — the items of one expense. With items, the expense is qty 1 at the items' total.
-type Item = { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string };
+type Item = { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string; status?: "pending" | "approved" | "rejected"; rejectReason?: string };
+/**
+ * CR 341 - a line keeps its review (approved, or rejected with why) while it is unchanged; a line
+ * that is edited (or new) is pending again, so a rejected line is fixed and sent back for review.
+ */
+function carryReview(items: Item[], before: Array<Partial<Item>>) {
+  const same = (a: Partial<Item>, b: Item) => a.description === b.description && String(a.qty) === String(b.qty) && a.unit === b.unit && String(a.unitPrice) === String(b.unitPrice) && (a.remark || "") === (b.remark || "");
+  return items.map((it) => {
+    const prev = before.find((x) => x.id && x.id === it.id);
+    return prev && same(prev, it) ? { ...it, status: prev.status || "pending", rejectReason: prev.rejectReason || "" } : { ...it, status: "pending" as const, rejectReason: "" };
+  });
+}
 const newItemId = () => `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 /**
  * CR 331 (GT Comments 4) - the category (account code) of each item comes from GreenTech staff
@@ -99,6 +110,25 @@ async function ownSignature(userId: string) {
 }
 
 const link = (pid: string) => `/dashboard/projects/${pid}?tab=finances`;
+
+/** CR 341 - the people who review a project's expenses: its owner and the employees assigned to it. */
+async function reviewersOf(projectId: string): Promise<Array<{ userId: string; name: string; role: string }>> {
+  const p = await Project.findOne({ projectId }).select("ownerId assignedEmployees").lean() as { ownerId?: unknown; assignedEmployees?: string[] } | null;
+  if (!p) return [];
+  const [owner, team] = await Promise.all([
+    p.ownerId ? User.findById(p.ownerId).select("name").lean() : null,
+    (p.assignedEmployees || []).length ? User.find({ empId: { $in: p.assignedEmployees } }).select("name").lean() : [],
+  ]);
+  const out = owner ? [{ userId: String(owner._id), name: (owner as { name?: string }).name || "Project owner", role: "Project owner" }] : [];
+  for (const u of team as Array<{ _id: unknown; name?: string }>) if (!out.some((x) => x.userId === String(u._id))) out.push({ userId: String(u._id), name: u.name || "Team member", role: "Project team" });
+  return out;
+}
+/** Tell the chosen reviewers an expense is waiting for them. Only the project's reviewers can be chosen. */
+async function notifyReviewers(req: AuthedRequest, ids: unknown, what: string) {
+  if (!Array.isArray(ids) || !ids.length) return;
+  const allowed = new Set((await reviewersOf(req.params.id)).map((r) => r.userId));
+  for (const id of ids.map(String).filter((x) => allowed.has(x)).slice(0, 20)) await notify(id, req, "Expense to review", `${req.user!.name || "Someone"} submitted "${what}" for review.`, req.params.id);
+}
 async function notify(userId: string, from: AuthedRequest, title: string, message: string, pid: string) {
   if (!userId || userId === from.user!.userId || !mongoose.isValidObjectId(userId)) return;
   await createNotification({ userId, type: "general", title, message, link: link(pid) }).catch(() => {});
@@ -112,6 +142,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const expenses = await Expense.find({ projectId: req.params.id, ...filter }).sort({ createdAt: 1 });
     res.json(expenses.map((e) => forViewer(req, e)));
   } catch (err) { next(err); }
+});
+
+// CR 341 - who can be told to review an expense (for "Notify for review").
+router.get("/reviewers", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try { res.json(await reviewersOf(req.params.id)); } catch (err) { next(err); }
 });
 
 // CR 331 - the chart of accounts an expense item is booked to. GreenTech staff only.
@@ -163,6 +198,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       addedByEmail: req.user!.email || "",
       addedByRole: req.user!.role || "",
     });
+    if (!expense.draft && !expense.historic) await notifyReviewers(req, b.notify, expense.description || "an expense");
     res.status(201).json(forViewer(req, expense));
   } catch (err) { next(err); }
 });
@@ -181,6 +217,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
       if (row.invoiceId) return res.status(400).json({ error: "This expense comes from a payment on an invoice received." });
       if (row.approval === "rejected") return res.status(400).json({ error: "A rejected expense is sent again by the person who added it before it can be approved." });
       if (row.draft) return res.status(400).json({ error: "This expense is still a draft: it is approved once it has been submitted." });
+      if ((row.items || []).some((i) => i.status === "rejected")) return res.status(400).json({ error: "A line is rejected. It is fixed and sent again before the expense can be approved." });
       const side = b.sign === "partner" ? "partner" : "gt";
       if (side === "partner" && !ctx.joint) return res.status(400).json({ error: "This project is not a joint venture." });
       let sig: { side: "gt" | "partner"; userId: string; name: string; title: string; signatureUrl: string; at: Date; appliedById: string; appliedByName: string };
@@ -203,9 +240,35 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
       const done = sidesNeeded(ctx.joint).every((s) => row.signatures.some((x) => x.side === s));
       const was = row.approval;
       row.approval = done ? "approved" : "pending";
+      if (done) row.items = (row.items || []).map((i) => ({ ...(i as unknown as Record<string, unknown>), status: "approved", rejectReason: "" })) as unknown as typeof row.items;
       await row.save();
       const what = row.description || "your expense";
       if (done && was !== "approved") await notify(String(row.addedById || ""), req, "Expense approved", `"${what}" was approved and signed.`, req.params.id);
+      return res.json(forViewer(req, row));
+    }
+
+    // CR 341 - review one line: approve it, or reject it with why (the expense is then rejected,
+    // naming the line, and its author fixes that line and sends it again).
+    if (b.lineReview && typeof b.lineReview === "object") {
+      if (!ctx.manager) return res.status(403).json({ error: "Only the project's owner or its assigned employees review an expense." });
+      if (row.draft) return res.status(400).json({ error: "This expense is still a draft." });
+      const { id, status, reason } = b.lineReview as { id?: string; status?: string; reason?: string };
+      const items = (row.items || []) as unknown as Item[];
+      const at = items.findIndex((i) => i.id === id);
+      if (at < 0) return res.status(404).json({ error: "That line is not on this expense." });
+      if (!["approved", "rejected", "pending"].includes(String(status))) return res.status(400).json({ error: "Approve or reject the line." });
+      const why = String(reason || "").trim().slice(0, 500);
+      if (status === "rejected" && !why) return res.status(400).json({ error: "Say why the line is rejected." });
+      items[at] = { ...items[at], status: status as Item["status"], rejectReason: status === "rejected" ? why : "" };
+      row.items = items as unknown as typeof row.items;
+      const rejected = items.map((it, k) => ({ it, k })).filter((x) => x.it.status === "rejected");
+      if (rejected.length) {
+        row.signatures = [];
+        row.approval = "rejected";
+        row.rejectReason = rejected.map((x) => `Line ${x.k + 1} (${x.it.description || "item"}): ${x.it.rejectReason}`).join("; ").slice(0, 1000);
+        if (status === "rejected") await notify(String(row.addedById || ""), req, "Expense line rejected", `"${row.description || "Your expense"}", line ${at + 1}: ${why}`, req.params.id);
+      } else if (row.approval === "rejected") { row.approval = "pending"; row.rejectReason = ""; }
+      await row.save();
       return res.json(forViewer(req, row));
     }
 
@@ -222,7 +285,7 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const cur = String(changes.currency ?? row.currency ?? "USD");
     const rate = rateOf(cur, changes.exchangeRate ?? row.exchangeRate);
     if ((items || "currency" in changes || "exchangeRate" in changes) && !rate) return res.status(400).json({ error: `Enter the exchange rate from ${cur} to USD.` });
-    if (items) applyItems(changes, items, rate);
+    if (items) applyItems(changes, carryReview(items, (row.items || []) as unknown as Array<Partial<Item>>), rate);
     else if (("currency" in changes || "exchangeRate" in changes) && (row.items || []).length) applyItems(changes, (row.items as unknown as Item[]), rate);
     // A draft is submitted (or taken back to draft) by the person who added it, or by staff.
     if (typeof b.draft === "boolean" && (isStaff(req) || String(row.addedById || "") === req.user!.userId) && !row.historic && row.approval !== "approved") changes.draft = b.draft;
@@ -253,7 +316,13 @@ router.patch("/:eid", async (req: AuthedRequest, res: Response, next: NextFuncti
       row.rejectReason = b.rejectReason.trim().slice(0, 1000);
     }
     // The author fixes a rejected expense and sends it again for approval.
-    if (b.resend && row.approval === "rejected" && String(row.addedById || "") === req.user!.userId) row.approval = "pending";
+    const submitting = (changes.draft === false && row.isModified("draft")) || (b.resend && row.approval === "rejected" && String(row.addedById || "") === req.user!.userId);
+    if (b.resend && row.approval === "rejected" && String(row.addedById || "") === req.user!.userId) {
+      // CR 341 - the lines still marked rejected were not fixed: they cannot be sent back as they are.
+      if ((row.items || []).some((i) => i.status === "rejected")) return res.status(400).json({ error: "Fix the rejected lines (change them) before sending it again." });
+      row.approval = "pending"; row.rejectReason = "";
+    }
+    if (submitting) await notifyReviewers(req, b.notify, row.description || "an expense");
 
     await row.save();
     res.json(forViewer(req, row));

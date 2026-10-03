@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Eye, FolderUp, History, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, Search, Send, Settings2, Trash2, Upload, X, XCircle } from "lucide-react";
-import { fetchWorkPackages, fetchExpenseCategories, fetchProcurementPOs,
+import { fetchWorkPackages, fetchExpenseCategories, fetchProcurementPOs, fetchExpenseReviewers, type ExpenseReviewer,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
   attachmentUrl, fetchBoardMembers, getAuthUser, invoicePaid,
   type ApiExpense, type ApiExpenseCategory, type ExpenseJv, type ExpenseSignature, type ApiExpenseItem, type ApiInvoice, type BoardMember,
@@ -60,7 +60,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
   /** CR 339 - on a joint venture, the partner signs an expense too. */
   jointVenture?: ExpenseJv;
 }) {
-  const { confirm, dialogs } = useDialogs();
+  const { confirm, prompt, dialogs } = useDialogs();
   const me = getAuthUser();
   const isStaff = me?.role !== "subcontractor";
   const [search, setSearch] = useState("");
@@ -276,6 +276,7 @@ export default function ExpenseLog({ projectId, rows, setRows, received, onRefre
           myEmail={me?.email || ""}
           myId={me?.id || ""}
           confirm={confirm}
+          prompt={prompt}
           onSaved={(u) => { replace(u); setEditor((ed) => (ed ? { ...ed, id: u._id } : ed)); }}
           onOpenReceived={onOpenReceived}
           onClose={() => setEditor(null)}
@@ -321,7 +322,7 @@ const EXP_CURRENCIES = ["USD", "EUR", "GBP", "AED", "SAR", "QAR", "KWD", "TRY", 
 const FOLDER_INPUT = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
 // CR-P (154)-(158) — add / manage one expense: the items, the receipts, the approval and the talk.
-function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, cats, jv, myEmail, myId, confirm, onSaved, onOpenReceived, onClose }: {
+function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isStaff, cats, jv, myEmail, myId, confirm, prompt, onSaved, onOpenReceived, onClose }: {
   projectId: string;
   expense: ApiExpense | null;
   historic: boolean;
@@ -334,6 +335,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   myEmail: string;
   myId: string;
   confirm: ReturnType<typeof useDialogs>["confirm"];
+  prompt: ReturnType<typeof useDialogs>["prompt"];
   onSaved: (e: ApiExpense) => void;
   onOpenReceived: () => void;
   onClose: () => void;
@@ -361,6 +363,10 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   const [poList, setPoList] = useState<string[]>([]);
   useEffect(() => { if (isStaff) fetchProcurementPOs(projectId).then((l) => setPoList(l.map((p) => p.poNo).filter(Boolean))).catch(() => setPoList([])); }, [projectId, isStaff]);
   const [preview, setPreview] = useState(false);
+  // CR 341 - "Notify for review": the reviewers told when it is submitted (the project owner by default).
+  const [reviewers, setReviewers] = useState<ExpenseReviewer[]>([]);
+  const [notifyIds, setNotifyIds] = useState<string[]>([]);
+  useEffect(() => { fetchExpenseReviewers(projectId).then((l) => { setReviewers(l); setNotifyIds(l.filter((r) => r.role === "Project owner").map((r) => r.userId)); }).catch(() => setReviewers([])); }, [projectId]);
   // CR 328 - the work package it is spent on (only offered when the project has packages this person can see).
   const [workPackageId, setWorkPackageId] = useState(expense?.workPackageId || "");
   const [packages, setPackages] = useState<Array<{ _id: string; name: string; order: number }>>([]);
@@ -418,7 +424,8 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     const draft = historic ? undefined : asDraft === undefined ? (expense ? undefined : false) : asDraft;
     setSaving(true);
     try {
-      const body = { ...p, ...(draft === undefined ? {} : { draft }) };
+      const submitting = draft === false && (!expense || isDraft);
+      const body = { ...p, ...(draft === undefined ? {} : { draft }), ...(submitting ? { notify: notifyIds } : {}) };
       const u = expense ? await updateExpense(projectId, expense._id, body) : await addExpense(projectId, { ...body, historic });
       onSaved(u);
       toast(draft ? "Saved as a draft. It is not counted or sent for approval until you submit it." : draft === false && isDraft ? "Submitted for approval." : expense ? "Expense saved." : historic ? "Past expenses recorded as approved. Attach the receipts below." : "Expense added. Attach the receipt below.", "success");
@@ -474,9 +481,24 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
     } catch (err) { toast(err instanceof Error ? err.message : "Could not sign.", "error"); }
     finally { setSigning(""); }
   };
+  // CR 341 - a line's review as saved (the lines on screen may hold edits not saved yet).
+  const reviewOf = (id?: string) => (id ? (expense?.items || []).find((x) => x.id === id) : undefined);
+  // CR 341 - review one line: approve it, or reject it with why.
+  const reviewLine = async (id: string, status: "approved" | "rejected" | "pending") => {
+    if (!expense) return;
+    let reason = "";
+    if (status === "rejected") {
+      const r = await prompt({ title: "Reject this line?", label: "Why (the person who added it is told)", placeholder: "e.g. The receipt for this line is missing.", confirmLabel: "Reject line" });
+      if (r === null) return;
+      reason = r.trim();
+      if (!reason) { toast("Say why the line is rejected.", "error"); return; }
+    }
+    try { onSaved(await updateExpense(projectId, expense._id, { lineReview: { id, status, reason } })); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not review the line.", "error"); }
+  };
   const resend = async () => {
     if (!expense) return;
-    try { onSaved(await updateExpense(projectId, expense._id, { resend: true })); toast("Sent again for approval.", "success"); }
+    try { onSaved(await updateExpense(projectId, expense._id, { resend: true, notify: notifyIds })); toast("Sent again for approval.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not resend.", "error"); }
   };
 
@@ -577,14 +599,15 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                     <th className="text-right px-2 py-2 w-28">Total</th>
                     <th className="text-left px-2 py-2 w-40">Remark</th>
                     <th className="text-left px-2 py-2 w-16">Files</th>
+                    {expense && !isDraft && <th className="text-left px-2 py-2 w-28">Status</th>}
                     <th className="w-8" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {items.map((it, i) => (
-                    <tr key={it.key}>
+                    <tr key={it.key} className={reviewOf(it.id)?.status === "rejected" ? "bg-red-50/60" : ""}>
                       <td className="px-2 py-1.5 text-slate-400 font-bold">{i + 1}</td>
-                      <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.description} onChange={(e) => setItem(it.key, { description: e.target.value })} placeholder="e.g. Monitor" /></td>
+                      <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.description} onChange={(e) => setItem(it.key, { description: e.target.value })} placeholder="e.g. Monitor" />{reviewOf(it.id)?.status === "rejected" && <span className="mt-0.5 block text-[10px] font-semibold text-red-600">Rejected: {reviewOf(it.id)?.rejectReason}{mine ? " Edit this line, then send it again." : ""}</span>}</td>
                       {showCat && <td className="px-1 py-1"><CategorySelect cats={cats} value={it.category || ""} onChange={(v) => setItem(it.key, { category: v })} disabled={!editable} className={inp} /></td>}
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.qty} onChange={(e) => setItem(it.key, { qty: e.target.value })} inputMode="decimal" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unit} onChange={(e) => setItem(it.key, { unit: e.target.value })} placeholder="pcs" /></td>
@@ -602,6 +625,25 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                           );
                         })()}
                       </td>
+                      {expense && !isDraft && (
+                        <td className="px-1 py-1 whitespace-nowrap">
+                          {(() => {
+                            const st = (expense.items || []).find((x) => x.id && x.id === it.id)?.status || "pending";
+                            const cls = st === "approved" ? "bg-emerald-50 text-emerald-700" : st === "rejected" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700";
+                            return (
+                              <span className="inline-flex items-center gap-1">
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold capitalize ${cls}`}>{st}</span>
+                                {canApprove && it.id && !expense.historic && status !== "approved" && (
+                                  <>
+                                    {st !== "approved" && <button onClick={() => void reviewLine(it.id!, "approved")} className="p-0.5 rounded text-slate-300 hover:text-emerald-600" title="Approve this line"><Check size={12} /></button>}
+                                    {st !== "rejected" && <button onClick={() => void reviewLine(it.id!, "rejected")} className="p-0.5 rounded text-slate-300 hover:text-red-600" title="Reject this line"><XCircle size={12} /></button>}
+                                  </>
+                                )}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                      )}
                       <td className="px-1 py-1">{editable && items.length > 1 && <button onClick={() => setItems((l) => l.filter((x) => x.key !== it.key))} className="p-1 rounded text-slate-300 hover:text-red-500" title="Remove item"><X size={13} /></button>}</td>
                     </tr>
                   ))}
@@ -728,6 +770,21 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
               ) : (
                 <p className="text-[11px] text-slate-500">{status === "approved" ? "Approved and signed." : status === "pending" ? (jv ? "Waiting for both signatures." : "Waiting for the project manager to approve and sign it.") : "Rejected."}</p>
               )}
+            </div>
+          )}
+
+          {/* CR 341 - "Notify for review": who is told when it is submitted (or sent again). */}
+          {editable && !historic && reviewers.length > 0 && (!expense || isDraft || (status === "rejected" && mine)) && (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Notify for review <span className="normal-case tracking-normal font-medium text-slate-400">(when you submit)</span></p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                {reviewers.map((r) => (
+                  <label key={r.userId} className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={notifyIds.includes(r.userId)} onChange={(e) => setNotifyIds((p2) => (e.target.checked ? [...p2, r.userId] : p2.filter((x) => x !== r.userId)))} className="accent-blue-600" />
+                    {r.name} <span className="text-[10px] text-slate-400">{r.role}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 

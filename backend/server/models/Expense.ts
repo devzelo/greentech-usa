@@ -11,7 +11,8 @@ export interface IExpenseAttachment {
 // CR-P (154) — one expense can hold several items (laptop, mouse, 4 monitors …).
 // CR 331 - each item is booked to an account of the chart (lib/expenseCategories), set by GreenTech staff only.
 // CR 340 - each item has an id (its files point to it) and a remark of its own.
-export interface IExpenseItem { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string }
+// CR 341 - each line is reviewed on its own: pending, approved or rejected (with why).
+export interface IExpenseItem { id: string; description: string; qty: string; unit: string; unitPrice: string; category: string; remark: string; status: "pending" | "approved" | "rejected"; rejectReason: string }
 // CR-P (157) — the conversation on an expense (e.g. why it was rejected, "receipt added").
 export interface IExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: Date }
 
@@ -81,7 +82,7 @@ const ExpenseSchema = new Schema<IExpense>(
     approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     attachments: { type: [AttachmentSchema], default: [] },
     items: {
-      type: [{ id: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, category: { type: String, default: "" }, remark: { type: String, default: "" }, _id: false }],
+      type: [{ id: { type: String, default: "" }, description: { type: String, default: "" }, qty: { type: String, default: "1" }, unit: { type: String, default: "" }, unitPrice: { type: String, default: "" }, category: { type: String, default: "" }, remark: { type: String, default: "" }, status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" }, rejectReason: { type: String, default: "" }, _id: false }],
       default: [],
     },
     rejectReason: { type: String, default: "" },

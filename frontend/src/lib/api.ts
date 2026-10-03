@@ -1434,7 +1434,13 @@ export interface ExpenseSignature { side: "gt" | "partner"; userId: string; name
 /** CR 339 - the joint venture details the expense approval needs (the partner signs too). */
 export type ExpenseJv = { enabled?: boolean; partnerName?: string; contactName?: string; email?: string; signatures?: Array<{ name: string; url: string }> };
 export interface ApiExpenseItem { description: string; qty: string; unit: string; unitPrice: string; /** CR 331 - account code; GreenTech staff only (never sent to an outside login). */ category?: string;
-  /** CR 340 - the line's id (its files point to it) and its own remark. */ id?: string; remark?: string }
+  /** CR 340 - the line's id (its files point to it) and its own remark. */ id?: string; remark?: string;
+  /** CR 341 - the line's review. */ status?: "pending" | "approved" | "rejected"; rejectReason?: string }
+/** CR 341 - the people who review a project's expenses (its owner and assigned employees). */
+export interface ExpenseReviewer { userId: string; name: string; role: string }
+export async function fetchExpenseReviewers(projectId: string) {
+  return request<ExpenseReviewer[]>(`/projects/${projectId}/expenses/reviewers`);
+}
 /** CR 331 (GT Comments 4) - an account of GreenTech's chart for expenses. A heading groups the accounts under it and cannot be chosen. */
 export interface ApiExpenseCategory { code: string; name: string; type: "COGS" | "Expense"; heading: boolean }
 export async function fetchExpenseCategories(projectId: string) {
@@ -1442,7 +1448,8 @@ export async function fetchExpenseCategories(projectId: string) {
 }
 export interface ApiExpenseComment { userId: string; authorName: string; text: string; mentions: string[]; at: string }
 type ExpenseInput = { description: string; date: string; qty: string; amount: string; remarks: string; items?: ApiExpenseItem[]; historic?: boolean; workPackageId?: string;
-  receiptNo?: string; poNo?: string; vendorName?: string; vendorCompanyId?: string; currency?: string; exchangeRate?: string; reference?: string; draft?: boolean };
+  receiptNo?: string; poNo?: string; vendorName?: string; vendorCompanyId?: string; currency?: string; exchangeRate?: string; reference?: string; draft?: boolean;
+  /** CR 341 - the reviewers to tell when it is submitted. */ notify?: string[] };
 export async function addExpenseComment(projectId: string, eid: string, body: { text: string; mentions: string[] }) {
   return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}/comments`, { method: 'POST', body: JSON.stringify(body) });
 }
@@ -1477,7 +1484,7 @@ export async function addExpense(projectId: string, body: ExpenseInput) {
   return request<ApiExpense>(`/projects/${projectId}/expenses`, { method: 'POST', body: JSON.stringify(body) });
 }
 
-export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus; rejectReason?: string; resend?: boolean; sign?: "gt" | "partner"; signatureIndex?: number }) {
+export async function updateExpense(projectId: string, eid: string, body: Partial<ExpenseInput> & { approval?: ApprovalStatus; rejectReason?: string; resend?: boolean; sign?: "gt" | "partner"; signatureIndex?: number; lineReview?: { id: string; status: "approved" | "rejected" | "pending"; reason?: string } }) {
   return request<ApiExpense>(`/projects/${projectId}/expenses/${eid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
