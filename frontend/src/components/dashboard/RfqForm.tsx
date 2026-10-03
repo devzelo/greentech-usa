@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { ArrowDown, ArrowUp, Building2, Check, Copy, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, BookmarkPlus, Building2, Check, Copy, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from "lucide-react";
 import {
-  fetchWorkPackages, withFileToken, RFQ_REQUESTS,
-  type ApiCompany, type ApiProcurementItem, type ApiRfq, type ApiWorkPackage, type RfqFormFields, type RfqLineFile, type RfqLineItem, type RfqRequestKey,
+  fetchWorkPackages, withFileToken, RFQ_REQUESTS, fetchLibraryItems, saveLibraryItems, deleteLibraryItem, markLibraryItemsUsed,
+  type ApiLibraryItem, type ApiCompany, type ApiProcurementItem, type ApiRfq, type ApiWorkPackage, type RfqFormFields, type RfqLineFile, type RfqLineItem, type RfqRequestKey,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -59,7 +59,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   /** The RFQ PDF for what the form holds now. */
   buildPreview: (draft: ApiRfq) => Promise<Blob>;
 }) {
-  const { confirm, dialogs } = useDialogs();
+  const { confirm, prompt, dialogs } = useDialogs();
   const editing = !!rfq;
   const [title, setTitle] = useState(rfq?.title || "");
   const [date, setDate] = useState(rfq?.date || (rfq?.createdAt ? rfq.createdAt.slice(0, 10) : today()));
@@ -110,6 +110,42 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
     const picked = boqItems.filter((it) => boqPicks[it._id]);
     setRows((list) => [...list.filter((r) => r.description.trim() || n(r.qty)), ...picked.map((it) => ({ key: rowKey(), itemId: it._id, description: it.description, spec: it.spec || "", qty: it.qty || "", unit: it.unit || "", targetUnitPrice: "", vendorNote: "" }))]);
     setBoqPicks({}); setBoqOpen(false);
+  };
+
+  // ── The item library (CR 337): items requested before, for any project ──
+  const [libOpen, setLibOpen] = useState(false);
+  const [libQ, setLibQ] = useState("");
+  const [libCat, setLibCat] = useState("");
+  const [libItems, setLibItems] = useState<ApiLibraryItem[] | null>(null);
+  const [libError, setLibError] = useState("");
+  const [libPicks, setLibPicks] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!libOpen) return;
+    const t = setTimeout(() => {
+      fetchLibraryItems(libQ.trim()).then((l) => { setLibItems(l); setLibError(""); }).catch((e) => { setLibItems([]); setLibError(e instanceof Error ? e.message : "The library could not be loaded."); });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [libOpen, libQ]);
+  const libCats = [...new Set((libItems || []).map((i) => i.category).filter(Boolean))].sort();
+  const libShown = (libItems || []).filter((i) => !libCat || i.category === libCat);
+  const addFromLibrary = () => {
+    const picked = (libItems || []).filter((i) => libPicks[i._id]);
+    setRows((list) => [...list.filter((r) => r.description.trim() || n(r.qty)), ...picked.map((i) => ({ key: rowKey(), itemId: newLineId(), description: i.description, spec: i.spec, qty: "", unit: i.unit, targetUnitPrice: "", vendorNote: i.vendorNote }))]);
+    void markLibraryItemsUsed(picked.map((i) => i._id)).catch(() => undefined);
+    setLibPicks({}); setLibOpen(false);
+    if (picked.length) toast(`${picked.length} item${picked.length === 1 ? "" : "s"} added. Enter the quantities.`, "success");
+  };
+  const removeFromLibrary = async (i: ApiLibraryItem) => {
+    if (!(await confirm({ title: `Remove "${i.description}" from the library?`, message: "It is no longer offered for new RFQs. RFQs that already have it keep it.", confirmLabel: "Remove", danger: true }))) return;
+    try { await deleteLibraryItem(i._id); setLibItems((l) => (l || []).filter((x) => x._id !== i._id)); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not remove it.", "error"); }
+  };
+  const saveToLibrary = async (r: Row) => {
+    if (!r.description.trim()) { toast("Describe the item first.", "error"); return; }
+    const category = await prompt({ title: "Save to the item library", label: "Category (optional)", placeholder: "e.g. Piping, Electrical, Services", confirmLabel: "Save" });
+    if (category === null) return;
+    try { await saveLibraryItems([{ description: r.description.trim(), spec: r.spec || "", unit: r.unit || "", category: category.trim(), vendorNote: r.vendorNote || "" }]); toast(`"${r.description.trim()}" is in the library for every project.`, "success"); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not save it to the library.", "error"); }
   };
 
   // ── Supporting documents ──
@@ -285,6 +321,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                   <input type="checkbox" checked={showTargets} onChange={(e) => setShowTargets(e.target.checked)} className="accent-blue-600" /> Show target prices to vendors
                 </label>
                 <button onClick={() => { setBoqPicks({}); setBoqOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Upload size={12} /> Import from BOQ</button>
+                <button onClick={() => { setLibPicks({}); setLibOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><BookOpen size={12} /> Add from Library</button>
                 <button onClick={addBlank} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Plus size={12} /> Add item</button>
               </div>
             </div>
@@ -304,7 +341,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.length === 0 && <tr><td colSpan={9} className={`px-3 py-6 text-center text-[11px] ${tried ? "text-red-500" : "text-slate-400"}`}>No items yet. Import them from the BOQ, or add them one by one.</td></tr>}
+                  {rows.length === 0 && <tr><td colSpan={9} className={`px-3 py-6 text-center text-[11px] ${tried ? "text-red-500" : "text-slate-400"}`}>No items yet. Import them from the BOQ, add them from the library, or add them one by one.</td></tr>}
                   {rows.map((r, i) => {
                     const fromBoq = boqItems.some((it) => it._id === r.itemId);
                     return (
@@ -320,6 +357,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                         <td className="px-1 py-1">
                           <ToolMenu label={`Actions for item ${i + 1}`} icon={<MoreHorizontal size={14} />} tone="ghost">
                             <button type="button" onClick={() => duplicate(i)} className={MENU_ITEM}><Copy size={13} /> Duplicate</button>
+                            <button type="button" onClick={() => void saveToLibrary(r)} className={MENU_ITEM}><BookmarkPlus size={13} /> Save to library</button>
                             <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className={MENU_ITEM}><ArrowUp size={13} /> Move up</button>
                             <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1} className={MENU_ITEM}><ArrowDown size={13} /> Move down</button>
                             <button type="button" onClick={() => setRows((list) => list.filter((x) => x.key !== r.key))} className={`${MENU_ITEM} !text-red-600`}><Trash2 size={13} /> Remove</button>
@@ -413,6 +451,51 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
             <div className="flex justify-end gap-2 mt-3">
               <button onClick={() => setBoqOpen(false)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
               <button onClick={importBoq} disabled={!Object.values(boqPicks).some(Boolean)} className="px-3.5 py-1.5 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-50">Add {Object.values(boqPicks).filter(Boolean).length || ""} item{Object.values(boqPicks).filter(Boolean).length === 1 ? "" : "s"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* The item library */}
+      {libOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setLibOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-5 flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h4 className="text-sm font-bold text-slate-900 inline-flex items-center gap-1.5"><BookOpen size={15} /> Item library</h4>
+              <button onClick={() => setLibOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <p className="text-[11px] text-slate-400 mb-3">Items GreenTech has requested before, for every project. Add an item to it from any RFQ row: ⋯ then Save to library.</p>
+            <div className="relative mb-2">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+              <input value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Search by description, specification or category" className={`${inp} pl-9`} autoFocus />
+            </div>
+            {libCats.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {["", ...libCats].map((c) => (
+                  <button key={c || "all"} onClick={() => setLibCat(c)} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${libCat === c ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:border-primary"}`}>{c || "All"}</button>
+                ))}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+              {libItems === null && <p className="p-4 text-[11px] text-slate-400 inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading</p>}
+              {libError && <p className="p-4 text-[11px] text-red-500">{libError}</p>}
+              {libItems !== null && !libError && libShown.length === 0 && <p className="p-4 text-[11px] text-slate-400">{libQ || libCat ? "Nothing matches." : "The library is empty. Save items to it from any RFQ row (⋯ then Save to library)."}</p>}
+              {libShown.map((i) => (
+                <label key={i._id} className="flex items-start gap-2.5 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={!!libPicks[i._id]} onChange={(e) => setLibPicks((p) => ({ ...p, [i._id]: e.target.checked }))} className="mt-0.5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-slate-800">{i.description}{i.unit && <span className="font-medium text-slate-400"> · {i.unit}</span>}</span>
+                    {i.spec && <span className="block text-[11px] text-slate-500 line-clamp-2">{i.spec}</span>}
+                    {i.vendorNote && <span className="block text-[10px] text-slate-400 line-clamp-1">Note: {i.vendorNote}</span>}
+                  </span>
+                  {i.category && <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-slate-100 text-[9px] font-bold text-slate-500">{i.category}</span>}
+                  <button type="button" onClick={(e) => { e.preventDefault(); void removeFromLibrary(i); }} className="shrink-0 p-1 rounded text-slate-300 hover:text-red-500" aria-label={`Remove ${i.description} from the library`}><Trash2 size={12} /></button>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={() => setLibOpen(false)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+              <button onClick={addFromLibrary} disabled={!Object.values(libPicks).some(Boolean)} className="px-3.5 py-1.5 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-50">Add {Object.values(libPicks).filter(Boolean).length || ""} item{Object.values(libPicks).filter(Boolean).length === 1 ? "" : "s"}</button>
             </div>
           </div>
         </div>

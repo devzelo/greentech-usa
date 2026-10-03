@@ -2326,6 +2326,17 @@ export async function uploadRfqLineFile(projectId: string, rid: string, lid: str
 export async function deleteRfqLineFile(projectId: string, rid: string, lid: string, aid: string): Promise<ApiRfq> {
   return request(`${rfqBase(projectId)}/${rid}/line-items/${lid}/attachments/${aid}`, { method: 'DELETE' });
 }
+// CR 337 - GreenTech's item library (company-wide), for "Add from Library" on an RFQ. Staff only.
+export interface ApiLibraryItem { _id: string; description: string; spec: string; unit: string; category: string; vendorNote: string; usedCount: number; createdByName?: string }
+export type LibraryItemInput = Pick<ApiLibraryItem, "description" | "spec" | "unit" | "category" | "vendorNote">;
+export async function fetchLibraryItems(q = "", category = ""): Promise<ApiLibraryItem[]> {
+  const qs = new URLSearchParams(); if (q) qs.set("q", q); if (category) qs.set("category", category);
+  return request(`/item-library${qs.toString() ? `?${qs}` : ""}`);
+}
+export async function saveLibraryItems(items: LibraryItemInput[]): Promise<ApiLibraryItem[]> { return request(`/item-library`, { method: 'POST', body: JSON.stringify({ items }) }); }
+export async function updateLibraryItem(id: string, body: Partial<LibraryItemInput>): Promise<ApiLibraryItem> { return request(`/item-library/${id}`, { method: 'PATCH', body: JSON.stringify(body) }); }
+export async function deleteLibraryItem(id: string): Promise<void> { await request(`/item-library/${id}`, { method: 'DELETE' }); }
+export async function markLibraryItemsUsed(ids: string[]): Promise<void> { await request(`/item-library/used`, { method: 'POST', body: JSON.stringify({ ids }) }); }
 // CR 335 - the RFQ's supporting documents (for every vendor).
 export async function uploadRfqAttachment(projectId: string, rid: string, file: File): Promise<ApiRfq> {
   const fd = new FormData(); fd.append('file', file);

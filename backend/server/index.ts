@@ -33,6 +33,7 @@ import proposalAssetRoutes from "./routes/proposalAssets";
 import proposalTemplateRoutes from "./routes/proposalTemplates";
 import proposalDocxRoutes from "./routes/proposalDocx";
 import resourceBlockRoutes from "./routes/resourceBlocks";
+import itemLibraryRoutes from "./routes/itemLibrary";
 import proposalRevisionRoutes from "./routes/proposalRevisions";
 import rfpDocumentRoutes from "./routes/rfpDocuments";
 import subInvoiceRoutes from "./routes/subInvoices";
@@ -123,6 +124,7 @@ app.use("/api/projects/:id/proposal-assets", proposalAssetRoutes);
 app.use("/api/proposal-templates", proposalTemplateRoutes);
 app.use("/api/projects/:id/proposal-docx", proposalDocxRoutes);
 app.use("/api/resource-blocks", resourceBlockRoutes);
+app.use("/api/item-library", itemLibraryRoutes);              // CR 337 RFQ item library
 app.use("/api/projects/:id/proposal-revisions", proposalRevisionRoutes);
 app.use("/api/rfp-documents", rfpDocumentRoutes);
 app.use("/api/public", publicProjectsRoutes);
