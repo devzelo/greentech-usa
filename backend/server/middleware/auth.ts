@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import { JWT_SECRET } from "../config/secrets";
 import User from "../models/User";
 
@@ -25,6 +26,12 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   // a session for an account that no longer existed (the profile and project pages then failed
   // in confusing ways instead of returning to login). Confirm the account on every request and
   // take role/name/email from the record, so a role change also applies immediately.
+  // A malformed id would throw below and land in the catch, which must never be a way past the
+  // check, so reject it outright.
+  if (!mongoose.isValidObjectId(decoded.userId)) {
+    return res.status(401).json({ error: "Invalid or expired token." });
+  }
+
   try {
     const account = await User.findById(decoded.userId)
       .select("name email role archived")
@@ -45,10 +52,12 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     };
     return next();
   } catch {
-    // The Atlas link on this project drops intermittently. If the check itself cannot run, fall
-    // back to the token's own claims rather than locking everyone out during an outage.
-    req.user = decoded;
-    return next();
+    // The Atlas link on this project drops intermittently, but letting the request through on the
+    // token's own claims would hand access back to exactly the removed accounts this check exists
+    // to stop. Refuse instead. A 503 is not a 401, so the browser keeps the session and retries
+    // rather than signing the person out, and every route that needs the database is failing in
+    // the same way anyway.
+    return res.status(503).json({ error: "Unable to verify your session right now. Please retry." });
   }
 }
 
