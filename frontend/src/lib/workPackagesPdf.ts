@@ -172,7 +172,7 @@ export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packa
     cards.forEach(([k, v], i) => kpiCard(f.page, b, X + i * (cw + 8), f.y, cw, 44, k, v, k === "Change orders" && m.changes > 0 ? RED : C.slate));
     f.y -= 60;
     if (p.changeOrders.length) {
-      const rows: TableRow[] = p.changeOrders.map((c) => ({ cells: [c.no, c.date ? fmtDay(c.date) : "-", c.reason || "-", c.amount === undefined ? "-" : `${c.amount >= 0 ? "+" : "-"}${fig(o, Math.abs(c.amount))}`, c.status === "approved" ? "Approved" : "Proposed"] }));
+      const rows: TableRow[] = p.changeOrders.map((c) => ({ cells: [c.no, c.date ? fmtDay(c.date) : "-", [c.reason, c.documentName ? `(document: ${c.documentName})` : ""].filter(Boolean).join(" ") || "-", c.amount === undefined ? "-" : `${c.amount >= 0 ? "+" : "-"}${fig(o, Math.abs(c.amount))}`, c.status === "approved" ? "Approved" : "Proposed"] }));
       f = drawTable(b, f, X, [{ label: "Change order", w: 70 }, { label: "Date", w: 70 }, { label: "Reason", w: W - 70 - 70 - 80 - 70, wrap: true }, { label: "Amount", w: 80, align: "right" }, { label: "Status", w: 70 }], rows, { newPage, size: 8, maxLines: 4 });
       f.y -= 24;
     }

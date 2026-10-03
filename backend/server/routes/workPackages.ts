@@ -32,6 +32,13 @@ const amount = (v: unknown) => Math.max(-1e12, Math.min(1e12, Math.round(money(v
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const status = (v: unknown) => ((WP_STATUSES as readonly string[]).includes(String(v)) ? String(v) : "not_started");
 
+/** A change order's document: a file uploaded to this project, never a path elsewhere. */
+function coDocument(projectId: string, c: Record<string, unknown>) {
+  const p = str(c.document, 500).trim().replace(/\\/g, "/");
+  const ok = p.startsWith(`uploads/${projectId}/`) && !p.includes("..");
+  return { document: ok ? p : "", documentName: ok ? str(c.documentName, 200).trim() : "" };
+}
+
 /** What a person may set on a package. Links are checked against this project before they are kept. */
 async function clean(projectId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
@@ -84,7 +91,7 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
   if (Array.isArray(body.changeOrders)) {
     out.changeOrders = body.changeOrders.slice(0, 100).map((raw, i) => {
       const c = (raw || {}) as Record<string, unknown>;
-      return { id: str(c.id, 40) || newId(), no: str(c.no, 40).trim() || `CO-${String(i + 1).padStart(2, "0")}`, date: date(c.date), reason: str(c.reason, 500).trim(), amount: amount(c.amount), status: c.status === "proposed" ? "proposed" : "approved", document: str(c.document, 200).trim() };
+      return { id: str(c.id, 40) || newId(), no: str(c.no, 40).trim() || `CO-${String(i + 1).padStart(2, "0")}`, date: date(c.date), reason: str(c.reason, 500).trim(), amount: amount(c.amount), status: c.status === "proposed" ? "proposed" : "approved", ...coDocument(projectId, c) };
     });
   }
   if (body.remarks !== undefined) out.remarks = str(body.remarks, 2000).trim();

@@ -13,7 +13,7 @@ export type WorkPackageStatus = (typeof WP_STATUSES)[number];
 export const WP_TYPES = ["design", "equipment", "civil", "installation", "controls", "lifting", "transport", "testing", "commissioning", "other"] as const;
 
 export interface IWorkSubtask { id: string; name: string; status: WorkPackageStatus; progress: number; dueDate: string; assignee: string }
-export interface IChangeOrder { id: string; no: string; date: string; reason: string; amount: number; status: "proposed" | "approved"; document: string }
+export interface IChangeOrder { id: string; no: string; date: string; reason: string; amount: number; status: "proposed" | "approved"; document: string; documentName: string }
 
 export interface IWorkPackage extends Document {
   projectId: string;
@@ -82,6 +82,7 @@ const WorkPackageSchema = new Schema<IWorkPackage>(
         amount: { type: Number, default: 0 },
         status: { type: String, enum: ["proposed", "approved"], default: "approved" },
         document: { type: String, default: "" },
+        documentName: { type: String, default: "" },
       }],
       default: [],
     },

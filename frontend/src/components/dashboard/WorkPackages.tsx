@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
-  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
+  Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
+  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
-  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq, uploadDocument, documentUrl,
+  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq, uploadDocument, documentUrl, attachmentUrl,
   type ApiAgreement, type ApiChangeOrder, type ApiProcurementPO, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -72,6 +72,16 @@ const loadView = (): View => { try { const v = JSON.parse(localStorage.getItem(V
 
 type Filters = { status: string; who: string; rfq: string; contract: string; changes: boolean };
 const NO_FILTER: Filters = { status: "", who: "", rfq: "", contract: "", changes: false };
+
+/** CR 328 (GT Comments 3, picture) - a PO's or agreement's state; Signed in green. */
+const docState = (state: string) => state === "Signed"
+  ? <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-px font-bold text-emerald-700 ring-1 ring-emerald-200"><BadgeCheck size={10} /> Signed</span>
+  : <span className="rounded-full bg-slate-100 px-1.5 py-px font-semibold text-slate-500">{state === "InvoiceReceived" ? "Invoiced" : state === "PendingSignature" ? "Awaiting signature" : state}</span>;
+/** The documents of a package's change orders, one small icon each. */
+const coDocs = (p: ApiWorkPackage) => {
+  const docs = (p.changeOrders || []).filter((c) => c.document);
+  return docs.length ? <span className="mt-0.5 flex flex-wrap gap-1">{docs.map((c) => <a key={c.id} href={attachmentUrl(c.document!, c.documentName)} target="_blank" rel="noreferrer" title={`${c.no}: ${c.documentName || "document"}`} className="inline-flex items-center gap-0.5 text-[10px] font-bold text-blue-600 hover:underline"><Paperclip size={10} /> {c.no}</a>)}</span> : null;
+};
 
 export default function WorkPackages({ project, canEdit }: { project: ApiProject; canEdit: boolean }) {
   const { confirm, dialogs } = useDialogs();
@@ -269,7 +279,9 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
     const pct = progressOf(p);
     switch (k) {
       case "rfq": return p.rfq ? <><Link to={`${base}?tab=procurement&proc=rfqs&rfq=${p.rfq.id}`} className={linkCls}><FileText size={11} /> {p.rfq.no}</Link><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
-      case "quotes": return p.quotes.count ? <><Link to={`${base}?tab=procurement&proc=quotes`} className={linkCls}>{p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</Link><span className="block max-w-[11rem] text-[10px] leading-snug text-slate-400">{p.quotes.names.join(", ")}</span></> : <span className="text-slate-300">-</span>;
+      case "quotes": return p.quotes.count ? <><Link to={`${base}?tab=procurement&proc=quotes`} className={linkCls}><FileText size={11} /> {p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</Link>
+        {/* CR 328 (GT Comments 3, picture) - who quoted, one per line. */}
+        {p.quotes.names.length > 0 && <ul className="mt-0.5 max-w-[11rem] list-disc pl-3.5 text-[10px] leading-snug text-slate-500 marker:text-slate-400">{p.quotes.names.slice(0, 4).map((n, i) => <li key={i} className="truncate" title={n}>{n}</li>)}{p.quotes.names.length > 4 && <li className="list-none -ml-3.5 text-slate-400">+{p.quotes.names.length - 4} more</li>}</ul>}</> : <span className="text-slate-300">-</span>;
       case "winner": return p.winner ? (
         <span className="flex items-start gap-2">
           {p.winner.logoUrl
@@ -278,8 +290,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           <span className="min-w-0"><span className="flex items-center gap-1 font-semibold text-slate-800">{p.winner.name}{!!p.locks?.length && <Lock size={10} className="shrink-0 text-slate-400" aria-label="Locked" title={`Locked: ${p.locks[0].no} is ${p.locks[0].label}`} />}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
         </span>
       ) : <span className="text-slate-300">-</span>;
-      case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po&po=${p.po.id}`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="block text-[10px] text-slate-400">{p.po.signed ? "Signed" : p.po.status}{p.po.date ? ` · ${fmtDay(p.po.date)}` : ""}</span></>
-        : p.agreement ? <><Link to={p.agreement.general ? `/dashboard/agreements?hl=ag-${p.agreement.id}` : `${base}?tab=subs`} className={linkCls}><FileText size={11} /> {p.agreement.no}</Link><span className="block text-[10px] text-slate-400">{p.agreement.status}{p.agreement.date ? ` · ${fmtDay(p.agreement.date)}` : ""}</span></>
+      case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po&po=${p.po.id}`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.po.signed ? "Signed" : p.po.status)}{p.po.date ? fmtDay(p.po.date) : ""}</span></>
+        : p.agreement ? <><Link to={p.agreement.general ? `/dashboard/agreements?hl=ag-${p.agreement.id}` : `${base}?tab=subs`} className={linkCls}><FileText size={11} /> {p.agreement.no}</Link><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.agreement.status)}{p.agreement.date ? fmtDay(p.agreement.date) : ""}</span></>
         : <span className="text-slate-300">-</span>;
       case "status": return (
         <select disabled={!canEdit} value={p.status} onChange={(e) => void patch(p, { status: e.target.value as WorkPackageStatus, ...(e.target.value === "complete" && p.progressMode === "manual" ? { progress: 100 } : {}) })} aria-label={`Status of ${p.name}`} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS[p.status].cls}`}>
@@ -295,7 +307,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
         </span>
       );
       case "original": return m && (m.original || m.source) ? <span className={`tabular-nums ${m.changes ? "text-slate-400 line-through" : "font-semibold text-slate-800"}`} title={m.source === "po" ? "The PO's total" : m.source === "agreement" ? "The agreement's contract value" : "The value typed on the package"}><Fig>{usd(m.original)}</Fig></span> : <span className="text-slate-300">-</span>;
-      case "changes": return m && m.changeCount ? <><span className={`font-bold tabular-nums ${m.changes >= 0 ? "text-red-600" : "text-emerald-600"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></span>{canEdit ? <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className="block text-[10px] font-bold text-blue-600 hover:underline">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</button> : <span className="block text-[10px] text-slate-400">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</span>}</> : <span className="text-slate-300">-</span>;
+      case "changes": return m && m.changeCount ? <><span className={`font-bold tabular-nums ${m.changes >= 0 ? "text-red-600" : "text-emerald-600"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></span>{canEdit ? <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className="block text-[10px] font-bold text-blue-600 hover:underline">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</button> : <span className="block text-[10px] text-slate-400">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</span>}{coDocs(p)}</> : <span className="text-slate-300">-</span>;
       case "current": return m && (m.current || m.source) ? <span className="font-bold tabular-nums text-slate-900"><Fig>{usd(m.current)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "paid": return m && (m.paid || m.source) ? <span className="tabular-nums text-slate-700"><Fig>{usd(m.paid)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "remaining": return m && (m.current || m.source) ? <span className={`font-semibold tabular-nums ${m.remaining < 0 ? "text-red-600" : "text-slate-800"}`}><Fig>{usd(m.remaining)}</Fig></span> : <span className="text-slate-300">-</span>;
@@ -607,6 +619,17 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
   const setSub = (i: number, t: Partial<ApiWorkSubtask>) => set({ subtasks: subs.map((x, j) => (j === i ? { ...x, ...t, ...(t.status === "complete" ? { progress: 100 } : {}) } : x)) });
   const moveSub = (i: number, d: number) => { const j = i + d; if (j < 0 || j >= subs.length) return; const next = [...subs]; [next[i], next[j]] = [next[j], next[i]]; set({ subtasks: next }); };
   const setCo = (i: number, c: Partial<ApiChangeOrder>) => set({ changeOrders: cos.map((x, j) => (j === i ? { ...x, ...c } : x)) });
+  // A change order's document goes to the project's documents (Project Management, "Change orders").
+  const [coUploading, setCoUploading] = useState("");
+  const attachCo = async (id: string, file: File) => {
+    setCoUploading(id);
+    try {
+      const doc = await uploadDocument(project.id, file, "pm-work-packages", false, "Change orders");
+      setF((p) => ({ ...p, changeOrders: (p.changeOrders || []).map((x) => (x.id === id ? { ...x, document: doc.filePath, documentName: doc.name } : x)) }));
+      toast("Document attached. Save the package to keep it.", "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not upload the document.", "error"); }
+    finally { setCoUploading(""); }
+  };
   const approved = cos.filter((c) => c.status === "approved").reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const outside = who.kind === "company";
   /**
@@ -696,7 +719,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
                   ? <Link to={`${base}?tab=procurement&proc=rfqs&rfq=${f.rfqId}`} className={linkBtn}><FileText size={11} /> Open the RFQ</Link>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
               </div>
-              {!f.rfqId && pkg && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
+              {!f.rfqId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
             </div>
             {/* PO */}
             <div>
@@ -707,7 +730,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
                   ? <><Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>{lockedNote("po")}</>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
               </div>
-              {!f.poId && pkg && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
+              {!f.poId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
             </div>
             {/* Agreement */}
             <div>
@@ -718,7 +741,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
                   ? <><Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>{lockedNote("agreement")}</>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
               </div>
-              {!f.agreementId && pkg && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
+              {!f.agreementId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
             </div>
           </Section>
         )}
@@ -787,6 +810,18 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
                       <button type="button" onClick={() => set({ changeOrders: cos.filter((_, j) => j !== i) })} aria-label="Remove the change order" className="ml-auto rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
                     </div>
                     <input value={c.reason} onChange={(e) => setCo(i, { reason: e.target.value })} placeholder="Reason, e.g. changed to an 80 ton crane per site requirement" aria-label="Reason" className={`${small} mt-1 w-full`} />
+                    {/* CR 328 (GT Comments 3, picture) - the change order's signed document. */}
+                    <div className="mt-1 flex items-center gap-2 text-[11px]">
+                      {c.document
+                        ? <>
+                            <a href={attachmentUrl(c.document, c.documentName)} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 font-bold text-blue-600 hover:underline"><Paperclip size={11} className="shrink-0" /> <span className="truncate">{c.documentName || "Document"}</span></a>
+                            <button type="button" onClick={() => setCo(i, { document: "", documentName: "" })} aria-label="Remove the document" className="rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={11} /></button>
+                          </>
+                        : <label className={`inline-flex cursor-pointer items-center gap-1 font-bold text-slate-500 hover:text-primary ${coUploading === c.id ? "pointer-events-none opacity-60" : ""}`}>
+                            {coUploading === c.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Attach the change order document
+                            <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void attachCo(c.id, file); }} />
+                          </label>}
+                    </div>
                   </div>
                 ))}
               </div>

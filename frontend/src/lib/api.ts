@@ -3449,7 +3449,7 @@ export function companyFileUrl(f: CompanyFile): string {
 export type WorkPackageStatus = "not_started" | "in_progress" | "complete" | "on_hold" | "cancelled";
 export type WorkPackageType = "design" | "equipment" | "civil" | "installation" | "controls" | "lifting" | "transport" | "testing" | "commissioning" | "other";
 export interface ApiWorkSubtask { id: string; name: string; status: WorkPackageStatus; progress: number; dueDate?: string; assignee?: string }
-export interface ApiChangeOrder { id: string; no: string; date: string; reason: string; amount?: number; status: "proposed" | "approved"; document?: string }
+export interface ApiChangeOrder { id: string; no: string; date: string; reason: string; amount?: number; status: "proposed" | "approved"; document?: string; documentName?: string }
 /**
  * A work package with what its linked records say: the RFQ, the quotes, who won, the PO or
  * agreement, and the money. Those parts are read-only here; they change where the records live.
