@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, SlidersHorizontal, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
+  AlertTriangle, ArrowDown, ArrowUp, BookmarkCheck, CheckCircle2, CloudOff, RefreshCw, SlidersHorizontal, CalendarCheck2, CalendarRange, ChevronDown, Diamond, FolderPlus, ChevronRight, ListTodo, Copy, Download, Eraser, Eye, FileSpreadsheet, FileUp, Flag, GripVertical, History, Import, Link2, ListChecks, Loader2,
   Pencil, Plus, Printer, Save, Search, StickyNote, Trash2, Undo2, X,
 } from "lucide-react";
 import {
@@ -357,19 +357,70 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
    * CR 317 (2026-09-28): a plain Save updates Current and nothing else. It used to ask for a
    * confirmation and file a numbered revision each time; a record is now filed on purpose, with
    * "Save for submittal / history" or a baseline.
+   *
+   * Auto-save (GT Comments 2, page 8: "Normal Save/Auto-Save only updates the Current Schedule"):
+   * Current saves itself a few seconds after the last change. It is paused while a draft is open,
+   * since saving then would make the draft live, and it can be switched off (per person) in the
+   * Save menu. Edits made while a save is on its way are kept and saved next.
    */
-  const save = async (quiet = false): Promise<boolean> => {
-    const bad = rows.find((r) => { const s = parseDate(r.plannedStart), e = parseDate(r.plannedEnd); return s && e && e < s; });
-    if (bad) { toast(`"${bad.name}" ends before it starts. Fix its dates first.`, "error"); return false; }
-    setBusy("save");
+  const [autoSave, setAutoSaveState] = useState(() => { try { return localStorage.getItem("gt-schedule-autosave") !== "0"; } catch { return true; } });
+  const setAutoSave = (v: boolean) => { setAutoSaveState(v); try { localStorage.setItem("gt-schedule-autosave", v ? "1" : "0"); } catch { /* ignore */ } };
+  type AutoState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: Date } | { kind: "error"; message: string };
+  const [autoState, setAutoState] = useState<AutoState>({ kind: "idle" });
+  const autoOn = canEdit && autoSave && !loadedFrom;
+  const saving = useRef(false);
+  const latest = useRef({ rows, cats: catList, phases });
+  latest.current = { rows, cats: catList, phases };
+  const endsBeforeStart = rows.find((r) => { const st = parseDate(r.plannedStart), e = parseDate(r.plannedEnd); return st && e && e < st; });
+  // "manual" is the Save button; "quiet" a save made first by another action (a baseline, a
+  // submittal), which only speaks up when it fails; "auto" never interrupts.
+  const persist = async (mode: "manual" | "quiet" | "auto"): Promise<boolean> => {
+    if (endsBeforeStart) { if (mode !== "auto") toast(`"${endsBeforeStart.name}" ends before it starts. Fix its dates first.`, "error"); return false; }
+    if (saving.current) return false;
+    const sent = { rows, cats: catList, phases };
+    saving.current = true;
+    if (mode !== "auto") setBusy("save");
+    setAutoState({ kind: "saving" });
     try {
-      const r = await saveTimelinePlain(project.id, rows, catList, phases);
-      takeSchedule(r.schedule, r.progress);
-      if (!quiet) toast("Saved. To keep a dated copy, use Save for submittal / history.", "success");
+      const r = await saveTimelinePlain(project.id, sent.rows, sent.cats, sent.phases);
+      const now = latest.current;
+      if (same(now.rows, sent.rows) && JSON.stringify(now.cats) === JSON.stringify(sent.cats) && JSON.stringify(now.phases) === JSON.stringify(sent.phases)) {
+        takeSchedule(r.schedule, r.progress);
+      } else {
+        // Changed again while it was saving: keep those edits on screen; they go with the next save.
+        onScheduleSaved(r.schedule, r.progress);
+        setLoadedFrom(""); setDraftRows(null);
+      }
+      setAutoState({ kind: "saved", at: new Date() });
+      if (mode === "manual") toast("Saved. To keep a dated copy, use Save for submittal / history.", "success");
       return true;
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save the schedule.", "error"); return false; }
-    finally { setBusy(""); }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not save the schedule.";
+      setAutoState({ kind: "error", message });
+      if (mode !== "auto") toast(message, "error");
+      return false;
+    } finally {
+      saving.current = false;
+      if (mode !== "auto") setBusy("");
+    }
   };
+  const save = async (quiet = false): Promise<boolean> => persist(quiet ? "quiet" : "manual");
+  // A few seconds after the last change; longer after a failed try, so a dropped connection is
+  // retried without hammering the server.
+  useEffect(() => {
+    if (!autoOn || !dirty || endsBeforeStart || saving.current || busy === "save" || busy === "draft" || busy === "import") return;
+    const t = setTimeout(() => { void persist("auto"); }, autoState.kind === "error" ? 15000 : 2500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOn, dirty, rows, catList, phases, busy, autoState, endsBeforeStart]);
+  // Leaving the schedule (another tab of the project, another page) with a change still waiting:
+  // it is sent on the way out.
+  const flush = useRef<() => void>(() => undefined);
+  flush.current = () => {
+    if (!autoOn || !dirty || endsBeforeStart || saving.current) return;
+    void saveTimelinePlain(project.id, rows, catList, phases).then((r) => onScheduleSaved(r.schedule, r.progress)).catch(() => undefined);
+  };
+  useEffect(() => () => flush.current(), []);
   // CR 235 - save one task: its edits go live straight away, without filing a revision.
   const baseRow = (id: string) => base.find((r) => r.id === id);
   const rowDirty = (m: ApiMilestone) => { const b = baseRow(m.id); return !b || JSON.stringify(b) !== JSON.stringify(m); };
@@ -994,7 +1045,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
           finish={cpm.finish}
           progress={overallPct}
           baseline={curBase}
-          dirty={dirty}
+          dirty={dirty && !autoOn}
           description={project.schedule?.description || ""}
           onDescription={canEdit ? saveDescription : undefined}
         />
@@ -1080,10 +1131,32 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                   <button type="button" onClick={() => void downloadTemplate()} className={MENU_ITEM}><FileSpreadsheet size={13} /> Excel template</button>
                 </ToolMenu>
                 {/* CR 317 - the three ways to save: Current only, a dated record in History, or the baseline. */}
+                {/* CR 317 - auto-save: where Current stands. */}
+                {(() => {
+                  const chip = "inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold";
+                  if (loadedFrom === "Draft" && autoSave) return <span className={`${chip} bg-amber-50 text-amber-700`} title="A draft is open, so nothing is saved automatically. Save makes the draft Current; Save as draft keeps it aside.">Auto-save paused: draft open</span>;
+                  if (!autoOn) return null;
+                  if (dirty && endsBeforeStart) return <span className={`${chip} bg-red-50 text-red-600`} title="Auto-save waits until the dates are fixed"><CloudOff size={12} /> Not saved: "{endsBeforeStart.name}" ends before it starts</span>;
+                  if (autoState.kind === "saving") return <span className={`${chip} text-slate-500`}><Loader2 size={12} className="animate-spin" /> Saving...</span>;
+                  if (autoState.kind === "error" && dirty) return (
+                    <span className={`${chip} bg-red-50 text-red-600`} title={autoState.message}>
+                      <CloudOff size={12} /> Not saved, trying again
+                      <button type="button" onClick={() => void persist("auto")} className="inline-flex items-center gap-1 rounded px-1 underline hover:no-underline"><RefreshCw size={11} /> Retry now</button>
+                    </span>
+                  );
+                  if (dirty) return <span className={`${chip} text-slate-400`}>Saving in a moment</span>;
+                  if (autoState.kind === "saved") return <span className={`${chip} text-emerald-600`} title={`Saved at ${autoState.at.toLocaleTimeString()}`}><CheckCircle2 size={12} /> All changes saved</span>;
+                  return null;
+                })()}
                 <ToolMenu label="Save" icon={<Save size={13} />} title="Save, save for submittal / history, or save as baseline">
-                  <button type="button" onClick={() => void save()} disabled={!!busy || (!dirty && !loadedFrom)} className={MENU_ITEM} title="Updates Current. Nothing is filed in History."><Save size={13} /> Save</button>
+                  <button type="button" onClick={() => void save()} disabled={!!busy || (!dirty && !loadedFrom)} className={MENU_ITEM} title="Updates Current. Nothing is filed in History."><Save size={13} /> Save now</button>
                   <button type="button" onClick={() => (rows.length ? setSubmittalOpen(true) : toast("The schedule is empty. Add its tasks first.", "error"))} className={MENU_ITEM} title="Files a locked, dated copy in History"><BookmarkCheck size={13} /> Save for submittal / history</button>
                   <button type="button" onClick={() => void startBaseline(false)} className={MENU_ITEM} title="Create the baseline from the current schedule"><CalendarCheck2 size={13} /> Save as baseline</button>
+                  <div className="my-1 border-t border-slate-100" />
+                  <button type="button" role="menuitemcheckbox" aria-checked={autoSave} onClick={() => setAutoSave(!autoSave)} className={MENU_ITEM} title="Save Current by itself a few seconds after each change. Remembered for you.">
+                    <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${autoSave ? "bg-emerald-500" : "bg-slate-300"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${autoSave ? "left-[14px]" : "left-0.5"}`} /></span>
+                    Auto-save {autoSave ? "on" : "off"}
+                  </button>
                 </ToolMenu>
                 {rows.length > 0 && (
                   <button
@@ -1384,7 +1457,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
                           </td>
                           <td className={`${cell} text-right`}>
                             <div className="inline-flex items-center gap-0.5">
-                              {canEdit && rowDirty(m) && (
+                              {canEdit && !autoOn && rowDirty(m) && (
                                 <button type="button" onClick={() => void saveRow(m)} disabled={rowBusy === m.id} title="Save this task now" className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-bold text-white hover:bg-primary disabled:opacity-50">
                                   {rowBusy === m.id ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
                                 </button>
@@ -1476,7 +1549,7 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
       )}
 
       {/* Save bar */}
-      {canEdit && (dirty || loadedFrom) && (
+      {canEdit && (loadedFrom || (dirty && (!autoOn || !!endsBeforeStart))) && (
         <div className="sticky bottom-3 z-[60] flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur">
           <p className="text-xs font-bold text-slate-700">{!unsaved && loadedFrom === "Draft" ? "Draft saved. Save to make it the live timeline." : dirty ? "You have unsaved changes to the timeline." : `${loadedFrom} is open in the editor.`}</p>
           <div className="flex flex-wrap gap-2">
