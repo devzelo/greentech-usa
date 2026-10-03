@@ -1,9 +1,9 @@
 import { PDFDocument, rgb, type Color, type PDFPage } from "pdf-lib";
 import type { ApiMilestone, ApiSchedulePhase } from "./api";
-import { C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
-import { fitOneLine } from "./pdfText";
+import { BOTTOM, C, NARROW, WIDE_LANDSCAPE, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
+import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
 import {
-  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, fmtShort, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule, wbsNumbers,
+  DAY, STATUS_META, daysBetween, delayDays, effectiveDays, fmtDay, fmtShort, groupByCategory, humanGap, isMilestonePoint, parseDate, phaseColor, phasePercent, planSchedule, plannedDays, wbsNumbers,
 } from "./projectSchedule";
 import { criticalPath, predLabel, predsOf, type CpmInfo } from "./scheduleLinks";
 import { DEFAULT_COLORS, barLabel, type BarColors, type ColKey, type ScheduleDisplay } from "./scheduleDisplay";
@@ -252,6 +252,25 @@ export async function buildTimelinePdf(o: TimelinePdfInput): Promise<Blob> {
 
   // CR 299 - the overview strip, as it reads at the top of the schedule, when it was asked for.
   if (o.overview) f = drawOverview(b, newPage, f, rows, o, today, PAGE);
+
+  // CR 327 - the critical path and the float, in words, as under the chart on screen.
+  if (cpm.critical.size) {
+    const W2 = PAGE.w - X * 2;
+    const day2 = (v?: string) => { const d = v ? new Date(`${v}T12:00:00`) : null; return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""; };
+    const live = rows.filter((m) => m.status !== "cancelled" && m.plannedStart);
+    const chain = live.filter((m) => cpm.critical.has(m.id)).sort((a, c) => (a.plannedStart || "").localeCompare(c.plannedStart || "") || (a.plannedEnd || "").localeCompare(c.plannedEnd || ""))
+      .map((m) => { const n = m.isMilestone || m.plannedStart === m.plannedEnd ? day2(m.plannedStart) : `${plannedDays(m) ?? ""} d`; return `${m.name}${n ? ` (${n})` : ""}`; }).join("  >  ");
+    const floats = live.filter((m) => !m.isMilestone && (cpm.float.get(m.id) || 0) > 0).sort((a, c) => (cpm.float.get(c.id) || 0) - (cpm.float.get(a.id) || 0))
+      .map((m) => { const fl = Math.round(cpm.float.get(m.id) || 0); return `${m.name}: ${fl} day${fl === 1 ? "" : "s"} of float (can slip that much without moving the finish)`; }).join(String.fromCharCode(10));
+    const h = 20 + wrappedHeight(b.regular, chain, 8.5, W2, 12) + (floats ? 24 + wrappedHeight(b.regular, floats, 8.5, W2, 12) : 0) + 10;
+    if (f.y - h < BOTTOM) f = newPage();
+    f.y = sectionHeading(f.page, b, "Critical path", X, f.y, W2);
+    f.y = drawWrapped(f.page, b.regular, chain, { x: X, y: f.y, size: 8.5, maxW: W2, lineHeight: 12, color: hex(colors.critical) }) - 10;
+    if (floats) {
+      f.y = sectionHeading(f.page, b, "Float", X, f.y, W2);
+      f.y = drawWrapped(f.page, b.regular, floats, { x: X, y: f.y, size: 8.5, maxW: W2, lineHeight: 12, color: C.s700 }) - 10;
+    }
+  }
 
 
   stampPageNumbers(doc, b);

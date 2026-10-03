@@ -17,6 +17,7 @@ import {
 } from "../../../lib/projectSchedule";
 import ShareMenu from "../ShareMenu";
 import TimelineBar from "./TimelineBar";
+import ScheduleOverview from "./ScheduleOverview";
 import GanttChart, { GanttLegend, GANTT_ZOOMS, type GanttZoom } from "./GanttChart";
 import { ItemForm, MilestoneMark, PhaseForm, phaseColorOf } from "./ScheduleForms";
 import DisplayOptions from "./DisplayOptions";
@@ -1589,6 +1590,15 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
             onOpen={openItem}
           />
           <GanttLegend colors={display.colors} progress={barOn(display, "percent")} />
+          {/* CR 327 - the schedule explained under the chart: critical path, workflow, links, float. */}
+          <ScheduleOverview
+            groups={groups.map((g) => ({ category: g.category, color: g.category === UNCATEGORISED ? undefined : phaseColorOf(phases, g.category, catList.indexOf(g.category)), items: g.items.map((s) => s.m) }))}
+            cpm={cpm}
+            planCtx={planCtx}
+            numbers={wbs.task}
+            colors={display.colors}
+            onOpen={openItem}
+          />
         </div>
       )}
       </div>
