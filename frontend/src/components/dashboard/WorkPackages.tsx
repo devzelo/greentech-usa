@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { Link, useNavigate } from "react-router-dom";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
-  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
+  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
@@ -78,6 +78,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
   const projectId = project.id;
   const [list, setList] = useState<ApiWorkPackage[] | null>(null);
   const [canMoney, setCanMoney] = useState(false);
+  const [canUnlink, setCanUnlink] = useState(false);
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTER);
   const [showArchived, setShowArchived] = useState(false);
@@ -96,7 +97,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState("");
 
-  const load = () => fetchWorkPackages(projectId).then((r) => { setList(r.packages); setCanMoney(r.canSeeFigures); }).catch((e) => { setList([]); toast(e instanceof Error ? e.message : "Could not load the work packages.", "error"); });
+  const load = () => fetchWorkPackages(projectId).then((r) => { setList(r.packages); setCanMoney(r.canSeeFigures); setCanUnlink(!!r.canUnlink); }).catch((e) => { setList([]); toast(e instanceof Error ? e.message : "Could not load the work packages.", "error"); });
   useEffect(() => { setList(null); void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
 
   // Progress read from the schedule, for a package linked to one of its tasks or phases.
@@ -274,7 +275,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           {p.winner.logoUrl
             ? <img src={withFileToken(p.winner.logoUrl)} alt="" className="h-6 w-6 shrink-0 rounded-full border border-slate-100 object-contain" />
             : <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${p.winner.internal ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{p.winner.internal ? <Building2 size={12} /> : p.winner.name.charAt(0).toUpperCase()}</span>}
-          <span className="min-w-0"><span className="block font-semibold text-slate-800">{p.winner.name}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
+          <span className="min-w-0"><span className="flex items-center gap-1 font-semibold text-slate-800">{p.winner.name}{!!p.locks?.length && <Lock size={10} className="shrink-0 text-slate-400" aria-label="Locked" title={`Locked: ${p.locks[0].no} is ${p.locks[0].label}`} />}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
         </span>
       ) : <span className="text-slate-300">-</span>;
       case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po&po=${p.po.id}`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="block text-[10px] text-slate-400">{p.po.signed ? "Signed" : p.po.status}{p.po.date ? ` · ${fmtDay(p.po.date)}` : ""}</span></>
@@ -481,7 +482,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
 
       {editing && (
         <Fragment key={editing === "new" ? "new" : editing._id}>
-          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} />
+          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canUnlink={canUnlink} confirm={confirm} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} />
         </Fragment>
       )}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
@@ -495,8 +496,10 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-40
 const inp = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none disabled:bg-slate-50 disabled:text-slate-500";
 const hint = "text-[11px] leading-snug text-slate-500";
 
-function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked }: {
-  pkg: ApiWorkPackage | null; project: ApiProject; canEdit: boolean; canMoney: boolean; busy: boolean; narrow: boolean; onNarrow: (v: boolean) => void;
+function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked }: {
+  pkg: ApiWorkPackage | null; project: ApiProject; canEdit: boolean; canMoney: boolean;
+  /** CR 328 - may unlink a signed document (the project's own team, not a guest). */
+  canUnlink: boolean; confirm: ReturnType<typeof useDialogs>["confirm"]; busy: boolean; narrow: boolean; onNarrow: (v: boolean) => void;
   onSave: (body: WorkPackageInput) => Promise<boolean>; onClose: () => void;
   /** CR 328 - the package, saved with a record just made for it (an RFQ, a PO, an agreement). */
   onLinked: (p: ApiWorkPackage) => void;
@@ -606,6 +609,27 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
   const setCo = (i: number, c: Partial<ApiChangeOrder>) => set({ changeOrders: cos.map((x, j) => (j === i ? { ...x, ...c } : x)) });
   const approved = cos.filter((c) => c.status === "approved").reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const outside = who.kind === "company";
+  /**
+   * CR 328 (GT Comments 3, page 1: "... subject to user permissions and record status"). A signed PO
+   * (or one the vendor confirmed) or a signed agreement binds the package: the company and the links
+   * are locked until that document is unlinked. Unlinking here frees them for the same save.
+   */
+  const locks = pkg ? (pkg.locks || []).filter((l) => (l.kind === "po" ? f.poId === pkg.poId : f.agreementId === pkg.agreementId)) : [];
+  const locked = locks.length > 0;
+  const lockOf = (kind: "po" | "agreement") => locks.find((l) => l.kind === kind);
+  const unlink = async (kind: "po" | "agreement") => {
+    const l = lockOf(kind);
+    if (!l) return;
+    if (!(await confirm({ title: `Unlink ${l.no}?`, message: `${l.no} is ${l.label}. Unlinked, the package's company and links can be changed again; ${l.no} itself is not touched. The change is kept when you save the package.`, confirmLabel: "Unlink" }))) return;
+    set(kind === "po" ? { poId: "" } : { agreementId: "" });
+  };
+  const lockedNote = (kind: "po" | "agreement") => {
+    const l = lockOf(kind);
+    if (!l) return null;
+    return canUnlink && canEdit
+      ? <button type="button" onClick={() => void unlink(kind)} className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:underline"><X size={11} /> Unlink</button>
+      : <span className={hint}>Only the project's team can unlink it.</span>;
+  };
   // CR 328 (GT Comments 3, page 1) - an outside company must be a Directory record, never loose text.
   const looseCompany = outside && !!who.name.trim() && !who.companyId;
   const small = "rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-primary focus:outline-none";
@@ -634,6 +658,13 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
         </Section>
 
         <Section n={2} title="Who does it">
+          {locked && (
+            <p className="flex items-start gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
+              <Lock size={12} className="mt-0.5 shrink-0" />
+              <span>Locked: {locks.map((l) => `${l.no} is ${l.label}`).join(", and ")}. The company and the links stay as they are. To change them, unlink {locks.length > 1 ? "those documents" : locks[0].no} below first.</span>
+            </p>
+          )}
+          <fieldset disabled={locked} className="space-y-3 disabled:opacity-70">
           <div className="flex gap-1.5">
             {([["company", "An outside company"], ["internal", "GT / JV (in-house)"]] as const).map(([k, l]) => (
               <button key={k} type="button" onClick={() => set({ responsible: k === "internal" ? { kind: "internal", companyId: "", name: who.kind === "internal" ? who.name : "GT" } : { kind: "company", companyId: "", name: "" } })} aria-pressed={who.kind === k} className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${who.kind === k ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}>{l}</button>
@@ -650,6 +681,7 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
           ) : (
             <label className="block"><span className={lbl}>Done by</span><input value={who.name} onChange={(e) => set({ responsible: { kind: "internal", companyId: "", name: e.target.value } })} placeholder="GT, or the JV's name" className={inp} /></label>
           )}
+          </fieldset>
         </Section>
 
         {outside && (
@@ -658,33 +690,33 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
             {/* RFQ */}
             <div>
               <span className={lbl}>RFQ</span>
-              <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} className={inp} aria-label="RFQ"><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
+              <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="RFQ"><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.rfqId
                   ? <Link to={`${base}?tab=procurement&proc=rfqs&rfq=${f.rfqId}`} className={linkBtn}><FileText size={11} /> Open the RFQ</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
+                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
               </div>
               {!f.rfqId && pkg && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
             </div>
             {/* PO */}
             <div>
               <span className={lbl}>Purchase order</span>
-              <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} className={inp} aria-label="Purchase order"><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
+              <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Purchase order"><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.poId
-                  ? <Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
+                  ? <><Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>{lockedNote("po")}</>
+                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
               </div>
               {!f.poId && pkg && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
             </div>
             {/* Agreement */}
             <div>
               <span className={lbl}>Agreement</span>
-              <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} className={inp} aria-label="Agreement"><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status}){a.ownerContextType === "general" ? " · General" : ""}</option>)}</select>
+              <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Agreement"><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status}){a.ownerContextType === "general" ? " · General" : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.agreementId
-                  ? <Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>
-                  : pkg && canEdit && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
+                  ? <><Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>{lockedNote("agreement")}</>
+                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
               </div>
               {!f.agreementId && pkg && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
             </div>

@@ -11,7 +11,7 @@ import Agreement from "../models/Agreement";
 import Invoice from "../models/Invoice";
 import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { tabAccessGuard, canSeeFigures } from "../lib/access";
+import { tabAccessGuard, canSeeFigures, fetchRequesterAccess } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
 
 // CR 328 - Work Packages (Project Management). Behind the "pm" tab permission like the schedule
@@ -94,6 +94,32 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
 
 const notInDirectory = (name: unknown) => `"${String(name)}" is not in the Directory. Pick the company from the list, or add it to the Directory first (the list offers to).`;
 
+/**
+ * CR 328 (GT Comments 3, page 1: "... subject to user permissions and record status"). Once a signed
+ * PO (or one the vendor has confirmed) or a signed agreement is linked, the package is bound to it:
+ * the company and the links stay as they are until that document is unlinked first.
+ */
+const PO_BOUND = ["Confirmed", "InvoiceReceived", "Paid"];
+const poLock = (po: { poNo?: string; status?: string; signatureUrl?: string } | null | undefined) =>
+  po && (po.signatureUrl || PO_BOUND.includes(String(po.status))) ? { kind: "po" as const, no: po.poNo || "the PO", label: po.signatureUrl ? "signed" : "confirmed by the vendor" } : null;
+const agrLock = (a: { agreementNo?: string; name?: string; status?: string } | null | undefined) =>
+  a && a.status === "Signed" ? { kind: "agreement" as const, no: a.agreementNo || a.name || "the agreement", label: "signed" } : null;
+type Lock = NonNullable<ReturnType<typeof poLock> | ReturnType<typeof agrLock>>;
+
+async function locksOf(projectId: string, doc: { poId?: string; agreementId?: string }): Promise<Lock[]> {
+  const [po, agr] = await Promise.all([
+    doc.poId && mongoose.isValidObjectId(doc.poId) ? ProcurementPO.findOne({ _id: doc.poId, projectId }).select("poNo status signatureUrl").lean() : null,
+    doc.agreementId && mongoose.isValidObjectId(doc.agreementId) ? Agreement.findById(doc.agreementId).select("agreementNo name status").lean() : null,
+  ]);
+  return [poLock(po), agrLock(agr)].filter((x): x is Lock => !!x);
+}
+
+/** Only the project's own team (its owner and employees) may unlink a signed document; a guest may not. */
+async function mayUnlink(req: AuthedRequest): Promise<boolean> {
+  const { access } = await fetchRequesterAccess(req);
+  return access.role === "owner" || access.role === "employee";
+}
+
 type Plain = Record<string, unknown> & { _id: unknown };
 /** The packages with what the linked records say about them. */
 async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean) {
@@ -153,6 +179,7 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
       po: po ? { id: String(po._id), no: po.poNo, status: po.status, signed: !!po.signatureUrl, date: day((po as { createdAt?: unknown }).createdAt) } : null,
       // A General Agreement lives on the Agreements page; a project one under Subcontractors & Employees.
       agreement: agr ? { id: String(agr._id), no: agr.agreementNo || agr.name, title: agr.title || "", status: agr.status, date: agr.effectiveDate || day((agr as { createdAt?: unknown }).createdAt), general: agr.ownerContextType === "general" } : null,
+      locks: [poLock(po), agrLock(agr)].filter(Boolean),
     };
     if (!showMoney) {
       // Not theirs to see: the figures are taken off the record itself, not just left uncounted.
@@ -182,7 +209,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
   try {
     const showMoney = await figures(req);
     const list = await WorkPackage.find({ projectId: req.params.id }).sort({ order: 1, createdAt: 1 }).limit(500);
-    res.json({ canSeeFigures: showMoney, packages: await shape(req.params.id, list, showMoney) });
+    res.json({ canSeeFigures: showMoney, canUnlink: await mayUnlink(req), packages: await shape(req.params.id, list, showMoney) });
   } catch (err) { next(err); }
 });
 
@@ -242,6 +269,28 @@ router.patch("/:wid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (body.notInDirectory) return res.status(400).json({ error: notInDirectory(body.notInDirectory) });
     // Someone who cannot see the figures cannot change them either.
     if (!showMoney) { delete body.budget; delete body.changeOrders; }
+    // Bound to a signed document: unlinking it is allowed (to the project's team), nothing else that
+    // decides who does the work. Unlinked in this same save, the rest of the save goes ahead.
+    const locks = await locksOf(req.params.id, doc);
+    if (locks.length) {
+      const was = { rfqId: doc.rfqId || "", poId: doc.poId || "", agreementId: doc.agreementId || "" };
+      const lockField = (l: Lock) => (l.kind === "po" ? "poId" : "agreementId");
+      const unlinked = locks.filter((l) => body[lockField(l)] === "");
+      if (unlinked.length && !(await mayUnlink(req))) return res.status(403).json({ error: `${unlinked[0].no} is ${unlinked[0].label}. Only the project's team can unlink it from the work package.` });
+      const held = locks.filter((l) => !unlinked.includes(l));
+      if (held.length) {
+        const sameWho = (() => {
+          if (body.responsible === undefined) return true;
+          const a = body.responsible as { kind: string; companyId: string; name: string }, b = doc.responsible || { kind: "company", companyId: "", name: "" };
+          return a.kind === b.kind && (a.kind === "internal" ? a.name === b.name : a.companyId === (b.companyId || ""));
+        })();
+        const moved = (["rfqId", "poId", "agreementId"] as const).filter((k) => body[k] !== undefined && body[k] !== was[k] && !unlinked.some((l) => lockField(l) === k));
+        if (!sameWho || moved.length) {
+          const l = held[0];
+          return res.status(409).json({ error: `${l.no} is ${l.label}, so the company${moved.length ? " and the links" : ""} of this work package stay as they are. Unlink ${l.no} first to change them.` });
+        }
+      }
+    }
     doc.set(body);
     await doc.save();
     res.json((await shape(req.params.id, [doc], showMoney))[0]);

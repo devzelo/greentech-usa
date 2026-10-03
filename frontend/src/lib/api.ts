@@ -3467,12 +3467,14 @@ export interface ApiWorkPackage {
   winner: { name: string; place: string; logoUrl: string; companyId: string; internal: boolean; from: string } | null;
   po: { id: string; no: string; status: string; signed: boolean; date: string } | null;
   agreement: { id: string; no: string; title: string; status: string; date: string; general?: boolean } | null;
+  /** CR 328 - the signed (or vendor-confirmed) documents that bind the package: its company and links stay until they are unlinked. */
+  locks?: Array<{ kind: "po" | "agreement"; no: string; label: string }>;
   money: { original: number; source: "po" | "agreement" | "budget" | ""; changes: number; changeCount: number; current: number; paid: number; remaining: number } | null;
 }
 export type WorkPackageInput = Partial<Pick<ApiWorkPackage,
   "name" | "description" | "type" | "responsible" | "rfqId" | "poId" | "agreementId" | "status" | "progressMode" | "progress" | "scheduleRef" | "subtasks" | "budget" | "changeOrders" | "remarks" | "archived">>;
 const wpBase = (projectId: string) => `/projects/${projectId}/work-packages`;
-export async function fetchWorkPackages(projectId: string): Promise<{ canSeeFigures: boolean; packages: ApiWorkPackage[] }> { return request(wpBase(projectId)); }
+export async function fetchWorkPackages(projectId: string): Promise<{ canSeeFigures: boolean; canUnlink?: boolean; packages: ApiWorkPackage[] }> { return request(wpBase(projectId)); }
 export async function createWorkPackage(projectId: string, body: WorkPackageInput): Promise<ApiWorkPackage> { return request(wpBase(projectId), { method: "POST", body: JSON.stringify(body) }); }
 export async function updateWorkPackage(projectId: string, id: string, body: WorkPackageInput): Promise<ApiWorkPackage> { return request(`${wpBase(projectId)}/${id}`, { method: "PATCH", body: JSON.stringify(body) }); }
 export async function deleteWorkPackage(projectId: string, id: string): Promise<void> { await request(`${wpBase(projectId)}/${id}`, { method: "DELETE" }); }
