@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
   FileUp, Filter, GripVertical, HardHat, HelpCircle, Loader2, MoreVertical, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
+  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq,
   type ApiAgreement, type ApiChangeOrder, type ApiProcurementPO, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -16,6 +17,7 @@ import { Fig } from "./FiguresPrivacy";
 import CompanyPicker from "./CompanyPicker";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { Fold, Section, SidePanel } from "./timeline/ScheduleForms";
+import { GREENTECH } from "../../lib/poPdf";
 
 /**
  * CR 328 (2026-09-28): Work Packages. The project manager's master list of everything the project
@@ -233,7 +235,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
     const m = p.money;
     const pct = progressOf(p);
     switch (k) {
-      case "rfq": return p.rfq ? <><Link to={`${base}?tab=procurement&proc=rfqs`} className={linkCls}><FileText size={11} /> {p.rfq.no}</Link><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
+      case "rfq": return p.rfq ? <><Link to={`${base}?tab=procurement&proc=rfqs&rfq=${p.rfq.id}`} className={linkCls}><FileText size={11} /> {p.rfq.no}</Link><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
       case "quotes": return p.quotes.count ? <><Link to={`${base}?tab=procurement&proc=quotes`} className={linkCls}>{p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</Link><span className="block max-w-[11rem] text-[10px] leading-snug text-slate-400">{p.quotes.names.join(", ")}</span></> : <span className="text-slate-300">-</span>;
       case "winner": return p.winner ? (
         <span className="flex items-start gap-2">
@@ -243,8 +245,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           <span className="min-w-0"><span className="block font-semibold text-slate-800">{p.winner.name}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
         </span>
       ) : <span className="text-slate-300">-</span>;
-      case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="block text-[10px] text-slate-400">{p.po.signed ? "Signed" : p.po.status}{p.po.date ? ` · ${fmtDay(p.po.date)}` : ""}</span></>
-        : p.agreement ? <><Link to={`${base}?tab=subs`} className={linkCls}><FileText size={11} /> {p.agreement.no}</Link><span className="block text-[10px] text-slate-400">{p.agreement.status}{p.agreement.date ? ` · ${fmtDay(p.agreement.date)}` : ""}</span></>
+      case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po&po=${p.po.id}`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="block text-[10px] text-slate-400">{p.po.signed ? "Signed" : p.po.status}{p.po.date ? ` · ${fmtDay(p.po.date)}` : ""}</span></>
+        : p.agreement ? <><Link to={p.agreement.general ? `/dashboard/agreements?hl=ag-${p.agreement.id}` : `${base}?tab=subs`} className={linkCls}><FileText size={11} /> {p.agreement.no}</Link><span className="block text-[10px] text-slate-400">{p.agreement.status}{p.agreement.date ? ` · ${fmtDay(p.agreement.date)}` : ""}</span></>
         : <span className="text-slate-300">-</span>;
       case "status": return (
         <select disabled={!canEdit} value={p.status} onChange={(e) => void patch(p, { status: e.target.value as WorkPackageStatus, ...(e.target.value === "complete" && p.progressMode === "manual" ? { progress: 100 } : {}) })} aria-label={`Status of ${p.name}`} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS[p.status].cls}`}>
@@ -440,7 +442,7 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
 
       {editing && (
         <Fragment key={editing === "new" ? "new" : editing._id}>
-          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} />
+          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} />
         </Fragment>
       )}
       {dialogs}
@@ -453,10 +455,13 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-40
 const inp = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none disabled:bg-slate-50 disabled:text-slate-500";
 const hint = "text-[11px] leading-snug text-slate-500";
 
-function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, onSave, onClose }: {
+function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked }: {
   pkg: ApiWorkPackage | null; project: ApiProject; canEdit: boolean; canMoney: boolean; busy: boolean; narrow: boolean; onNarrow: (v: boolean) => void;
   onSave: (body: WorkPackageInput) => Promise<boolean>; onClose: () => void;
+  /** CR 328 - the package, saved with a record just made for it (an RFQ, a PO, an agreement). */
+  onLinked: (p: ApiWorkPackage) => void;
 }) {
+  const navigate = useNavigate();
   const [f, setF] = useState<WorkPackageInput>(() => pkg ? {
     name: pkg.name, description: pkg.description, type: pkg.type, responsible: pkg.responsible, rfqId: pkg.rfqId, poId: pkg.poId, agreementId: pkg.agreementId, status: pkg.status,
     progressMode: pkg.progressMode, progress: pkg.progress, scheduleRef: pkg.scheduleRef, subtasks: pkg.subtasks, budget: pkg.budget || 0, changeOrders: pkg.changeOrders, remarks: pkg.remarks,
@@ -475,8 +480,83 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
   useEffect(() => {
     fetchRfqs(project.id).then(setRfqs).catch(() => setRfqs([]));
     fetchProcurementPOs(project.id).then(setPos).catch(() => setPos([]));
-    fetchProjectAgreements(project.id).then(setAgrs).catch(() => setAgrs([]));
+    // The project's own agreements, and the General Agreements that cover this project (GT
+    // Comments 3: "Existing RFQ, PO, and Agreement builders from Procurement and General
+    // Agreements should be reused").
+    Promise.all([
+      fetchProjectAgreements(project.id).catch(() => [] as ApiAgreement[]),
+      fetchAgreements({ kind: "general" }).then((l) => l.filter((a) => (a.linkedProjects || []).some((lp) => lp.id === project.id))).catch(() => [] as ApiAgreement[]),
+    ]).then(([own, general]) => setAgrs([...own, ...general]));
   }, [project.id]);
+
+  /**
+   * CR 328 (GT Comments 3, page 1: "Work Package → RFQ → Vendor Quotes → Selection/Winner →
+   * PO/Agreement ... Existing RFQ, PO, and Agreement builders ... should be reused"). The record is
+   * made by the same Procurement and agreement endpoints as always, filled in from the package,
+   * linked to it, and opened where it lives to carry on there. The package is saved with it, so
+   * nothing typed in this form is lost.
+   */
+  const [making, setMaking] = useState<"" | "rfq" | "po" | "agreement">("");
+  const scope = () => ({ name: (f.name || "").trim(), detail: (f.description || "").trim() });
+  // A scope line is not a BOQ item; it still needs an id of its own for the quotes and the PO.
+  const newLineId = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const linkAndOpen = async (patch: WorkPackageInput, to: string, message: string) => {
+    const saved = await updateWorkPackage(project.id, pkg!._id, { ...f, ...patch });
+    onLinked(saved);
+    toast(message, "success");
+    navigate(to);
+  };
+  const makeRfq = async () => {
+    if (!pkg) return;
+    setMaking("rfq");
+    try {
+      const { name, detail } = scope();
+      const rfq = await createRfq(project.id, { title: name, notes: detail, lineItems: [{ itemId: newLineId(), description: name, qty: "1", unit: "lot", spec: detail }] });
+      // The company the package is meant for is the first one the request goes to.
+      if (who.kind === "company" && who.companyId) {
+        const c = await fetchCompany(who.companyId).catch(() => null);
+        await updateRfq(project.id, rfq._id, { recipients: [{ companyId: who.companyId, name: c?.name || who.name, category: c?.category || "vendor", expectsQuote: true }] }).catch(() => undefined);
+      }
+      await linkAndOpen({ rfqId: rfq._id }, `${base}?tab=procurement&proc=rfqs&rfq=${rfq._id}`, `RFQ ${rfq.rfqNo} made for this package. Add the vendors and send it from Procurement.`);
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not make the RFQ.", "error"); }
+    finally { setMaking(""); }
+  };
+  const linkedRfq = rfqs.find((r) => r._id === f.rfqId);
+  const awarded = linkedRfq?.quotes?.find((q) => q.status === "Awarded");
+  const makePo = async () => {
+    if (!pkg) return;
+    setMaking("po");
+    try {
+      const { name } = scope();
+      // From the awarded quote, the normal Procurement way; without one, a PO for the package's
+      // company with the package as its line, priced in the PO editor.
+      let po = linkedRfq && awarded
+        ? await createProcurementPO(project.id, linkedRfq._id, awarded._id)
+        : await createManualPO(project.id, who.kind === "company" ? who.name : "");
+      if (!(linkedRfq && awarded)) po = await updateProcurementPO(project.id, po._id, { lineItems: [{ itemId: "", description: name, qty: "1", unit: "lot", unitPrice: "" }] });
+      await linkAndOpen({ poId: po._id }, `${base}?tab=procurement&proc=po&po=${po._id}`, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price in Procurement."}`);
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PO.", "error"); }
+    finally { setMaking(""); }
+  };
+  const makeAgreement = async () => {
+    if (!pkg) return;
+    setMaking("agreement");
+    try {
+      const { name, detail } = scope();
+      const c = who.kind === "company" && who.companyId ? await fetchCompany(who.companyId).catch(() => null) : null;
+      const ag = await createAgreement({ kind: "general" }, {
+        name, title: name, description: detail, agreementType: "Service",
+        linkedProjects: [{ id: project.id, name: project.name, location: project.location || "" }],
+        partySnapshot: {
+          party1: { name: GREENTECH.name, contactName: "", address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone, logoUrl: "/gt-usa-logo-new.png" },
+          party2: { name: c?.name || who.name, contactName: c?.contactPersons?.[0]?.name || "", address: c?.address || "", email: c?.email || "", phone: c?.phone || "", logoUrl: c?.logoUrl || "", companyId: c?._id || "" },
+          extraParties: [], contextLines: [],
+        },
+      });
+      await linkAndOpen({ agreementId: ag._id }, `/dashboard/agreements?hl=ag-${ag._id}`, `Agreement ${ag.agreementNo || ""} made for this package. Write it and send it from General Agreements.`.replace("  ", " "));
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); }
+    finally { setMaking(""); }
+  };
   const base = `/dashboard/projects/${project.id}`;
   const tasks = project.schedule?.milestones || [];
   const phases = [...new Set([...(project.schedule?.categories || []), ...tasks.map((m) => (m.category || "").trim()).filter(Boolean)])];
@@ -528,22 +608,41 @@ function PackageForm({ pkg, project, canEdit, canMoney, busy, narrow, onNarrow, 
         </Section>
 
         {outside && (
-          <Section n={3} title="Commercial" note="The RFQ, the PO and the agreement are made in Procurement and in Subcontractors & Employees, as always. Link them here and the table follows them: quotes, winner, value and payments.">
-            <label className="block">
+          <Section n={3} title="Commercial" note="Make the RFQ, the PO or the agreement from here, or link one that already exists. They are the usual Procurement and agreement records: the table follows them (quotes, winner, value, payments).">
+            {!pkg && <p className={`rounded-lg bg-amber-50 px-2.5 py-1.5 ${hint} text-amber-800`}>Save the package first; its RFQ, PO and agreement can then be made from here.</p>}
+            {/* RFQ */}
+            <div>
               <span className={lbl}>RFQ</span>
-              <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} className={inp}><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
-              <Link to={`${base}?tab=procurement&proc=rfqs`} className={`mt-1 ${linkBtn}`}><Plus size={11} /> Create an RFQ in Procurement</Link>
-            </label>
-            <label className="block">
+              <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} className={inp} aria-label="RFQ"><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                {f.rfqId
+                  ? <Link to={`${base}?tab=procurement&proc=rfqs&rfq=${f.rfqId}`} className={linkBtn}><FileText size={11} /> Open the RFQ</Link>
+                  : pkg && canEdit && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
+              </div>
+              {!f.rfqId && pkg && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
+            </div>
+            {/* PO */}
+            <div>
               <span className={lbl}>Purchase order</span>
-              <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} className={inp}><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
-              <Link to={`${base}?tab=procurement&proc=po`} className={`mt-1 ${linkBtn}`}><Plus size={11} /> Create a PO in Procurement</Link>
-            </label>
-            <label className="block">
+              <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} className={inp} aria-label="Purchase order"><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                {f.poId
+                  ? <Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>
+                  : pkg && canEdit && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
+              </div>
+              {!f.poId && pkg && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
+            </div>
+            {/* Agreement */}
+            <div>
               <span className={lbl}>Agreement</span>
-              <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} className={inp}><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status})</option>)}</select>
-              <Link to={`${base}?tab=subs`} className={`mt-1 ${linkBtn}`}><Plus size={11} /> Create an agreement in Subcontractors &amp; Employees</Link>
-            </label>
+              <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} className={inp} aria-label="Agreement"><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status}){a.ownerContextType === "general" ? " · General" : ""}</option>)}</select>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                {f.agreementId
+                  ? <Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>
+                  : pkg && canEdit && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
+              </div>
+              {!f.agreementId && pkg && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
+            </div>
           </Section>
         )}
 

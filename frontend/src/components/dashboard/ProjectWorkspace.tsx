@@ -691,6 +691,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
+  const [openPoId, setOpenPoId] = useState<string | undefined>(undefined);   // CR 328 - from a work package
   const [openRfqId, setOpenRfqId] = useState<string | undefined>(undefined); // open a specific RFQ after creating it from the BOQ
 
   // Deep-link support for the "+ New" menu: /dashboard/projects/:id?tab=procurement&proc=rfqs
@@ -711,6 +712,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (tab) setActiveTab(tab);
     if (proc) setProcSub(proc as typeof procSub);
     if (sub) setSubsSubTab(sub as "employees" | "subcontractors" | "partners" | "vendors");
+    // CR 328 - a work package links to its own RFQ or PO: &rfq=<id> / &po=<id> opens that record.
+    const rfqOpen = searchParams.get("rfq"), poOpen = searchParams.get("po");
+    if (rfqOpen) setOpenRfqId(rfqOpen);
+    if (poOpen) setOpenPoId(poOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   const [showSectionList, setShowSectionList] = useState(false); // reorder-list panel (kept, hidden by default — on-box arrows are primary)
@@ -6469,7 +6474,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {procActive === "submittals" && id && <ProcurementSubmittals projectId={id} canEdit={procPermFor("submittals") === "edit"} projectName={project?.name} clientName={project?.clientInfo?.name} highlightItemId={highlightSubItem} onHighlightDone={() => setHighlightSubItem(undefined)} />}
               {procActive === "rfqs" && id && <ProcurementRFQ projectId={id} canEdit={procPermFor("rfqs") === "edit"} projectInfo={projectPdfInfo(project)} onGoToPO={() => setProcSub("po")} openRfqId={openRfqId} onOpenedRfq={() => setOpenRfqId(undefined)} />}
               {procActive === "quotes" && id && <ProcurementQuotes projectId={id} canEdit={procPermFor("quotes") === "edit"} />}
-              {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} onGoToQuotes={() => setProcSub("quotes")} />}
+              {procActive === "po" && id && <ProcurementPO projectId={id} canEdit={procPermFor("po") === "edit"} projectInfo={projectPdfInfo(project)} onGoToBOQ={() => setProcSub("boq")} onGoToRFQ={() => setProcSub("rfqs")} onGoToQuotes={() => setProcSub("quotes")} openPoId={openPoId} onOpenedPo={() => setOpenPoId(undefined)} />}
               {procActive === "invoices" && id && <ProcurementInvoices projectId={id} projectName={project?.name} canEdit={procPermFor("po") === "edit"} onGoToPO={() => setProcSub("po")} onGoToReceived={() => { setActiveTab("finances"); setFinSub("invoice-received"); }} />}
               {procActive === "shipment" && id && <ProcurementShipment projectId={id} canEdit={procPermFor("shipment") === "edit"} projectInfo={projectPdfInfo(project)} />}
 

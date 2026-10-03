@@ -3458,7 +3458,7 @@ export interface ApiWorkPackage {
   quotes: { count: number; names: string[] };
   winner: { name: string; place: string; logoUrl: string; companyId: string; internal: boolean; from: string } | null;
   po: { id: string; no: string; status: string; signed: boolean; date: string } | null;
-  agreement: { id: string; no: string; title: string; status: string; date: string } | null;
+  agreement: { id: string; no: string; title: string; status: string; date: string; general?: boolean } | null;
   money: { original: number; source: "po" | "budget" | ""; changes: number; changeCount: number; current: number; paid: number; remaining: number } | null;
 }
 export type WorkPackageInput = Partial<Pick<ApiWorkPackage,

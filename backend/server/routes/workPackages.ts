@@ -90,7 +90,7 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
     rfqIds.length ? Rfq.find({ _id: { $in: rfqIds }, projectId }).select("rfqNo title status sentAt recipients createdAt").lean() : [],
     rfqIds.length ? VendorQuote.find({ rfqId: { $in: rfqIds }, projectId }).select("rfqId vendorId status").lean() : [],
     poIds.length ? ProcurementPO.find({ _id: { $in: poIds }, projectId }).select("poNo status total vendorId vendorName signatureUrl createdAt").lean() : [],
-    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt").lean() : [],
+    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt ownerContextType").lean() : [],
     showMoney && (poIds.length || agrIds.length)
       ? Invoice.find({ projectId, type: "received", $or: [{ poId: { $in: poIds } }, { "contractRef.agreementId": { $in: agrIds } }] }).select("poId contractRef payments").lean()
       : [],
@@ -132,7 +132,8 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
       quotes: { count: qs.length, names: qs.map((q) => vendorName(q.vendorId)).filter(Boolean) },
       winner,
       po: po ? { id: String(po._id), no: po.poNo, status: po.status, signed: !!po.signatureUrl, date: day((po as { createdAt?: unknown }).createdAt) } : null,
-      agreement: agr ? { id: String(agr._id), no: agr.agreementNo || agr.name, title: agr.title || "", status: agr.status, date: agr.effectiveDate || day((agr as { createdAt?: unknown }).createdAt) } : null,
+      // A General Agreement lives on the Agreements page; a project one under Subcontractors & Employees.
+      agreement: agr ? { id: String(agr._id), no: agr.agreementNo || agr.name, title: agr.title || "", status: agr.status, date: agr.effectiveDate || day((agr as { createdAt?: unknown }).createdAt), general: agr.ownerContextType === "general" } : null,
     };
     if (!showMoney) {
       // Not theirs to see: the figures are taken off the record itself, not just left uncounted.

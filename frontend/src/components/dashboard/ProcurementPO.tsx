@@ -35,7 +35,7 @@ const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5
 const STATUSES = ["Sent", "Confirmed", "InvoiceReceived", "Paid"] as const;
 const statusCls: Record<string, string> = { Sent: "bg-amber-50 text-amber-600", Confirmed: "bg-blue-50 text-blue-600", InvoiceReceived: "bg-indigo-50 text-indigo-600", Paid: "bg-emerald-50 text-emerald-600" };
 
-export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void }) {
+export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes, openPoId, onOpenedPo }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void; /** CR 328 - open this PO (a link from a work package). */ openPoId?: string; onOpenedPo?: () => void }) {
   const present = useBuilderPresence(projectId ? `po:${projectId}` : null, "Purchase Orders"); // CR-B-01
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
@@ -93,6 +93,14 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, showArchived]);
+  // CR 328 - a work package's link opens its PO, unfolded and scrolled into view.
+  useEffect(() => {
+    if (!openPoId || !pos.some((p) => p._id === openPoId)) return;
+    setOpenId(openPoId);
+    onOpenedPo?.();
+    setTimeout(() => document.querySelector(`[data-po-row="${openPoId}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPoId, pos]);
   const archivePO = async (pid: string, next: boolean) => {
     try { await setProcurementPOArchived(projectId, pid, next); setPOs((p) => p.filter((x) => x._id !== pid)); }
     catch { /* ignore */ }
@@ -622,7 +630,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
         const att = (kind: string) => po.attachments.filter((a) => a.kind === kind);
         return (
           <Fragment key={po._id}>
-            <tr className="hover:bg-slate-50/40">
+            <tr className="hover:bg-slate-50/40" data-po-row={po._id}>
               <td className="px-3 py-2 align-top"><button onClick={() => setOpenId(isOpen ? null : po._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
               <td className="px-3 py-2 align-top font-bold text-slate-700 whitespace-nowrap">PO {po.poNo}</td>
               <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{poRef(po) || "—"}</td>
