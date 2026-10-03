@@ -430,6 +430,9 @@ export function HistoryTab({ entries, h, onUpload, currentBaselineId, frozen }: 
   const [status, setStatus] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // CR 318 (GT Comments 2, page 7: "filters/search by date, submission period, version, status").
+  const [period, setPeriod] = useState("");
+  const [version, setVersion] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [docsOpen, setDocsOpen] = useState("");
   const [viewing, setViewing] = useState("");
@@ -442,6 +445,8 @@ export function HistoryTab({ entries, h, onUpload, currentBaselineId, frozen }: 
     if (status !== "all" && (e.status || "draft") !== status) return false;
     if (from && dayOf(e) < from) return false;
     if (to && dayOf(e) > to) return false;
+    if (period && (e.period || "") !== period) return false;
+    if (version && e._id !== version) return false;
     const text = `${entryCode(e)} ${entryTitle(e)} ${e.period || ""} ${e.description || ""} ${e.note || ""} ${e.client || ""} ${e.submittedBy || ""} ${e.savedBy || ""} ${(e.files || []).map((f) => f.name).join(" ")}`.toLowerCase();
     return !q.trim() || text.includes(q.trim().toLowerCase());
   });
@@ -490,6 +495,20 @@ export function HistoryTab({ entries, h, onUpload, currentBaselineId, frozen }: 
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel} aria-label="Status">
           <option value="all">Any status</option>
           {(Object.keys(STATUS) as ScheduleEntryStatus[]).map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}
+        </select>
+        {/* The reporting periods on file, newest first, and every record by its number and title. */}
+        {(() => {
+          const periods = [...new Map([...live].sort((a, b) => dayOf(b).localeCompare(dayOf(a))).filter((e) => e.period).map((e) => [e.period!, e.period!])).values()];
+          return (
+            <select value={period} onChange={(e) => setPeriod(e.target.value)} disabled={!periods.length && !period} className={sel} aria-label="Reporting period" title={periods.length ? "Reporting period" : "No record has a reporting period yet"}>
+              <option value="">Any period</option>
+              {periods.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          );
+        })()}
+        <select value={version} onChange={(e) => setVersion(e.target.value)} className={`${sel} max-w-[14rem]`} aria-label="Version">
+          <option value="">Any version</option>
+          {live.map((e) => <option key={e._id} value={e._id}>{kindOf(e) === "submittal" ? entryTitle(e) : `${entryCode(e)} · ${entryTitle(e)}`}</option>)}
         </select>
         <label className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">From <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={sel} aria-label="From date" /></label>
         <label className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">to <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={sel} aria-label="To date" /></label>
