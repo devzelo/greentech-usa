@@ -179,6 +179,18 @@ export default function DashboardLayout() {
   // CR 343 - the project that is open, named in the top bar on every page of it.
   const openProject = useCurrentProject();
   const inProject = !!openProject && location.pathname.startsWith(`/dashboard/projects/${openProject.id}`);
+  // CR 344 - while a popup covers the page, the project's name hangs from the top edge of the screen
+  // instead (the breadcrumb is under the popup's backdrop). A popup is any full-screen overlay.
+  const [popupOpen, setPopupOpen] = useState(false);
+  useEffect(() => {
+    if (!inProject) { setPopupOpen(false); return; }
+    let frame = 0;
+    const check = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setPopupOpen(!!document.querySelector(".fixed.inset-0, [role='dialog']"))); };
+    const obs = new MutationObserver(check);
+    obs.observe(document.body, { childList: true, subtree: true });
+    check();
+    return () => { obs.disconnect(); cancelAnimationFrame(frame); };
+  }, [inProject]);
   const activeNav = [...sidebarLinks, ...secondaryLinks].find(link => link.path === location.pathname);
   const seg = location.pathname.replace(/^\/dashboard\/?/, "").split("/")[0];
   const activeLink = activeNav?.name || (seg ? seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " ") : "Overview");
@@ -436,13 +448,24 @@ export default function DashboardLayout() {
                 )}
             </div>
             {/* CR 343 - "Project name should be always visible somewhere in the page, no matter which
-                folder or tab we open or which popup is on." Drawn above every popup's backdrop (it
-                is only a label, so nothing behind an open popup can be clicked through it). */}
+                folder or tab we open or which popup is on." In the breadcrumb on every page of the project. */}
             {inProject && openProject && (
-              <span className="relative z-[2000] inline-flex min-w-0 max-w-[55vw] sm:max-w-[26rem] items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3 shadow-sm ring-1 ring-slate-200" title={`${openProject.id} · ${openProject.name}`}>
+              <span className="inline-flex min-w-0 max-w-[55vw] sm:max-w-[26rem] items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3 shadow-sm ring-1 ring-slate-200" title={`${openProject.id} · ${openProject.name}`}>
                 <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary">{openProject.id}</span>
                 <span className="truncate text-sm font-bold text-slate-900">{openProject.name}</span>
               </span>
+            )}
+            {/* CR 344 - with a popup open: a slim tab from the top edge of the screen, centred, above the
+                popup's backdrop. Popups start below it, so it never sits on one. A label only. */}
+            {inProject && openProject && popupOpen && (
+              <div className="pointer-events-none fixed inset-x-0 top-0 z-[2000] flex justify-center" aria-hidden>
+                <span className="inline-flex max-w-[90vw] items-center gap-2 rounded-b-xl bg-slate-900/95 px-3.5 py-1 shadow-lg ring-1 ring-white/10" title={`${openProject.id} · ${openProject.name}`}>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Project</span>
+                  <span className="text-[11px] font-bold tabular-nums text-emerald-400">{openProject.id}</span>
+                  <span className="h-3 w-px bg-white/20" />
+                  <span className="truncate text-xs font-semibold text-white">{openProject.name}</span>
+                </span>
+              </div>
             )}
           </div>
 
