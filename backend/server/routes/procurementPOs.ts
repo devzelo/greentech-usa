@@ -12,11 +12,13 @@ import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
-import { ownerFilter, ownerPackage, linkIfEmpty } from "../lib/packageOwned";
+import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned } from "../lib/packageOwned";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
 router.use(procTabGuard(["proc-po"]));
+// CR 345 - an outside login never reaches a PO a work package owns.
+router.param("pid", guardOwned(ProcurementPO as never) as never);
 
 const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 
@@ -62,7 +64,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (req.body?.ownerPackageId && req.user!.role === "subcontractor") return res.status(403).json({ error: "Not allowed." });
     const rfq = await Rfq.findOne({ _id: rfqId, projectId: req.params.id });
     const quote = await VendorQuote.findOne({ _id: quoteId, rfqId, projectId: req.params.id });
-    if (!rfq || !quote) return res.status(404).json({ error: "RFQ or quote not found." });
+    if (!rfq || !quote || (rfq.ownerPackageId && req.user!.role === "subcontractor")) return res.status(404).json({ error: "RFQ or quote not found." });
     const vendor = await Vendor.findById(quote.vendorId);
     const lineItems = (rfq.lineItems || []).map((li) => {
       const ql = (quote.lineItems || []).find((x) => x.itemId === li.itemId);

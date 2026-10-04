@@ -25,6 +25,21 @@ export async function ownerFilter(projectId: string, query: Record<string, unkno
   return { ownerPackageId: { $in: ["", null] } };
 }
 
+/**
+ * For a router's :rid / :pid: an outside login never reaches a record a work package owns (the
+ * lists already leave them out; this closes the by-id routes too). Answers 404, as for a missing one.
+ */
+export function guardOwned(model: { findOne: (q: Record<string, unknown>) => { select: (f: string) => { lean: () => Promise<unknown> } } }) {
+  return async (req: { user?: { role?: string }; params: Record<string, string> }, res: { status: (n: number) => { json: (b: unknown) => void } }, next: (err?: unknown) => void, id: string) => {
+    try {
+      if (req.user?.role !== "subcontractor" || !mongoose.isValidObjectId(id)) return next();
+      const doc = await model.findOne({ _id: id, projectId: req.params.id }).select("ownerPackageId").lean() as { ownerPackageId?: string } | null;
+      if (doc?.ownerPackageId) return res.status(404).json({ error: "Not found" });
+      next();
+    } catch (err) { next(err); }
+  };
+}
+
 /** The package an owner id names, in this project (null when it is not one, or the caller is an outside login). */
 export async function ownerPackage(projectId: string, id: unknown, role = "") {
   if (role === "subcontractor") return null;

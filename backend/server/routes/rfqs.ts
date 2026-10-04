@@ -6,7 +6,7 @@ import path from "path";
 import Rfq from "../models/Rfq";
 import WorkPackage from "../models/WorkPackage";
 import { locksOf } from "../lib/workPackageLocks";
-import { ownerFilter, ownerPackage, linkIfEmpty } from "../lib/packageOwned";
+import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned } from "../lib/packageOwned";
 import Company from "../models/Company";
 import Project from "../models/Project";
 import User from "../models/User";
@@ -29,6 +29,8 @@ function humanSize(bytes: number): string {
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
 router.use(procTabGuard(["proc-rfqs"]));
+// CR 345 - an outside login never reaches an RFQ a work package owns.
+router.param("rid", guardOwned(Rfq as never) as never);
 
 // Writes gated by tabAccessGuard (requires "edit"); a guest granted RFQ-edit may write.
 const block = (_req: AuthedRequest, _res: Response) => false;
