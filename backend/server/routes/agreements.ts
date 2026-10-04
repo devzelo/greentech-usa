@@ -338,6 +338,24 @@ function buildAgreementRouter(ctx: Ctx): Router {
       if (ctx === "project" && !["partner", "subcontractor", "vendor"].includes(entityType)) {
         return res.status(400).json({ error: "ownerEntityType must be partner, subcontractor or vendor." });
       }
+      // CR 347 - made in a work package: the package must be in a project this agreement covers, and
+      // the person on that project's team (its owner, an assigned employee, or an admin).
+      let ownerPackageId = "";
+      if (b.ownerPackageId) {
+        const pkgId = String(b.ownerPackageId);
+        const covered = cleanLinkedProjects(b.linkedProjects).map((x) => x.id);
+        const pkg = mongoose.isValidObjectId(pkgId) && covered.length ? await WorkPackage.findOne({ _id: pkgId, projectId: { $in: covered } }).select("projectId").lean() : null;
+        if (!pkg) return res.status(400).json({ error: "That work package is not in a project this agreement covers." });
+        if (req.user!.role !== "admin") {
+          const [proj, me] = await Promise.all([
+            Project.findOne({ projectId: pkg.projectId }).select("ownerId assignedEmployees guests").lean(),
+            User.findById(req.user!.userId).select("empId").lean(),
+          ]);
+          const access = proj ? getProjectAccess(proj as never, req.user!.userId, (me as { empId?: string } | null)?.empId || "") : { role: "none" };
+          if (access.role !== "owner" && access.role !== "employee") return res.status(403).json({ error: "Only the project's team can make an agreement for its work packages." });
+        }
+        ownerPackageId = String(pkg._id);
+      }
       const ag = await Agreement.create({
         ownerContextType: ctx,
         ownerUserId: ctx === "user" ? String(req.params.uid) : "",
@@ -346,7 +364,7 @@ function buildAgreementRouter(ctx: Ctx): Router {
         ownerEntityType: entityType as AgreementEntityType,
         ownerEntityId: ctx === "project" ? String(b.ownerEntityId || "") : "",
         // CR 347 - made in a work package: the package owns it (it must be a real package).
-        ownerPackageId: b.ownerPackageId && mongoose.isValidObjectId(String(b.ownerPackageId)) && (await WorkPackage.exists({ _id: String(b.ownerPackageId) })) ? String(b.ownerPackageId) : "",
+        ownerPackageId,
         name: String(b.name || "").slice(0, 160),
         agreementNo: await nextAgreementNo(),   // CR-P (23) — server-assigned, never from the client
         title: String(b.title || "").slice(0, 200),
