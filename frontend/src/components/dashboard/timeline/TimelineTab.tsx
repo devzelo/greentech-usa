@@ -120,6 +120,9 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
   const [loadedFrom, setLoadedFrom] = useState("");                // "Draft" / "Version 3" when loaded into the editor
   const [importOpen, setImportOpen] = useState(false);
   const dragFrom = useRef<number | null>(null);
+  // CR 342 - phases are dragged into a new order too (by the handle on the phase row).
+  const dragPhase = useRef<string | null>(null);
+  const [phaseOver, setPhaseOver] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
   // Take the live timeline when it changes elsewhere and nothing is being edited here.
@@ -328,6 +331,14 @@ export default function TimelineTab({ project, canEdit, userName = "", onSchedul
     if (i < 0 || j < 0 || j >= catList.length) return;
     const next = [...catList];
     [next[i], next[j]] = [next[j], next[i]];
+    setCats(next);
+  };
+  /** CR 342 - put a dragged phase where it was dropped: before the phase dropped on when moving up, after it when moving down. */
+  const dropPhase = (from: string, onto: string) => {
+    const i = catList.indexOf(from), j = catList.indexOf(onto);
+    if (i < 0 || j < 0 || i === j) return;
+    const next = catList.filter((x) => x !== from);
+    next.splice(next.indexOf(onto) + (i < j ? 1 : 0), 0, from);
     setCats(next);
   };
   const deleteCategory = async (c: string) => {
@@ -1334,8 +1345,17 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
                         {/* CR 300 - a phase is a row of its own: numbered, typed, with its figures rolled up from its tasks.
                             CR 324 - tinted with the phase's colour. */}
                         {g.category && (
-                          <tr className="border-t border-slate-200" style={{ background: g.category === UNCATEGORISED ? "#f8fafc" : `${phColor}14`, boxShadow: phCritical ? `inset 3px 0 0 ${display.colors.critical}` : undefined }}>
-                            <td className="pl-2" />
+                          <tr
+                            draggable={canEdit && view === "all" && g.category !== UNCATEGORISED}
+                            onDragStart={(e: DragEvent) => { dragFrom.current = null; dragPhase.current = g.category; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", g.category); }}
+                            onDragOver={(e: DragEvent) => { if (dragPhase.current && dragPhase.current !== g.category && g.category !== UNCATEGORISED) { e.preventDefault(); setPhaseOver(g.category); } }}
+                            onDragLeave={() => setPhaseOver((v) => (v === g.category ? null : v))}
+                            onDrop={(e) => { e.preventDefault(); if (dragPhase.current) dropPhase(dragPhase.current, g.category); dragPhase.current = null; setPhaseOver(null); }}
+                            onDragEnd={() => { dragPhase.current = null; setPhaseOver(null); }}
+                            className={`border-t border-slate-200 ${phaseOver === g.category ? "outline outline-2 -outline-offset-2 outline-blue-400" : ""}`}
+                            style={{ background: phaseOver === g.category ? "#eff6ff" : g.category === UNCATEGORISED ? "#f8fafc" : `${phColor}14`, boxShadow: phCritical ? `inset 3px 0 0 ${display.colors.critical}` : undefined }}
+                          >
+                            <td className="pl-2 text-slate-400">{canEdit && view === "all" && g.category !== UNCATEGORISED && <span title="Drag to move the phase, with its tasks"><GripVertical size={14} className="cursor-grab" /></span>}</td>
                             {cols.map((k) => P[k])}
                             <td className={cell} />
                             <td className={`${cell} text-right`}>
@@ -1481,7 +1501,7 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
                         <tr
                           key={m.id}
                           draggable={canEdit && view === "all"}
-                          onDragStart={() => { dragFrom.current = index; }}
+                          onDragStart={() => { dragPhase.current = null; dragFrom.current = index; }}
                           onDragOver={(e: DragEvent) => { if (dragFrom.current !== null) { e.preventDefault(); setDragOver(index); } }}
                           onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
                           onDrop={(e) => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current, index); dragFrom.current = null; setDragOver(null); }}
@@ -1533,7 +1553,7 @@ Nothing is lost: tick "Show archived" in History, or open the Archive page, to f
             {rows.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
                 <span className="flex items-center gap-3">
-                  {canEdit && <span className="inline-flex items-center gap-1"><GripVertical size={12} /> Drag rows to reorder</span>}
+                  {canEdit && <span className="inline-flex items-center gap-1"><GripVertical size={12} /> Drag tasks, or whole phases, to reorder</span>}
                   {canEdit && <button type="button" onClick={sortByDate} className="font-bold text-slate-500 hover:text-primary">Sort by planned start</button>}
                 </span>
                 <span>Dates can overlap; phases do not depend on each other. Red actual dates are later than the baseline.</span>
