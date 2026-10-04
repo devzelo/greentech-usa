@@ -42,7 +42,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     // CR-PR-07 — hide archived RFQs by default; ?archived=true returns only archived ones.
     const arch = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
     // CR 345 - Procurement lists its own RFQs; a work package's view lists the package's (?package=).
-    const rfqs = await Rfq.find({ projectId: req.params.id, ...arch, ...(await ownerFilter(req.params.id, req.query, "rfqId")) }).sort({ createdAt: 1 }).lean();
+    const rfqs = await Rfq.find({ projectId: req.params.id, ...arch, ...(await ownerFilter(req.params.id, req.query, "rfqId", req.user!.role)) }).sort({ createdAt: 1 }).lean();
     const quotes = await VendorQuote.find({ projectId: req.params.id }).lean();
     const byRfq: Record<string, unknown[]> = {};
     for (const q of quotes) (byRfq[String(q.rfqId)] ||= []).push(q);
@@ -99,6 +99,10 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     const { title, lineItems, includesShipping, includesTax, notes, shipToLocation, deliveryMethod } = req.body || {};
     // CR 335 - the Create RFQ form's own fields (dates, currency, requests, target prices).
     const extra = formFields(req.body || {});
+    // CR 345 - made for a work package: GreenTech staff only, and the package must be this project's.
+    if (req.body?.ownerPackageId && req.user!.role === "subcontractor") return res.status(403).json({ error: "Not allowed." });
+    const owner = req.body?.ownerPackageId ? await ownerPackage(req.params.id, req.body.ownerPackageId, req.user!.role) : null;
+    if (req.body?.ownerPackageId && !owner) return res.status(404).json({ error: "That work package is not in this project." });
     // G — numbers-only, per-project, RFQ range starts at 7000. Use max-existing+1 (not count+1)
     // so deleting an RFQ never lets the next one reuse a number (CR-PR-06 durable uniqueness).
     const existingRfqs = await Rfq.find({ projectId: req.params.id }).select("rfqNo").lean();
@@ -116,8 +120,6 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     });
     await logEvent(req, { entityId: String(rfq._id), action: "created", toValue: rfqNo });
     // CR 345 - made in a work package's view: the package owns it (and links it when it has no RFQ yet).
-    const owner = req.body?.ownerPackageId ? await ownerPackage(req.params.id, req.body.ownerPackageId) : null;
-    if (req.body?.ownerPackageId && !owner) { await rfq.deleteOne(); return res.status(404).json({ error: "That work package is not in this project." }); }
     if (owner) {
       rfq.ownerPackageId = String(owner._id);
       await rfq.save();
