@@ -41,7 +41,7 @@ function coDocument(projectId: string, c: Record<string, unknown>) {
 }
 
 /** What a person may set on a package. Links are checked against this project before they are kept. */
-async function clean(projectId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function clean(projectId: string, body: Record<string, unknown>, current?: { _id: unknown; rfqId?: string; poId?: string }): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
   if (body.name !== undefined) out.name = str(body.name, 160).trim();
   if (body.description !== undefined) out.description = str(body.description, 2000).trim();
@@ -63,13 +63,16 @@ async function clean(projectId: string, body: Record<string, unknown>): Promise<
       if (name && !c) out.notInDirectory = name;
     }
   }
+  // CR 346 - a package's RFQ and PO are its own (made in it), never Procurement's: only one the
+  // package owns is accepted, or the one it already has (linked before the two were kept apart).
+  const own = current ? String(current._id) : "-";
   if (body.rfqId !== undefined) {
     const id = oid(body.rfqId);
-    out.rfqId = id && (await Rfq.exists({ _id: id, projectId })) ? id : "";
+    out.rfqId = id && (id === current?.rfqId || await Rfq.exists({ _id: id, projectId, ownerPackageId: own })) ? id : "";
   }
   if (body.poId !== undefined) {
     const id = oid(body.poId);
-    out.poId = id && (await ProcurementPO.exists({ _id: id, projectId })) ? id : "";
+    out.poId = id && (id === current?.poId || await ProcurementPO.exists({ _id: id, projectId, ownerPackageId: own })) ? id : "";
   }
   if (body.agreementId !== undefined) {
     const id = oid(body.agreementId);
@@ -204,7 +207,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
 router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const showMoney = await figures(req);
-    const body = await clean(req.params.id, req.body || {});
+    const body = await clean(req.params.id, { ...(req.body || {}), rfqId: undefined, poId: undefined });
     if (!body.name) return res.status(400).json({ error: "Give the work package a name." });
     if (body.notInDirectory) return res.status(400).json({ error: notInDirectory(body.notInDirectory) });
     // Someone who cannot see the figures cannot set them either.
@@ -252,7 +255,7 @@ router.patch("/:wid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const doc = await WorkPackage.findOne({ _id: req.params.wid, projectId: req.params.id });
     if (!doc) return res.status(404).json({ error: "Not found" });
     const showMoney = await figures(req);
-    const body = await clean(req.params.id, req.body || {});
+    const body = await clean(req.params.id, req.body || {}, doc);
     if (body.name === "") delete body.name;
     if (body.notInDirectory) return res.status(400).json({ error: notInDirectory(body.notInDirectory) });
     // Someone who cannot see the figures cannot change them either.

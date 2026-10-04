@@ -2297,7 +2297,7 @@ export const RFQ_REQUESTS: Array<{ key: RfqRequestKey; label: string }> = [
   { key: "other", label: "Other (see the notes)" },
 ];
 /** CR 335 - the fields the Create RFQ form sets, on create and on edit. */
-export type RfqFormFields = { title: string; notes: string; shipToLocation: string; deliveryMethod: string; lineItems: RfqLineItem[]; date: string; dueDate: string; currency: string; requests: RfqRequestKey[]; showTargetPrices: boolean; workPackageId: string };
+export type RfqFormFields = { title: string; notes: string; shipToLocation: string; deliveryMethod: string; lineItems: RfqLineItem[]; date: string; dueDate: string; currency: string; requests: RfqRequestKey[]; showTargetPrices: boolean };
 
 export async function fetchVendors(projectId: string): Promise<ApiVendor[]> { return request(`/projects/${projectId}/vendors`); }
 export async function addVendor(projectId: string, body: Partial<ApiVendor>): Promise<ApiVendor> { return request(`/projects/${projectId}/vendors`, { method: 'POST', body: JSON.stringify(body) }); }

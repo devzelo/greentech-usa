@@ -6,9 +6,9 @@ import {
   FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
-  createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
+  createWorkPackage, deleteWorkPackage, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
   createAgreement, createManualPO, createProcurementPO, fetchAgreements, fetchCompany, updateProcurementPO, uploadDocument, documentUrl, attachmentUrl,
-  type ApiAgreement, type ApiChangeOrder, type ApiProcurementPO, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
+  type ApiAgreement, type ApiChangeOrder, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -567,18 +567,12 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
   const who = f.responsible!;
   const subs = f.subtasks || [];
   const cos = f.changeOrders || [];
-  // The project's RFQs, POs and agreements, to link one that already exists.
+  // CR 346 - the package's own RFQs (for the awarded quote a PO is made from) and agreements (for
+  // the contract value). Nothing is picked from Procurement: a package's records are made in it.
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
-  const [pos, setPos] = useState<ApiProcurementPO[]>([]);
   const [agrs, setAgrs] = useState<ApiAgreement[]>([]);
   useEffect(() => {
-    // CR 345 - Procurement's own records, and this package's own (they are kept apart).
-    const merge = <T extends { _id: string }>(a: T[], b: T[]) => [...a, ...b.filter((x) => !a.some((y) => y._id === x._id))];
-    void Promise.all([fetchRfqs(project.id).catch(() => []), pkg ? fetchRfqs(project.id, false, { package: pkg._id }).catch(() => []) : []]).then(([a, b]) => setRfqs(merge(a, b)));
-    void Promise.all([fetchProcurementPOs(project.id).catch(() => []), pkg ? fetchProcurementPOs(project.id, false, { package: pkg._id }).catch(() => []) : []]).then(([a, b]) => setPos(merge(a, b)));
-    // The project's own agreements, and the General Agreements that cover this project (GT
-    // Comments 3: "Existing RFQ, PO, and Agreement builders from Procurement and General
-    // Agreements should be reused").
+    if (pkg) fetchRfqs(project.id, false, { package: pkg._id }).then(setRfqs).catch(() => setRfqs([]));
     Promise.all([
       fetchProjectAgreements(project.id).catch(() => [] as ApiAgreement[]),
       fetchAgreements({ kind: "general" }).then((l) => l.filter((a) => (a.linkedProjects || []).some((lp) => lp.id === project.id))).catch(() => [] as ApiAgreement[]),
@@ -735,41 +729,39 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
         </Section>
 
         {outside && (
-          <Section n={3} title="Commercial" note="Make the RFQ, the PO or the agreement from here, or link one that already exists. They are the usual Procurement and agreement records: the table follows them (quotes, winner, value, payments).">
-            {!pkg && <p className={`rounded-lg bg-amber-50 px-2.5 py-1.5 ${hint} text-amber-800`}>Save the package first; its RFQ, PO and agreement can then be made from here.</p>}
-            {/* RFQ */}
-            <div>
-              <span className={lbl}>RFQ</span>
-              <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="RFQ"><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                {f.rfqId
-                  ? <button type="button" onClick={() => openHere({ tab: "rfq", rfqId: f.rfqId })} className={linkBtn}><FileText size={11} /> Open the RFQ</button>
-                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
+          <Section n={3} title="Commercial" note="The package's own RFQ, purchase order and agreement. They are made and kept here, in the package, apart from Procurement; the table follows them (quotes, winner, value, payments).">
+            {!pkg && <p className={`rounded-lg bg-amber-50 px-2.5 py-1.5 ${hint} text-amber-800`}>Save the package first; its RFQ, PO and agreement are then made here.</p>}
+            {pkg && (
+              <div className="space-y-2">
+                {/* CR 346 - each one: the package's own record (open it), or Create. Nothing is chosen from Procurement. */}
+                {([
+                  { k: "rfq" as const, label: "RFQ", has: !!f.rfqId, rec: f.rfqId && pkg.rfq?.id === f.rfqId ? { no: `RFQ ${pkg.rfq.no}`, sub: [pkg.rfq.status, pkg.quotes.count ? `${pkg.quotes.count} quote${pkg.quotes.count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") } : null,
+                    open: () => openHere({ tab: "rfq", rfqId: f.rfqId }), make: makeRfq, makeLabel: "Create an RFQ",
+                    help: `Opens the Create RFQ window here, filled from the package${who.companyId ? `, with ${who.name} as the first vendor` : ""}.` },
+                  { k: "po" as const, label: "Purchase order", has: !!f.poId, rec: f.poId && pkg.po?.id === f.poId ? { no: pkg.po.no, sub: pkg.po.signed ? "Signed" : pkg.po.status } : null,
+                    open: () => openHere({ tab: "po", poId: f.poId }), make: makePo, makeLabel: "Create a PO",
+                    help: linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one first, or make the PO now and price it.` : "A PO for the package's company with the package as its line; priced in the PO." },
+                  { k: "agreement" as const, label: "Agreement", has: !!f.agreementId, rec: f.agreementId && pkg.agreement?.id === f.agreementId ? { no: pkg.agreement.no, sub: pkg.agreement.status } : null,
+                    open: () => openHere({ tab: "agreement" }), make: makeAgreement, makeLabel: "Create an agreement",
+                    help: `With ${who.name || "the package's company"} as the other party, titled with the package's name; written and signed here.` },
+                ]).map((x) => (
+                  <div key={x.k} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><FileText size={14} /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{x.label}</p>
+                      {x.has
+                        ? <p className="text-xs font-bold text-slate-800 truncate">{x.rec ? x.rec.no : "Made"}{x.rec?.sub && <span className="ml-1.5 font-semibold text-slate-400">{x.rec.sub}</span>}</p>
+                        : <p className={`${hint} line-clamp-2`} title={x.help}>{x.help}</p>}
+                      {x.has && x.k !== "rfq" && lockedNote(x.k)}
+                    </div>
+                    {x.has
+                      ? <button type="button" onClick={x.open} className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Eye size={12} /> Open</button>
+                      : canEdit && !locked && <button type="button" onClick={() => void x.make()} disabled={!!making || !scope().name || looseCompany} className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-primary disabled:opacity-50">{making === x.k ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {x.makeLabel}</button>}
+                  </div>
+                ))}
+                <button type="button" onClick={() => openHere({ tab: "rfq" })} className={`${linkBtn} mt-1`}><Boxes size={11} /> Open all of this package's RFQs, quotes and POs</button>
               </div>
-              {!f.rfqId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
-            </div>
-            {/* PO */}
-            <div>
-              <span className={lbl}>Purchase order</span>
-              <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Purchase order"><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                {f.poId
-                  ? <><button type="button" onClick={() => openHere({ tab: "po", poId: f.poId })} className={linkBtn}><FileText size={11} /> Open the PO</button>{lockedNote("po")}</>
-                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
-              </div>
-              {!f.poId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
-            </div>
-            {/* Agreement */}
-            <div>
-              <span className={lbl}>Agreement</span>
-              <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Agreement"><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status}){a.ownerContextType === "general" ? " · General" : ""}</option>)}</select>
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                {f.agreementId
-                  ? <><button type="button" onClick={() => openHere({ tab: "agreement" })} className={linkBtn}><FileText size={11} /> Open the agreement</button>{lockedNote("agreement")}</>
-                  : pkg && canEdit && !locked && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
-              </div>
-              {!f.agreementId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}
-            </div>
+            )}
           </Section>
         )}
 

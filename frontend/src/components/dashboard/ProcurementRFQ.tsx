@@ -272,7 +272,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     let rfq: ApiRfq;
     try {
       // CR 345 - inside a work package the package owns the RFQ (its own link is not re-set from the form).
-      const fields = ownerPackage ? (({ workPackageId: _w, ...rest }) => { void _w; return rest; })(r.fields) : r.fields;
+      const fields = r.fields;
       rfq = base ? { ...base, ...(await updateRfq(projectId, base._id, fields)) } : await createRfq(projectId, { ...fields, ...(ownerPackage ? { ownerPackageId: ownerPackage.id } : {}) });
       onChanged?.();
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save the RFQ.", "error"); return false; }
@@ -647,7 +647,6 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                     <span><b className="text-slate-700">Date</b> {rfq.date || rfq.createdAt?.slice(0, 10) || "-"}</span>
                     <span><b className="text-slate-700">Reply by</b> {rfq.dueDate || <span className="text-amber-600">not set</span>}</span>
                     <span><b className="text-slate-700">Currency</b> {rfq.currency || "USD"}</span>
-                    {rfq.workPackageId && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-700">Work package linked</span>}
                     {(rfq.requests || []).length > 0 && <span title={RFQ_REQUESTS.filter((q) => (rfq.requests || []).includes(q.key)).map((q) => q.label).join("\n")}><b className="text-slate-700">Asks for</b> {RFQ_REQUESTS.filter((q) => (rfq.requests || []).includes(q.key)).map((q) => q.label.split(/[ (/,]/)[0].toLowerCase()).join(", ")}</span>}
                     {rfq.showTargetPrices && <span className="text-violet-600 font-bold">Target prices shown to vendors</span>}
                   </div>

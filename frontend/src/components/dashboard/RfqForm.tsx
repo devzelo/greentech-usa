@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { ArrowDown, ArrowUp, BookOpen, BookmarkPlus, Building2, Check, Copy, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from "lucide-react";
 import {
-  fetchWorkPackages, withFileToken, RFQ_REQUESTS, fetchLibraryItems, saveLibraryItems, deleteLibraryItem, markLibraryItemsUsed,
-  type ApiLibraryItem, type ApiCompany, type ApiProcurementItem, type ApiRfq, type ApiWorkPackage, type RfqFormFields, type RfqLineFile, type RfqLineItem, type RfqRequestKey,
+  withFileToken, RFQ_REQUESTS, fetchLibraryItems, saveLibraryItems, deleteLibraryItem, markLibraryItemsUsed,
+  type ApiLibraryItem, type ApiCompany, type ApiProcurementItem, type ApiRfq, type RfqFormFields, type RfqLineFile, type RfqLineItem, type RfqRequestKey,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
@@ -73,7 +73,6 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   const [date, setDate] = useState(rfq?.date || (rfq?.createdAt ? rfq.createdAt.slice(0, 10) : today()));
   const [dueDate, setDueDate] = useState(rfq?.dueDate || (rfq ? "" : inTwoWeeks()));
   const [currency, setCurrency] = useState(rfq?.currency || "USD");
-  const [workPackageId, setWorkPackageId] = useState(rfq?.workPackageId || "");
   const [notes, setNotes] = useState(rfq?.notes || seed?.notes || "");
   const [deliveryMethod, setDeliveryMethod] = useState(rfq?.deliveryMethod || "Delivery");
   const [shipTo, setShipTo] = useState(rfq?.shipToLocation || "");
@@ -87,9 +86,6 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   const [emailVendors, setEmailVendors] = useState(true);
   const [tried, setTried] = useState(false);
 
-  // The project's work packages (hidden for someone without the Project Management tab).
-  const [packages, setPackages] = useState<ApiWorkPackage[] | null>(null);
-  useEffect(() => { fetchWorkPackages(projectId).then((r) => setPackages(r.packages.filter((p) => !p.archived || p._id === workPackageId))).catch(() => setPackages(null)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
 
   // ── Vendors ──
   const [vSearch, setVSearch] = useState("");
@@ -169,7 +165,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
 
   // ── Saving ──
   const fields = (): RfqFormFields => ({
-    title: title.trim(), notes, shipToLocation: shipTo, deliveryMethod, date, dueDate, currency, requests, showTargetPrices: showTargets, workPackageId,
+    title: title.trim(), notes, shipToLocation: shipTo, deliveryMethod, date, dueDate, currency, requests, showTargetPrices: showTargets,
     lineItems: rows.filter((r) => r.description.trim() || n(r.qty)).map(({ key: _k, ...r }) => { void _k; return r; }),
   });
   const problems = (send: boolean): string[] => {
@@ -254,22 +250,14 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                 <label className="block"><span className={lbl}>Date *</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${inp} ${err(!date)}`} /></label>
                 <label className="block"><span className={lbl}>Response due date *</span><input type="date" value={dueDate} min={date || undefined} onChange={(e) => setDueDate(e.target.value)} className={`${inp} ${err(!dueDate || dueDate < date)}`} /></label>
                 <label className="block"><span className={lbl}>Project</span><input value={projectName} disabled className={inp} /></label>
-                <label className="block">
-                  <span className={lbl}>Work package <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
-                  {ownerPackage
-                    ? <input value={ownerPackage.name} disabled className={inp} title="This RFQ belongs to the work package it is made in" />
-                    : packages === null
-                    ? <input value="Not available" disabled className={inp} />
-                    : (
-                      <select value={workPackageId} onChange={(e) => setWorkPackageId(e.target.value)} className={inp}>
-                        <option value="">None</option>
-                        {packages.map((p) => {
-                          const taken = !!p.rfqId && p.rfqId !== rfq?._id;
-                          return <option key={p._id} value={p._id} disabled={taken}>{p.order}.0 {p.name}{taken ? " (has an RFQ)" : ""}</option>;
-                        })}
-                      </select>
-                    )}
-                </label>
+                {/* CR 346 - work packages and Procurement are kept apart: only an RFQ made inside a
+                    package names it (fixed); Procurement's RFQs never link to one. */}
+                {ownerPackage && (
+                  <label className="block">
+                    <span className={lbl}>Work package</span>
+                    <input value={ownerPackage.name} disabled className={inp} title="This RFQ belongs to the work package it is made in" />
+                  </label>
+                )}
                 <label className="block"><span className={lbl}>Currency *</span>
                   <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inp}>{[...new Set([currency, ...CURRENCIES])].map((c) => <option key={c} value={c}>{c}</option>)}</select>
                 </label>

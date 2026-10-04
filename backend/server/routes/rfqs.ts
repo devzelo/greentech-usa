@@ -5,7 +5,6 @@ import fs from "fs";
 import path from "path";
 import Rfq from "../models/Rfq";
 import WorkPackage from "../models/WorkPackage";
-import { locksOf } from "../lib/workPackageLocks";
 import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned } from "../lib/packageOwned";
 import Company from "../models/Company";
 import Project from "../models/Project";
@@ -73,25 +72,6 @@ async function packageOf(projectId: string, rid: string): Promise<string> {
   const p = await WorkPackage.findOne({ projectId, rfqId: rid }).select("_id").lean();
   return p ? String(p._id) : "";
 }
-/**
- * CR 335 - link the RFQ to a work package ("" unlinks it). The package holds the link (its rfqId),
- * as when the RFQ is made from the package. A package bound to a signed PO or agreement keeps its
- * links (CR 328), and a package already on another RFQ is not taken over.
- */
-async function linkPackage(projectId: string, rid: string, wpId: string): Promise<string> {
-  const target = wpId ? await WorkPackage.findOne({ _id: mongoose.isValidObjectId(wpId) ? wpId : null, projectId }) : null;
-  if (wpId && !target) return "That work package is not in this project.";
-  if (target && target.rfqId === rid) return "";
-  if (target?.rfqId) return `"${target.name}" is already linked to another RFQ. Unlink it on the work package first.`;
-  const current = await WorkPackage.find({ projectId, rfqId: rid });
-  for (const p of [...current, ...(target ? [target] : [])]) {
-    const locks = await locksOf(projectId, p);
-    if (locks.length) return `"${p.name}" is locked: ${locks[0].no} is ${locks[0].label}. Its links stay as they are.`;
-  }
-  for (const p of current) { p.rfqId = ""; await p.save(); }
-  if (target) { target.rfqId = rid; await target.save(); }
-  return "";
-}
 
 // STEP 1a — Create an RFQ (a DRAFT request) from selected BOQ items (line items snapshot).
 // Items are NOT advanced yet; that happens when the request is actually sent to vendors (see /send).
@@ -128,14 +108,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       await linkIfEmpty(req.params.id, String(owner._id), "rfqId", String(rfq._id));
       return res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId: String(owner._id) });
     }
-    // The work package it is for (optional): the package keeps the link (its rfqId).
-    let workPackageId = "";
-    if (typeof req.body?.workPackageId === "string" && req.body.workPackageId && req.user!.role !== "subcontractor") {
-      const err = await linkPackage(req.params.id, String(rfq._id), req.body.workPackageId);
-      if (err) { await rfq.deleteOne(); return res.status(409).json({ error: err }); }
-      workPackageId = req.body.workPackageId;
-    }
-    res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId });
+    // CR 346 - a Procurement RFQ never links to a work package (they are kept apart).
+    res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId: "" });
   } catch (err) { next(err); }
 });
 
@@ -162,11 +136,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     const patch: Record<string, unknown> = {};
     for (const f of ["title", "notes", "includesShipping", "includesTax", "shipToLocation", "deliveryMethod", "status", "lineItems", "recipients", "archived", "assignedTo"]) if (f in (req.body || {})) patch[f] = req.body[f];
     Object.assign(patch, formFields(req.body || {}));
-    // Work packages are GreenTech's internal list (CR 328): an outside login cannot relink one.
-    if (typeof req.body?.workPackageId === "string" && req.user!.role !== "subcontractor") {
-      const err = await linkPackage(req.params.id, req.params.rid, req.body.workPackageId);
-      if (err) return res.status(409).json({ error: err });
-    }
+    // CR 346 - linking an RFQ to a work package from Procurement is gone (they are kept apart).
     // Per-item docs (CR-PR-03) are uploaded separately, so a wholesale lineItems PATCH must NOT
     // wipe them — preserve each existing line's attachments by _id when the client omits them.
     if (Array.isArray(patch.lineItems)) {
