@@ -35,6 +35,7 @@ import NotificationBell from "./NotificationBell";
 import { FiguresToggle } from "./FiguresPrivacy";
 import Toolbox from "../toolbox/Toolbox";
 import NewRecordMenu from "./NewRecordMenu";
+import { useCurrentProject } from "../../lib/currentProject";
 import PoweredByProjnell from "../PoweredByProjnell";
 import projnellMark from "@/assets/projnell-mark.png";
 
@@ -175,6 +176,9 @@ export default function DashboardLayout() {
   // Breadcrumb: "Overview" is the root (→ /dashboard). On the overview page itself it shows just
   // once; on any other page it reads "Overview › <Page>", both crumbs clickable.
   const isOverview = location.pathname === "/dashboard";
+  // CR 343 - the project that is open, named in the top bar on every page of it.
+  const openProject = useCurrentProject();
+  const inProject = !!openProject && location.pathname.startsWith(`/dashboard/projects/${openProject.id}`);
   const activeNav = [...sidebarLinks, ...secondaryLinks].find(link => link.path === location.pathname);
   const seg = location.pathname.replace(/^\/dashboard\/?/, "").split("/")[0];
   const activeLink = activeNav?.name || (seg ? seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " ") : "Overview");
@@ -426,10 +430,20 @@ export default function DashboardLayout() {
                   <>
                     <Link to="/dashboard" onClick={(e) => guardedGo(e, "/dashboard")} className="text-slate-400 font-medium hover:text-primary transition-colors">Overview</Link>
                     <ChevronRight size={14} className="text-slate-300" />
-                    <Link to={location.pathname} className="text-slate-900 font-bold tracking-tight hover:text-primary transition-colors">{activeLink}</Link>
+                    <Link to={location.pathname} className={`${inProject ? "text-slate-400 font-medium" : "text-slate-900 font-bold tracking-tight"} hover:text-primary transition-colors`}>{activeLink}</Link>
+                    {inProject && <ChevronRight size={14} className="text-slate-300" />}
                   </>
                 )}
             </div>
+            {/* CR 343 - "Project name should be always visible somewhere in the page, no matter which
+                folder or tab we open or which popup is on." Drawn above every popup's backdrop (it
+                is only a label, so nothing behind an open popup can be clicked through it). */}
+            {inProject && openProject && (
+              <span className="relative z-[2000] inline-flex min-w-0 max-w-[55vw] sm:max-w-[26rem] items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3 shadow-sm ring-1 ring-slate-200" title={`${openProject.id} · ${openProject.name}`}>
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary">{openProject.id}</span>
+                <span className="truncate text-sm font-bold text-slate-900">{openProject.name}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">

@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
+import { setCurrentProject } from "../../lib/currentProject";
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -313,6 +314,9 @@ export default function ProjectWorkspace() {
 
   // Core data
   const [project, setProject] = useState<ApiProject | null>(null);
+  // CR 343 - the top bar always shows which project is open, above any popup.
+  useEffect(() => { if (project) setCurrentProject({ id: project.id, name: project.name }); }, [project?.id, project?.name]);
+  useEffect(() => () => setCurrentProject(null), []);
   useMeta({
     title: project?.name ? `${project.name} — Workspace` : `Project ${id || ""} — Workspace`,
     description: project?.description || "Project workspace — manage tabs, documents, finances, and team.",
