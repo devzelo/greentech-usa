@@ -41,6 +41,7 @@ export interface IRfq extends Document {
   attachments: IRfqLineFile[];
   // CR 338 - each copy emailed to a vendor: to whom, when, by whom, and whether the mail went out.
   emails: Array<{ vendorId: string; to: string; at: Date; byName: string; ok: boolean }>;
+  ownerPackageId: string;   // CR 345 - the work package this RFQ belongs to ("" = Procurement's own)
   assignedTo: string;       // CR-B-19 — colleague tagged to edit/review/verify this RFQ
   addedByName: string;
   archived: boolean;        // CR-PR-07 — archived RFQs are hidden from the normal list.
@@ -75,6 +76,7 @@ const RfqSchema = new Schema<IRfq>(
     attachments: { type: [RfqLineFileSchema], default: [] },
     emails: { type: [{ vendorId: { type: String, default: "" }, to: { type: String, default: "" }, at: { type: Date, default: Date.now }, byName: { type: String, default: "" }, ok: { type: Boolean, default: false }, _id: false }], default: [] },
     assignedTo: { type: String, default: "" },
+    ownerPackageId: { type: String, default: "", index: true },
     addedByName: { type: String, default: "" },
     archived: { type: Boolean, default: false },
   },

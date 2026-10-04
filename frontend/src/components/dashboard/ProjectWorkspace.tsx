@@ -5506,7 +5506,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   ) : null,
                 },
                 // CR 328 - the master list of what the project has to get done, after the schedule.
-                { id: "work-packages", label: "Work Packages", icon: <Boxes size={16} />, content: project ? <WorkPackages project={project} canEdit={canEdit} /> : null },
+                { id: "work-packages", label: "Work Packages", icon: <Boxes size={16} />, content: project ? <WorkPackages project={project} canEdit={canEdit} projectInfo={projectPdfInfo(project)} /> : null },
               ]}
               // CR 208 - minutes written in the platform sit above the uploads in that tab.
               above={{

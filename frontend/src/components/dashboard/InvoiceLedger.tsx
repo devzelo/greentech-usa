@@ -134,7 +134,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     fetchCompanyBanks().then(setCompanyBanks).catch(() => {});
     if (isSent) fetchProjectAgreements(projectId).then(setAgreements).catch(() => {});
     fetchSignatories().then(setSignatories).catch(() => {});
-    fetchRfqs(projectId).then(setRfqList).catch(() => {});
+    fetchRfqs(projectId, false, { all: true }).then(setRfqList).catch(() => {});
   }, [projectId]);
   // Distinct saved banks from prior invoices (CR-I-04 bank dropdown) + templates (CR-I-07).
   const savedBanks = (() => { const seen = new Set<string>(); const out: InvoiceBank[] = []; for (const r of rows) { const b = r.bank; if (b?.name && !seen.has(b.name)) { seen.add(b.name); out.push(b); } } return out; })();
@@ -288,7 +288,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     try {
       const [inv, p, v] = await Promise.all([
         fetchInvoices(projectId, kind),
-        fetchProcurementPOs(projectId).catch(() => [] as ApiProcurementPO[]),
+        fetchProcurementPOs(projectId, false, { all: true }).catch(() => [] as ApiProcurementPO[]),   // CR 345 - work package POs too
         fetchVendors(projectId).catch(() => [] as ApiVendor[]),
       ]);
       setRows(inv); setPOs(p); setVendors(v);

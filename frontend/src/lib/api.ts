@@ -2281,6 +2281,8 @@ export interface ApiRfq {
   /** CR 335 - the Create RFQ form: dates, currency, what vendors are asked for, documents, the work package. */
   date?: string; dueDate?: string; currency?: string; requests?: RfqRequestKey[]; showTargetPrices?: boolean;
   attachments?: RfqLineFile[]; workPackageId?: string;
+  /** CR 345 - the work package this RFQ belongs to ("" = Procurement's own). */
+  ownerPackageId?: string;
   /** CR 338 - each copy emailed to a vendor. */
   emails?: RfqEmail[];
 }
@@ -2303,8 +2305,21 @@ export async function updateVendor(projectId: string, vid: string, body: Partial
 export async function deleteVendor(projectId: string, vid: string): Promise<void> { await request(`/projects/${projectId}/vendors/${vid}`, { method: 'DELETE' }); }
 
 const rfqBase = (projectId: string) => `/projects/${projectId}/rfqs`;
-export async function fetchRfqs(projectId: string, archived = false): Promise<ApiRfq[]> { return request(`${rfqBase(projectId)}${archived ? '?archived=true' : ''}`); }
-export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string } & Partial<RfqFormFields>): Promise<ApiRfq> {
+/**
+ * CR 345 - which RFQs / POs a list holds: Procurement's own (default), one work package's
+ * ({ package }), or every one ({ all }: finance views that reach a PO from an invoice or expense).
+ */
+export type OwnerScope = { package?: string; all?: boolean };
+const scopeQs = (archived: boolean, scope: OwnerScope = {}) => {
+  const qs = new URLSearchParams();
+  if (archived) qs.set("archived", "true");
+  if (scope.package) qs.set("package", scope.package);
+  if (scope.all) qs.set("all", "1");
+  const s = qs.toString();
+  return s ? `?${s}` : "";
+};
+export async function fetchRfqs(projectId: string, archived = false, scope: OwnerScope = {}): Promise<ApiRfq[]> { return request(`${rfqBase(projectId)}${scopeQs(archived, scope)}`); }
+export async function createRfq(projectId: string, body: { title?: string; lineItems: RfqLineItem[]; includesShipping?: boolean; includesTax?: boolean; notes?: string; shipToLocation?: string; deliveryMethod?: string; ownerPackageId?: string } & Partial<RfqFormFields>): Promise<ApiRfq> {
   return request(rfqBase(projectId), { method: 'POST', body: JSON.stringify(body) });
 }
 export async function updateRfq(projectId: string, rid: string, body: Partial<{ title: string; notes: string; includesShipping: boolean; includesTax: boolean; shipToLocation: string; deliveryMethod: string; status: RfqStatus; lineItems: RfqLineItem[]; recipients: RfqRecipient[]; archived: boolean; assignedTo: string } & RfqFormFields>): Promise<ApiRfq> {
@@ -2941,20 +2956,20 @@ export type PoPatch = Partial<Pick<ApiProcurementPO,
   "signerName" | "signerEmail" | "signerPhone" | "signerTitle" | "signatureUrl" | "stampUrl" |
   "partnerSignerName" | "partnerSignerEmail" | "partnerSignerPhone" | "partnerSignatureUrl" | "partnerStampUrl" | "assignedTo">>;
 const poBase = (projectId: string) => `/projects/${projectId}/procurement-pos`;
-export async function fetchProcurementPOs(projectId: string, archived = false): Promise<ApiProcurementPO[]> { return request(`${poBase(projectId)}${archived ? "?archived=true" : ""}`); }
+export async function fetchProcurementPOs(projectId: string, archived = false, scope: OwnerScope = {}): Promise<ApiProcurementPO[]> { return request(`${poBase(projectId)}${scopeQs(archived, scope)}`); }
 export async function setProcurementPOArchived(projectId: string, pid: string, archived: boolean): Promise<ApiProcurementPO> {
   return request(`${poBase(projectId)}/${pid}`, { method: "PATCH", body: JSON.stringify({ archived }) });
 }
-export async function createProcurementPO(projectId: string, rfqId: string, quoteId: string): Promise<ApiProcurementPO> {
-  return request(poBase(projectId), { method: 'POST', body: JSON.stringify({ rfqId, quoteId }) });
+export async function createProcurementPO(projectId: string, rfqId: string, quoteId: string, ownerPackageId = ""): Promise<ApiProcurementPO> {
+  return request(poBase(projectId), { method: 'POST', body: JSON.stringify({ rfqId, quoteId, ...(ownerPackageId ? { ownerPackageId } : {}) }) });
 }
 // §H — create a PO directly from selected BOQ items (fill vendor/prices in the PO tab).
 export async function createPOFromItems(projectId: string, itemIds: string[]): Promise<ApiProcurementPO> {
   return request(`${poBase(projectId)}/from-items`, { method: 'POST', body: JSON.stringify({ itemIds }) });
 }
 // CR-PR-06 — a manual PO not tied to a BOQ/RFQ/approved quote (starts empty).
-export async function createManualPO(projectId: string, vendorName = ""): Promise<ApiProcurementPO> {
-  return request(`${poBase(projectId)}/manual`, { method: 'POST', body: JSON.stringify({ vendorName }) });
+export async function createManualPO(projectId: string, vendorName = "", ownerPackageId = ""): Promise<ApiProcurementPO> {
+  return request(`${poBase(projectId)}/manual`, { method: 'POST', body: JSON.stringify({ vendorName, ...(ownerPackageId ? { ownerPackageId } : {}) }) });
 }
 export async function updateProcurementPO(projectId: string, pid: string, body: PoPatch): Promise<ApiProcurementPO> {
   return request(`${poBase(projectId)}/${pid}`, { method: 'PATCH', body: JSON.stringify(body) });

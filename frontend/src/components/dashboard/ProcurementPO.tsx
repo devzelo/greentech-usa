@@ -35,7 +35,11 @@ const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5
 const STATUSES = ["Sent", "Confirmed", "InvoiceReceived", "Paid"] as const;
 const statusCls: Record<string, string> = { Sent: "bg-amber-50 text-amber-600", Confirmed: "bg-blue-50 text-blue-600", InvoiceReceived: "bg-indigo-50 text-indigo-600", Paid: "bg-emerald-50 text-emerald-600" };
 
-export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes, openPoId, onOpenedPo }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void; /** CR 328 - open this PO (a link from a work package). */ openPoId?: string; onOpenedPo?: () => void }) {
+export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes, openPoId, onOpenedPo, ownerPackage, onChanged }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void; /** CR 328 - open this PO (a link from a work package). */ openPoId?: string; onOpenedPo?: () => void;
+  /** CR 345 - shown inside a work package: only its POs, and new ones belong to it. */
+  ownerPackage?: { id: string; name: string };
+  onChanged?: () => void }) {
+  const scope = ownerPackage ? { package: ownerPackage.id } : {};
   const present = useBuilderPresence(projectId ? `po:${projectId}` : null, "Purchase Orders"); // CR-B-01
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
@@ -80,7 +84,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     setLoading(true);
     try {
       const [p, r, v, it, secs, sig, stmp, subs, recInv] = await Promise.all([
-        fetchProcurementPOs(projectId, showArchived), fetchRfqs(projectId), fetchVendors(projectId),
+        fetchProcurementPOs(projectId, showArchived, scope), fetchRfqs(projectId, false, scope), fetchVendors(projectId),
         fetchProcurementItems(projectId).catch(() => []), fetchProcurementSections(projectId).catch(() => []),
         fetchSignatories().catch(() => []), fetchStamps().catch(() => []), fetchSubmittals(projectId).catch(() => []),
         // Which POs already have an invoice on the Invoice Received tab — drives the button state.
@@ -154,11 +158,11 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   // CR-PR-06 — a manual PO (not from a BOQ/quote); opens straight into the editor.
   const createManual = async () => {
     setNewPoMenu(false);
-    try { const po = await createManualPO(projectId); setPOs((p) => [po, ...p]); setManageId(po._id); void autoSavePoDoc(po); toast(`Manual PO ${po.poNo} created — add the vendor and line items.`, "success"); }
+    try { const po = await createManualPO(projectId, "", ownerPackage?.id || ""); onChanged?.(); setPOs((p) => [po, ...p]); setManageId(po._id); void autoSavePoDoc(po); toast(`Manual PO ${po.poNo} created — add the vendor and line items.`, "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not create the PO.", "error"); }
   };
   const createPO = async (rfqId: string, quoteId: string) => {
-    try { const po = await createProcurementPO(projectId, rfqId, quoteId); setPOs((p) => [...p, po]); setManageId(po._id); void autoSavePoDoc(po); }
+    try { const po = await createProcurementPO(projectId, rfqId, quoteId, ownerPackage?.id || ""); onChanged?.(); setPOs((p) => [...p, po]); setManageId(po._id); void autoSavePoDoc(po); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not create PO.", "error"); }
   };
   // CR-P-32 — editable line items (manual POs & corrections). Saving recomputes the total server-side.

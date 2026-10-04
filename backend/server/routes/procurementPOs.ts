@@ -12,6 +12,7 @@ import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
+import { ownerFilter, ownerPackage, linkIfEmpty } from "../lib/packageOwned";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -48,7 +49,8 @@ async function logEvent(req: AuthedRequest, e: { entityId: string; action: strin
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     const arch = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
-    res.json(await ProcurementPO.find({ projectId: req.params.id, ...arch }).sort({ createdAt: 1 }));
+    // CR 345 - Procurement lists its own POs; a work package's view lists the package's (?package=); ?all=1 every one.
+    res.json(await ProcurementPO.find({ projectId: req.params.id, ...arch, ...(await ownerFilter(req.params.id, req.query, "poId")) }).sort({ createdAt: 1 }));
   } catch (err) { next(err); }
 });
 
@@ -74,6 +76,9 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       shipTo: rfq.shipToLocation || "", deliveryMethod: rfq.deliveryMethod || "Delivery",
       terms: DEFAULT_PO_TERMS, termsMode: "constant", addedByName: req.user!.name || "",
     });
+    // CR 345 - a PO from a package's quote belongs to that package too.
+    const owner = await ownerPackage(req.params.id, req.body?.ownerPackageId || rfq.ownerPackageId);
+    if (owner) { po.ownerPackageId = String(owner._id); await po.save(); await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id)); }
     // Auto-carry the vendor's quotation document(s) from the RFQ onto the PO (kind "quote") —
     // physically COPIED into the PO's folder so it's clickable/downloadable and survives RFQ edits.
     const destDir = path.join("uploads", req.params.id, "procurement-pos", String(po._id));
@@ -126,6 +131,8 @@ router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunct
       projectId: req.params.id, poNo, lineItems: [], total: "0",
       vendorName: String(req.body?.vendorName || ""), terms: DEFAULT_PO_TERMS, addedByName: req.user!.name || "",
     });
+    const owner = await ownerPackage(req.params.id, req.body?.ownerPackageId);
+    if (owner) { po.ownerPackageId = String(owner._id); await po.save(); await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id)); }
     await logEvent(req, { entityId: String(po._id), action: "created", toValue: poNo });
     res.status(201).json(po);
   } catch (err) { next(err); }

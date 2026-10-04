@@ -6,6 +6,7 @@ import path from "path";
 import Rfq from "../models/Rfq";
 import WorkPackage from "../models/WorkPackage";
 import { locksOf } from "../lib/workPackageLocks";
+import { ownerFilter, ownerPackage, linkIfEmpty } from "../lib/packageOwned";
 import Company from "../models/Company";
 import Project from "../models/Project";
 import User from "../models/User";
@@ -40,7 +41,8 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
   try {
     // CR-PR-07 — hide archived RFQs by default; ?archived=true returns only archived ones.
     const arch = String(req.query.archived) === "true" ? { archived: true } : { archived: { $ne: true } };
-    const rfqs = await Rfq.find({ projectId: req.params.id, ...arch }).sort({ createdAt: 1 }).lean();
+    // CR 345 - Procurement lists its own RFQs; a work package's view lists the package's (?package=).
+    const rfqs = await Rfq.find({ projectId: req.params.id, ...arch, ...(await ownerFilter(req.params.id, req.query, "rfqId")) }).sort({ createdAt: 1 }).lean();
     const quotes = await VendorQuote.find({ projectId: req.params.id }).lean();
     const byRfq: Record<string, unknown[]> = {};
     for (const q of quotes) (byRfq[String(q.rfqId)] ||= []).push(q);
@@ -113,6 +115,15 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       addedByName: req.user!.name || "",
     });
     await logEvent(req, { entityId: String(rfq._id), action: "created", toValue: rfqNo });
+    // CR 345 - made in a work package's view: the package owns it (and links it when it has no RFQ yet).
+    const owner = req.body?.ownerPackageId ? await ownerPackage(req.params.id, req.body.ownerPackageId) : null;
+    if (req.body?.ownerPackageId && !owner) { await rfq.deleteOne(); return res.status(404).json({ error: "That work package is not in this project." }); }
+    if (owner) {
+      rfq.ownerPackageId = String(owner._id);
+      await rfq.save();
+      await linkIfEmpty(req.params.id, String(owner._id), "rfqId", String(rfq._id));
+      return res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId: String(owner._id) });
+    }
     // The work package it is for (optional): the package keeps the link (its rfqId).
     let workPackageId = "";
     if (typeof req.body?.workPackageId === "string" && req.body.workPackageId && req.user!.role !== "subcontractor") {

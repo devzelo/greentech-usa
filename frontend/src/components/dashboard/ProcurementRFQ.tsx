@@ -49,7 +49,16 @@ function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
   return quoteItemsTotal(rfq, q) + n(q.shipping) + n(q.tax);
 }
 
-export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: () => void; openRfqId?: string; onOpenedRfq?: () => void }) {
+export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq, ownerPackage, startNew, seed, onChanged }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: (poId?: string) => void; openRfqId?: string; onOpenedRfq?: () => void;
+  /** CR 345 - shown inside a work package: only its RFQs, and new ones belong to it. */
+  ownerPackage?: { id: string; name: string };
+  /** CR 345 - open the Create RFQ window straight away, starting from `seed`. */
+  startNew?: boolean;
+  seed?: { title?: string; notes?: string; lineItems?: RfqLineItem[]; vendorIds?: string[] };
+  /** Called after an RFQ is made or changed (the package's table refreshes). */
+  onChanged?: () => void;
+}) {
+  const scope = ownerPackage ? { package: ownerPackage.id } : {};
   const present = useBuilderPresence(projectId ? `rfq:${projectId}` : null, "RFQs"); // CR-B-01
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
@@ -82,6 +91,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [showArchived, setShowArchived] = useState(false); // CR-PR-07 — toggle archived RFQs
   const { confirm, dialogs } = useDialogs();
 
+  // CR 345 - a work package's "Create an RFQ" opens the Create RFQ window here.
+  useEffect(() => { if (startNew && canEdit) setForm({ rfq: null }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [startNew]);
   // Auto-open a specific RFQ's manage popup (e.g. right after creating it from the BOQ).
   useEffect(() => {
     if (openRfqId && rfqs.some((r) => r._id === openRfqId)) { setManageId(openRfqId); onOpenedRfq?.(); }
@@ -91,7 +102,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const load = async () => {
     setLoading(true);
     try {
-      const [v, r, it, secs, subs] = await Promise.all([fetchVendors(projectId), fetchRfqs(projectId, showArchived), fetchProcurementItems(projectId), fetchProcurementSections(projectId), fetchSubmittals(projectId)]);
+      const [v, r, it, secs, subs] = await Promise.all([fetchVendors(projectId), fetchRfqs(projectId, showArchived, scope), fetchProcurementItems(projectId), fetchProcurementSections(projectId), fetchSubmittals(projectId)]);
       setVendors(v); setRfqs(r); setItems(it.filter((x) => x.status !== "Cancelled")); setSubmittals(subs); setSections(secs);
       setSecNames(Object.fromEntries(secs.map((s) => [s._id, s.name])));
     } catch { /* keep */ } finally { setLoading(false); }
@@ -260,7 +271,10 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const saveForm = async (base: ApiRfq | null, r: RfqFormResult): Promise<boolean> => {
     let rfq: ApiRfq;
     try {
-      rfq = base ? { ...base, ...(await updateRfq(projectId, base._id, r.fields)) } : await createRfq(projectId, r.fields);
+      // CR 345 - inside a work package the package owns the RFQ (its own link is not re-set from the form).
+      const fields = ownerPackage ? (({ workPackageId: _w, ...rest }) => { void _w; return rest; })(r.fields) : r.fields;
+      rfq = base ? { ...base, ...(await updateRfq(projectId, base._id, fields)) } : await createRfq(projectId, { ...fields, ...(ownerPackage ? { ownerPackageId: ownerPackage.id } : {}) });
+      onChanged?.();
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save the RFQ.", "error"); return false; }
     const problems: string[] = [];
     try {
@@ -281,7 +295,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     for (const aid of r.removeAttachmentIds) { try { await deleteRfqAttachment(projectId, rfq._id, aid); } catch { problems.push("removing a document"); } }
     for (const f of r.newFiles) { try { await uploadRfqAttachment(projectId, rfq._id, f); } catch { problems.push(f.name); } }
     if (r.send) { try { await sendRfq(projectId, rfq._id); } catch { problems.push("sending"); } }
-    let fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || null;
+    let fresh = (await fetchRfqs(projectId, showArchived, scope).catch(() => null)) || null;
     if (fresh) setRfqs(fresh);
     let saved = fresh?.find((x) => x._id === rfq._id) || rfq;
     // CR 338 - each vendor emailed its own copy, when asked.
@@ -300,7 +314,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         } catch (e) { if (/not set up/i.test(e instanceof Error ? e.message : "")) setupMissing = true; missed.push(c.name); if (setupMissing) break; }
       }
       mailNote = setupMissing ? " Email is not set up on the server, so nothing was emailed: download each vendor's copy from the RFQ." : ` Emailed ${sent} of ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}.${missed.length ? ` Not emailed (no email in the Directory): ${missed.join(", ")}.` : ""}`;
-      fresh = (await fetchRfqs(projectId, showArchived).catch(() => null)) || fresh;
+      fresh = (await fetchRfqs(projectId, showArchived, scope).catch(() => null)) || fresh;
       if (fresh) setRfqs(fresh);
       saved = fresh?.find((x) => x._id === rfq._id) || saved;
     }
@@ -313,7 +327,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   // CR-PR-02 — create a shell RFQ so an already-made RFQ document can be uploaded to it.
   const createUploadRfq = async () => {
     try {
-      const rfq = await createRfq(projectId, { title: "Uploaded RFQ", lineItems: [] });
+      const rfq = await createRfq(projectId, { title: "Uploaded RFQ", lineItems: [], ...(ownerPackage ? { ownerPackageId: ownerPackage.id } : {}) });
+      onChanged?.();
       setRfqs((p) => [...p, rfq]); setOpenId(rfq._id);
       toast("RFQ created — upload your ready-made document in the panel below.", "success");
       void load();
@@ -534,14 +549,15 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       const vName = vendorName(rfqs.find((r) => r._id === rid)?.quotes.find((q) => q._id === qid)?.vendorId || "");
       if (await confirm({ title: "Quote accepted", message: `Create the purchase order for ${vName} now? The accepted quote carries over automatically. (You can also do this later from the Purchase Orders tab.)`, confirmLabel: "Create PO now", danger: false })) {
         try {
-          const po = await createProcurementPO(projectId, rid, qid);
+          const po = await createProcurementPO(projectId, rid, qid, ownerPackage?.id || "");
+          onChanged?.();
           // Auto-save the PO document into the project documents (whether or not it's saved manually later).
           try {
             const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
             await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), "procurement-po", true);
           } catch { /* best-effort */ }
-          toast("Purchase order created — opening Purchase Orders.", "success");
-          onGoToPO?.();
+          toast(`Purchase order created. Opening ${ownerPackage ? "the package's" : ""} Purchase Orders.`.replace("  ", " "), "success");
+          onGoToPO?.(po._id);
         } catch (err) { toast(err instanceof Error ? err.message : "Awarded, but could not create the PO — do it from the Purchase Orders tab.", "error"); }
       }
     } catch (err) { toast(err instanceof Error ? err.message : "Could not award.", "error"); }
@@ -1038,7 +1054,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">RFQs &amp; Bid Leveling</h3><PresenceBar users={present} /></div>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">{ownerPackage ? "RFQs & quotes" : <>RFQs &amp; Bid Leveling</>}</h3><PresenceBar users={present} /></div>
           <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>
         </div>
         {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`} title={showArchived ? "Show active RFQs" : "Show archived RFQs"}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
@@ -1158,6 +1174,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           onClose={() => setForm(null)}
           onSave={(r) => saveForm(form.rfq, r)}
           buildPreview={(draft) => buildRfqWithSubmittals(draft)}
+          ownerPackage={ownerPackage}
+          seed={form.rfq ? undefined : seed}
         />
       )}
       {dialogs}

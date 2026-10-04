@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import PackageWorkspace, { type WorkspaceOpen } from "./PackageWorkspace";
+import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
   FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProcurementPOs, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
-  createAgreement, createManualPO, createProcurementPO, createRfq, fetchAgreements, fetchCompany, updateProcurementPO, updateRfq, uploadDocument, documentUrl, attachmentUrl,
+  createAgreement, createManualPO, createProcurementPO, fetchAgreements, fetchCompany, updateProcurementPO, uploadDocument, documentUrl, attachmentUrl,
   type ApiAgreement, type ApiChangeOrder, type ApiProcurementPO, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -83,7 +84,26 @@ const coDocs = (p: ApiWorkPackage) => {
   return docs.length ? <span className="mt-0.5 flex flex-wrap gap-1">{docs.map((c) => <a key={c.id} href={attachmentUrl(c.document!, c.documentName)} target="_blank" rel="noreferrer" title={`${c.no}: ${c.documentName || "document"}`} className="inline-flex items-center gap-0.5 text-[10px] font-bold text-blue-600 hover:underline"><Paperclip size={10} /> {c.no}</a>)}</span> : null;
 };
 
-export default function WorkPackages({ project, canEdit }: { project: ApiProject; canEdit: boolean }) {
+/**
+ * CR 345 - the package's agreement, filled from the package (its name, scope and company), linked to
+ * the project; the package keeps its id.
+ */
+async function createPackageAgreement(project: ApiProject, f: { name?: string; description?: string; responsible?: ApiWorkPackage["responsible"] }) {
+  const name = (f.name || "").trim(), detail = (f.description || "").trim();
+  const who = f.responsible || { kind: "company", companyId: "", name: "" };
+  const c = who.kind === "company" && who.companyId ? await fetchCompany(who.companyId).catch(() => null) : null;
+  return createAgreement({ kind: "general" }, {
+    name, title: name, description: detail, agreementType: "Service",
+    linkedProjects: [{ id: project.id, name: project.name, location: project.location || "" }],
+    partySnapshot: {
+      party1: { name: GREENTECH.name, contactName: "", address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone, logoUrl: "/gt-usa-logo-new.png" },
+      party2: { name: c?.name || who.name, contactName: c?.contactPersons?.[0]?.name || "", address: c?.address || "", email: c?.email || "", phone: c?.phone || "", logoUrl: c?.logoUrl || "", companyId: c?._id || "" },
+      extraParties: [], contextLines: [],
+    },
+  });
+}
+
+export default function WorkPackages({ project, canEdit, projectInfo }: { project: ApiProject; canEdit: boolean; projectInfo?: ProjectPdfInfo }) {
   const { confirm, dialogs } = useDialogs();
   const projectId = project.id;
   const [list, setList] = useState<ApiWorkPackage[] | null>(null);
@@ -96,6 +116,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ApiWorkPackage | "new" | null>(null);
+  // CR 345 - a package's RFQs, quotes, POs and agreement, opened right here.
+  const [ws, setWs] = useState<{ pkg: ApiWorkPackage; open: WorkspaceOpen } | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [busy, setBusy] = useState(false);
   const shown = useFiguresShown();
@@ -278,8 +300,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
     const m = p.money;
     const pct = progressOf(p);
     switch (k) {
-      case "rfq": return p.rfq ? <><Link to={`${base}?tab=procurement&proc=rfqs&rfq=${p.rfq.id}`} className={linkCls}><FileText size={11} /> {p.rfq.no}</Link><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
-      case "quotes": return p.quotes.count ? <><Link to={`${base}?tab=procurement&proc=quotes`} className={linkCls}><FileText size={11} /> {p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</Link>
+      case "rfq": return p.rfq ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "rfq", rfqId: p.rfq!.id } })} className={linkCls}><FileText size={11} /> {p.rfq.no}</button><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
+      case "quotes": return p.quotes.count ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "rfq", rfqId: p.rfq?.id } })} className={linkCls}><FileText size={11} /> {p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</button>
         {/* CR 328 (GT Comments 3, picture) - who quoted, one per line. */}
         {p.quotes.names.length > 0 && <ul className="mt-0.5 max-w-[11rem] list-disc pl-3.5 text-[10px] leading-snug text-slate-500 marker:text-slate-400">{p.quotes.names.slice(0, 4).map((n, i) => <li key={i} className="truncate" title={n}>{n}</li>)}{p.quotes.names.length > 4 && <li className="list-none -ml-3.5 text-slate-400">+{p.quotes.names.length - 4} more</li>}</ul>}</> : <span className="text-slate-300">-</span>;
       case "winner": return p.winner ? (
@@ -290,8 +312,8 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
           <span className="min-w-0"><span className="flex items-center gap-1 font-semibold text-slate-800">{p.winner.name}{!!p.locks?.length && <Lock size={10} className="shrink-0 text-slate-400" aria-label="Locked" title={`Locked: ${p.locks[0].no} is ${p.locks[0].label}`} />}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
         </span>
       ) : <span className="text-slate-300">-</span>;
-      case "po": return p.po ? <><Link to={`${base}?tab=procurement&proc=po&po=${p.po.id}`} className={linkCls}><FileText size={11} /> {p.po.no}</Link><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.po.signed ? "Signed" : p.po.status)}{p.po.date ? fmtDay(p.po.date) : ""}</span></>
-        : p.agreement ? <><Link to={p.agreement.general ? `/dashboard/agreements?hl=ag-${p.agreement.id}` : `${base}?tab=subs`} className={linkCls}><FileText size={11} /> {p.agreement.no}</Link><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.agreement.status)}{p.agreement.date ? fmtDay(p.agreement.date) : ""}</span></>
+      case "po": return p.po ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "po", poId: p.po!.id } })} className={linkCls}><FileText size={11} /> {p.po.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.po.signed ? "Signed" : p.po.status)}{p.po.date ? fmtDay(p.po.date) : ""}</span></>
+        : p.agreement ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "agreement" } })} className={linkCls}><FileText size={11} /> {p.agreement.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.agreement.status)}{p.agreement.date ? fmtDay(p.agreement.date) : ""}</span></>
         : <span className="text-slate-300">-</span>;
       case "status": return (
         <select disabled={!canEdit} value={p.status} onChange={(e) => void patch(p, { status: e.target.value as WorkPackageStatus, ...(e.target.value === "complete" && p.progressMode === "manual" ? { progress: 100 } : {}) })} aria-label={`Status of ${p.name}`} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS[p.status].cls}`}>
@@ -494,8 +516,24 @@ export default function WorkPackages({ project, canEdit }: { project: ApiProject
 
       {editing && (
         <Fragment key={editing === "new" ? "new" : editing._id}>
-          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canUnlink={canUnlink} confirm={confirm} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} />
+          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canUnlink={canUnlink} confirm={confirm} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} onWorkspace={(x, open) => { replace(x); setEditing(null); setWs({ pkg: x, open }); }} />
         </Fragment>
+      )}
+      {ws && (
+        <PackageWorkspace
+          projectId={project.id} projectInfo={projectInfo} canEdit={canEdit}
+          pkg={{ id: ws.pkg._id, no: `${(list || []).findIndex((x) => x._id === ws.pkg._id) + 1 || ws.pkg.order}.0`, name: ws.pkg.name, agreementId: ws.pkg.agreementId }}
+          open={ws.open}
+          onCreateAgreement={async () => {
+            try {
+              const ag = await createPackageAgreement(project, ws.pkg);
+              replace(await updateWorkPackage(project.id, ws.pkg._id, { agreementId: ag._id }));
+              toast(`Agreement ${ag.agreementNo || ""} made for this package.`.replace("  ", " "), "success");
+              return ag._id;
+            } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); return null; }
+          }}
+          onClose={(changed) => { setWs(null); if (changed) void load(); }}
+        />
       )}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
       {dialogs}
@@ -508,15 +546,16 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-40
 const inp = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none disabled:bg-slate-50 disabled:text-slate-500";
 const hint = "text-[11px] leading-snug text-slate-500";
 
-function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked }: {
+function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked, onWorkspace }: {
   pkg: ApiWorkPackage | null; project: ApiProject; canEdit: boolean; canMoney: boolean;
   /** CR 328 - may unlink a signed document (the project's own team, not a guest). */
   canUnlink: boolean; confirm: ReturnType<typeof useDialogs>["confirm"]; busy: boolean; narrow: boolean; onNarrow: (v: boolean) => void;
   onSave: (body: WorkPackageInput) => Promise<boolean>; onClose: () => void;
   /** CR 328 - the package, saved with a record just made for it (an RFQ, a PO, an agreement). */
   onLinked: (p: ApiWorkPackage) => void;
+  /** CR 345 - open the package's RFQs / POs / agreement right here (the package saved first). */
+  onWorkspace: (p: ApiWorkPackage, open: WorkspaceOpen) => void;
 }) {
-  const navigate = useNavigate();
   const [f, setF] = useState<WorkPackageInput>(() => pkg ? {
     name: pkg.name, description: pkg.description, type: pkg.type, responsible: pkg.responsible, rfqId: pkg.rfqId, poId: pkg.poId, agreementId: pkg.agreementId, status: pkg.status,
     progressMode: pkg.progressMode, progress: pkg.progress, scheduleRef: pkg.scheduleRef, subtasks: pkg.subtasks, budget: pkg.budget || 0, changeOrders: pkg.changeOrders, remarks: pkg.remarks,
@@ -533,8 +572,10 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
   const [pos, setPos] = useState<ApiProcurementPO[]>([]);
   const [agrs, setAgrs] = useState<ApiAgreement[]>([]);
   useEffect(() => {
-    fetchRfqs(project.id).then(setRfqs).catch(() => setRfqs([]));
-    fetchProcurementPOs(project.id).then(setPos).catch(() => setPos([]));
+    // CR 345 - Procurement's own records, and this package's own (they are kept apart).
+    const merge = <T extends { _id: string }>(a: T[], b: T[]) => [...a, ...b.filter((x) => !a.some((y) => y._id === x._id))];
+    void Promise.all([fetchRfqs(project.id).catch(() => []), pkg ? fetchRfqs(project.id, false, { package: pkg._id }).catch(() => []) : []]).then(([a, b]) => setRfqs(merge(a, b)));
+    void Promise.all([fetchProcurementPOs(project.id).catch(() => []), pkg ? fetchProcurementPOs(project.id, false, { package: pkg._id }).catch(() => []) : []]).then(([a, b]) => setPos(merge(a, b)));
     // The project's own agreements, and the General Agreements that cover this project (GT
     // Comments 3: "Existing RFQ, PO, and Agreement builders from Procurement and General
     // Agreements should be reused").
@@ -555,24 +596,20 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
   const scope = () => ({ name: (f.name || "").trim(), detail: (f.description || "").trim() });
   // A scope line is not a BOQ item; it still needs an id of its own for the quotes and the PO.
   const newLineId = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
-  const linkAndOpen = async (patch: WorkPackageInput, to: string, message: string) => {
-    const saved = await updateWorkPackage(project.id, pkg!._id, { ...f, ...patch });
-    onLinked(saved);
-    toast(message, "success");
-    navigate(to);
+  const linkAndOpen = async (patch: WorkPackageInput, open: WorkspaceOpen, message = "") => {
+    const saved = canEdit ? await updateWorkPackage(project.id, pkg!._id, { ...f, ...patch }) : pkg!;
+    if (message) toast(message, "success");
+    onWorkspace(saved, open);
   };
+  const openHere = (open: WorkspaceOpen) => { if (pkg) void linkAndOpen({}, open).catch((e) => toast(e instanceof Error ? e.message : "Could not save the package.", "error")); };
   const makeRfq = async () => {
     if (!pkg) return;
     setMaking("rfq");
     try {
       const { name, detail } = scope();
-      const rfq = await createRfq(project.id, { title: name, notes: detail, lineItems: [{ itemId: newLineId(), description: name, qty: "1", unit: "lot", spec: detail }] });
-      // The company the package is meant for is the first one the request goes to.
-      if (who.kind === "company" && who.companyId) {
-        const c = await fetchCompany(who.companyId).catch(() => null);
-        await updateRfq(project.id, rfq._id, { recipients: [{ companyId: who.companyId, name: c?.name || who.name, category: c?.category || "vendor", expectsQuote: true }] }).catch(() => undefined);
-      }
-      await linkAndOpen({ rfqId: rfq._id }, `${base}?tab=procurement&proc=rfqs&rfq=${rfq._id}`, `RFQ ${rfq.rfqNo} made for this package. Add the vendors and send it from Procurement.`);
+      // CR 345 - the Create RFQ window opens in the package, filled from it (the package's company
+      // is the first vendor); the RFQ belongs to the package.
+      await linkAndOpen({}, { tab: "rfq", newRfq: { title: name, notes: detail, lineItems: [{ itemId: newLineId(), description: name, qty: "1", unit: "lot", spec: detail }], vendorIds: who.kind === "company" && who.companyId ? [who.companyId] : [] } });
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the RFQ.", "error"); }
     finally { setMaking(""); }
   };
@@ -587,10 +624,10 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
       // From the awarded quote, the normal Procurement way; without one, a PO for the package's
       // company with the package as its line, priced in the PO editor.
       let po = linkedRfq && awarded
-        ? await createProcurementPO(project.id, linkedRfq._id, awarded._id)
-        : await createManualPO(project.id, who.kind === "company" ? who.name : "");
+        ? await createProcurementPO(project.id, linkedRfq._id, awarded._id, pkg._id)
+        : await createManualPO(project.id, who.kind === "company" ? who.name : "", pkg._id);
       if (!(linkedRfq && awarded)) po = await updateProcurementPO(project.id, po._id, { lineItems: [{ itemId: "", description: name, qty: "1", unit: "lot", unitPrice: "" }] });
-      await linkAndOpen({ poId: po._id }, `${base}?tab=procurement&proc=po&po=${po._id}`, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price in Procurement."}`);
+      await linkAndOpen({ poId: f.poId || po._id }, { tab: "po", poId: po._id }, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price below."}`);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PO.", "error"); }
     finally { setMaking(""); }
   };
@@ -598,18 +635,8 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
     if (!pkg) return;
     setMaking("agreement");
     try {
-      const { name, detail } = scope();
-      const c = who.kind === "company" && who.companyId ? await fetchCompany(who.companyId).catch(() => null) : null;
-      const ag = await createAgreement({ kind: "general" }, {
-        name, title: name, description: detail, agreementType: "Service",
-        linkedProjects: [{ id: project.id, name: project.name, location: project.location || "" }],
-        partySnapshot: {
-          party1: { name: GREENTECH.name, contactName: "", address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone, logoUrl: "/gt-usa-logo-new.png" },
-          party2: { name: c?.name || who.name, contactName: c?.contactPersons?.[0]?.name || "", address: c?.address || "", email: c?.email || "", phone: c?.phone || "", logoUrl: c?.logoUrl || "", companyId: c?._id || "" },
-          extraParties: [], contextLines: [],
-        },
-      });
-      await linkAndOpen({ agreementId: ag._id }, `/dashboard/agreements?hl=ag-${ag._id}`, `Agreement ${ag.agreementNo || ""} made for this package. Write it and send it from General Agreements.`.replace("  ", " "));
+      const ag = await createPackageAgreement(project, f);
+      await linkAndOpen({ agreementId: ag._id }, { tab: "agreement" }, `Agreement ${ag.agreementNo || ""} made for this package. Write it below.`.replace("  ", " "));
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); }
     finally { setMaking(""); }
   };
@@ -716,7 +743,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
               <select value={f.rfqId} onChange={(e) => set({ rfqId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="RFQ"><option value="">None</option>{rfqs.map((r) => <option key={r._id} value={r._id}>{r.rfqNo}{r.title ? ` · ${r.title}` : ""}{r.status ? ` (${r.status})` : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.rfqId
-                  ? <Link to={`${base}?tab=procurement&proc=rfqs&rfq=${f.rfqId}`} className={linkBtn}><FileText size={11} /> Open the RFQ</Link>
+                  ? <button type="button" onClick={() => openHere({ tab: "rfq", rfqId: f.rfqId })} className={linkBtn}><FileText size={11} /> Open the RFQ</button>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makeRfq()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "rfq" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an RFQ for this package</button>}
               </div>
               {!f.rfqId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A draft RFQ with this package as its line (1 lot){who.companyId ? `, sent to ${who.name}` : ""}. Vendors are added and it is sent from Procurement.</p>}
@@ -727,7 +754,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
               <select value={f.poId} onChange={(e) => set({ poId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Purchase order"><option value="">None</option>{pos.map((p) => <option key={p._id} value={p._id}>{p.poNo} · {p.vendorName}{p.total ? ` · ${p.total}` : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.poId
-                  ? <><Link to={`${base}?tab=procurement&proc=po&po=${f.poId}`} className={linkBtn}><FileText size={11} /> Open the PO</Link>{lockedNote("po")}</>
+                  ? <><button type="button" onClick={() => openHere({ tab: "po", poId: f.poId })} className={linkBtn}><FileText size={11} /> Open the PO</button>{lockedNote("po")}</>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makePo()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "po" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create a PO for this package</button>}
               </div>
               {!f.poId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>{linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one in Procurement first, or make a PO now and price it there.` : "A PO for the package's company with the package as its line; the price is added in Procurement."}</p>}
@@ -738,7 +765,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
               <select value={f.agreementId} onChange={(e) => set({ agreementId: e.target.value })} disabled={locked} className={`${inp} disabled:bg-slate-50`} aria-label="Agreement"><option value="">None</option>{agrs.map((a) => <option key={a._id} value={a._id}>{a.agreementNo || a.name}{a.title ? ` · ${a.title}` : ""} ({a.status}){a.ownerContextType === "general" ? " · General" : ""}</option>)}</select>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 {f.agreementId
-                  ? <><Link to={agrs.find((a) => a._id === f.agreementId)?.ownerContextType === "general" ? `/dashboard/agreements?hl=ag-${f.agreementId}` : `${base}?tab=subs`} className={linkBtn}><FileText size={11} /> Open the agreement</Link>{lockedNote("agreement")}</>
+                  ? <><button type="button" onClick={() => openHere({ tab: "agreement" })} className={linkBtn}><FileText size={11} /> Open the agreement</button>{lockedNote("agreement")}</>
                   : pkg && canEdit && !locked && <button type="button" onClick={() => void makeAgreement()} disabled={!!making || !scope().name || looseCompany} className={`${linkBtn} disabled:opacity-50`}>{making === "agreement" ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Create an agreement for this package</button>}
               </div>
               {!f.agreementId && pkg && !locked && <p className={`mt-0.5 ${hint}`}>A General Agreement for this project with {who.name || "the package's company"} as the other party, titled with the package's name. It is written and sent from General Agreements.</p>}

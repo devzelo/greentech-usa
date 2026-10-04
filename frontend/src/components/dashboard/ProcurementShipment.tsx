@@ -211,7 +211,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       let denied = false;
       const [s, p, v] = await Promise.all([
         fetchShipments(projectId),
-        fetchProcurementPOs(projectId).catch(() => { denied = true; return [] as ApiProcurementPO[]; }),
+        fetchProcurementPOs(projectId, false, { all: true }).catch(() => { denied = true; return [] as ApiProcurementPO[]; }),   // CR 345 - work package POs ship too
         fetchVendors(projectId).catch(() => [] as ApiVendor[]),
       ]);
       setShipments(s); setPOs(p); setVendors(v); setPoAccessDenied(denied);

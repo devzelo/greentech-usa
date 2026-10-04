@@ -46,7 +46,7 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-50
 const card = "rounded-2xl border border-slate-200 bg-white";
 const cardHead = "flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/70 rounded-t-2xl";
 
-export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview }: {
+export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview, ownerPackage, seed }: {
   projectId: string;
   projectName: string;
   projectSite?: string;
@@ -62,21 +62,25 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   onSave: (r: RfqFormResult) => Promise<boolean>;
   /** The RFQ PDF for what the form holds now. */
   buildPreview: (draft: ApiRfq) => Promise<Blob>;
+  /** CR 345 - made inside a work package: the package is fixed (it owns the RFQ). */
+  ownerPackage?: { id: string; name: string };
+  /** CR 345 - a new RFQ's starting point (the package's name, scope and company). */
+  seed?: { title?: string; notes?: string; lineItems?: RfqLineItem[]; vendorIds?: string[] };
 }) {
   const { confirm, prompt, dialogs } = useDialogs();
   const editing = !!rfq;
-  const [title, setTitle] = useState(rfq?.title || "");
+  const [title, setTitle] = useState(rfq?.title || seed?.title || "");
   const [date, setDate] = useState(rfq?.date || (rfq?.createdAt ? rfq.createdAt.slice(0, 10) : today()));
   const [dueDate, setDueDate] = useState(rfq?.dueDate || (rfq ? "" : inTwoWeeks()));
   const [currency, setCurrency] = useState(rfq?.currency || "USD");
   const [workPackageId, setWorkPackageId] = useState(rfq?.workPackageId || "");
-  const [notes, setNotes] = useState(rfq?.notes || "");
+  const [notes, setNotes] = useState(rfq?.notes || seed?.notes || "");
   const [deliveryMethod, setDeliveryMethod] = useState(rfq?.deliveryMethod || "Delivery");
   const [shipTo, setShipTo] = useState(rfq?.shipToLocation || "");
   const [requests, setRequests] = useState<RfqRequestKey[]>(rfq?.requests || (rfq ? [] : ["leadTime", "dataSheets", "alternatives"]));
   const [showTargets, setShowTargets] = useState(!!rfq?.showTargetPrices);
-  const [rows, setRows] = useState<Row[]>(() => (rfq?.lineItems || []).map((l) => ({ ...l, key: rowKey() })));
-  const [vendorIds, setVendorIds] = useState<string[]>(() => (rfq?.recipients || []).map((r) => r.companyId).filter(Boolean));
+  const [rows, setRows] = useState<Row[]>(() => (rfq?.lineItems || seed?.lineItems || []).map((l) => ({ ...l, key: rowKey() })));
+  const [vendorIds, setVendorIds] = useState<string[]>(() => (rfq ? (rfq.recipients || []).map((r) => r.companyId) : seed?.vendorIds || []).filter(Boolean));
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [removed, setRemoved] = useState<string[]>([]);
   const [busy, setBusy] = useState<"" | "draft" | "send" | "preview">("");
@@ -252,7 +256,9 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                 <label className="block"><span className={lbl}>Project</span><input value={projectName} disabled className={inp} /></label>
                 <label className="block">
                   <span className={lbl}>Work package <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
-                  {packages === null
+                  {ownerPackage
+                    ? <input value={ownerPackage.name} disabled className={inp} title="This RFQ belongs to the work package it is made in" />
+                    : packages === null
                     ? <input value="Not available" disabled className={inp} />
                     : (
                       <select value={workPackageId} onChange={(e) => setWorkPackageId(e.target.value)} className={inp}>

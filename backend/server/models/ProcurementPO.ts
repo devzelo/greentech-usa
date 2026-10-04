@@ -39,6 +39,7 @@ export interface IProcurementPO extends Document {
   partnerStampUrl: string;
   assignedTo: string;       // CR-B-19 — colleague tagged to edit/review/verify this PO
   addedByName: string;
+  ownerPackageId: string;   // CR 345 - the work package this PO belongs to ("" = Procurement's own)
 }
 
 const LineSchema = new Schema<IPOLine>({ itemId: String, description: String, qty: String, unit: String, unitPrice: String, cancelled: { type: Boolean, default: false } }, { _id: true });
@@ -82,6 +83,7 @@ const ProcurementPOSchema = new Schema<IProcurementPO>(
     partnerStampUrl: { type: String, default: "" },
     assignedTo: { type: String, default: "" },
     addedByName: { type: String, default: "" },
+    ownerPackageId: { type: String, default: "", index: true },
   },
   { timestamps: true }
 );

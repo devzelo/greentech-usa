@@ -161,8 +161,10 @@ type Draft = {
 };
 const BLANK_ASSIGNEES = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "" };
 
-export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults }: {
+export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults, onlyIds, openId, noCreate }: {
   ctx: AgreementCtx; canManage: boolean; canSign?: boolean; defaults?: AgreementDefaults;
+  /** CR 345 - shown inside a work package: only these agreements, the given one opened, no new ones from here. */
+  onlyIds?: string[]; openId?: string; noCreate?: boolean;
 }) {
   const [list, setList] = useState<ApiAgreement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,7 +258,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   const load = async () => {
     setLoading(true);
-    try { setList(await fetchAgreements(ctx, showArchived)); } catch { /* keep */ } finally { setLoading(false); }
+    try { const all = await fetchAgreements(ctx, showArchived); setList(onlyIds ? all.filter((a) => onlyIds.includes(a._id)) : all); } catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx), showArchived]);
   // CR-PR-09 — Party 2 is a company for every agreement except an employee one, where it is
@@ -497,6 +499,14 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
     setEditor({ aid: null });
     loadPickers();
   };
+  // CR 345 - open the agreement asked for once the list is in (from a work package).
+  const openedRef = useRef("");
+  useEffect(() => {
+    if (!openId || loading || openedRef.current === openId) return;
+    const ag = list.find((x) => x._id === openId);
+    if (ag) { openedRef.current = openId; openEdit(ag); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, loading, list]);
   const openEdit = (ag: ApiAgreement) => {
     allDoneRef.current = null;
     autoNameRef.current = null;   // CR-P (24) — an existing name is never rewritten on its own
@@ -1123,7 +1133,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Handshake size={12} /> Agreements{showArchived && <span className="text-amber-600">· archived</span>}</p>
         <div className="flex items-center gap-2">
           {canManage && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={11} /> {showArchived ? "Active" : "Archived"}</button>}
-          {canManage && !showArchived && <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors"><Plus size={12} /> Create agreement</button>}
+          {canManage && !showArchived && !noCreate && <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary transition-colors"><Plus size={12} /> Create agreement</button>}
         </div>
       </div>
 

@@ -361,7 +361,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
   const [exchangeRate, setExchangeRate] = useState(expense?.exchangeRate || "");
   const [reference, setReference] = useState(expense?.reference || "");
   const [poList, setPoList] = useState<string[]>([]);
-  useEffect(() => { if (isStaff) fetchProcurementPOs(projectId).then((l) => setPoList(l.map((p) => p.poNo).filter(Boolean))).catch(() => setPoList([])); }, [projectId, isStaff]);
+  useEffect(() => { if (isStaff) fetchProcurementPOs(projectId, false, { all: true }).then((l) => setPoList(l.map((p) => p.poNo).filter(Boolean))).catch(() => setPoList([])); }, [projectId, isStaff]);
   const [preview, setPreview] = useState(false);
   // CR 341 - "Notify for review": the reviewers told when it is submitted (the project owner by default).
   const [reviewers, setReviewers] = useState<ExpenseReviewer[]>([]);
