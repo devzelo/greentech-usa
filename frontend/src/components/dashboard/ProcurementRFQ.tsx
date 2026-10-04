@@ -59,6 +59,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   onChanged?: () => void;
 }) {
   const scope = ownerPackage ? { package: ownerPackage.id } : {};
+  // CR 347 - a package's documents are filed with the package (Project Management), not in Procurement.
+  const docSection = ownerPackage ? "pm-work-packages" : "procurement-rfq";
+  const docFolder = ownerPackage ? ownerPackage.name.replace(/[\\/]+/g, " ").trim() : "";
   const present = useBuilderPresence(projectId ? `rfq:${projectId}` : null, "RFQs"); // CR-B-01
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
@@ -468,7 +471,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const autoSaveRfqDoc = async (rfq: ApiRfq) => {
     try {
       const blob = await buildRfqWithSubmittals(rfq);
-      await uploadDocument(projectId, new File([blob], `RFQ_${rfq.rfqNo}.pdf`, { type: "application/pdf" }), "procurement-rfq", true);
+      await uploadDocument(projectId, new File([blob], `RFQ_${rfq.rfqNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder);
     } catch { /* best-effort */ }
   };
   // Save the RFQ PDF into the organized project documents (Procurement → RFQs). When a vendor is
@@ -479,8 +482,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       const blob = await buildRfqWithSubmittals(rfq, vendor);
       const suffix = vendor ? `_${vendor.name.replace(/\s+/g, "_")}` : "";
       const file = new File([blob], `RFQ_${rfq.rfqNo}${suffix}.pdf`, { type: "application/pdf" });
-      await uploadDocument(projectId, file, "procurement-rfq", !vendor);
-      toast(vendor ? `Saved ${vendor.name}'s RFQ to documents.` : "Saved to project documents (Procurement → RFQs).", "success");
+      await uploadDocument(projectId, file, docSection, !vendor, docFolder);
+      toast(vendor ? `Saved ${vendor.name}'s RFQ to documents.` : ownerPackage ? "Saved to the package's documents (Project Management)." : "Saved to project documents (Procurement → RFQs).", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
     finally { setSavingDoc(null); }
   };
@@ -554,7 +557,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           // Auto-save the PO document into the project documents (whether or not it's saved manually later).
           try {
             const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-            await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), "procurement-po", true);
+            await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), ownerPackage ? "pm-work-packages" : "procurement-po", true, docFolder);
           } catch { /* best-effort */ }
           toast(`Purchase order created. Opening ${ownerPackage ? "the package's" : ""} Purchase Orders.`.replace("  ", " "), "success");
           onGoToPO?.(po._id);
@@ -628,7 +631,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                       <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
                       <div>
                         <p className="text-sm font-bold text-slate-800">Request — send to vendors</p>
-                        <p className="text-[10px] text-slate-400">Items (from the approved submittals &amp; BOQ) plus where and how they ship.</p>
+                        <p className="text-[10px] text-slate-400">{ownerPackage ? "The items, and where and how they ship." : <>Items (from the approved submittals &amp; BOQ) plus where and how they ship.</>}</p>
                       </div>
                       {canEdit && <button onClick={() => setForm({ rfq })} className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Settings2 size={11} /> Edit RFQ</button>}
                     </div>
@@ -709,11 +712,11 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                           </Fragment>
                           );
                         })}
-                        {rfq.lineItems.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-slate-400 italic">No items — add from the BOQ below.</td></tr>}
+                        {rfq.lineItems.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-slate-400 italic">{ownerPackage ? "No items yet: add them with Edit RFQ." : "No items — add from the BOQ below."}</td></tr>}
                       </tbody>
                     </table>
                   </div>
-                  {canEdit && (
+                  {canEdit && !ownerPackage && (
                     <button onClick={() => { setAddItemPicks({}); setAddItemsFor(rfq._id); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-600 text-[11px] font-bold hover:border-primary hover:text-primary"><Plus size={12} /> Add item from BOQ</button>
                   )}
 
@@ -1008,7 +1011,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
             <tr className="hover:bg-slate-50/40">
               <td className="px-3 py-2 align-top"><button onClick={() => setOpenId(isOpen ? null : rfq._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
               <td className="px-3 py-2 align-top font-bold text-slate-700 whitespace-nowrap">RFQ {rfq.rfqNo}</td>
-              <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{rfqRef(rfq) || "—"}</td>
+              {!ownerPackage && <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{rfqRef(rfq) || "—"}</td>}
               <td className="px-3 py-2 align-top font-bold text-slate-700">{rfqDesc(rfq)}</td>
               <td className="px-3 py-2 align-top text-slate-500">{rfq.lineItems.length}</td>
               <td className="px-3 py-2 align-top">
@@ -1054,14 +1057,16 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">{ownerPackage ? "RFQs & quotes" : <>RFQs &amp; Bid Leveling</>}</h3><PresenceBar users={present} /></div>
-          <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>
+          {ownerPackage
+            ? <p className="text-xs font-medium text-slate-400 mt-1">This package's requests for quotation: <span className="font-bold text-slate-500">1</span> create and send, then <span className="font-bold text-slate-500">2</span> enter the quotes, compare them and accept one.</p>
+            : <p className="text-xs font-medium text-slate-400 mt-1">Two steps: <span className="font-bold text-slate-500">1</span> request quotes for approved items &amp; send to vendors, then <span className="font-bold text-slate-500">2</span> upload their quotes, compare, and accept one. All quotes are kept.</p>}
         </div>
         {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`} title={showArchived ? "Show active RFQs" : "Show archived RFQs"}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
-        {canEdit && !showArchived && <button onClick={() => setChooseNew(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New RFQ</button>}
+        {canEdit && !showArchived && <button onClick={() => (ownerPackage ? setForm({ rfq: null }) : setChooseNew(true))} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all"><Plus size={13} /> New RFQ</button>}
       </div>
 
-      {/* Vendors */}
-      <div className="bg-slate-50 rounded-2xl p-4">
+      {/* Vendors (Procurement's shared list; a package picks its vendors in the Create RFQ window) */}
+      {!ownerPackage && <div className="bg-slate-50 rounded-2xl p-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5" title="Vendors are shared across all projects — add once, reuse everywhere"><Building2 size={11} /> Vendors ({vendors.length}) · shared</p>
           {canEdit && <button onClick={() => setShowVendorForm(true)} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1" title="Opens the Companies Directory form"><Plus size={11} /> Add vendor</button>}
@@ -1081,7 +1086,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
             onClose={() => setShowVendorForm(false)}
           />
         )}
-      </div>
+      </div>}
 
       {/* CR-PR-02 — New RFQ: build on the platform, or upload an already-made RFQ. */}
       {chooseNew && (
@@ -1131,7 +1136,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th className="w-8 px-3 py-2" />
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("rfqNo")} className="uppercase tracking-widest hover:text-slate-700">RFQ #{sortArrow("rfqNo")}</button></th>
-                <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("boq")} className="uppercase tracking-widest hover:text-slate-700">BOQ #{sortArrow("boq")}</button></th>
+                {!ownerPackage && <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("boq")} className="uppercase tracking-widest hover:text-slate-700">BOQ #{sortArrow("boq")}</button></th>}
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("desc")} className="uppercase tracking-widest hover:text-slate-700">Description{sortArrow("desc")}</button></th>
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("items")} className="uppercase tracking-widest hover:text-slate-700">Items{sortArrow("items")}</button></th>
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Vendors</th>

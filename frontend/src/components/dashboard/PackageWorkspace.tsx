@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Boxes, FileText, Handshake, Loader2, Package, X } from "lucide-react";
-import { fetchAgreements, fetchProjectAgreements, type AgreementCtx, type ApiAgreement, type RfqLineItem } from "../../lib/api";
+import { fetchAgreements, type AgreementCtx, type ApiAgreement, type RfqLineItem } from "../../lib/api";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import ProcurementRFQ from "./ProcurementRFQ";
 import ProcurementPO from "./ProcurementPO";
@@ -45,13 +45,10 @@ export default function PackageWorkspace({ projectId, projectInfo, canEdit, pkg,
   useEffect(() => {
     if (!agreementId) { setAgr("none"); return; }
     setAgr("loading");
-    void Promise.all([fetchAgreements({ kind: "general" }).catch(() => [] as ApiAgreement[]), fetchProjectAgreements(projectId).catch(() => [] as ApiAgreement[])]).then(([gen, own]) => {
-      const ag = [...gen, ...own].find((a) => a._id === agreementId);
-      if (!ag) { setAgr("none"); return; }
-      const ctx: AgreementCtx = ag.ownerContextType === "general" || !ag.ownerEntityType
-        ? { kind: "general" }
-        : { kind: "project", projectId: ag.ownerProjectId || projectId, entityType: ag.ownerEntityType, entityId: ag.ownerEntityId };
-      setAgr({ ctx, ag });
+    // CR 347 - the package's own agreement only.
+    void fetchAgreements({ kind: "general" }, false, { package: pkg.id }).catch(() => [] as ApiAgreement[]).then((list) => {
+      const ag = list.find((a) => a._id === agreementId);
+      setAgr(ag ? { ctx: { kind: "general" }, ag } : "none");
     });
   }, [agreementId, projectId]);
   const [makingAgr, setMakingAgr] = useState(false);
@@ -75,7 +72,7 @@ export default function PackageWorkspace({ projectId, projectInfo, canEdit, pkg,
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 inline-flex items-center gap-1.5"><Boxes size={12} /> Work package</p>
               <h3 className="text-lg font-display font-bold text-slate-900 truncate">{pkg.no} {pkg.name}</h3>
-              <p className="text-[11px] text-slate-400">Its own RFQs, quotes, purchase orders and agreement. They are kept with this package, not in Procurement.</p>
+              <p className="text-[11px] text-slate-400">Its own RFQs, quotes, purchase orders and agreement, made and kept here in the package.</p>
             </div>
             <button onClick={() => onClose(changed)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
           </div>
@@ -119,7 +116,7 @@ export default function PackageWorkspace({ projectId, projectInfo, canEdit, pkg,
                 {canEdit && <button onClick={() => void makeAgreement()} disabled={makingAgr} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">{makingAgr ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} Create an agreement for this package</button>}
               </div>
             ) : (
-              <Fragment key={agr.ag._id}><AgreementsPanel ctx={agr.ctx} canManage={canEdit} onlyIds={[agr.ag._id]} openId={agr.ag._id} noCreate /></Fragment>
+              <Fragment key={agr.ag._id}><AgreementsPanel ctx={agr.ctx} canManage={canEdit} onlyIds={[agr.ag._id]} openId={agr.ag._id} noCreate ownerPackageId={pkg.id} /></Fragment>
             )
           )}
         </div>

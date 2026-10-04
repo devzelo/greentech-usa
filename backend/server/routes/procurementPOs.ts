@@ -12,7 +12,7 @@ import Expense from "../models/Expense";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
-import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned } from "../lib/packageOwned";
+import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned, nextPackageNo, procurementOnly } from "../lib/packageOwned";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -24,8 +24,10 @@ const num = (s: unknown) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, ""))
 
 // PO numbers: per-project, range starts at 8000. Use max-existing+1 (not count+1) so deleting a
 // PO never lets the next one reuse a number (CR-PR-06 durable uniqueness).
-async function nextPoNo(projectId: string): Promise<string> {
-  const existing = await ProcurementPO.find({ projectId }).select("poNo").lean();
+async function nextPoNo(projectId: string, owned = false): Promise<string> {
+  // CR 347 - a package's POs are numbered on their own (PO WP-001); Procurement's go on from 8000.
+  if (owned) return nextPackageNo(ProcurementPO as never, projectId, "poNo", "WP");
+  const existing = await ProcurementPO.find({ projectId, ...procurementOnly }).select("poNo").lean();
   const max = existing.reduce((m, p) => Math.max(m, parseInt(String((p as { poNo?: string }).poNo ?? "").replace(/[^0-9]/g, ""), 10) || 0), 8000);
   return String(max + 1);
 }
@@ -71,17 +73,18 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       return { itemId: li.itemId, description: li.description, qty: li.qty, unit: li.unit, unitPrice: ql?.unitPrice || "" };
     });
     const total = lineItems.reduce((s, l) => s + num(l.qty) * num(l.unitPrice), 0) + num(quote.shipping) + num(quote.tax);
-    const poNo = await nextPoNo(req.params.id);
+    // CR 345 - a PO from a package's quote belongs to that package too.
+    const owner = await ownerPackage(req.params.id, req.body?.ownerPackageId || rfq.ownerPackageId, req.user!.role);
+    const poNo = await nextPoNo(req.params.id, !!owner);
     // E5 — carry the shipping instruction over from the RFQ (method + address kept separate now).
     const po = await ProcurementPO.create({
       projectId: req.params.id, poNo, rfqId, quoteId, vendorId: quote.vendorId, vendorName: vendor?.name || "",
       lineItems, shipping: quote.shipping, tax: quote.tax, total: String(total), status: "Sent",
       shipTo: rfq.shipToLocation || "", deliveryMethod: rfq.deliveryMethod || "Delivery",
       terms: DEFAULT_PO_TERMS, termsMode: "constant", addedByName: req.user!.name || "",
+      ownerPackageId: owner ? String(owner._id) : "",
     });
-    // CR 345 - a PO from a package's quote belongs to that package too.
-    const owner = await ownerPackage(req.params.id, req.body?.ownerPackageId || rfq.ownerPackageId, req.user!.role);
-    if (owner) { po.ownerPackageId = String(owner._id); await po.save(); await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id)); }
+    if (owner) await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id), ProcurementPO as never);
     // Auto-carry the vendor's quotation document(s) from the RFQ onto the PO (kind "quote") —
     // physically COPIED into the PO's folder so it's clickable/downloadable and survives RFQ edits.
     const destDir = path.join("uploads", req.params.id, "procurement-pos", String(po._id));
@@ -130,13 +133,15 @@ router.post("/manual", async (req: AuthedRequest, res: Response, next: NextFunct
   try {
     if (block(req, res)) return;
     if (req.body?.ownerPackageId && req.user!.role === "subcontractor") return res.status(403).json({ error: "Not allowed." });
-    const poNo = await nextPoNo(req.params.id);
+    const owner = req.body?.ownerPackageId ? await ownerPackage(req.params.id, req.body.ownerPackageId, req.user!.role) : null;
+    if (req.body?.ownerPackageId && !owner) return res.status(404).json({ error: "That work package is not in this project." });
+    const poNo = await nextPoNo(req.params.id, !!owner);
     const po = await ProcurementPO.create({
       projectId: req.params.id, poNo, lineItems: [], total: "0",
       vendorName: String(req.body?.vendorName || ""), terms: DEFAULT_PO_TERMS, addedByName: req.user!.name || "",
+      ownerPackageId: owner ? String(owner._id) : "",
     });
-    const owner = await ownerPackage(req.params.id, req.body?.ownerPackageId, req.user!.role);
-    if (owner) { po.ownerPackageId = String(owner._id); await po.save(); await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id)); }
+    if (owner) await linkIfEmpty(req.params.id, String(owner._id), "poId", String(po._id), ProcurementPO as never);
     await logEvent(req, { entityId: String(po._id), action: "created", toValue: poNo });
     res.status(201).json(po);
   } catch (err) { next(err); }

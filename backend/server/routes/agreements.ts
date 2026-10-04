@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import WorkPackage from "../models/WorkPackage";
 import Agreement, { IAgreement, AgreementStatus, AgreementEntityType } from "../models/Agreement";
 import AgreementTemplate from "../models/AgreementTemplate";
 import { nextSequence } from "../models/Counter";
@@ -286,6 +287,9 @@ function buildAgreementRouter(ctx: Ctx): Router {
           filter.$or = scopes;
         }
       }
+      // CR 347 - a work package's agreement is kept with the package: staff see it there (?package=)
+      // and not in the agreement lists. (A party it was shared with still sees it as theirs.)
+      if (p.staff) filter.ownerPackageId = req.query.package ? String(req.query.package) : { $in: ["", null] };
       let list = await Agreement.find(filter).sort({ createdAt: -1 });
       // CR-P (62) — being NAMED on an agreement is not the same as having been GIVEN it. Until the
       // agreement is shared, it is internal: "we don't want them to see... you are adding some
@@ -341,6 +345,8 @@ function buildAgreementRouter(ctx: Ctx): Router {
         // general agreements own no entity — the counterparty lives entirely in partySnapshot
         ownerEntityType: entityType as AgreementEntityType,
         ownerEntityId: ctx === "project" ? String(b.ownerEntityId || "") : "",
+        // CR 347 - made in a work package: the package owns it (it must be a real package).
+        ownerPackageId: b.ownerPackageId && mongoose.isValidObjectId(String(b.ownerPackageId)) && (await WorkPackage.exists({ _id: String(b.ownerPackageId) })) ? String(b.ownerPackageId) : "",
         name: String(b.name || "").slice(0, 160),
         agreementNo: await nextAgreementNo(),   // CR-P (23) — server-assigned, never from the client
         title: String(b.title || "").slice(0, 200),

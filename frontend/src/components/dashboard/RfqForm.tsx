@@ -330,7 +330,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                 <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mr-1" title="Off: target prices are only for GreenTech. On: they are printed on the vendors' copies.">
                   <input type="checkbox" checked={showTargets} onChange={(e) => setShowTargets(e.target.checked)} className="accent-blue-600" /> Show target prices to vendors
                 </label>
-                <button onClick={() => { setBoqPicks({}); setBoqOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Upload size={12} /> Import from BOQ</button>
+{!ownerPackage && <button onClick={() => { setBoqPicks({}); setBoqOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Upload size={12} /> Import from BOQ</button>}
                 <button onClick={() => { setLibPicks({}); setLibOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><BookOpen size={12} /> Add from Library</button>
                 <button onClick={addBlank} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Plus size={12} /> Add item</button>
               </div>
@@ -351,7 +351,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.length === 0 && <tr><td colSpan={9} className={`px-3 py-6 text-center text-[11px] ${tried ? "text-red-500" : "text-slate-400"}`}>No items yet. Import them from the BOQ, add them from the library, or add them one by one.</td></tr>}
+                  {rows.length === 0 && <tr><td colSpan={9} className={`px-3 py-6 text-center text-[11px] ${tried ? "text-red-500" : "text-slate-400"}`}>{ownerPackage ? "No items yet. Add them from the library, or one by one." : "No items yet. Import them from the BOQ, add them from the library, or add them one by one."}</td></tr>}
                   {rows.map((r, i) => {
                     const fromBoq = boqItems.some((it) => it._id === r.itemId);
                     return (

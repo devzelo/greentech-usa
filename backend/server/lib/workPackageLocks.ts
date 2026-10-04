@@ -15,10 +15,12 @@ export const agrLock = (a: { agreementNo?: string; name?: string; status?: strin
   a && a.status === "Signed" ? { kind: "agreement" as const, no: a.agreementNo || a.name || "the agreement", label: "signed" } : null;
 export type Lock = NonNullable<ReturnType<typeof poLock> | ReturnType<typeof agrLock>>;
 
-export async function locksOf(projectId: string, doc: { poId?: string; agreementId?: string }): Promise<Lock[]> {
+export async function locksOf(projectId: string, doc: { _id?: unknown; poId?: string; agreementId?: string }): Promise<Lock[]> {
+  // CR 347 - only the package's own PO / agreement binds it (not a Procurement record linked before).
+  const own = doc._id ? { ownerPackageId: String(doc._id) } : {};
   const [po, agr] = await Promise.all([
-    doc.poId && mongoose.isValidObjectId(doc.poId) ? ProcurementPO.findOne({ _id: doc.poId, projectId }).select("poNo status signatureUrl").lean() : null,
-    doc.agreementId && mongoose.isValidObjectId(doc.agreementId) ? Agreement.findById(doc.agreementId).select("agreementNo name status").lean() : null,
+    doc.poId && mongoose.isValidObjectId(doc.poId) ? ProcurementPO.findOne({ _id: doc.poId, projectId, ...own }).select("poNo status signatureUrl").lean() : null,
+    doc.agreementId && mongoose.isValidObjectId(doc.agreementId) ? Agreement.findOne({ _id: doc.agreementId, ...own }).select("agreementNo name status").lean() : null,
   ]);
   return [poLock(po), agrLock(agr)].filter((x): x is Lock => !!x);
 }

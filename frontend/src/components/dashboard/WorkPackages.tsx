@@ -88,12 +88,12 @@ const coDocs = (p: ApiWorkPackage) => {
  * CR 345 - the package's agreement, filled from the package (its name, scope and company), linked to
  * the project; the package keeps its id.
  */
-async function createPackageAgreement(project: ApiProject, f: { name?: string; description?: string; responsible?: ApiWorkPackage["responsible"] }) {
+async function createPackageAgreement(project: ApiProject, f: { name?: string; description?: string; responsible?: ApiWorkPackage["responsible"] }, packageId: string) {
   const name = (f.name || "").trim(), detail = (f.description || "").trim();
   const who = f.responsible || { kind: "company", companyId: "", name: "" };
   const c = who.kind === "company" && who.companyId ? await fetchCompany(who.companyId).catch(() => null) : null;
   return createAgreement({ kind: "general" }, {
-    name, title: name, description: detail, agreementType: "Service",
+    name, title: name, description: detail, agreementType: "Service", ownerPackageId: packageId,
     linkedProjects: [{ id: project.id, name: project.name, location: project.location || "" }],
     partySnapshot: {
       party1: { name: GREENTECH.name, contactName: "", address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone, logoUrl: "/gt-usa-logo-new.png" },
@@ -526,7 +526,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
           open={ws.open}
           onCreateAgreement={async () => {
             try {
-              const ag = await createPackageAgreement(project, ws.pkg);
+              const ag = await createPackageAgreement(project, ws.pkg, ws.pkg._id);
               replace(await updateWorkPackage(project.id, ws.pkg._id, { agreementId: ag._id }));
               toast(`Agreement ${ag.agreementNo || ""} made for this package.`.replace("  ", " "), "success");
               return ag._id;
@@ -573,10 +573,8 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
   const [agrs, setAgrs] = useState<ApiAgreement[]>([]);
   useEffect(() => {
     if (pkg) fetchRfqs(project.id, false, { package: pkg._id }).then(setRfqs).catch(() => setRfqs([]));
-    Promise.all([
-      fetchProjectAgreements(project.id).catch(() => [] as ApiAgreement[]),
-      fetchAgreements({ kind: "general" }).then((l) => l.filter((a) => (a.linkedProjects || []).some((lp) => lp.id === project.id))).catch(() => [] as ApiAgreement[]),
-    ]).then(([own, general]) => setAgrs([...own, ...general]));
+    // CR 347 - the package's own agreement (for its contract value).
+    if (pkg) fetchAgreements({ kind: "general" }, false, { package: pkg._id }).then(setAgrs).catch(() => setAgrs([]));
   }, [project.id]);
 
   /**
@@ -621,7 +619,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
         ? await createProcurementPO(project.id, linkedRfq._id, awarded._id, pkg._id)
         : await createManualPO(project.id, who.kind === "company" ? who.name : "", pkg._id);
       if (!(linkedRfq && awarded)) po = await updateProcurementPO(project.id, po._id, { lineItems: [{ itemId: "", description: name, qty: "1", unit: "lot", unitPrice: "" }] });
-      await linkAndOpen({ poId: f.poId || po._id }, { tab: "po", poId: po._id }, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price below."}`);
+      await linkAndOpen({ poId: pkg.po ? f.poId : po._id }, { tab: "po", poId: po._id }, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price below."}`);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PO.", "error"); }
     finally { setMaking(""); }
   };
@@ -629,7 +627,7 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
     if (!pkg) return;
     setMaking("agreement");
     try {
-      const ag = await createPackageAgreement(project, f);
+      const ag = await createPackageAgreement(project, f, pkg._id);
       await linkAndOpen({ agreementId: ag._id }, { tab: "agreement" }, `Agreement ${ag.agreementNo || ""} made for this package. Write it below.`.replace("  ", " "));
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); }
     finally { setMaking(""); }
@@ -735,13 +733,13 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
               <div className="space-y-2">
                 {/* CR 346 - each one: the package's own record (open it), or Create. Nothing is chosen from Procurement. */}
                 {([
-                  { k: "rfq" as const, label: "RFQ", has: !!f.rfqId, rec: f.rfqId && pkg.rfq?.id === f.rfqId ? { no: `RFQ ${pkg.rfq.no}`, sub: [pkg.rfq.status, pkg.quotes.count ? `${pkg.quotes.count} quote${pkg.quotes.count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") } : null,
+                  { k: "rfq" as const, label: "RFQ", has: !!f.rfqId && pkg.rfq?.id === f.rfqId, rec: f.rfqId && pkg.rfq?.id === f.rfqId ? { no: `RFQ ${pkg.rfq.no}`, sub: [pkg.rfq.status, pkg.quotes.count ? `${pkg.quotes.count} quote${pkg.quotes.count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") } : null,
                     open: () => openHere({ tab: "rfq", rfqId: f.rfqId }), make: makeRfq, makeLabel: "Create an RFQ",
                     help: `Opens the Create RFQ window here, filled from the package${who.companyId ? `, with ${who.name} as the first vendor` : ""}.` },
-                  { k: "po" as const, label: "Purchase order", has: !!f.poId, rec: f.poId && pkg.po?.id === f.poId ? { no: pkg.po.no, sub: pkg.po.signed ? "Signed" : pkg.po.status } : null,
+                  { k: "po" as const, label: "Purchase order", has: !!f.poId && pkg.po?.id === f.poId, rec: f.poId && pkg.po?.id === f.poId ? { no: pkg.po.no, sub: pkg.po.signed ? "Signed" : pkg.po.status } : null,
                     open: () => openHere({ tab: "po", poId: f.poId }), make: makePo, makeLabel: "Create a PO",
                     help: linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one first, or make the PO now and price it.` : "A PO for the package's company with the package as its line; priced in the PO." },
-                  { k: "agreement" as const, label: "Agreement", has: !!f.agreementId, rec: f.agreementId && pkg.agreement?.id === f.agreementId ? { no: pkg.agreement.no, sub: pkg.agreement.status } : null,
+                  { k: "agreement" as const, label: "Agreement", has: !!f.agreementId && pkg.agreement?.id === f.agreementId, rec: f.agreementId && pkg.agreement?.id === f.agreementId ? { no: pkg.agreement.no, sub: pkg.agreement.status } : null,
                     open: () => openHere({ tab: "agreement" }), make: makeAgreement, makeLabel: "Create an agreement",
                     help: `With ${who.name || "the package's company"} as the other party, titled with the package's name; written and signed here.` },
                 ]).map((x) => (

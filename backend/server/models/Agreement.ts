@@ -25,6 +25,7 @@ export interface IAgreement extends Document {
   ownerProjectId: string;     // project context
   ownerEntityType: AgreementEntityType;
   ownerEntityId: string;      // subId / vendorId; "jv" for the project's partner
+  ownerPackageId: string;     // CR 347 - the work package this agreement belongs to ("" = none)
 
   name: string;               // auto-generated code (GT-…), editable
   // CR-P (23) — the document's own reference, AG-0001, AG-0002, … Assigned by the server from a
@@ -156,6 +157,7 @@ const AgreementSchema = new Schema<IAgreement>(
     ownerProjectId: { type: String, default: "", index: true },
     ownerEntityType: { type: String, enum: ["", "partner", "subcontractor", "vendor"], default: "" },
     ownerEntityId: { type: String, default: "", index: true },
+    ownerPackageId: { type: String, default: "", index: true },
 
     name: { type: String, default: "" },
     agreementNo: { type: String, default: "", index: true },   // CR-P (23) — AG-0001, AG-0002, …

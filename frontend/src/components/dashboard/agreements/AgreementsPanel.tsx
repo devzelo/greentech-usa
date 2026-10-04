@@ -161,10 +161,12 @@ type Draft = {
 };
 const BLANK_ASSIGNEES = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "" };
 
-export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults, onlyIds, openId, noCreate }: {
+export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults, onlyIds, openId, noCreate, ownerPackageId }: {
   ctx: AgreementCtx; canManage: boolean; canSign?: boolean; defaults?: AgreementDefaults;
   /** CR 345 - shown inside a work package: only these agreements, the given one opened, no new ones from here. */
   onlyIds?: string[]; openId?: string; noCreate?: boolean;
+  /** CR 347 - the work package whose own agreements these are. */
+  ownerPackageId?: string;
 }) {
   const [list, setList] = useState<ApiAgreement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,7 +260,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
 
   const load = async () => {
     setLoading(true);
-    try { const all = await fetchAgreements(ctx, showArchived); setList(onlyIds ? all.filter((a) => onlyIds.includes(a._id)) : all); } catch { /* keep */ } finally { setLoading(false); }
+    try { const all = await fetchAgreements(ctx, showArchived, ownerPackageId ? { package: ownerPackageId } : {}); setList(onlyIds ? all.filter((a) => onlyIds.includes(a._id)) : all); } catch { /* keep */ } finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [JSON.stringify(ctx), showArchived]);
   // CR-PR-09 — Party 2 is a company for every agreement except an employee one, where it is

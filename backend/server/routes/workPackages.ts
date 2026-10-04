@@ -76,7 +76,7 @@ async function clean(projectId: string, body: Record<string, unknown>, current?:
   }
   if (body.agreementId !== undefined) {
     const id = oid(body.agreementId);
-    out.agreementId = id && (await Agreement.exists({ _id: id, $or: [{ ownerProjectId: projectId }, { "linkedProjects.id": projectId }] })) ? id : "";
+    out.agreementId = id && (id === (current as { agreementId?: string } | undefined)?.agreementId || await Agreement.exists({ _id: id, ownerPackageId: own })) ? id : "";
   }
   if (body.status !== undefined) out.status = status(body.status);
   if (body.progressMode !== undefined) out.progressMode = ["subtasks", "schedule"].includes(String(body.progressMode)) ? String(body.progressMode) : "manual";
@@ -118,10 +118,10 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
   const ids = (k: "rfqId" | "poId" | "agreementId") => [...new Set(rows.map((r) => r[k]).filter((x) => mongoose.isValidObjectId(x)))];
   const rfqIds = ids("rfqId"), poIds = ids("poId"), agrIds = ids("agreementId");
   const [rfqs, quotes, pos, agrs, invoices] = await Promise.all([
-    rfqIds.length ? Rfq.find({ _id: { $in: rfqIds }, projectId }).select("rfqNo title status sentAt recipients createdAt").lean() : [],
+    rfqIds.length ? Rfq.find({ _id: { $in: rfqIds }, projectId }).select("rfqNo title status sentAt recipients createdAt ownerPackageId").lean() : [],
     rfqIds.length ? VendorQuote.find({ rfqId: { $in: rfqIds }, projectId }).select("rfqId vendorId status").lean() : [],
-    poIds.length ? ProcurementPO.find({ _id: { $in: poIds }, projectId }).select("poNo status total vendorId vendorName signatureUrl createdAt").lean() : [],
-    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt ownerContextType contractValue").lean() : [],
+    poIds.length ? ProcurementPO.find({ _id: { $in: poIds }, projectId }).select("poNo status total vendorId vendorName signatureUrl createdAt ownerPackageId").lean() : [],
+    agrIds.length ? Agreement.find({ _id: { $in: agrIds } }).select("agreementNo name title status effectiveDate partySnapshot.party2 createdAt ownerContextType contractValue ownerPackageId").lean() : [],
     showMoney && (poIds.length || agrIds.length)
       ? Invoice.find({ projectId, type: "received", $or: [{ poId: { $in: poIds } }, { "contractRef.agreementId": { $in: agrIds } }] }).select("poId contractRef payments").lean()
       : [],
@@ -141,10 +141,13 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
   const paidOf = (inv: { payments?: Array<{ amount: string }> }) => (inv.payments || []).reduce((a, p) => a + money(p.amount), 0);
 
   return rows.map((r) => {
-    const rfq = rfqs.find((x) => String(x._id) === r.rfqId);
-    const qs = quotes.filter((q) => q.rfqId === r.rfqId && r.rfqId);
-    const po = pos.find((x) => String(x._id) === r.poId);
-    const agr = agrs.find((x) => String(x._id) === r.agreementId);
+    // CR 347 - only what the package owns shows on it: a link left from before, to a Procurement
+    // record or a General Agreement, is not the package's.
+    const mine = (x: { ownerPackageId?: string }) => x.ownerPackageId === String(r._id);
+    const rfq = rfqs.find((x) => String(x._id) === r.rfqId && mine(x));
+    const qs = rfq ? quotes.filter((q) => q.rfqId === r.rfqId) : [];
+    const po = pos.find((x) => String(x._id) === r.poId && mine(x));
+    const agr = agrs.find((x) => String(x._id) === r.agreementId && mine(x as { ownerPackageId?: string }));
     const awarded = qs.find((q) => q.status === "Awarded");
     const vendorName = (id: string) => vendorOf.get(id)?.name || "";
     // Who does it: the company chosen on the package, else whoever won the quote, else the PO's vendor.
@@ -184,7 +187,7 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
     const agrValue = agr ? money((agr as { contractValue?: string }).contractValue) : 0;
     const original = po ? money(po.total) : agrValue || r.budget || 0;
     const changes = (r.changeOrders || []).filter((c) => c.status === "approved").reduce((a, c) => a + (c.amount || 0), 0);
-    const paid = invoices.filter((i) => (r.poId && i.poId === r.poId) || (r.agreementId && i.contractRef?.agreementId === r.agreementId)).reduce((a, i) => a + paidOf(i), 0)
+    const paid = invoices.filter((i) => (po && i.poId === r.poId) || (agr && i.contractRef?.agreementId === r.agreementId)).reduce((a, i) => a + paidOf(i), 0)
       + expenses.filter((e) => e.workPackageId === String(r._id)).reduce((a, e) => a + (money(e.qty) || 1) * money(e.amount), 0);
     out.money = { original, source: po ? "po" : agrValue ? "agreement" : r.budget ? "budget" : "", changes, changeCount: (r.changeOrders || []).filter((c) => c.status === "approved").length, current: original + changes, paid, remaining: original + changes - paid };
     return out;
@@ -294,8 +297,8 @@ router.delete("/:wid", async (req: AuthedRequest, res: Response, next: NextFunct
     if (!mongoose.isValidObjectId(req.params.wid)) return res.status(404).json({ error: "Not found" });
     const doc = await WorkPackage.findOne({ _id: req.params.wid, projectId: req.params.id });
     if (!doc) return res.status(404).json({ error: "Not found" });
-    if (doc.poId && (await ProcurementPO.exists({ _id: doc.poId, projectId: req.params.id }))) return res.status(400).json({ error: "A purchase order is linked to this work package. Unlink it first, or archive the package instead." });
-    if (doc.agreementId && (await Agreement.exists({ _id: doc.agreementId, status: "Signed" }))) return res.status(400).json({ error: "A signed agreement is linked to this work package. Unlink it first, or archive the package instead." });
+    if (doc.poId && (await ProcurementPO.exists({ _id: doc.poId, projectId: req.params.id, ownerPackageId: String(doc._id) }))) return res.status(400).json({ error: "A purchase order is linked to this work package. Unlink it first, or archive the package instead." });
+    if (doc.agreementId && (await Agreement.exists({ _id: doc.agreementId, status: "Signed", ownerPackageId: String(doc._id) }))) return res.status(400).json({ error: "A signed agreement is linked to this work package. Unlink it first, or archive the package instead." });
     const project = await Project.findOne({ projectId: req.params.id }).select("name").lean();
     await recycleAndDelete(doc, { kind: "work-package", name: doc.name, subtitle: "Work package", projectId: req.params.id, projectName: project?.name || "", deletedById: req.user?.userId, deletedByName: req.user?.name || "" });
     res.json({ message: "Deleted" });

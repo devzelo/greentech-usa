@@ -17,10 +17,9 @@ export async function ownerFilter(projectId: string, query: Record<string, unkno
   if (String(query.all || "") === "1" && !outside) return {};
   const pkgId = outside ? "" : String(query.package || "");
   if (pkgId) {
-    const pkg = mongoose.isValidObjectId(pkgId) ? await WorkPackage.findOne({ _id: pkgId, projectId }).select(linkField).lean() : null;
-    if (!pkg) return { _id: null };
-    const linked = String((pkg as unknown as Record<string, unknown>)[linkField] || "");
-    return { $or: [{ ownerPackageId: pkgId }, ...(mongoose.isValidObjectId(linked) ? [{ _id: linked }] : [])] };
+    // CR 347 - the package's own records only; nothing of Procurement's shows in a package.
+    const pkg = mongoose.isValidObjectId(pkgId) ? await WorkPackage.exists({ _id: pkgId, projectId }) : null;
+    return pkg ? { ownerPackageId: pkgId } : { _id: null };
   }
   return { ownerPackageId: { $in: ["", null] } };
 }
@@ -47,8 +46,26 @@ export async function ownerPackage(projectId: string, id: unknown, role = "") {
   return mongoose.isValidObjectId(s) ? WorkPackage.findOne({ _id: s, projectId }) : null;
 }
 
+/**
+ * CR 347 - a package's documents are numbered on their own (RFQ WP-001, PO WP-001, ... per project), so
+ * making one never uses up a Procurement number.
+ */
+export async function nextPackageNo(model: { find: (q: Record<string, unknown>) => { select: (f: string) => { lean: () => Promise<unknown> } } }, projectId: string, field: "rfqNo" | "poNo", prefix: string): Promise<string> {
+  const rows = await model.find({ projectId, [field]: new RegExp(`^${prefix}-`) }).select(field).lean() as Array<Record<string, string>>;
+  const n = rows.reduce((m, r) => Math.max(m, parseInt(String(r[field] || "").slice(prefix.length + 1), 10) || 0), 0) + 1;
+  return `${prefix}-${String(n).padStart(3, "0")}`;
+}
+/** Procurement's own records only, for Procurement's numbering. */
+export const procurementOnly = { ownerPackageId: { $in: ["", null] } };
+
 /** The package's main RFQ / PO is the first one made for it (later ones are listed in its view too). */
-export async function linkIfEmpty(projectId: string, pkgId: string, field: "rfqId" | "poId", recordId: string) {
+export async function linkIfEmpty(projectId: string, pkgId: string, field: "rfqId" | "poId", recordId: string, model?: { exists: (q: Record<string, unknown>) => Promise<unknown> }) {
   if (!pkgId) return;
-  await WorkPackage.updateOne({ _id: pkgId, projectId, [field]: { $in: ["", null] } }, { $set: { [field]: recordId } });
+  const pkg = await WorkPackage.findOne({ _id: pkgId, projectId }).select(field).lean() as unknown as Record<string, unknown> | null;
+  if (!pkg) return;
+  const cur = String(pkg[field] || "");
+  // A link to a record the package does not own (a Procurement one, from before) counts as empty.
+  const ownsCurrent = !!cur && mongoose.isValidObjectId(cur) && !!model && !!(await model.exists({ _id: cur, ownerPackageId: pkgId }));
+  if (cur && (ownsCurrent || !model)) return;
+  await WorkPackage.updateOne({ _id: pkgId, projectId }, { $set: { [field]: recordId } });
 }

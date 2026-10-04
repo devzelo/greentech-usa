@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import Rfq from "../models/Rfq";
 import WorkPackage from "../models/WorkPackage";
-import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned } from "../lib/packageOwned";
+import { ownerFilter, ownerPackage, linkIfEmpty, guardOwned, nextPackageNo, procurementOnly } from "../lib/packageOwned";
 import Company from "../models/Company";
 import Project from "../models/Project";
 import User from "../models/User";
@@ -87,9 +87,10 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (req.body?.ownerPackageId && !owner) return res.status(404).json({ error: "That work package is not in this project." });
     // G — numbers-only, per-project, RFQ range starts at 7000. Use max-existing+1 (not count+1)
     // so deleting an RFQ never lets the next one reuse a number (CR-PR-06 durable uniqueness).
-    const existingRfqs = await Rfq.find({ projectId: req.params.id }).select("rfqNo").lean();
+    // CR 347 - a package's RFQs are numbered on their own (RFQ WP-001); Procurement's go on from 7000.
+    const existingRfqs = owner ? [] : await Rfq.find({ projectId: req.params.id, ...procurementOnly }).select("rfqNo").lean();
     const maxRfqNo = existingRfqs.reduce((m, r) => Math.max(m, parseInt(String((r as { rfqNo?: string }).rfqNo ?? "").replace(/[^0-9]/g, ""), 10) || 0), 7000);
-    const rfqNo = String(maxRfqNo + 1);
+    const rfqNo = owner ? await nextPackageNo(Rfq as never, req.params.id, "rfqNo", "WP") : String(maxRfqNo + 1);
     const rfq = await Rfq.create({
       projectId: req.params.id, rfqNo, title: title || `RFQ ${rfqNo}`,
       lineItems: Array.isArray(lineItems) ? lineItems.slice(0, 500) : [],
@@ -105,7 +106,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (owner) {
       rfq.ownerPackageId = String(owner._id);
       await rfq.save();
-      await linkIfEmpty(req.params.id, String(owner._id), "rfqId", String(rfq._id));
+      await linkIfEmpty(req.params.id, String(owner._id), "rfqId", String(rfq._id), Rfq as never);
       return res.status(201).json({ ...rfq.toObject(), quotes: [], workPackageId: String(owner._id) });
     }
     // CR 346 - a Procurement RFQ never links to a work package (they are kept apart).

@@ -2837,8 +2837,9 @@ const agrBase = (ctx: AgreementCtx) =>
 export async function fetchProjectAgreements(projectId: string): Promise<ApiAgreement[]> {
   return request(`/projects/${projectId}/agreements`);
 }
-export async function fetchAgreements(ctx: AgreementCtx, archived = false): Promise<ApiAgreement[]> {
+export async function fetchAgreements(ctx: AgreementCtx, archived = false, opts: { package?: string } = {}): Promise<ApiAgreement[]> {
   const parts: string[] = [];
+  if (opts.package) parts.push(`package=${encodeURIComponent(opts.package)}`);   // CR 347 - a work package's own
   if (ctx.kind === "project") parts.push(`entityType=${encodeURIComponent(ctx.entityType)}`, `entityId=${encodeURIComponent(ctx.entityId)}`);
   if (archived) parts.push("archived=true");
   return request(`${agrBase(ctx)}${parts.length ? `?${parts.join("&")}` : ""}`);
@@ -2858,6 +2859,8 @@ export async function setAgreementArchived(ctx: AgreementCtx, aid: string, archi
 }
 export interface AgreementInput {
   name?: string; title?: string; description?: string; agreementType?: string; templateId?: string; contractValue?: string;
+  /** CR 347 - made in a work package: the package owns it (kept out of the agreement lists). */
+  ownerPackageId?: string;
   linkedProjects?: Array<{ id: string; name: string; location?: string }>;
   effectiveDate?: string; startDate?: string; endDate?: string;
   docStatus?: string;

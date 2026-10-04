@@ -40,6 +40,9 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   ownerPackage?: { id: string; name: string };
   onChanged?: () => void }) {
   const scope = ownerPackage ? { package: ownerPackage.id } : {};
+  // CR 347 - a package's documents are filed with the package (Project Management), not in Procurement.
+  const docSection = ownerPackage ? "pm-work-packages" : "procurement-po";
+  const docFolder = ownerPackage ? ownerPackage.name.replace(/[\\/]+/g, " ").trim() : "";
   const present = useBuilderPresence(projectId ? `po:${projectId}` : null, "Purchase Orders"); // CR-B-01
   const [pos, setPOs] = useState<ApiProcurementPO[]>([]);
   const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
@@ -152,7 +155,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const autoSavePoDoc = async (po: ApiProcurementPO) => {
     try {
       const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-      await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), "procurement-po", true);
+      await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder);
     } catch { /* best-effort */ }
   };
   // CR-PR-06 — a manual PO (not from a BOQ/quote); opens straight into the editor.
@@ -291,7 +294,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     try {
       const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
       const file = new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" });
-      await uploadDocument(projectId, file, "procurement-po", true);
+      await uploadDocument(projectId, file, docSection, true, docFolder);
       toast("Saved to project documents (Procurement → Purchase Orders).", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
     finally { setSavingDoc(null); }
@@ -482,7 +485,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-slate-400 mb-2">Record the vendor's invoice here and upload its file below. Once the number, amount and date are in, it goes to <span className="font-bold">Invoices Received</span> by itself (with the file), where it is paid; the payment is recorded in Expenses. It is also listed in Procurement &gt; Invoices.</p>
+          <p className="text-[10px] text-slate-400 mb-2">Record the vendor's invoice here and upload its file below. Once the number, amount and date are in, it goes to <span className="font-bold">Invoices Received</span> by itself (with the file), where it is paid; the payment is recorded in Expenses.{ownerPackage ? "" : " It is also listed in Procurement > Invoices."}</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input className={inp} placeholder="Invoice #" value={po.invoiceNo} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceNo: e.target.value })} onBlur={(e) => save(po._id, "invoiceNo", e.target.value)} />
             <input className={inp} placeholder="Invoice amount" value={po.invoiceAmount} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceAmount: e.target.value })} onBlur={(e) => save(po._id, "invoiceAmount", e.target.value)} />
@@ -558,7 +561,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
         </div>
 
         {/* Approved submittals — optionally add the approved submittal document(s) to the PO */}
-        {(() => {
+        {!ownerPackage && (() => {
           const itemIds = Array.from(new Set(po.lineItems.map((l) => l.itemId).filter(Boolean) as string[]));
           const rows = itemIds.map((iid) => ({ iid, data: approvedSubDocsForItem(iid) })).filter((r) => r.data && r.data.atts.length);
           if (!rows.length) return null;
@@ -637,7 +640,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
             <tr className="hover:bg-slate-50/40" data-po-row={po._id}>
               <td className="px-3 py-2 align-top"><button onClick={() => setOpenId(isOpen ? null : po._id)} className="text-slate-400 hover:text-slate-900">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
               <td className="px-3 py-2 align-top font-bold text-slate-700 whitespace-nowrap">PO {po.poNo}</td>
-              <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{poRef(po) || "—"}</td>
+              {!ownerPackage && <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{poRef(po) || "—"}</td>}
               <td className="px-3 py-2 align-top font-bold text-slate-700">{po.vendorName || vendorName(po.vendorId) || <span className="text-slate-300 font-medium italic">— add in detail</span>}</td>
               <td className="px-3 py-2 align-top text-slate-500">{po.lineItems.length}</td>
               <td className="px-3 py-2 align-top font-bold text-slate-700 whitespace-nowrap">{money(n(po.total))}</td>
@@ -666,8 +669,8 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">Purchase Orders</h3><PresenceBar users={present} /></div>
-          <p className="text-xs font-medium text-slate-400 mt-1">Create a PO from an accepted quote, link the vendor invoice, and it auto-posts to the project expenses.</p>
+          <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">{ownerPackage ? "Purchase orders" : "Purchase Orders"}</h3><PresenceBar users={present} /></div>
+          <p className="text-xs font-medium text-slate-400 mt-1">{ownerPackage ? "This package's purchase orders: make one from the quote you accepted or start a blank one, sign it, add the vendor's invoice." : "Create a PO from an accepted quote, link the vendor invoice, and it auto-posts to the project expenses."}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {canEdit && <button onClick={() => setShowArchived((v) => !v)} className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border ${showArchived ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"}`}><Archive size={12} /> {showArchived ? "Active" : "Archived"}</button>}
@@ -681,7 +684,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
                   <button type="button" aria-label="Close" onClick={() => setNewPoMenu(false)} className="fixed inset-0 z-10 cursor-default" />
                   <div className="absolute right-0 z-20 mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5">
                     <button onClick={createManual} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700">Manual PO <span className="block text-[10px] font-medium text-slate-400">Empty PO — add vendor &amp; line items yourself</span></button>
-                    <button onClick={() => { setNewPoMenu(false); onGoToBOQ?.(); }} disabled={!onGoToBOQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From BOQ items <span className="block text-[10px] font-medium text-slate-400">Select items in BOQ → Create PO</span></button>
+                    {!ownerPackage && <button onClick={() => { setNewPoMenu(false); onGoToBOQ?.(); }} disabled={!onGoToBOQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From BOQ items <span className="block text-[10px] font-medium text-slate-400">Select items in BOQ → Create PO</span></button>}
                     <button onClick={() => { setNewPoMenu(false); (onGoToQuotes ?? onGoToRFQ)?.(); }} disabled={!onGoToQuotes && !onGoToRFQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From an approved quote <span className="block text-[10px] font-medium text-slate-400">Open Quotes → accepted quote → Create PO</span></button>
                     <button onClick={() => { setNewPoMenu(false); onGoToRFQ?.(); }} disabled={!onGoToRFQ} className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 text-sm font-semibold text-slate-700 disabled:opacity-40">From RFQ <span className="block text-[10px] font-medium text-slate-400">Open RFQs → convert to PO</span></button>
                   </div>
@@ -751,7 +754,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th className="w-8 px-3 py-2" />
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("poNo")} className="uppercase tracking-widest hover:text-slate-700">PO #{sortArrow("poNo")}</button></th>
-                <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("boq")} className="uppercase tracking-widest hover:text-slate-700">BOQ #{sortArrow("boq")}</button></th>
+                {!ownerPackage && <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("boq")} className="uppercase tracking-widest hover:text-slate-700">BOQ #{sortArrow("boq")}</button></th>}
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("vendor")} className="uppercase tracking-widest hover:text-slate-700">Vendor{sortArrow("vendor")}</button></th>
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Items</th>
                 <th className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px]"><button onClick={() => toggleSort("total")} className="uppercase tracking-widest hover:text-slate-700">Total{sortArrow("total")}</button></th>
