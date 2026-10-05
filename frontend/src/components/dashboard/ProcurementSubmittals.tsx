@@ -260,6 +260,18 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     finally { setBuilding(null); }
   };
 
+  // CR 211 - the submittals table sorts by any column, inside each section. (A hook: it must run
+  // before the loading return below, every render, or React sees a different number of hooks.)
+  const subSort = useTableSort<ApiSubmittal>([], {
+    no: (sub) => itemNo[sub.itemId] ?? 0,
+    rv: (sub) => sub.revisions.length,
+    product: (sub) => sub.productName || sub.title || "",
+    brand: (sub) => sub.manufacturer || "",
+    model: (sub) => sub.modelNo || "",
+    spec: (sub) => sub.specSection || "",
+    status: (sub) => { const c = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1]; return c?.disposition || ""; },
+  });
+
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
 
   // The client's signed reply (approval / rejection letter). This is the client's RESPONSE to the
@@ -585,16 +597,6 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
 
   // D1 — one table row per submittal (summary). Expand = read-only preview; Actions button = modal.
   const SUB_COLS = ["#", "RV", "Product", "Brand", "Model", "Spec", "Status", "Actions"];
-  // CR 211 - the submittals table sorts by any column, inside each section.
-  const subSort = useTableSort<ApiSubmittal>([], {
-    no: (sub) => itemNo[sub.itemId] ?? 0,
-    rv: (sub) => sub.revisions.length,
-    product: (sub) => sub.productName || sub.title || "",
-    brand: (sub) => sub.manufacturer || "",
-    model: (sub) => sub.modelNo || "",
-    spec: (sub) => sub.specSection || "",
-    status: (sub) => { const c = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1]; return c?.disposition || ""; },
-  });
   const subHead = () => (
     <tr className="border-b border-slate-100">
       {SUB_COLS.map((h, i) => {
