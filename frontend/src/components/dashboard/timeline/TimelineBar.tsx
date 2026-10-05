@@ -113,9 +113,12 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
     const span2 = cs && dl ? Math.max(DAY, dl.getTime() - cs.getTime()) : 0;
     const p2 = (d: Date) => (cs && span2 ? Math.max(0, Math.min(100, ((d.getTime() - cs.getTime()) / span2) * 100)) : 0);
     const nowPct = cs && dl ? p2(today) : null;
-    // One thin line: start, the elapsed bar with Today (and any extension), the deadline, time left.
+    // Two lines: start, the elapsed bar with Today (and any extension) and the deadline; then the
+    // duration and the time left. CR 351 - the duration always sits on the second line, beside the time
+    // left, as it does with an extension (without one it used to stay up on the bar's line).
     return (
-      <div className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-100 bg-white px-3 py-1.5 shadow-sm lg:w-[44rem] ${className}`}>
+      <div className={`flex w-full flex-col gap-1 rounded-xl border border-slate-100 bg-white px-3 py-1.5 shadow-sm lg:w-[44rem] ${className}`}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
           <CalendarClock size={13} className={overdue ? "text-red-500" : "text-emerald-500"} /> Contract time
         </span>
@@ -129,6 +132,8 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           {nowPct !== null && today <= (dl as Date) && <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded bg-blue-600" style={{ left: `${nowPct}%` }} title={`Today, ${fmtDay(today)}`} />}
         </div>
         {extensions}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
         {totalDays !== null && (
           <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-slate-700" title={durationTitle}>
             <span className="text-[9px] uppercase tracking-widest text-slate-400">Duration</span>
@@ -145,6 +150,7 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
           {deadline ? (overdue ? remaining : `${remaining} left`) : "No deadline"}
           {deadline && <span className="ml-1 font-semibold text-slate-400">({remainingDays}d{elapsedPct !== null ? `, ${Math.round(elapsedPct)}% elapsed` : ""})</span>}
         </span>
+        </div>
       </div>
     );
   }
