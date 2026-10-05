@@ -4831,7 +4831,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   {/* CR 198 - each tab says what it is for. */}
                   {([
                     { k: "cover" as const, label: "Cover Page", hint: "The front page: its style, the titles, the solicitation and client details, and the photos." },
-                    { k: "letter" as const, label: "Transmittal Letter", hint: "The covering letter to the client, printed with the cover (page 1 or 2), signed by whoever you pick." },
+                    { k: "letter" as const, label: "Cover Letter", hint: "The covering letter to the client, printed with the cover (page 1 or 2), signed by whoever you pick." },
                     { k: "builder" as const, label: "Builder", hint: "The body of the proposal: its sections, their content and their order." },
                     { k: "attachments" as const, label: "Attachments", hint: "Files that print at the end, or inside a section set to Government form or External." },
                     { k: "versions" as const, label: "Saved Versions", hint: "Every revision filed so far, including the ones marked Final. Older revisions stay for the record." },
@@ -4850,7 +4850,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </div>
               )}
 
-              {/* CR-P (93) - the transmittal letter, one per volume, printed with the cover (CR 195: page 1 or 2). */}
+              {/* CR-P (93) - the cover letter (CR 358, was "Transmittal Letter"), one per volume, printed with the cover (CR 195: page 1 or 2). */}
               {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "letter" && (
                 <ProposalLetterBuilder
                   projectId={id}

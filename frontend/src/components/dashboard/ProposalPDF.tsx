@@ -1097,7 +1097,7 @@ export function OpeningPagesDocument({ volume, cover, coverLetter, project, lett
   const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
   const coverEl = <ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />;
   const letterEl = <CoverLetterPage coverLetter={{ ...coverLetter, enabled: true }} cover={cover} project={project} lh={lh} label={LABEL} note={note} />;
-  return asDocument(`${cover?.proposalTitle || project.name} - Transmittal letter`, coverLetter.position === "before-cover" ? [letterEl, coverEl] : [coverEl, letterEl]);
+  return asDocument(`${cover?.proposalTitle || project.name} - Cover letter`, coverLetter.position === "before-cover" ? [letterEl, coverEl] : [coverEl, letterEl]);
 }
 
 /** The technical proposal as one react-pdf document. Uploaded section files are not in it; the

@@ -18,7 +18,7 @@ export interface LibraryItem {
 }
 
 /** Items 1 to 3 of the client's library are built into the proposal as their own tabs. */
-export const BUILT_IN_SECTIONS = ["Cover Page", "Cover Letter / Transmittal Letter", "Table of Contents"];
+export const BUILT_IN_SECTIONS = ["Cover Page", "Cover Letter", "Table of Contents"];
 
 export const SECTION_LIBRARY: LibraryItem[] = [
   { key: "executive-summary", title: "Executive Summary", hint: "High-level summary of GT/JV's understanding, qualifications, proposed solution, key strengths, relevant experience and major advantages." },
@@ -77,7 +77,7 @@ export const FINANCIAL_SECTION_LIBRARY: LibraryItem[] = [
   { key: "fin-quotations", title: "Subcontractor & Vendor Quotations", hint: "Supporting quotations from subcontractors, suppliers and manufacturers.", pageType: "external" },
   { key: "fin-financial-capability", title: "Financial Capability / Bank Reference", hint: "Bank reference letter, line of credit or audited statements showing financial capacity.", pageType: "external" },
 ];
-export const FINANCIAL_BUILT_INS = ["Cover Page", "Transmittal Letter", "Table of Contents", "Price Schedule (our own table)"];
+export const FINANCIAL_BUILT_INS = ["Cover Page", "Cover Letter", "Table of Contents", "Price Schedule (our own table)"];
 
 export const APPENDIX_LIBRARY: LibraryItem[] = [
   { key: "appx-sam", title: "SAM.gov Registration", hint: "The current SAM.gov entity registration printout." },

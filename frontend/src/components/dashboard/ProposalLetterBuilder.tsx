@@ -101,7 +101,7 @@ export default function ProposalLetterBuilder({
     <div className="space-y-6">
       <div className={card}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h4 className="font-bold text-slate-800 text-sm">Transmittal Letter</h4>
+          <h4 className="font-bold text-slate-800 text-sm">Cover Letter</h4>
           <div className="flex items-center gap-2 flex-wrap">
             <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
               <input type="checkbox" checked={letter.enabled} onChange={(e) => set("enabled", e.target.checked)} disabled={!canEdit} className="accent-emerald-600" />
@@ -127,7 +127,7 @@ export default function ProposalLetterBuilder({
         {preview && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex flex-col" onClick={() => setPreview(false)}>
             <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100" onClick={(e) => e.stopPropagation()}>
-              <h3 className="font-display font-bold text-slate-900 text-sm">Preview: cover and transmittal letter ({letter.position === "before-cover" ? "letter first" : "letter after the cover"})</h3>
+              <h3 className="font-display font-bold text-slate-900 text-sm">Preview: cover page and cover letter ({letter.position === "before-cover" ? "letter first" : "letter after the cover"})</h3>
               <button type="button" onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
             </div>
             <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>

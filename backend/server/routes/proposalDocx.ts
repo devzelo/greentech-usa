@@ -308,7 +308,7 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
     for (const [k, v] of fields) if (v && v.trim()) body.push(kvLine(k, v));
 
     if (letter?.enabled) {
-      body.push(h("Transmittal Letter"));
+      body.push(h("Cover Letter"));   // CR 358
       body.push(...htmlToParagraphs(letter.body));
       for (const s of letter.signatories || []) {
         if (s.name || s.title) { body.push(p("")); body.push(p(s.name || "", { bold: true })); if (s.title) body.push(p(s.title)); }
