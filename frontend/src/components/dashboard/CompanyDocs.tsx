@@ -78,7 +78,6 @@ function DocMetaDialog({ file, onClose, onSaved }: { file: CompanyFile; onClose:
   );
 }
 import { iconFor, colorFor, classifyForFilter, formatDate } from "./fileHelpers";
-import CredentialsVault from "./CredentialsVault";
 import DocumentViewer from "./DocumentViewer";
 import ShareMenu from "./ShareMenu";
 import { PromptDialog, ConfirmDialog } from "./Dialogs";
@@ -92,7 +91,6 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
   focus?: { fileId: string; tabId: string } | null;
 } = {}) {
   // CR 263 - the website credentials sit beside the sub-tabs, on the classified page only.
-  const [vaultOpen, setVaultOpen] = useState(kind === "classified");
   const [tabs, setTabs] = useState<CompanyTab[]>([]);
   const [loadingTabs, setLoadingTabs] = useState(true);
   const [files, setFiles] = useState<CompanyFile[]>([]);
@@ -429,17 +427,13 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
           <button onClick={() => setTabDialog({ mode: "addSub" })} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-primary border border-dashed border-primary/30 hover:bg-primary/5">
             <Plus size={12} /> Sub-tab
           </button>
-          {kind === "classified" && !vaultOpen && (
-            <button onClick={() => setVaultOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
-              <KeyRound size={12} className="text-amber-500" /> Website credentials
-            </button>
-          )}
         </div>
       )}
 
-      {/* CR 263 - files on the left, the website credentials beside them on wide screens. */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-      <div className="min-w-0 flex-1 space-y-5">
+      {/* CR 366 - the files have the whole width; the website credentials open from a button beside
+          the PIN (Documents, Classified). */}
+      <div>
+      <div className="min-w-0 space-y-5">
       {/* Files toolbar */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <h2 className="text-lg font-display font-bold text-slate-900">
@@ -588,14 +582,15 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
                     </td>
                     <td className="px-6 py-4 text-xs font-bold text-slate-400">{f.uploadedByName || "—"}</td>
                     <td className="px-6 py-4 text-xs text-slate-500">{f.createdAt ? formatDate(f.createdAt) : "—"}</td>
-                    <td className="px-6 py-4 text-right">
+                    {/* CR 365 - the actions stay in view on the right, with a Delete that says so. */}
+                    <td className={`sticky right-0 px-4 py-4 text-right ${flashId === f._id ? "bg-amber-50" : "bg-white group-hover:bg-slate-50"}`}>
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openPreview(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Preview"><Eye size={16} /></button>
                         <a href={companyFileUrl(f)} download={f.name} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Download"><Download size={16} /></a>
                         <ShareMenu fileName={f.name} fileUrl={companyFileUrl(f)} size={16} />
                         <button onClick={() => setMetaFile(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Type, version and expiry"><Pencil size={16} /></button>
                         <button onClick={() => archiveFile(f, !f.archived)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={f.archived ? "Restore" : "Archive"}>{f.archived ? <RotateCcw size={16} /> : <Archive size={16} />}</button>
-                        <button onClick={() => setConfirmFile(f)} className="p-2 rounded-lg hover:bg-white text-slate-400 hover:text-red-500" title="Delete"><Trash2 size={16} /></button>
+                        <button onClick={() => setConfirmFile(f)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={14} /> Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -607,11 +602,6 @@ export default function CompanyDocs({ kind = "company", banner, focus }: {
       )}
 
       </div>
-      {kind === "classified" && vaultOpen && (
-        <aside className="w-full shrink-0 lg:sticky lg:top-2 lg:h-[36rem] lg:w-[24rem]">
-          <CredentialsVault onClose={() => setVaultOpen(false)} />
-        </aside>
-      )}
       </div>
 
       <AnimatePresence>

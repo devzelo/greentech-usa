@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import CredentialsVault from "./CredentialsVault";
 import { AnimatePresence } from "motion/react";
 import {
   Search, Download, Eye, FileText, FileImage, FileCode, FileSpreadsheet,
   File, Loader2, List as ListIcon, LayoutGrid,
   Building2, FolderOpen, Lock, ShieldAlert, ChevronsUpDown, ArrowUp, ArrowDown,
-  Folder, ChevronRight, Home, Plus, Trash2, Pencil, Check,
+  Folder, ChevronRight, Home, Plus, Trash2, Pencil, Check, KeyRound,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useUrlState } from "../../hooks/useUrlState";
@@ -159,6 +161,7 @@ export default function Documents() {
   // CR-P — classified access: employees unlock the tab with a PIN; admins manage the PIN.
   const [clsAccess, setClsAccess] = useState<ClassifiedAccessStatus | null>(null);
   const [clsUnlocked, setClsUnlocked] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);   // CR 366 - the website credentials, in a window
   useEffect(() => { if (!isGuest) fetchClassifiedAccess().then(setClsAccess).catch(() => {}); }, [isGuest]);
   // CR-P-41c — the PIN must be re-entered every time the Classified tab is opened: clear the
   // unlock + token whenever the user isn't on the classified tab.
@@ -676,13 +679,29 @@ export default function Documents() {
         // When a PIN is set AND enabled, everyone (admins included) must unlock to view the docs.
         // Admins still see the manager bar so they can update or disable the PIN.
         const gateOn = !!(clsAccess?.enabled && clsAccess?.hasPin);
+        const vaultButton = (
+          <button type="button" onClick={() => setVaultOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 shadow-sm hover:border-primary hover:text-primary">
+            <KeyRound size={13} className="text-amber-500" /> Website credentials
+          </button>
+        );
         return (
           <div className="space-y-5">
             {(clsUnlocked || !gateOn) ? (
               <>
-                {/* CR 291 - the PIN control lives in here, behind the lock, not above it. */}
-                {isAdmin && <ClassifiedPinManager access={clsAccess} onChange={setClsAccess} />}
+                {/* CR 291 - the PIN control lives in here, behind the lock, not above it. CR 366 - the
+                    website credentials open from a button beside it, so the files get the full width. */}
+                {isAdmin
+                  ? <ClassifiedPinManager access={clsAccess} onChange={setClsAccess}>{vaultButton}</ClassifiedPinManager>
+                  : <div className="flex justify-end">{vaultButton}</div>}
                 <ClassifiedDocs />
+                {vaultOpen && createPortal(
+                  <div className="fixed inset-0 z-[160] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setVaultOpen(false); }}>
+                    <div className="my-10 h-[36rem] w-full max-w-lg">
+                      <CredentialsVault onClose={() => setVaultOpen(false)} />
+                    </div>
+                  </div>,
+                  document.body,
+                )}
               </>
             ) : <ClassifiedPinGate onUnlocked={() => setClsUnlocked(true)} />}
           </div>

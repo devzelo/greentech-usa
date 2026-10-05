@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ShieldAlert, KeyRound, Loader2, Lock, Unlock, X } from "lucide-react";
 import { updateClassifiedAccess, verifyClassifiedPin, setClassifiedToken, type ClassifiedAccessStatus } from "../../lib/api";
@@ -14,7 +14,9 @@ const inp = "bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-sm fo
  * box on show to anyone standing behind the admin. It is now one quiet button, and it only appears
  * once the classified area has been entered; the form opens when the PIN is actually being changed.
  */
-export function ClassifiedPinManager({ access, onChange }: { access: ClassifiedAccessStatus | null; onChange: (a: ClassifiedAccessStatus) => void }) {
+export function ClassifiedPinManager({ access, onChange, children }: { access: ClassifiedAccessStatus | null; onChange: (a: ClassifiedAccessStatus) => void;
+  /** CR 366 - other controls on the same row (Website credentials). */
+  children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,7 +34,8 @@ export function ClassifiedPinManager({ access, onChange }: { access: ClassifiedA
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {children}
         <button
           onClick={() => setOpen(true)}
           title="Employee PIN access for classified documents"
