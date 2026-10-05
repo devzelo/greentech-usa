@@ -4535,11 +4535,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   revision sits on the main row and older ones fold out underneath it. */}
               {proposalSub === "overview" && (
                 <div className="space-y-6">
-                  {/* Item 114 - the three ways to answer a solicitation, in the client's order. */}
+                  {/* Item 114 - the three ways to answer a solicitation, in the client's order. CR 355 - the
+                      Expression of Interest comes first: "you do your expression of interest first...
+                      after they added you to the bid, then you can write your proposal". */}
                   {canEdit && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Upload existing</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Expression of Interest</p>
+                        <p className="text-xs text-slate-500">{eoi.updatedAt ? `Solicitation ${eoi.solicitationNo || cover.solicitationNo || "not set"} · updated ${new Date(eoi.updatedAt).toLocaleDateString()}` : "One standard letter, filled from the project."}</p>
+                        <button onClick={() => setProposalSub("eoi")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><FileText size={12} /> {eoi.updatedAt ? "Open the EOI" : "Write an EOI"}</button>
+                      </div>
+                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Upload existing</p>
                         <p className="text-xs text-slate-500">A proposal produced outside the platform.</p>
                         <div className="flex gap-2 flex-wrap">
                           <button onClick={() => setUploadFor("technical")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Technical</button>
@@ -4547,11 +4554,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           {/* CR 193: technical and financial in one file. */}
                           {!(financialLocked && !isOwner) && <button onClick={() => setUploadFor("combined")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Upload size={12} /> Combined</button>}
                         </div>
-                      </div>
-                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Expression of Interest</p>
-                        <p className="text-xs text-slate-500">{eoi.updatedAt ? `Solicitation ${eoi.solicitationNo || cover.solicitationNo || "not set"} · updated ${new Date(eoi.updatedAt).toLocaleDateString()}` : "One standard letter, filled from the project."}</p>
-                        <button onClick={() => setProposalSub("eoi")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><FileText size={12} /> {eoi.updatedAt ? "Open the EOI" : "Write an EOI"}</button>
                       </div>
                       <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">3. Proposal builder</p>
