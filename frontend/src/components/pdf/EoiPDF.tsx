@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
-import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, abs } from "./brand";
+import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, abs, COMPANY } from "./brand";
+import { withFileToken } from "../../lib/api";
 import { eoiText, type EoiResolved } from "../../lib/eoi";
 
 registerBrandFonts();
@@ -31,6 +32,10 @@ const s = StyleSheet.create({
   pageNoRow: { position: "absolute", left: GUTTER, right: GUTTER, bottom: 17.2, flexDirection: "row", justifyContent: "flex-end" },
   pageNo: { fontSize: 7.5, color: BRAND.s500 },
 });
+
+// CR 363 - signatures and stamps are protected uploads: the PDF fetches them with the file token,
+// or they are left out of the preview and the download.
+const img = (url: string) => abs(withFileToken(url.startsWith("uploads/") ? `/${url}` : url));
 
 const longDate = (v: string) => {
   const d = new Date(`${v}T00:00:00`);
@@ -88,12 +93,15 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
         <View wrap={false} style={{ marginTop: 4 }}>
           <Text style={s.para}>{t.closing}</Text>
           <View style={s.sigRow}>
-            {!!r.signatory?.signatureUrl && <Image src={abs(r.signatory.signatureUrl)} style={s.sigImg} />}
-            {!!r.stampUrl && <Image src={abs(r.stampUrl)} style={s.seal} />}
+            {!!r.signatory?.signatureUrl && <Image src={img(r.signatory.signatureUrl)} style={s.sigImg} />}
+            {r.stampUrls.map((u) => <Image key={u} src={img(u)} style={s.seal} />)}
           </View>
+          {/* CR 364 - the signature block: name, title, the firm, and how to reach the signer. */}
           <Text style={s.sigName}>{r.signatory?.name || r.pocName || ""}</Text>
           {!!r.signatory?.title && <Text style={s.sigLine}>{r.signatory.title}</Text>}
           <Text style={s.sigLine}>{r.firmName}</Text>
+          {!!r.signatory && <Text style={s.sigLine}>{[r.signatory.phone, r.signatory.email, r.signatory.website || COMPANY.website].filter(Boolean).join("  ·  ")}</Text>}
+          {!!r.signatory?.address && <Text style={s.sigLine}>{r.signatory.address}</Text>}
         </View>
         <LetterheadFooter note={`Expression of Interest · ${r.solicitationNo || projectName}`} />
         <View fixed style={s.pageNoRow}>

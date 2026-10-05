@@ -1,4 +1,4 @@
-import type { ApiProject, EoiContent, ProposalCover } from "./api";
+import type { ApiProject, EoiBodyKey, EoiContent, ProposalCover } from "./api";
 import { COMPANY } from "../components/pdf/brand";
 
 /**
@@ -31,6 +31,10 @@ export interface EoiResolved {
   bullets: string[]; bondingPercent: string;
   pocName: string; pocPhone: string; pocEmail: string;
   signatory?: EoiContent["signatory"]; stampUrl: string;
+  /** CR 362 - every stamp chosen (the first is `stampUrl`, kept for older readers). */
+  stampUrls: string[];
+  /** CR 359 - paragraphs changed for this EOI. */
+  body: Partial<Record<EoiBodyKey, string>>;
 }
 
 /** The JV's registered name, or "GreenTech USA - Partner JV" until it is filled in. */
@@ -40,7 +44,7 @@ export const jvEntityName = (project: ApiProject) => {
 };
 
 /** What every empty field prints as. */
-export function eoiDefaults(project: ApiProject, cover: ProposalCover | undefined, firm?: EoiContent["firm"], sig?: EoiContent["signatory"]): Omit<EoiResolved, "signatory" | "stampUrl"> {
+export function eoiDefaults(project: ApiProject, cover: ProposalCover | undefined, firm?: EoiContent["firm"], sig?: EoiContent["signatory"]): Omit<EoiResolved, "signatory" | "stampUrl" | "stampUrls" | "body"> {
   const jvOn = !!project.jointVenture?.enabled && !!project.jointVenture.partnerName;
   const jv = (firm || (jvOn ? "jv" : "gt")) === "jv" && jvOn;
   const loc = (cover?.location || project.location || "").trim();
@@ -88,12 +92,32 @@ export function resolveEoi(e: EoiContent, project: ApiProject, cover: ProposalCo
     pocPhone: pick(e.pocPhone, d.pocPhone),
     pocEmail: pick(e.pocEmail, d.pocEmail),
     signatory: e.signatory,
-    stampUrl: e.stampUrl || "",
+    stampUrl: (e.stampUrls ?? (e.stampUrl ? [e.stampUrl] : []))[0] || "",
+    stampUrls: e.stampUrls ?? (e.stampUrl ? [e.stampUrl] : []),
+    body: e.body || {},
   };
 }
 
-/** The standard wording with the fields in place (one firm name all the way through). */
+/** CR 359 - the paragraphs that can be changed for one EOI, in the order they print. */
+export const EOI_BODY_PARTS: Array<{ key: EoiBodyKey; label: string }> = [
+  { key: "intro", label: "Opening paragraph" },
+  { key: "about", label: "About the firm" },
+  { key: "capacity", label: "Capacity and bonding" },
+  { key: "language", label: "Language and local permits" },
+  { key: "distribution", label: "Request for the solicitation package" },
+  { key: "closingPara", label: "Closing paragraph" },
+];
+
+/** The letter as printed: the standard wording, with any paragraph changed for this EOI (CR 359). */
 export function eoiText(r: EoiResolved) {
+  const std = eoiStandardText(r);
+  const o = r.body || {};
+  const pick = (k: EoiBodyKey) => (o[k] && o[k]!.trim()) || std[k];
+  return { ...std, intro: pick("intro"), about: pick("about"), capacity: pick("capacity"), language: pick("language"), distribution: pick("distribution"), closingPara: pick("closingPara") };
+}
+
+/** The standard wording with the fields in place (one firm name all the way through). */
+export function eoiStandardText(r: EoiResolved) {
   const sol = r.solicitationNo || "[solicitation number]";
   const what = `${r.projectTitle || "[project]"}${r.projectType ? ` (${r.projectType})` : ""}`;
   return {
