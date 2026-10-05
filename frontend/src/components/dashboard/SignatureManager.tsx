@@ -1,7 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { motion } from "motion/react";
 import { PenLine, Upload, Trash2, Loader2, CheckCircle2, Star, Pencil, Check, X, Signature } from "lucide-react";
-import { fetchMySignatures, uploadMySignature, updateMySignature, deleteMySignature, attachmentUrl, type ApiSignature } from "../../lib/api";
+import { fetchMySignatures, uploadMySignature, updateMySignature, deleteMySignature, attachmentUrl, type ApiSignature, type SignatureBlock } from "../../lib/api";
+import { COMPANY } from "../../lib/brandTokens";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import SignaturePad from "./SignaturePad";
@@ -19,6 +20,19 @@ export default function SignatureManager() {
   // 2026-09-25 - sign on the screen (phones and tablets), and name a signature after it is added.
   const [padOpen, setPadOpen] = useState(false);
   const [editing, setEditing] = useState<{ id: string; label: string } | null>(null);
+  // CR 364 - the signature block: name, title, phone, email, website, address.
+  const [block, setBlock] = useState<({ id: string } & SignatureBlock) | null>(null);
+  const saveBlock = async () => {
+    if (!block) return;
+    setBusyId(block.id);
+    try {
+      const { id, ...fields } = block;
+      setSigs(await updateMySignature(id, fields));
+      setBlock(null);
+      toast("Signature block saved. It prints with this signature.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
+    finally { setBusyId(null); }
+  };
 
   useEffect(() => {
     fetchMySignatures().then(setSigs).catch(() => setSigs([])).finally(() => setLoading(false));
@@ -76,7 +90,7 @@ export default function SignatureManager() {
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-8 lg:p-10">
       <h2 className="text-xl font-display font-bold text-slate-900 mb-1 flex items-center gap-2"><PenLine size={20} className="text-primary" /> Signatures</h2>
-      <p className="text-xs text-slate-400 mb-6">Add one signature per signer, with their name: draw it on the screen (a phone or tablet works best) or upload an image, ideally a transparent PNG. The starred one is your default: it is used on purchase orders and offered first when signing an agreement.</p>
+      <p className="text-xs text-slate-400 mb-6">Add one signature per signer, with their name: draw it on the screen (a phone or tablet works best) or upload an image, ideally a transparent PNG. Each one carries its block (name, title, phone, email, website, address), filled from your profile and printed with it; keep one per role, e.g. Managing Director, Head of Procurement. The starred one is your default: it is used on purchase orders and offered first when signing an agreement.</p>
 
       {loading ? (
         <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center"><Loader2 size={16} className="animate-spin" /> Loading signatures…</div>
@@ -128,6 +142,25 @@ export default function SignatureManager() {
                 </span>
                 )}
               </div>
+              {/* CR 364 - what prints with the signature: the block, filled from the profile, editable. */}
+              {block?.id === s.id ? (
+                <div className="mt-2 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                  {([["name", "Name"], ["title", "Title, e.g. Managing Director"], ["phone", "Phone"], ["email", "Email"], ["website", `Website (empty: ${COMPANY.website})`], ["address", `Address (empty: ${COMPANY.mailingAddress})`]] as const).map(([k, ph]) => (
+                    <input key={k} value={block[k]} onChange={(e) => setBlock({ ...block, [k]: e.target.value })} placeholder={ph} aria-label={ph} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-primary" />
+                  ))}
+                  <div className="flex justify-end gap-1 pt-0.5">
+                    <button onClick={() => setBlock(null)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+                    <button onClick={() => void saveBlock()} disabled={busyId === s.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-primary disabled:opacity-40">{busyId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setBlock({ id: s.id, name: s.name || "", title: s.title || "", phone: s.phone || "", email: s.email || "", website: s.website || "", address: s.address || "" })} title="Name, title and contact details printed with this signature" className="mt-2 block w-full rounded-xl border border-dashed border-slate-200 px-2 py-1.5 text-left text-[10px] leading-snug text-slate-500 hover:border-primary">
+                  <span className="block font-bold text-slate-700">{s.name || s.label || "Name"}{s.title ? `, ${s.title}` : <span className="font-semibold text-amber-600"> · add a title</span>}</span>
+                  <span className="block truncate">{[s.phone, s.email, s.website || COMPANY.website].filter(Boolean).join(" · ")}</span>
+                  <span className="block truncate">{s.address || COMPANY.mailingAddress}</span>
+                  <span className="mt-0.5 inline-flex items-center gap-1 font-bold text-primary"><Pencil size={10} /> Edit the signature block</span>
+                </button>
+              )}
             </div>
           ))}
         </div>

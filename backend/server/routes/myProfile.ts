@@ -29,6 +29,9 @@ type LeanUser = {
   companyId?: unknown; signatureUrl?: string;
   signatures?: Array<{ _id: unknown; label?: string; url: string; isDefault?: boolean }>;
 };
+/** CR 364 - the block printed with a signature. */
+const BLOCK_FIELDS = ["name", "title", "phone", "email", "website", "address"] as const;
+type BlockSig = { _id: unknown; label?: string; url: string; isDefault?: boolean } & Partial<Record<(typeof BLOCK_FIELDS)[number], string>>;
 
 // A subcontractor/partner login maps to its Directory company via the hard companyId link,
 // falling back to the legacy email match (and back-filling companyId when the match hits).
@@ -174,12 +177,18 @@ const MAX_SIGNATURES = 10;
 const unlinkUpload = (url: string) => {
   if (url && url.includes("/uploads/signatures/")) fs.unlink(url.replace(/^\//, ""), () => undefined);
 };
-const publicSignatures = (user: { signatures?: Array<{ _id: unknown; label?: string; url: string; isDefault?: boolean }> }) =>
-  (user.signatures || []).map((s) => ({ id: String(s._id), label: s.label || "", url: s.url, isDefault: !!s.isDefault }));
+// CR 364 - an empty line of the block falls back to the profile (name, job title, phone, email);
+// website and address fall back to the company's, on the page that prints them.
+const publicSignatures = (user: { name?: string; jobTitle?: string; phone?: string; email?: string; signatures?: BlockSig[] }) =>
+  (user.signatures || []).map((s) => ({
+    id: String(s._id), label: s.label || "", url: s.url, isDefault: !!s.isDefault,
+    name: s.name || s.label || user.name || "", title: s.title || user.jobTitle || "", phone: s.phone || user.phone || "",
+    email: s.email || user.email || "", website: s.website || "", address: s.address || "",
+  }));
 
 router.get("/signatures", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const user = await User.findById(req.user!.userId).select("name signatureUrl signatures");
+    const user = await User.findById(req.user!.userId).select("name jobTitle phone email signatureUrl signatures");
     if (!user) return res.status(404).json({ error: "User not found." });
     // Lazy migration: surface a pre-existing single signature as the default named entry.
     if ((!user.signatures || user.signatures.length === 0) && user.signatureUrl) {
@@ -193,7 +202,7 @@ router.get("/signatures", async (req: AuthedRequest, res: Response, next: NextFu
 router.post("/signatures", signatureUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded." });
-    const user = await User.findById(req.user!.userId).select("signatureUrl signatures");
+    const user = await User.findById(req.user!.userId).select("name jobTitle phone email signatureUrl signatures");
     if (!user) return res.status(404).json({ error: "User not found." });
     if ((user.signatures || []).length >= MAX_SIGNATURES) {
       fs.unlink(req.file.path, () => undefined);
@@ -201,7 +210,10 @@ router.post("/signatures", signatureUpload.single("file"), async (req: AuthedReq
     }
     const url = `/${req.file.path.replace(/\\/g, "/")}`;
     const makeDefault = !(user.signatures || []).some((s) => s.isDefault);
-    user.signatures.push({ label: String(req.body.label || "").trim().slice(0, 120), url, isDefault: makeDefault } as (typeof user.signatures)[number]);
+    const label = String(req.body.label || "").trim().slice(0, 120);
+    // CR 364 - the block starts from the profile; every line can be changed afterwards.
+    const u = user as unknown as { name?: string; jobTitle?: string; phone?: string; email?: string };
+    user.signatures.push({ label, url, isDefault: makeDefault, name: label || u.name || "", title: u.jobTitle || "", phone: u.phone || "", email: u.email || "", website: "", address: "" } as (typeof user.signatures)[number]);
     if (makeDefault) user.signatureUrl = url;
     await user.save();
     res.status(201).json(publicSignatures(user));
@@ -210,11 +222,13 @@ router.post("/signatures", signatureUpload.single("file"), async (req: AuthedReq
 
 router.patch("/signatures/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const user = await User.findById(req.user!.userId).select("signatureUrl signatures");
+    const user = await User.findById(req.user!.userId).select("name jobTitle phone email signatureUrl signatures");
     if (!user) return res.status(404).json({ error: "User not found." });
     const sig = (user.signatures || []).find((s) => String(s._id) === req.params.sid);
     if (!sig) return res.status(404).json({ error: "Signature not found." });
     if (typeof req.body.label === "string") sig.label = req.body.label.trim().slice(0, 120);
+    // CR 364 - the signature block's lines.
+    for (const k of BLOCK_FIELDS) if (typeof req.body[k] === "string") (sig as unknown as Record<string, string>)[k] = req.body[k].trim().slice(0, k === "address" ? 300 : 160);
     if (req.body.isDefault === true) {
       for (const s of user.signatures) s.isDefault = false;
       sig.isDefault = true;
@@ -225,9 +239,25 @@ router.patch("/signatures/:sid", async (req: AuthedRequest, res: Response, next:
   } catch (err) { next(err); }
 });
 
+/**
+ * CR 361 - who can sign a letter: every GreenTech login (not an outside company's), with their saved
+ * signatures and each one's block, so a document can be signed by anyone and with the title that fits.
+ */
+router.get("/signers", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
+    const users = await User.find({ role: { $in: ["admin", "employee"] }, archived: { $ne: true } })
+      .select("name jobTitle phone email signatureUrl signatures").sort({ name: 1 }).lean();
+    res.json(users.map((u) => {
+      const sigs = (u.signatures || []).length ? u.signatures : u.signatureUrl ? [{ _id: "legacy", label: u.name, url: u.signatureUrl, isDefault: true }] : [];
+      return { id: String(u._id), name: u.name, jobTitle: u.jobTitle || "", email: u.email, phone: u.phone || "", signatures: publicSignatures({ ...u, signatures: sigs as BlockSig[] }) };
+    }));
+  } catch (err) { next(err); }
+});
+
 router.delete("/signatures/:sid", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const user = await User.findById(req.user!.userId).select("signatureUrl signatures");
+    const user = await User.findById(req.user!.userId).select("name jobTitle phone email signatureUrl signatures");
     if (!user) return res.status(404).json({ error: "User not found." });
     const sig = (user.signatures || []).find((s) => String(s._id) === req.params.sid);
     if (!sig) return res.status(404).json({ error: "Signature not found." });

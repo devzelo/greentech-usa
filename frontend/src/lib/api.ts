@@ -497,6 +497,7 @@ export interface ProposalContent {
  * Step 8 (items 114-117) - an Expression of Interest: one fixed letter (the GT_EOI wording), filled
  * from the project and the cover page. Every field left empty takes its default when printed.
  */
+export type EoiBodyKey = "intro" | "about" | "capacity" | "language" | "distribution" | "closingPara";
 export interface EoiContent {
   date?: string;
   solicitationNo?: string;
@@ -511,8 +512,12 @@ export interface EoiContent {
   bullets?: string[];          // experience bullets; unset = the standard list
   bondingPercent?: string;     // ILC / bonding capacity, % of contract value
   pocName?: string; pocPhone?: string; pocEmail?: string;
-  signatory?: { name: string; title: string; signatureUrl: string; email: string; phone: string };
+  signatory?: { name: string; title: string; signatureUrl: string; email: string; phone: string; website?: string; address?: string; userId?: string; signatureId?: string };
   stampUrl?: string;
+  /** CR 362 - the stamps / seals printed beside the signature (GreenTech's, the partner's). */
+  stampUrls?: string[];
+  /** CR 359 - the letter's paragraphs, changed for this EOI (empty: the standard text). */
+  body?: Partial<Record<EoiBodyKey, string>>;
   updatedAt?: string;
 }
 
@@ -949,13 +954,18 @@ export async function fetchMyTasks(): Promise<ProfileTask[]> { return request('/
 export async function fetchMyFiles(): Promise<UserFile[]> { return request('/me/files'); }
 
 // CR-P (16) — named signatures with a default (the default also feeds signatureUrl everywhere).
-export interface ApiSignature { id: string; label: string; url: string; isDefault: boolean }
+/** CR 364 - a signature with its block: who signs and how to reach them (printed with it). */
+export interface SignatureBlock { name: string; title: string; phone: string; email: string; website: string; address: string }
+export interface ApiSignature extends SignatureBlock { id: string; label: string; url: string; isDefault: boolean }
+/** CR 361 - a GreenTech login who can sign, with their signatures. */
+export interface ApiSigner { id: string; name: string; jobTitle: string; email: string; phone: string; signatures: ApiSignature[] }
+export async function fetchSigners(): Promise<ApiSigner[]> { return request('/me/signers'); }
 export async function fetchMySignatures(): Promise<ApiSignature[]> { return request('/me/signatures'); }
 export async function uploadMySignature(file: File, label: string): Promise<ApiSignature[]> {
   const fd = new FormData(); fd.append('file', file); fd.append('label', label);
   return postMultipart<ApiSignature[]>('/api/me/signatures', fd);
 }
-export async function updateMySignature(id: string, body: { label?: string; isDefault?: boolean }): Promise<ApiSignature[]> {
+export async function updateMySignature(id: string, body: { label?: string; isDefault?: boolean } & Partial<SignatureBlock>): Promise<ApiSignature[]> {
   return request(`/me/signatures/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 export async function deleteMySignature(id: string): Promise<ApiSignature[]> {

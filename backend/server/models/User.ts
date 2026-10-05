@@ -14,7 +14,13 @@ const UserSchema = new mongoose.Schema({
   signatureUrl:     { type: String, default: '' }, // personal signature image, used on PO documents
   // CR-P (16) — named signatures with a default: a company login can hold one per signer person.
   // The default's url is mirrored into `signatureUrl` so every existing consumer keeps working.
-  signatures:       [{ label: { type: String, default: '' }, url: { type: String, required: true }, isDefault: { type: Boolean, default: false } }],
+  // CR 364 - each signature is a full signature block: who signs (name, title) and how to reach them
+  // (phone, email, website, address), filled from the profile when it is made and editable.
+  signatures:       [{
+    label: { type: String, default: '' }, url: { type: String, required: true }, isDefault: { type: Boolean, default: false },
+    name: { type: String, default: '' }, title: { type: String, default: '' }, phone: { type: String, default: '' },
+    email: { type: String, default: '' }, website: { type: String, default: '' }, address: { type: String, default: '' },
+  }],
   // CR-P (16) — hard link from a guest login to its Directory company (email matching is fragile).
   companyId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
   // CR-P (16) — uploaded resume file (separate from the resume builder).
