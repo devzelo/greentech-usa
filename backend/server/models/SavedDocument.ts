@@ -51,8 +51,19 @@ export function describeSavedDoc(d: { kind: string; refId?: string; version?: nu
   };
 }
 
-export const SAVED_DOC_STATUSES = ["draft", "final", "completed", "sent", "submitted", "awarded", "not-awarded"] as const;
+// CR 356 - one short list for every proposal, in order: Draft, Final - Not submitted, Submitted -
+// Sent (in review by the client), In negotiation, Awarded, Not awarded. "Completed" and "Sent" were
+// the same step as Submitted and are folded into it (see LEGACY_SAVED_DOC_STATUS).
+export const SAVED_DOC_STATUSES = ["draft", "final", "submitted", "negotiation", "awarded", "not-awarded"] as const;
 export type SavedDocStatus = (typeof SAVED_DOC_STATUSES)[number];
+/** Statuses no longer offered, and the one each now means. */
+export const LEGACY_SAVED_DOC_STATUS: Record<string, SavedDocStatus> = { completed: "submitted", sent: "submitted" };
+/** A status from a request: a current one, an old name mapped to its new one, or null. */
+export function savedDocStatus(v: unknown): SavedDocStatus | null {
+  const s = String(v || "");
+  if ((SAVED_DOC_STATUSES as readonly string[]).includes(s)) return s as SavedDocStatus;
+  return LEGACY_SAVED_DOC_STATUS[s] || null;
+}
 
 const SavedDocumentSchema = new Schema<ISavedDocument>(
   {

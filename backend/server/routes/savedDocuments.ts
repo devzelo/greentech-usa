@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import mongoose from "mongoose";
-import SavedDocument, { SavedDocKind, SAVED_DOC_STATUSES, describeSavedDoc } from "../models/SavedDocument";
+import SavedDocument, { SavedDocKind, savedDocStatus, describeSavedDoc } from "../models/SavedDocument";
 import User from "../models/User";
 import Project from "../models/Project";
 import { moveToTrash } from "../lib/recycleBin";
@@ -116,7 +116,7 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       docDate: ISO_DATE.test(String(req.body.docDate || "")) ? String(req.body.docDate) : "",
       // Any valid lifecycle status is kept. This used to collapse everything but "final" to
       // "draft", so an uploaded proposal asked to be "submitted" was silently filed as a draft.
-      status: SAVED_DOC_STATUSES.includes(req.body.status) ? req.body.status : "draft",
+      status: savedDocStatus(req.body.status) || "draft",
       fileName: req.file.originalname,
       filePath: req.file.path.replace(/\\/g, "/"),
       fileType: (req.file.originalname.split(".").pop() || "").toLowerCase(),
@@ -135,7 +135,8 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
     if (typeof req.body.title === "string") update.title = req.body.title.trim();
     if (typeof req.body.note === "string") update.note = req.body.note;
     // CR-P (83) — the wider proposal lifecycle.
-    if (SAVED_DOC_STATUSES.includes(req.body.status)) update.status = req.body.status;
+    const st = savedDocStatus(req.body.status);
+    if (st) update.status = st;
     if (typeof req.body.archived === "boolean") update.archived = req.body.archived;   // CR-P (86)
     if (typeof req.body.docDate === "string" && (req.body.docDate === "" || ISO_DATE.test(req.body.docDate))) update.docDate = req.body.docDate;   // CR-P (88)
     // CR-P (83) — "last modified" names who made the change, not who created the revision.
@@ -153,7 +154,7 @@ router.patch("/:docId", async (req: AuthedRequest, res: Response, next: NextFunc
 
 // POST /api/projects/:id/saved-documents/:docId/sends — item 110: record that a revision went out
 // (emailed from the platform, or by portal, hand delivery, courier). `markSent` moves a draft /
-// final / completed revision to "sent"; a later lifecycle status (submitted, awarded) is kept.
+// final revision to "submitted" (Submitted - Sent, CR 356); a later status (in negotiation, awarded) is kept.
 router.post("/:docId/sends", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     if (!mongoose.isValidObjectId(req.params.docId)) return res.status(404).json({ error: "Not found" });
@@ -167,7 +168,7 @@ router.post("/:docId/sends", async (req: AuthedRequest, res: Response, next: Nex
     const me = await User.findById(req.user!.userId).select("name").lean();
     const byName = (me as { name?: string } | null)?.name || "";
     doc.sendLog.push({ at, to, method, byName, note });
-    if (req.body.markSent && ["draft", "final", "completed"].includes(doc.status)) doc.status = "sent";
+    if (req.body.markSent && ["draft", "final"].includes(doc.status)) doc.status = "submitted";
     doc.updatedByName = byName;
     await doc.save();
     res.json(doc);

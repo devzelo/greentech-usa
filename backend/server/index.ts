@@ -166,6 +166,16 @@ async function runBootstrapTasks() {
   } catch (err) {
     console.error("Subcontractor role migration failed:", err);
   }
+  // CR 356: proposal statuses "Completed" and "Sent" are now "Submitted - Sent". Idempotent.
+  try {
+    const { default: SavedDocumentModel, LEGACY_SAVED_DOC_STATUS } = await import("./models/SavedDocument");
+    for (const [from, to] of Object.entries(LEGACY_SAVED_DOC_STATUS)) {
+      const r = await SavedDocumentModel.collection.updateMany({ status: from }, { $set: { status: to } });
+      if (r.modifiedCount) console.log(`🔁 Moved ${r.modifiedCount} saved document(s) from "${from}" to "${to}".`);
+    }
+  } catch (err) {
+    console.error("Proposal status migration failed:", err);
+  }
   // CR 184: Project Nature folded into Categories (one field). Idempotent.
   try {
     const { foldNatureIntoCategories, normalizeCategoryAliases } = await import("./lib/natureToCategories");

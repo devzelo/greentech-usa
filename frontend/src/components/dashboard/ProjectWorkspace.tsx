@@ -658,15 +658,15 @@ export default function ProjectWorkspace() {
     technical: { submissionDate: "", status: "Draft" },
     financial: { submissionDate: "", status: "Draft" },
   });
-  // CR-P (83) - the lifecycle of one produced proposal revision, as Reza listed it:
-// "is it sent, draft, completed, submitted, all those status items", plus the outcome.
+  // CR 356 - the lifecycle of one produced proposal revision, the same for every proposal, in order.
+// "Final, completed, sent, submitted. All the same thing": Completed and Sent are gone (old ones now
+// read Submitted - Sent, which means in review by the client).
 const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-slate-100 text-slate-500" },
   // CR 203 - Final is the one status that must be unmistakable: solid green, not a pale tint.
-  final: { label: "Final", cls: "bg-emerald-500 text-white" },
-  completed: { label: "Completed", cls: "bg-teal-50 text-teal-700" },
-  sent: { label: "Sent", cls: "bg-blue-50 text-blue-600" },
-  submitted: { label: "Submitted", cls: "bg-amber-50 text-amber-700" },
+  final: { label: "Final - Not submitted", cls: "bg-emerald-500 text-white" },
+  submitted: { label: "Submitted - Sent", cls: "bg-blue-50 text-blue-700" },
+  negotiation: { label: "In negotiation", cls: "bg-amber-50 text-amber-700" },
   awarded: { label: "Awarded", cls: "bg-emerald-50 text-emerald-700" },
   "not-awarded": { label: "Not awarded", cls: "bg-red-50 text-red-600" },
 };
@@ -901,7 +901,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     catch (err) { toast(err instanceof Error ? err.message : "Could not update the status.", "error"); }
   };
   // Item 110 - a revision's send log: who it went to, when and how. Recording one moves a draft /
-  // final / completed revision to Sent.
+  // final revision to Submitted - Sent (CR 356).
   const logProposalSend = async (d: ApiSavedDocument, to: string, method: string, note = "", at?: string) => {
     if (!id) return;
     try { await logSavedDocumentSend(id, d._id, { to, method, note, at, markSent: true }); await loadNextFinalVer(); }

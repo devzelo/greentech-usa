@@ -1521,7 +1521,8 @@ export function attachmentUrl(filePath: string, name?: string, download = false)
 // ── Saved document versions (frozen PDF/Excel copies with history) ────────────
 export type SavedDocKind = "proposal" | "boq" | "rfq" | "po" | "resume";
 /** CR-P (83) - a produced document's lifecycle, wide enough for a proposal revision. */
-export type SavedDocStatus = "draft" | "final" | "completed" | "sent" | "submitted" | "awarded" | "not-awarded";
+// CR 356 - Draft, Final - Not submitted, Submitted - Sent, In negotiation, Awarded, Not awarded.
+export type SavedDocStatus = "draft" | "final" | "submitted" | "negotiation" | "awarded" | "not-awarded";
 export interface ApiSavedDocument {
   _id: string;
   kind: SavedDocKind;
@@ -1611,7 +1612,7 @@ export async function updateSavedDocument(projectId: string, docId: string, body
 
 /**
  * Item 110 - record that a revision went out: emailed from here, or sent another way (portal, hand
- * delivery). `markSent` moves a draft / final / completed revision to Sent.
+ * delivery). `markSent` moves a draft / final revision to Submitted - Sent.
  */
 export async function logSavedDocumentSend(projectId: string, docId: string, entry: { to: string; method: string; note?: string; at?: string; markSent?: boolean }) {
   return request<ApiSavedDocument>(`/projects/${projectId}/saved-documents/${docId}/sends`, { method: 'POST', body: JSON.stringify(entry) });

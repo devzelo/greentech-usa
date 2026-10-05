@@ -42,7 +42,7 @@ export default function RevisionManage({ doc, statuses, onSave, onClose, onLogSe
       const at = sDate ? new Date(`${sDate}T12:00:00`).toISOString() : new Date().toISOString();
       await onLogSend({ to: sTo.trim(), method: sMethod, at, note: sNote.trim() });
       setLog((l) => [...l, { at, to: sTo.trim(), method: sMethod, byName: "", note: sNote.trim() }]);
-      if (status === "draft" || status === "final" || status === "completed") setStatus("sent");
+      if (status === "draft" || status === "final") setStatus("submitted");
       setSTo(""); setSDate(""); setSNote("");
     } catch { /* the caller has already said what went wrong */ }
     finally { setLogging(false); }
