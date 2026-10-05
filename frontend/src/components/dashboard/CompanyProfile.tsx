@@ -50,7 +50,10 @@ export default function CompanyProfile({
   // so their profile gets an Access tab. CR-P (72) — "the same for users, subcontractors and
   // vendors": vendors (and suppliers / manufacturers, the vendor categories) get it too, now that a
   // vendor's login can be given project tabs. Clients and other categories still don't log in.
-  const canHaveLogin = companyCategories(company).some((c) => ["subcontractor", "partner", "vendor", "supplier", "manufacturer"].includes(c));
+  // CR 385 (2026-10-05) - "All of them should just log in from one place": every Directory company
+  // (consultants, clients and any other category too) can be given a login, used from the sign-in
+  // page's third-party (Subcontractor) option.
+  const canHaveLogin = true;
   const [links, setLinks] = useState<CompanyLinks | null>(null);
   const [files, setFiles] = useState<CompanyFile[]>([]);
   const [tasks, setTasks] = useState<ProfileTask[]>([]);

@@ -113,7 +113,7 @@ export default function LoginPage() {
             transition={{ delay: 0.1 }}
             className="font-display text-3xl font-bold text-slate-900 mb-3"
           >
-            {loginTab === "subcontractor" ? "Subcontractor Access" : loginTab === "partner" ? "Partner Access" : "Employee Portal"}
+            {loginTab === "subcontractor" ? "Third-party Access" : loginTab === "partner" ? "Partner Access" : "Employee Portal"}
           </motion.h1>
           <motion.p
             initial={{ y: 20, opacity: 0 }}
@@ -121,8 +121,9 @@ export default function LoginPage() {
             transition={{ delay: 0.2 }}
             className="text-slate-500"
           >
+            {/* CR 385 - one sign-in for every Directory company: subcontractors, vendors, consultants... */}
             {loginTab === "subcontractor"
-              ? "Sign in to view the projects shared with you."
+              ? "Subcontractors, vendors, suppliers, consultants and every other company we work with: sign in to view the projects shared with you."
               : loginTab === "partner"
               ? "Sign in to view your joint-venture projects."
               : "Sign in to manage projects and internal documents."}
