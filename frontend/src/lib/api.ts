@@ -1370,6 +1370,11 @@ export async function deleteProjectContract(id: string): Promise<ApiProject> {
   return normalise(data);
 }
 
+/** CR 349 - remove the project's cover picture (owner only). */
+export async function deleteProjectImage(id: string): Promise<ApiProject> {
+  const data = await request<Record<string, unknown>>(`/projects/${id}/image`, { method: 'DELETE' });
+  return normalise(data);
+}
 export async function uploadProjectImage(id: string, file: File): Promise<ApiProject> {
   const fd = new FormData();
   fd.append('file', file);

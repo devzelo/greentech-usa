@@ -60,4 +60,21 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
   }
 });
 
+// DELETE /api/projects/:id/image - owner only. CR 349: the cover picture can be removed.
+router.delete("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await Project.findOne({ projectId: req.params.id });
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    if (!project.ownerId || String(project.ownerId) !== req.user!.userId) {
+      return res.status(403).json({ error: "Only the project owner can change the image." });
+    }
+    // Only a file under this project's own image folder is removed from disk.
+    const own = `/uploads/${req.params.id}/project-image/`;
+    if (project.image && project.image.startsWith(own) && !project.image.includes("..")) fs.unlink(project.image.replace(/^\//, ""), () => undefined);
+    project.image = "";
+    await project.save();
+    res.json(project);
+  } catch (err) { next(err); }
+});
+
 export default router;

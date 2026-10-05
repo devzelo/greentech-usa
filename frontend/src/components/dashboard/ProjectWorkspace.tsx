@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { PDFDocument } from "pdf-lib";
 import ShareMenu from "./ShareMenu";
-import { fetchProject, updateProject, uploadProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
+import { fetchProject, updateProject, uploadProjectImage, deleteProjectImage, fetchEmployees, fetchExpenses, addExpense, updateExpense, deleteExpense, fetchPurchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchTemplates, createTemplate, updateTemplate, deleteTemplate, fetchDocuments, uploadDocument, deleteDocument, updateDocumentDescription, documentUrl,
 fetchProcurementRows, createProcurementRow, updateProcurementRow, deleteProcurementRow, downloadProjectExport, downloadProposalDocx, getAuthUser, fetchProjects, fetchGuests, fetchGuestDirectory, createGuest, updateGuest, removeGuest, uploadGalleryFile, setDocumentPublic, ApiProject, ApiEmployee, ApiTemplate, ApiDocument, ApiProcurementRow, ApiGuest, GalleryItem } from "../../lib/api";
 import type { ProposalContent, TechnicalProposalContent, FinancialProposalContent, ProposalCover, ProposalCoverLetter, ProposalBackCover, FinancialTable, FinancialColumn, FinancialColumnKind, FinancialAdjustment } from "../../lib/api";
 import { uploadProposalAsset, uploadInlineImage, setProjectArchived } from "../../lib/api";
@@ -1781,6 +1781,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       toast(`Partner ${kind === "stamps" ? "stamp" : "signature"} uploaded — remember to save.`, "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
     finally { setJvImgUploading(null); }
+  };
+  // CR 349 - the cover picture can be removed from the header.
+  const removeProjectImage = async () => {
+    if (!id) return;
+    if (!(await brandedConfirm({ title: "Remove the cover picture?", message: "The project's details show on a plain card again. You can add a picture later.", confirmLabel: "Remove", danger: true }))) return;
+    setImageUploading(true);
+    try { setProject(await deleteProjectImage(id)); toast("Cover picture removed.", "success"); }
+    catch (err) { toast(err instanceof Error ? err.message : "Could not remove the picture.", "error"); }
+    finally { setImageUploading(false); }
   };
   const handleProjectImageUpload = async (file: File) => {
     if (!id) return;
@@ -3916,14 +3925,26 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-900/30 to-transparent" />
               </>
             )}
-            {isOwner && hasCover && (
-              <label className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-700 shadow-sm hover:bg-white cursor-pointer transition-colors" title="Change the cover picture behind the project's details">
-                {imageUploading ? <Loader2 size={12} className="animate-spin" /> : <FileImage size={12} />}
-                {imageUploading ? "Uploading…" : "Change picture"}
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
-              </label>
+            {/* CR 349 - the cover picture's controls stay in one place, the box's top-right corner:
+                "Add cover picture" without one; "Change" and "Remove" with one. */}
+            {isOwner && (
+              <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1">
+                {imageUploading ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-600 shadow-sm ring-1 ring-slate-200"><Loader2 size={12} className="animate-spin" /> Saving…</span>
+                ) : (
+                  <>
+                    <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-white hover:text-primary cursor-pointer transition-colors" title={hasCover ? "Change the cover picture" : "Add a cover picture behind the project's details"}>
+                      <FileImage size={12} /> {hasCover ? "Change picture" : "Add cover picture"}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
+                    </label>
+                    {!!project.image && (
+                      <button type="button" onClick={() => void removeProjectImage()} className="inline-flex items-center justify-center h-[30px] w-[30px] rounded-lg bg-white/90 text-slate-500 shadow-sm ring-1 ring-slate-200 hover:bg-white hover:text-red-600 transition-colors" title="Remove the cover picture" aria-label="Remove the cover picture"><Trash2 size={13} /></button>
+                    )}
+                  </>
+                )}
+              </div>
             )}
-          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-4 mt-14 sm:mt-16 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : "p-4 sm:p-5"}`}>
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-4 mt-14 sm:mt-16 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : `p-4 sm:p-5 ${isOwner ? "pt-14 sm:pt-5 sm:pr-56" : ""}`}`}>
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
@@ -3969,13 +3990,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   projectId={project.id}
                   projectName={project.name}
                 />
-                {/* CR 336 - with no cover picture, adding one is a quiet action beside the others. */}
-                {isOwner && !(project.image && !coverBroken) && (
-                  <label className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50 cursor-pointer transition-all" title="Add a cover picture behind the project's details" aria-label="Add a cover picture">
-                    {imageUploading ? <Loader2 size={16} className="animate-spin" /> : <FileImage size={16} />}
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
-                  </label>
-                )}
               </div>
               {/* CR 182: subcontractors and vendors get the project name and their tabs only. */}
               {!isGuest && (<>
@@ -4021,12 +4035,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </a>
                   </>
                 )}
-                {project.contractYear && (
-                  <>
-                    <span className="text-xs font-bold text-slate-300">·</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Year: {project.contractYear}</span>
-                  </>
-                )}
+                {/* CR 350 - no "Year": the contract date already shows it. */}
                 {project.contractDate && (
                   <>
                     <span className="text-xs font-bold text-slate-300">·</span>
