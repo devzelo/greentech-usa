@@ -5425,6 +5425,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </div>
               )}
 
+              {/* CR 357 - "Whatever you have at the top, please show them at the bottom... so we can save,
+                  preview anything from here, not going up every time": the volume's actions, on every tab. */}
+              {(proposalSub === "technical" || proposalSub === "financial") && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {proposalSub === "financial" ? "Financial" : "Technical"} Proposal
+                    {dirty && canEdit && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">Unsaved changes</span>}
+                  </span>
+                  <ActionButtons which={proposalSub} />
+                </div>
+              )}
+
               {/* Import-from-team picker */}
               {showEmployeePicker && (
                 <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
