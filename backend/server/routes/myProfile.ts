@@ -245,7 +245,9 @@ router.patch("/signatures/:sid", async (req: AuthedRequest, res: Response, next:
  */
 router.get("/signers", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    if (req.user!.role === "subcontractor") return res.status(403).json({ error: "Not available." });
+    // Staff only, by an allowlist read from the account as it is now (a token's role may be hours old).
+    const me = await User.findById(req.user!.userId).select("role archived").lean() as { role?: string; archived?: boolean } | null;
+    if (!me || me.archived || !["admin", "employee"].includes(me.role || "")) return res.status(403).json({ error: "Not available." });
     const users = await User.find({ role: { $in: ["admin", "employee"] }, archived: { $ne: true } })
       .select("name jobTitle phone email signatureUrl signatures").sort({ name: 1 }).lean();
     res.json(users.map((u) => {
