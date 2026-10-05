@@ -45,11 +45,12 @@ function quoteItemsTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
   }
   return sum;
 }
-function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
+// CR 383 - also used by a work package for its agreement's value (the accepted quote's total).
+export function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
   return quoteItemsTotal(rfq, q) + n(q.shipping) + n(q.tax);
 }
 
-export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq, ownerPackage, startNew, seed, onChanged }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: (poId?: string) => void; openRfqId?: string; onOpenedRfq?: () => void;
+export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq, ownerPackage, startNew, seed, onChanged, inline, onGoToRequest, onAwarded }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: (poId?: string) => void; openRfqId?: string; onOpenedRfq?: () => void;
   /** CR 345 - shown inside a work package: only its RFQs, and new ones belong to it. */
   ownerPackage?: { id: string; name: string };
   /** CR 345 - open the Create RFQ window straight away, starting from `seed`. */
@@ -57,6 +58,15 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   seed?: { title?: string; notes?: string; lineItems?: RfqLineItem[]; vendorIds?: string[] };
   /** Called after an RFQ is made or changed (the package's table refreshes). */
   onChanged?: () => void;
+  /**
+   * CR 381 / 382 - in the work package's window: one part of its RFQs, in place (no list, no
+   * window over it). "request": the RFQ, saved, and each vendor's copy; "quotes": the quotes and
+   * the winner.
+   */
+  inline?: "request" | "quotes";
+  onGoToRequest?: () => void;
+  /** CR 382 - a quote was accepted (a package goes on to its agreement, not a PO). */
+  onAwarded?: () => void;
 }) {
   const scope = ownerPackage ? { package: ownerPackage.id } : {};
   // CR 347 - a package's documents are filed with the package (Project Management), not in Procurement.
@@ -550,6 +560,8 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       setRfqs((p) => p.map((r) => r._id === rid ? { ...r, quotes: r.quotes.map((x) => ({ ...x, status: x._id === qid ? "Awarded" : "NotSelected" })) } : r));
       // D9 — offer to create the purchase order right away, carrying this quote across.
       const vName = vendorName(rfqs.find((r) => r._id === rid)?.quotes.find((q) => q._id === qid)?.vendorId || "");
+      // CR 383 - a work package contracts its winner with an agreement, not a purchase order.
+      if (ownerPackage) { onChanged?.(); onAwarded?.(); toast(`${vName} is the winner. Next: the agreement.`, "success"); return; }
       if (await confirm({ title: "Quote accepted", message: `Create the purchase order for ${vName} now? The accepted quote carries over automatically. (You can also do this later from the Purchase Orders tab.)`, confirmLabel: "Create PO now", danger: false })) {
         try {
           const po = await createProcurementPO(projectId, rid, qid, ownerPackage?.id || "");
@@ -600,7 +612,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   };
 
   // Full RFQ editor — shown in the actions modal (shipping, add quotes, prices, award, versions).
-  const renderRfqDetail = (rfq: ApiRfq) => {
+  const renderRfqDetail = (rfq: ApiRfq, section?: "request" | "quotes") => {
     // CR-PR-08 — one "send to" list. Receivers come from the Directory; a quote whose vendor has
     // no matching receiver is a legacy row from before the two lists were merged, and is still
     // shown so those older RFQs keep making sense.
@@ -625,12 +637,12 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     return (
               <div className="p-4 space-y-4">
                 {/* ── STEP 1 — Request (send to vendors) ─────────────────────────────── */}
-                <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+                {section !== "quotes" && <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
                       <div>
-                        <p className="text-sm font-bold text-slate-800">Request — send to vendors</p>
+                        <p className="text-sm font-bold text-slate-800">{ownerPackage ? "Request: saved, then each vendor's copy" : "Request — send to vendors"}</p>
                         <p className="text-[10px] text-slate-400">{ownerPackage ? "The items, and where and how they ship." : <>Items (from the approved submittals &amp; BOQ) plus where and how they ship.</>}</p>
                       </div>
                       {canEdit && <button onClick={() => setForm({ rfq })} className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><Settings2 size={11} /> Edit RFQ</button>}
@@ -831,10 +843,10 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                       </div>
                     </div>
                   )}
-                </div>
+                </div>}
 
                 {/* ── STEP 2 — Quotes (receive, compare, accept) ─────────────────────── */}
-                <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+                {section !== "request" && <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
                     <div>
@@ -842,7 +854,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                       <p className="text-[10px] text-slate-400">A column is created for each vendor you chose in Step 1. Upload their returned quotation, enter their prices, then accept the best one.</p>
                     </div>
                   </div>
-                  {!sent && <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[11px] font-bold text-amber-700"><AlertCircle size={13} /> Send the request in Step 1 first — then fill in prices here as vendors reply.</div>}
+                  {!sent && !ownerPackage && <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[11px] font-bold text-amber-700"><AlertCircle size={13} /> Send the request in Step 1 first — then fill in prices here as vendors reply.</div>}
                   {rfq.quotes.length === 0 && <p className="text-[11px] text-slate-400 italic">No priced receivers yet — pick them under “Send to” in Step 1.</p>}
 
                 {/* Leveling matrix */}
@@ -961,7 +973,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   remove={(docId) => deleteSavedDocument(projectId, docId).then(() => {})}
                   toast={toast}
                 />
-                </div>
+                </div>}
               </div>
     );
   };
@@ -1053,7 +1065,35 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
 
   return (
-    <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+    <div className={inline ? "space-y-4" : "bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5"}>
+      {inline && !form && (
+        <div className="space-y-4">
+          {rfqs.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center">
+              <FileText size={28} className="mx-auto text-slate-300" />
+              <p className="mt-2 text-sm font-bold text-slate-700">{inline === "request" ? "No RFQ for this package yet" : "No quotes yet"}</p>
+              <p className="mx-auto mt-1 max-w-md text-xs text-slate-400">{inline === "request" ? "Describe what is needed, pick the vendors from the Directory and save it. Then download or email each vendor its own copy, one by one." : "Quotes come in against the package's RFQ: make the RFQ first, with the vendors it goes to."}</p>
+              {canEdit && inline === "request" && <button onClick={() => setForm({ rfq: null })} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary"><Plus size={13} /> Create the RFQ</button>}
+              {inline === "quotes" && onGoToRequest && <button onClick={onGoToRequest} className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary"><FileText size={13} /> Go to the RFQ</button>}
+            </div>
+          ) : rfqs.map((rfq) => {
+            const won = rfq.quotes.find((q) => q.status === "Awarded");
+            return (
+              <div key={rfq._id} className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                  <p className="min-w-0 truncate text-sm font-bold text-slate-900">RFQ {rfq.rfqNo} · {rfqDesc(rfq)}</p>
+                  {won && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200"><Award size={11} /> Winner: {vendorName(won.vendorId)}</span>}
+                </div>
+                {renderRfqDetail(rfq, inline)}
+              </div>
+            );
+          })}
+          {inline === "request" && canEdit && rfqs.length > 0 && (
+            <button onClick={() => setForm({ rfq: null })} className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 px-3 py-2.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={13} /> Another RFQ for this package</button>
+          )}
+        </div>
+      )}
+      {!inline && <>
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><h3 className="text-xl font-display font-bold text-slate-900">{ownerPackage ? "RFQs & quotes" : <>RFQs &amp; Bid Leveling</>}</h3><PresenceBar users={present} /></div>
@@ -1150,6 +1190,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           </table>
         </div>
       )}
+      </>}
       {/* CR-PR-08 — the Directory's company form, opened from "Send to". The RFQ modal stays
           mounted underneath, so saving drops you straight back into it with the new receiver. */}
       {newCompanyFor && (() => {
@@ -1180,6 +1221,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           buildPreview={(draft) => buildRfqWithSubmittals(draft)}
           ownerPackage={ownerPackage}
           seed={form.rfq ? undefined : seed}
+          inline={inline === "request"}
         />
       )}
       {dialogs}
@@ -1304,7 +1346,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       })()}
 
       {/* §A1 — Actions modal: add quotes, prices, award, shipping, versions */}
-      {manageId && (() => {
+      {manageId && !inline && (() => {
         const m = rfqs.find((r) => r._id === manageId);
         if (!m) return null;
         return (

@@ -1,13 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import PackageWorkspace, { type WorkspaceOpen } from "./PackageWorkspace";
+import { createPortal } from "react-dom";
+import ProcurementRFQ, { quoteTotal } from "./ProcurementRFQ";
+import ProcurementPO from "./ProcurementPO";
+import AgreementsPanel from "./agreements/AgreementsPanel";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
-  FileUp, Filter, GripVertical, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
+  FileUp, Filter, GripVertical, Handshake, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
-  createAgreement, createManualPO, createProcurementPO, fetchAgreements, fetchCompany, updateProcurementPO, uploadDocument, documentUrl, attachmentUrl,
+  createAgreement, fetchAgreements, fetchCompany, uploadDocument, documentUrl, attachmentUrl,
   type ApiAgreement, type ApiChangeOrder, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -18,7 +21,6 @@ import { UNCATEGORISED, fmtDay, phasePercent } from "../../lib/projectSchedule";
 import { Fig } from "./FiguresPrivacy";
 import CompanyPicker from "./CompanyPicker";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
-import { Fold, Section, SidePanel } from "./timeline/ScheduleForms";
 import { GREENTECH } from "../../lib/poPdf";
 import PdfPreviewModal from "./PdfPreviewModal";
 import ShareMenu from "./ShareMenu";
@@ -51,6 +53,8 @@ const TYPES: Array<{ v: WorkPackageType; label: string; icon: typeof Package }> 
 const typeIcon = (t: WorkPackageType) => TYPES.find((x) => x.v === t)?.icon || Boxes;
 const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2, minimumFractionDigits: 0 });
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+// A scope line is not a BOQ item; it still needs an id of its own for the quotes.
+const newLineId = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
 
 type ColKey = "rfq" | "quotes" | "winner" | "po" | "status" | "progress" | "original" | "changes" | "current" | "paid" | "remaining" | "remarks";
 const COLS: Array<{ key: ColKey; label: string; help: string; money?: boolean }> = [
@@ -88,12 +92,12 @@ const coDocs = (p: ApiWorkPackage) => {
  * CR 345 - the package's agreement, filled from the package (its name, scope and company), linked to
  * the project; the package keeps its id.
  */
-async function createPackageAgreement(project: ApiProject, f: { name?: string; description?: string; responsible?: ApiWorkPackage["responsible"] }, packageId: string) {
+async function createPackageAgreement(project: ApiProject, f: { name?: string; description?: string; responsible?: ApiWorkPackage["responsible"] }, packageId: string, contractValue = "") {
   const name = (f.name || "").trim(), detail = (f.description || "").trim();
   const who = f.responsible || { kind: "company", companyId: "", name: "" };
   const c = who.kind === "company" && who.companyId ? await fetchCompany(who.companyId).catch(() => null) : null;
   return createAgreement({ kind: "general" }, {
-    name, title: name, description: detail, agreementType: "Service", ownerPackageId: packageId,
+    name, title: name, description: detail, agreementType: "Service", ownerPackageId: packageId, ...(contractValue ? { contractValue } : {}),
     linkedProjects: [{ id: project.id, name: project.name, location: project.location || "" }],
     partySnapshot: {
       party1: { name: GREENTECH.name, contactName: "", address: GREENTECH.address, email: GREENTECH.email, phone: GREENTECH.phone, logoUrl: "/gt-usa-logo-new.png" },
@@ -115,10 +119,10 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
   const [view, setViewState] = useState<View>(loadView);
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
   const [folded, setFolded] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState<ApiWorkPackage | "new" | null>(null);
-  // CR 345 - a package's RFQs, quotes, POs and agreement, opened right here.
-  const [ws, setWs] = useState<{ pkg: ApiWorkPackage; open: WorkspaceOpen } | null>(null);
-  const [narrow, setNarrow] = useState(false);
+  // CR 379 / 380 - adding asks only for a name and a description; a package opens in its own window.
+  const [adding, setAdding] = useState(false);
+  const [win, setWin] = useState<{ id: string; tab: WinTab } | null>(null);
+  const open = (p: ApiWorkPackage, tab: WinTab = "details") => setWin({ id: p._id, tab });
   const [busy, setBusy] = useState(false);
   const shown = useFiguresShown();
   // A link from elsewhere (a company's profile) can point at one package: ?hl=wp-<id>.
@@ -146,7 +150,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
     try { replace(await updateWorkPackage(projectId, p._id, body)); if (!quiet) toast("Saved.", "success"); return true; }
     catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); return false; }
   };
-  /** A subtask changed: its package's status follows when progress comes from the subtasks. */
+  /** A subtask changed: its package's status follows when progress comes from the subtasks (CR 384). */
   const patchSubtask = (p: ApiWorkPackage, id: string, t: Partial<ApiWorkSubtask>) => {
     const subtasks = p.subtasks.map((x) => {
       if (x.id !== id) return x;
@@ -155,10 +159,17 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
       if ("progress" in t) next.status = (t.progress ?? 0) >= 100 ? "complete" : (t.progress ?? 0) > 0 ? "in_progress" : next.status === "complete" ? "in_progress" : next.status;
       return next;
     });
-    const follow: WorkPackageInput = p.progressMode === "subtasks" && p.status !== "on_hold" && p.status !== "cancelled"
+    const follow: WorkPackageInput = p.progressMode !== "schedule" && p.status !== "on_hold" && p.status !== "cancelled"
       ? { status: subtasks.every((x) => x.status === "complete") ? "complete" : subtasks.some((x) => x.status !== "not_started" || x.progress > 0) ? "in_progress" : "not_started" }
       : {};
     void patch(p, { subtasks, ...follow });
+  };
+  // CR 384 - a subtask added right under its package's row.
+  const [newSub, setNewSub] = useState<{ id: string; name: string } | null>(null);
+  const addSubtask = (p: ApiWorkPackage, name: string) => {
+    if (!name.trim()) { setNewSub(null); return; }
+    void patch(p, { subtasks: [...p.subtasks, { id: newId(), name: name.trim(), status: "not_started", progress: 0 }], ...(p.progressMode === "manual" ? { progressMode: "subtasks" } : {}) });
+    setNewSub({ id: p._id, name: "" });
   };
 
   const all = list || [];
@@ -194,16 +205,13 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
     try { await deleteWorkPackage(projectId, p._id); setList((l) => (l || []).filter((x) => x._id !== p._id)); toast("Work package deleted.", "success"); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not delete it.", "error"); }
   };
-  const save = async (body: WorkPackageInput): Promise<boolean> => {
-    setBusy(true);
+  const add = async (name: string, description: string): Promise<boolean> => {
     try {
-      if (editing === "new") replace(await createWorkPackage(projectId, body));
-      else if (editing) replace(await updateWorkPackage(projectId, editing._id, body));
-      setEditing(null);
-      toast(editing === "new" ? "Work package added." : "Work package saved.", "success");
+      const p = await createWorkPackage(projectId, { name, description, progressMode: "manual", status: "not_started", responsible: { kind: "company", companyId: "", name: "" } });
+      replace(p);
+      toast(`"${p.name}" added. Open it to make its RFQ, take the quotes and write the agreement.`, "success");
       return true;
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); return false; }
-    finally { setBusy(false); }
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not add it.", "error"); return false; }
   };
 
   // ── PDF: the rows shown, and one package's sheet ──
@@ -294,14 +302,13 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
     </button>
   );
   const who = [...new Set(live.map((p) => p.winner?.name || "").filter(Boolean))].sort();
-  const panelOpen = !!editing;
 
   const cellOf = (p: ApiWorkPackage, k: ColKey): ReactNode => {
     const m = p.money;
     const pct = progressOf(p);
     switch (k) {
-      case "rfq": return p.rfq ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "rfq", rfqId: p.rfq!.id } })} className={linkCls}><FileText size={11} /> {p.rfq.no}</button><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
-      case "quotes": return p.quotes.count ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "rfq", rfqId: p.rfq?.id } })} className={linkCls}><FileText size={11} /> {p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</button>
+      case "rfq": return p.rfq ? <><button type="button" onClick={() => open(p, "rfq")} className={linkCls}><FileText size={11} /> {p.rfq.no}</button><span className="block whitespace-nowrap text-[10px] text-slate-400">{p.rfq.date ? fmtDay(p.rfq.date) : p.rfq.status}{p.rfq.vendors ? ` · ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}</span></> : <span className="text-slate-300">-</span>;
+      case "quotes": return p.quotes.count ? <><button type="button" onClick={() => open(p, "quotes")} className={linkCls}><FileText size={11} /> {p.quotes.count} Quote{p.quotes.count === 1 ? "" : "s"}</button>
         {/* CR 328 (GT Comments 3, picture) - who quoted, one per line. */}
         {p.quotes.names.length > 0 && <ul className="mt-0.5 max-w-[11rem] list-disc pl-3.5 text-[10px] leading-snug text-slate-500 marker:text-slate-400">{p.quotes.names.slice(0, 4).map((n, i) => <li key={i} className="truncate" title={n}>{n}</li>)}{p.quotes.names.length > 4 && <li className="list-none -ml-3.5 text-slate-400">+{p.quotes.names.length - 4} more</li>}</ul>}</> : <span className="text-slate-300">-</span>;
       case "winner": return p.winner ? (
@@ -312,8 +319,8 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
           <span className="min-w-0"><span className="flex items-center gap-1 font-semibold text-slate-800">{p.winner.name}{!!p.locks?.length && <Lock size={10} className="shrink-0 text-slate-400" aria-label="Locked" title={`Locked: ${p.locks[0].no} is ${p.locks[0].label}`} />}</span><span className="block max-w-[11rem] truncate text-[10px] text-slate-400" title={p.winner.place}>{p.winner.internal ? "Done in-house" : p.winner.place}</span></span>
         </span>
       ) : <span className="text-slate-300">-</span>;
-      case "po": return p.po ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "po", poId: p.po!.id } })} className={linkCls}><FileText size={11} /> {p.po.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.po.signed ? "Signed" : p.po.status)}{p.po.date ? fmtDay(p.po.date) : ""}</span></>
-        : p.agreement ? <><button type="button" onClick={() => setWs({ pkg: p, open: { tab: "agreement" } })} className={linkCls}><FileText size={11} /> {p.agreement.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.agreement.status)}{p.agreement.date ? fmtDay(p.agreement.date) : ""}</span></>
+      case "po": return p.po ? <><button type="button" onClick={() => open(p, "po")} className={linkCls}><FileText size={11} /> {p.po.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.po.signed ? "Signed" : p.po.status)}{p.po.date ? fmtDay(p.po.date) : ""}</span></>
+        : p.agreement ? <><button type="button" onClick={() => open(p, "agreement")} className={linkCls}><FileText size={11} /> {p.agreement.no}</button><span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">{docState(p.agreement.status)}{p.agreement.date ? fmtDay(p.agreement.date) : ""}</span></>
         : <span className="text-slate-300">-</span>;
       case "status": return (
         <select disabled={!canEdit} value={p.status} onChange={(e) => void patch(p, { status: e.target.value as WorkPackageStatus, ...(e.target.value === "complete" && p.progressMode === "manual" ? { progress: 100 } : {}) })} aria-label={`Status of ${p.name}`} className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${STATUS[p.status].cls}`}>
@@ -321,15 +328,15 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
         </select>
       );
       case "progress": return (
-        <span className="flex items-center gap-2" title={p.progressMode === "subtasks" ? "The average of its subtasks" : p.progressMode === "schedule" ? "Read from the schedule" : "Typed"}>
-          {p.progressMode === "manual" && canEdit
+        <span className="flex items-center gap-2" title={p.progressMode === "schedule" ? "Read from the schedule" : p.subtasks.length ? "The average of its subtasks" : "Typed"}>
+          {p.progressMode === "manual" && !p.subtasks.length && canEdit
             ? <input type="number" min={0} max={100} step={5} key={p.progress} defaultValue={p.progress} onBlur={(e) => { const v = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))); if (v !== p.progress) void patch(p, { progress: v }); }} aria-label={`Progress of ${p.name}`} className="w-12 rounded-md border border-slate-200 px-1 py-0.5 text-right text-xs tabular-nums" />
             : <span className="w-9 text-right font-bold tabular-nums text-slate-800">{pct}%</span>}
           <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} /></span>
         </span>
       );
       case "original": return m && (m.original || m.source) ? <span className={`tabular-nums ${m.changes ? "text-slate-400 line-through" : "font-semibold text-slate-800"}`} title={m.source === "po" ? "The PO's total" : m.source === "agreement" ? "The agreement's contract value" : "The value typed on the package"}><Fig>{usd(m.original)}</Fig></span> : <span className="text-slate-300">-</span>;
-      case "changes": return m && m.changeCount ? <><span className={`font-bold tabular-nums ${m.changes >= 0 ? "text-red-600" : "text-emerald-600"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></span>{canEdit ? <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className="block text-[10px] font-bold text-blue-600 hover:underline">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</button> : <span className="block text-[10px] text-slate-400">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</span>}{coDocs(p)}</> : <span className="text-slate-300">-</span>;
+      case "changes": return m && m.changeCount ? <><span className={`font-bold tabular-nums ${m.changes >= 0 ? "text-red-600" : "text-emerald-600"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></span>{canEdit ? <button type="button" onClick={() => open(p, "money")} className="block text-[10px] font-bold text-blue-600 hover:underline">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</button> : <span className="block text-[10px] text-slate-400">{m.changeCount} change order{m.changeCount === 1 ? "" : "s"}</span>}{coDocs(p)}</> : <span className="text-slate-300">-</span>;
       case "current": return m && (m.current || m.source) ? <span className="font-bold tabular-nums text-slate-900"><Fig>{usd(m.current)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "paid": return m && (m.paid || m.source) ? <span className="tabular-nums text-slate-700"><Fig>{usd(m.paid)}</Fig></span> : <span className="text-slate-300">-</span>;
       case "remaining": return m && (m.current || m.source) ? <span className={`font-semibold tabular-nums ${m.remaining < 0 ? "text-red-600" : "text-slate-800"}`}><Fig>{usd(m.remaining)}</Fig></span> : <span className="text-slate-300">-</span>;
@@ -340,7 +347,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
   };
 
   return (
-    <div className={`space-y-3 transition-[margin] ${panelOpen ? (narrow ? "sm:mr-9" : "xl:mr-[29rem]") : ""}`}>
+    <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
         <div>
           <h3 className="font-display text-base font-bold text-slate-900">Work Packages</h3>
@@ -388,7 +395,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
               <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={view.compact} onChange={(e) => setView({ ...view, compact: e.target.checked })} className="accent-blue-600" /> Compact rows</label>
             </div>
           </ToolMenu>
-          {canEdit && <button type="button" onClick={() => { setNarrow(false); setEditing("new"); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700"><Plus size={13} /> Add Work Package</button>}
+          {canEdit && <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700"><Plus size={13} /> Add Work Package</button>}
         </div>
       </div>
       <input ref={fileInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importExcel(f); e.target.value = ""; }} />
@@ -439,7 +446,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
                       </span>
                     </td>
                     <td className={`${td} sticky left-16 z-[1] ${dragOver === p._id ? "bg-blue-50" : amber ? "bg-amber-50" : "bg-white"}`}>
-                      <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className="flex items-start gap-2 text-left">
+                      <button type="button" onClick={() => open(p)} title="Open the package: details, RFQ, quotes, agreement, money" className="flex items-start gap-2 text-left">
                         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon size={13} /></span>
                         <span className="min-w-0">
                           <span className="block font-bold text-slate-900 hover:text-primary">{p.name}{p.archived && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500">Archived</span>}</span>
@@ -450,7 +457,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
                     {cols.map((c) => <td key={c.key} className={`${td} ${c.money ? "text-right" : ""}`}>{cellOf(p, c.key)}</td>)}
                     <td className={`${td} text-right`}>
                       <ToolMenu label={`Actions for ${p.name}`} icon={<MoreVertical size={14} />} tone="ghost">
-                        <button type="button" onClick={() => { setNarrow(false); setEditing(p); }} className={MENU_ITEM}><Pencil size={13} /> {canEdit ? "Open / edit" : "Open"}</button>
+                        <button type="button" onClick={() => open(p)} className={MENU_ITEM}><Pencil size={13} /> Open</button>
                         <button type="button" onClick={() => setPreview({ title: `Work package ${n || ""}.0 · ${p.name}`, fileName: sheetFile(p), build: () => sheetPdf(p) })} className={MENU_ITEM}><Printer size={13} /> Print package sheet</button>
                         <ShareMenu variant="button" fileName={sheetFile(p)} fileUrl="" projectName={project.name} prepareFile={async () => shareFile(await sheetPdf(p), sheetFile(p))} className={MENU_ITEM} />
                         {canEdit && (
@@ -484,13 +491,26 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
                       <td />
                     </tr>
                   ))}
+                  {canEdit && !isFolded && !p.archived && (
+                    <tr className="border-t border-slate-50 bg-slate-50/30">
+                      <td className="sticky left-0 z-[1] bg-slate-50/30 px-3 py-1 pl-7 text-[11px] tabular-nums text-slate-300">{n ? `${n}.${p.subtasks.length + 1}` : ""}</td>
+                      <td className="sticky left-16 z-[1] bg-slate-50/30 px-3 py-1 pl-8" colSpan={1}>
+                        {newSub?.id === p._id ? (
+                          <input autoFocus value={newSub.name} onChange={(e) => setNewSub({ id: p._id, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") addSubtask(p, newSub.name); if (e.key === "Escape") setNewSub(null); }} onBlur={() => addSubtask(p, newSub.name)} placeholder="Subtask name, then Enter" aria-label={`New subtask of ${p.name}`} className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] focus:border-primary focus:outline-none" />
+                        ) : (
+                          <button type="button" onClick={() => setNewSub({ id: p._id, name: "" })} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-primary"><Plus size={11} /> Add subtask</button>
+                        )}
+                      </td>
+                      <td colSpan={cols.length + 1} />
+                    </tr>
+                  )}
                 </Fragment>
               );
             })}
             {canEdit && list !== null && (
               <tr className="border-t border-slate-100">
                 <td colSpan={cols.length + 3} className="p-2">
-                  <button type="button" onClick={() => { setNarrow(false); setEditing("new"); }} className="flex w-full items-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-left text-xs hover:border-primary hover:bg-blue-50/40">
+                  <button type="button" onClick={() => setAdding(true)} className="flex w-full items-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-left text-xs hover:border-primary hover:bg-blue-50/40">
                     <Plus size={14} className="text-blue-600" /><b className="text-slate-800">Add new work package</b><span className="text-slate-400">Add a new requirement, task, or service for this project.</span>
                   </button>
                 </td>
@@ -514,131 +534,141 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
         </table>
       </div>
 
-      {editing && (
-        <Fragment key={editing === "new" ? "new" : editing._id}>
-          <PackageForm pkg={editing === "new" ? null : editing} project={project} canEdit={canEdit} canUnlink={canUnlink} confirm={confirm} canMoney={canMoney} busy={busy} narrow={narrow} onNarrow={setNarrow} onSave={save} onClose={() => setEditing(null)} onLinked={(x) => { replace(x); setEditing(null); }} onWorkspace={(x, open) => { replace(x); setEditing(null); setWs({ pkg: x, open }); }} />
-        </Fragment>
-      )}
-      {ws && (
-        <PackageWorkspace
-          projectId={project.id} projectInfo={projectInfo} canEdit={canEdit}
-          pkg={{ id: ws.pkg._id, no: `${(list || []).findIndex((x) => x._id === ws.pkg._id) + 1 || ws.pkg.order}.0`, name: ws.pkg.name, agreementId: ws.pkg.agreementId }}
-          open={ws.open}
-          onCreateAgreement={async () => {
-            try {
-              const ag = await createPackageAgreement(project, ws.pkg, ws.pkg._id);
-              replace(await updateWorkPackage(project.id, ws.pkg._id, { agreementId: ag._id }));
-              toast(`Agreement ${ag.agreementNo || ""} made for this package.`.replace("  ", " "), "success");
-              return ag._id;
-            } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); return null; }
-          }}
-          onClose={(changed) => { setWs(null); if (changed) void load(); }}
-        />
-      )}
+      {adding && <AddPackage onAdd={add} onClose={() => setAdding(false)} />}
+      {win && (() => {
+        const p = all.find((x) => x._id === win.id);
+        if (!p) return null;
+        return (
+          <Fragment key={p._id}><PackageWindow
+            pkg={p} no={`${numberOf.get(p._id) || p.order}.0`} project={project} projectInfo={projectInfo}
+            canEdit={canEdit} canUnlink={canUnlink} canMoney={canMoney} confirm={confirm} tab={win.tab}
+            onSaved={replace} onChanged={() => void load()} onClose={() => { setWin(null); void load(); }}
+          /></Fragment>
+        );
+      })()}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
       {dialogs}
     </div>
   );
 }
 
-// ── Add / edit: the side panel ──
+// ── Add: just a name and a short description (CR 379) ──
 const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-400";
 const inp = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none disabled:bg-slate-50 disabled:text-slate-500";
 const hint = "text-[11px] leading-snug text-slate-500";
 
-function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy, narrow, onNarrow, onSave, onClose, onLinked, onWorkspace }: {
-  pkg: ApiWorkPackage | null; project: ApiProject; canEdit: boolean; canMoney: boolean;
+/**
+ * CR 379 - "When you add a work [package], you don't need all of this. What is the name of it and
+ * what is the description? ... So it will create a row." Everything else is done in its window.
+ */
+function AddPackage({ onAdd, onClose }: { onAdd: (name: string, description: string) => Promise<boolean>; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    try { if (await onAdd(name.trim(), description.trim())) onClose(); } finally { setBusy(false); }
+  };
+  return createPortal(
+    <div className="fixed inset-0 z-[150] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-label="Add work package" className="my-16 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><Boxes size={15} className="text-blue-600" /> Add work package</p>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+        </div>
+        <div className="space-y-3 px-4 py-4">
+          <label className="block"><span className={lbl}>Name *</span><input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} placeholder="e.g. Crane Service (50 ton)" className={inp} /></label>
+          <label className="block"><span className={lbl}>Short description</span><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${inp} resize-y`} placeholder="What this package covers" /></label>
+          <p className={hint}>It is added as a row. Open it to make its RFQ, take the quotes, choose the winner and write the agreement.</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+          <button type="button" onClick={() => void submit()} disabled={busy || !name.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── The package's window (CR 380): everything about one package, step by step, in tabs ──
+export type WinTab = "details" | "rfq" | "quotes" | "agreement" | "money" | "po";
+
+const inputOf = (p: ApiWorkPackage): WorkPackageInput => ({
+  name: p.name, description: p.description, type: p.type, responsible: p.responsible, rfqId: p.rfqId, poId: p.poId, agreementId: p.agreementId, status: p.status,
+  progressMode: p.progressMode, progress: p.progress, scheduleRef: p.scheduleRef, subtasks: p.subtasks, budget: p.budget || 0, changeOrders: p.changeOrders, remarks: p.remarks,
+});
+
+function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canMoney, confirm, tab: initialTab, onSaved, onChanged, onClose }: {
+  pkg: ApiWorkPackage; no: string; project: ApiProject; projectInfo?: ProjectPdfInfo; canEdit: boolean; canMoney: boolean;
   /** CR 328 - may unlink a signed document (the project's own team, not a guest). */
-  canUnlink: boolean; confirm: ReturnType<typeof useDialogs>["confirm"]; busy: boolean; narrow: boolean; onNarrow: (v: boolean) => void;
-  onSave: (body: WorkPackageInput) => Promise<boolean>; onClose: () => void;
-  /** CR 328 - the package, saved with a record just made for it (an RFQ, a PO, an agreement). */
-  onLinked: (p: ApiWorkPackage) => void;
-  /** CR 345 - open the package's RFQs / POs / agreement right here (the package saved first). */
-  onWorkspace: (p: ApiWorkPackage, open: WorkspaceOpen) => void;
+  canUnlink: boolean; confirm: ReturnType<typeof useDialogs>["confirm"];
+  tab: WinTab;
+  onSaved: (p: ApiWorkPackage) => void;
+  /** Something inside it was made or changed (an RFQ, a quote, the agreement): the table reloads. */
+  onChanged: () => void;
+  onClose: () => void;
 }) {
-  const [f, setF] = useState<WorkPackageInput>(() => pkg ? {
-    name: pkg.name, description: pkg.description, type: pkg.type, responsible: pkg.responsible, rfqId: pkg.rfqId, poId: pkg.poId, agreementId: pkg.agreementId, status: pkg.status,
-    progressMode: pkg.progressMode, progress: pkg.progress, scheduleRef: pkg.scheduleRef, subtasks: pkg.subtasks, budget: pkg.budget || 0, changeOrders: pkg.changeOrders, remarks: pkg.remarks,
-  } : {
-    name: "", description: "", type: "other", responsible: { kind: "company", companyId: "", name: "" }, rfqId: "", poId: "", agreementId: "", status: "not_started",
-    progressMode: "manual", progress: 0, scheduleRef: { kind: "", id: "" }, subtasks: [], budget: 0, changeOrders: [], remarks: "",
-  });
+  const [tab, setTab] = useState<WinTab>(initialTab);
+  const [f, setF] = useState<WorkPackageInput>(() => inputOf(pkg));
+  const [saved, setSaved] = useState(() => JSON.stringify(inputOf(pkg)));
+  const dirty = JSON.stringify(f) !== saved;
+  const [busy, setBusy] = useState(false);
   const set = (patch: WorkPackageInput) => setF((p) => ({ ...p, ...patch }));
   const who = f.responsible!;
   const subs = f.subtasks || [];
   const cos = f.changeOrders || [];
-  // CR 346 - the package's own RFQs (for the awarded quote a PO is made from) and agreements (for
-  // the contract value). Nothing is picked from Procurement: a package's records are made in it.
-  const [rfqs, setRfqs] = useState<ApiRfq[]>([]);
-  const [agrs, setAgrs] = useState<ApiAgreement[]>([]);
-  useEffect(() => {
-    if (pkg) fetchRfqs(project.id, false, { package: pkg._id }).then(setRfqs).catch(() => setRfqs([]));
-    // CR 347 - the package's own agreement (for its contract value).
-    if (pkg) fetchAgreements({ kind: "general" }, false, { package: pkg._id }).then(setAgrs).catch(() => setAgrs([]));
-  }, [project.id]);
+  const owner = { id: pkg._id, name: `${no} ${pkg.name}` };
 
-  /**
-   * CR 328 (GT Comments 3, page 1: "Work Package → RFQ → Vendor Quotes → Selection/Winner →
-   * PO/Agreement ... Existing RFQ, PO, and Agreement builders ... should be reused"). The record is
-   * made by the same Procurement and agreement endpoints as always, filled in from the package,
-   * linked to it, and opened where it lives to carry on there. The package is saved with it, so
-   * nothing typed in this form is lost.
-   */
-  const [making, setMaking] = useState<"" | "rfq" | "po" | "agreement">("");
-  const scope = () => ({ name: (f.name || "").trim(), detail: (f.description || "").trim() });
-  // A scope line is not a BOQ item; it still needs an id of its own for the quotes and the PO.
-  const newLineId = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, "0")).join("");
-  const linkAndOpen = async (patch: WorkPackageInput, open: WorkspaceOpen, message = "") => {
-    const saved = canEdit ? await updateWorkPackage(project.id, pkg!._id, { ...f, ...patch }) : pkg!;
-    if (message) toast(message, "success");
-    onWorkspace(saved, open);
-  };
-  const openHere = (open: WorkspaceOpen) => { if (pkg) void linkAndOpen({}, open).catch((e) => toast(e instanceof Error ? e.message : "Could not save the package.", "error")); };
-  const makeRfq = async () => {
-    if (!pkg) return;
-    setMaking("rfq");
+  const save = async (): Promise<boolean> => {
+    if (!canEdit) return true;
+    setBusy(true);
     try {
-      const { name, detail } = scope();
-      // CR 345 - the Create RFQ window opens in the package, filled from it (the package's company
-      // is the first vendor); the RFQ belongs to the package.
-      await linkAndOpen({}, { tab: "rfq", newRfq: { title: name, notes: detail, lineItems: [{ itemId: newLineId(), description: name, qty: "1", unit: "lot", spec: detail }], vendorIds: who.kind === "company" && who.companyId ? [who.companyId] : [] } });
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not make the RFQ.", "error"); }
-    finally { setMaking(""); }
+      const p = await updateWorkPackage(project.id, pkg._id, f);
+      onSaved(p);
+      setF(inputOf(p)); setSaved(JSON.stringify(inputOf(p)));
+      toast("Work package saved.", "success");
+      return true;
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not save.", "error"); return false; }
+    finally { setBusy(false); }
   };
-  const linkedRfq = rfqs.find((r) => r._id === f.rfqId);
-  const linkedAgrValue = (agrs.find((a) => a._id === f.agreementId)?.contractValue || "").replace(/[^0-9.]/g, "");
-  const awarded = linkedRfq?.quotes?.find((q) => q.status === "Awarded");
-  const makePo = async () => {
-    if (!pkg) return;
-    setMaking("po");
-    try {
-      const { name } = scope();
-      // From the awarded quote, the normal Procurement way; without one, a PO for the package's
-      // company with the package as its line, priced in the PO editor.
-      let po = linkedRfq && awarded
-        ? await createProcurementPO(project.id, linkedRfq._id, awarded._id, pkg._id)
-        : await createManualPO(project.id, who.kind === "company" ? who.name : "", pkg._id);
-      if (!(linkedRfq && awarded)) po = await updateProcurementPO(project.id, po._id, { lineItems: [{ itemId: "", description: name, qty: "1", unit: "lot", unitPrice: "" }] });
-      await linkAndOpen({ poId: pkg.po ? f.poId : po._id }, { tab: "po", poId: po._id }, `${po.poNo} made for this package.${linkedRfq && awarded ? "" : " Add its price below."}`);
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PO.", "error"); }
-    finally { setMaking(""); }
+  const close = async () => {
+    if (dirty && canEdit && !(await confirm({ title: "Close without saving?", message: "The changes to this package's details are lost.", confirmLabel: "Close", danger: true }))) return;
+    onClose();
   };
+
+  // ── Agreement (CR 383): the contract with the winner; its value is the package's money ──
+  const [agr, setAgr] = useState<ApiAgreement | null | "loading">(pkg.agreementId ? "loading" : null);
+  useEffect(() => {
+    if (!pkg.agreementId) { setAgr(null); return; }
+    setAgr("loading");
+    void fetchAgreements({ kind: "general" }, false, { package: pkg._id }).catch(() => [] as ApiAgreement[]).then((list) => setAgr(list.find((a) => a._id === pkg.agreementId) || null));
+  }, [pkg.agreementId, pkg._id]);
+  const [makingAgr, setMakingAgr] = useState(false);
   const makeAgreement = async () => {
-    if (!pkg) return;
-    setMaking("agreement");
+    setMakingAgr(true);
     try {
-      const ag = await createPackageAgreement(project, f, pkg._id);
-      await linkAndOpen({ agreementId: ag._id }, { tab: "agreement" }, `Agreement ${ag.agreementNo || ""} made for this package. Write it below.`.replace("  ", " "));
+      // Filled from the winner: the company, and the accepted quote's total as the contract value.
+      const rfqs = await fetchRfqs(project.id, false, { package: pkg._id }).catch(() => [] as ApiRfq[]);
+      const won = rfqs.flatMap((r) => r.quotes.filter((q) => q.status === "Awarded").map((q) => ({ r, q })))[0];
+      const value = won ? quoteTotal(won.r, won.q) : 0;
+      const party = pkg.winner && !pkg.winner.internal ? { kind: "company" as const, companyId: pkg.winner.companyId, name: pkg.winner.name } : who;
+      const ag = await createPackageAgreement(project, { name: f.name, description: f.description, responsible: party }, pkg._id, value ? String(Math.round(value * 100) / 100) : "");
+      const p = await updateWorkPackage(project.id, pkg._id, { agreementId: ag._id });
+      onSaved(p);
+      set({ agreementId: ag._id }); setSaved((s) => JSON.stringify({ ...JSON.parse(s), agreementId: ag._id }));
+      toast(`Agreement ${ag.agreementNo || ""} made with ${party.name || "the winner"}. Write and sign it below.`.replace("  ", " "), "success");
     } catch (e) { toast(e instanceof Error ? e.message : "Could not make the agreement.", "error"); }
-    finally { setMaking(""); }
+    finally { setMakingAgr(false); }
   };
-  const base = `/dashboard/projects/${project.id}`;
+
+  // ── Details ──
   const tasks = project.schedule?.milestones || [];
   const phases = [...new Set([...(project.schedule?.categories || []), ...tasks.map((m) => (m.category || "").trim()).filter(Boolean)])];
   const setSub = (i: number, t: Partial<ApiWorkSubtask>) => set({ subtasks: subs.map((x, j) => (j === i ? { ...x, ...t, ...(t.status === "complete" ? { progress: 100 } : {}) } : x)) });
   const moveSub = (i: number, d: number) => { const j = i + d; if (j < 0 || j >= subs.length) return; const next = [...subs]; [next[i], next[j]] = [next[j], next[i]]; set({ subtasks: next }); };
   const setCo = (i: number, c: Partial<ApiChangeOrder>) => set({ changeOrders: cos.map((x, j) => (j === i ? { ...x, ...c } : x)) });
-  // A change order's document goes to the project's documents (Project Management, "Change orders").
   const [coUploading, setCoUploading] = useState("");
   const attachCo = async (id: string, file: File) => {
     setCoUploading(id);
@@ -650,219 +680,257 @@ function PackageForm({ pkg, project, canEdit, canUnlink, confirm, canMoney, busy
     finally { setCoUploading(""); }
   };
   const approved = cos.filter((c) => c.status === "approved").reduce((a, c) => a + (Number(c.amount) || 0), 0);
-  const outside = who.kind === "company";
-  /**
-   * CR 328 (GT Comments 3, page 1: "... subject to user permissions and record status"). A signed PO
-   * (or one the vendor confirmed) or a signed agreement binds the package: the company and the links
-   * are locked until that document is unlinked. Unlinking here frees them for the same save.
-   */
-  const locks = pkg ? (pkg.locks || []).filter((l) => (l.kind === "po" ? f.poId === pkg.poId : f.agreementId === pkg.agreementId)) : [];
+  // CR 328 - a signed PO or agreement binds the package's company until it is unlinked.
+  const locks = (pkg.locks || []).filter((l) => (l.kind === "po" ? f.poId === pkg.poId : f.agreementId === pkg.agreementId));
   const locked = locks.length > 0;
-  const lockOf = (kind: "po" | "agreement") => locks.find((l) => l.kind === kind);
   const unlink = async (kind: "po" | "agreement") => {
-    const l = lockOf(kind);
+    const l = locks.find((x) => x.kind === kind);
     if (!l) return;
-    if (!(await confirm({ title: `Unlink ${l.no}?`, message: `${l.no} is ${l.label}. Unlinked, the package's company and links can be changed again; ${l.no} itself is not touched. The change is kept when you save the package.`, confirmLabel: "Unlink" }))) return;
+    if (!(await confirm({ title: `Unlink ${l.no}?`, message: `${l.no} is ${l.label}. Unlinked, the package's company can be changed again; ${l.no} itself is not touched. The change is kept when you save the package.`, confirmLabel: "Unlink" }))) return;
     set(kind === "po" ? { poId: "" } : { agreementId: "" });
   };
-  const lockedNote = (kind: "po" | "agreement") => {
-    const l = lockOf(kind);
-    if (!l) return null;
-    return canUnlink && canEdit
-      ? <button type="button" onClick={() => void unlink(kind)} className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:underline"><X size={11} /> Unlink</button>
-      : <span className={hint}>Only the project's team can unlink it.</span>;
-  };
-  // CR 328 (GT Comments 3, page 1) - an outside company must be a Directory record, never loose text.
-  const looseCompany = outside && !!who.name.trim() && !who.companyId;
+  const looseCompany = who.kind === "company" && !!who.name.trim() && !who.companyId;
   const small = "rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-primary focus:outline-none";
-  const linkBtn = "inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline";
+  const fromSubs = subs.length > 0 && f.progressMode !== "schedule";
+  const subAvg = subs.length ? Math.round(subs.reduce((a, t) => a + (t.progress || 0), 0) / subs.length) : 0;
 
-  return (
-    <SidePanel
-      title={pkg ? (canEdit ? "Edit work package" : "Work package") : "Add work package"}
-      icon={<Boxes size={15} />}
-      narrow={narrow} onNarrow={onNarrow} onClose={onClose}
-      footer={<>
-        <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100">{canEdit ? "Cancel" : "Close"}</button>
-        {canEdit && <button type="button" onClick={() => void onSave(f)} disabled={busy || !(f.name || "").trim() || looseCompany} title={looseCompany ? "Pick the company from the Directory first" : undefined} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 size={14} className="animate-spin" />} Save work package</button>}
-      </>}
-    >
-      <fieldset disabled={!canEdit} className="space-y-5">
-        <Section n={1} title="Requirement">
-          <label className="block"><span className={lbl}>Name *</span><input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Crane Service (50 ton)" className={inp} autoFocus={!pkg} /></label>
-          <label className="block"><span className={lbl}>Description</span><textarea value={f.description} onChange={(e) => set({ description: e.target.value })} rows={2} className={`${inp} resize-y`} placeholder="What this requirement covers" /></label>
-          <div>
-            <span className={lbl}>Type</span>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {TYPES.map((t) => <button key={t.v} type="button" onClick={() => set({ type: t.v })} aria-pressed={f.type === t.v} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold ${f.type === t.v ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}><t.icon size={12} /> {t.label}</button>)}
+  const m = pkg.money;
+  const hasRfq = !!pkg.rfq;
+  const won = pkg.winner && pkg.winner.from === "quote";
+  const TABS: Array<{ k: WinTab; n?: number; label: string; done?: boolean; show?: boolean }> = [
+    { k: "details", label: "Details & progress" },
+    { k: "rfq", n: 1, label: "RFQ", done: hasRfq },
+    { k: "quotes", n: 2, label: "Quotes & winner", done: !!won },
+    { k: "agreement", n: 3, label: "Agreement", done: !!pkg.agreement },
+    { k: "money", label: "Money", show: canMoney },
+    { k: "po", label: "Purchase order", show: !!pkg.po },
+  ];
+  const card = "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-2 sm:p-4">
+      <div role="dialog" aria-label={`Work package ${no} ${pkg.name}`} className="my-2 flex w-full max-w-7xl flex-col rounded-3xl bg-slate-50 shadow-2xl sm:my-4">
+        {/* Header: the package at a glance, and its steps */}
+        <div className="sticky top-0 z-20 rounded-t-3xl border-b border-slate-200 bg-white px-4 pt-4 sm:px-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400"><Boxes size={12} /> Work package {no}</p>
+              <h3 className="truncate font-display text-lg font-bold text-slate-900">{f.name || pkg.name}</h3>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                <span className={`rounded-md border px-1.5 py-0.5 font-bold ${STATUS[pkg.status].cls}`}>{STATUS[pkg.status].label}</span>
+                <span className="inline-flex items-center gap-1.5 text-slate-500"><span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${pkg.progress >= 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${pkg.progress}%` }} /></span><b className="tabular-nums text-slate-700">{pkg.progress}%</b></span>
+                {pkg.winner && <span className="inline-flex items-center gap-1 text-slate-500"><Building2 size={11} /> {pkg.winner.internal ? "In-house:" : won ? "Winner:" : "Company:"} <b className="text-slate-700">{pkg.winner.name}</b></span>}
+                {canMoney && m && (m.current || m.source) ? <span className="text-slate-500">Current value <b className="tabular-nums text-slate-700"><Fig>{usd(m.current)}</Fig></b></span> : null}
+              </div>
             </div>
+            <button type="button" onClick={() => void close()} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
           </div>
-        </Section>
-
-        <Section n={2} title="Who does it">
-          {locked && (
-            <p className="flex items-start gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
-              <Lock size={12} className="mt-0.5 shrink-0" />
-              <span>Locked: {locks.map((l) => `${l.no} is ${l.label}`).join(", and ")}. The company and the links stay as they are. To change them, unlink {locks.length > 1 ? "those documents" : locks[0].no} below first.</span>
-            </p>
-          )}
-          <fieldset disabled={locked} className="space-y-3 disabled:opacity-70">
-          <div className="flex gap-1.5">
-            {([["company", "An outside company"], ["internal", "GT / JV (in-house)"]] as const).map(([k, l]) => (
-              <button key={k} type="button" onClick={() => set({ responsible: k === "internal" ? { kind: "internal", companyId: "", name: who.kind === "internal" ? who.name : "GT" } : { kind: "company", companyId: "", name: "" } })} aria-pressed={who.kind === k} className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${who.kind === k ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}>{l}</button>
+          <div className="mt-3 flex gap-1 overflow-x-auto">
+            {TABS.filter((t) => t.show !== false).map((t) => (
+              <button key={t.k} type="button" onClick={() => setTab(t.k)} className={`inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-bold transition-colors ${tab === t.k ? "border-primary text-primary" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+                {t.n && <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${t.done ? "bg-emerald-500 text-white" : tab === t.k ? "bg-primary text-white" : "bg-slate-200 text-slate-600"}`}>{t.done ? <BadgeCheck size={10} /> : t.n}</span>}
+                {t.label}
+              </button>
             ))}
           </div>
-          {outside ? (
-            <div>
-              <span className={lbl}>Company (from the Directory)</span>
-              <div className="mt-1"><CompanyPicker size="sm" value={who.name} category="vendor" categories={["vendor", "subcontractor", "supplier", "manufacturer", "consultant"]} onNameChange={(v) => set({ responsible: { kind: "company", companyId: "", name: v } })} onSelectCompany={(c) => set({ responsible: { kind: "company", companyId: c._id, name: c.name } })} placeholder="Search the Directory, or add a company to it" /></div>
-              {looseCompany
-                ? <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600">"{who.name}" is not picked from the Directory. Choose it from the list, or add it to the Directory from the list, to save.</p>
-                : <p className={`mt-1 ${hint}`}>{who.companyId ? "From the Directory." : "Leave it empty until a quote is awarded: the winner of the linked RFQ then shows here."}</p>}
-            </div>
-          ) : (
-            <label className="block"><span className={lbl}>Done by</span><input value={who.name} onChange={(e) => set({ responsible: { kind: "internal", companyId: "", name: e.target.value } })} placeholder="GT, or the JV's name" className={inp} /></label>
-          )}
-          </fieldset>
-        </Section>
+        </div>
 
-        {outside && (
-          <Section n={3} title="Commercial" note="The package's own RFQ, purchase order and agreement. They are made and kept here, in the package, apart from Procurement; the table follows them (quotes, winner, value, payments).">
-            {!pkg && <p className={`rounded-lg bg-amber-50 px-2.5 py-1.5 ${hint} text-amber-800`}>Save the package first; its RFQ, PO and agreement are then made here.</p>}
-            {pkg && (
-              <div className="space-y-2">
-                {/* CR 346 - each one: the package's own record (open it), or Create. Nothing is chosen from Procurement. */}
-                {([
-                  { k: "rfq" as const, label: "RFQ", has: !!f.rfqId && pkg.rfq?.id === f.rfqId, rec: f.rfqId && pkg.rfq?.id === f.rfqId ? { no: `RFQ ${pkg.rfq.no}`, sub: [pkg.rfq.status, pkg.quotes.count ? `${pkg.quotes.count} quote${pkg.quotes.count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") } : null,
-                    open: () => openHere({ tab: "rfq", rfqId: f.rfqId }), make: makeRfq, makeLabel: "Create an RFQ",
-                    help: `Opens the Create RFQ window here, filled from the package${who.companyId ? `, with ${who.name} as the first vendor` : ""}.` },
-                  { k: "po" as const, label: "Purchase order", has: !!f.poId && pkg.po?.id === f.poId, rec: f.poId && pkg.po?.id === f.poId ? { no: pkg.po.no, sub: pkg.po.signed ? "Signed" : pkg.po.status } : null,
-                    open: () => openHere({ tab: "po", poId: f.poId }), make: makePo, makeLabel: "Create a PO",
-                    help: linkedRfq && awarded ? `From the quote awarded on RFQ ${linkedRfq.rfqNo}, with its prices.` : linkedRfq ? `No quote is awarded on RFQ ${linkedRfq.rfqNo} yet: award one first, or make the PO now and price it.` : "A PO for the package's company with the package as its line; priced in the PO." },
-                  { k: "agreement" as const, label: "Agreement", has: !!f.agreementId && pkg.agreement?.id === f.agreementId, rec: f.agreementId && pkg.agreement?.id === f.agreementId ? { no: pkg.agreement.no, sub: pkg.agreement.status } : null,
-                    open: () => openHere({ tab: "agreement" }), make: makeAgreement, makeLabel: "Create an agreement",
-                    help: `With ${who.name || "the package's company"} as the other party, titled with the package's name; written and signed here.` },
-                ]).map((x) => (
-                  <div key={x.k} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500"><FileText size={14} /></span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{x.label}</p>
-                      {x.has
-                        ? <p className="text-xs font-bold text-slate-800 truncate">{x.rec ? x.rec.no : "Made"}{x.rec?.sub && <span className="ml-1.5 font-semibold text-slate-400">{x.rec.sub}</span>}</p>
-                        : <p className={`${hint} line-clamp-2`} title={x.help}>{x.help}</p>}
-                      {x.has && x.k !== "rfq" && lockedNote(x.k)}
+        <div className="flex-1 p-3 sm:p-5">
+          {tab === "details" && (
+            <fieldset disabled={!canEdit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="space-y-4">
+                <section className={`${card} space-y-3`}>
+                  <h4 className="text-sm font-bold text-slate-800">Requirement</h4>
+                  <label className="block"><span className={lbl}>Name *</span><input value={f.name} onChange={(e) => set({ name: e.target.value })} className={inp} /></label>
+                  <label className="block"><span className={lbl}>Description</span><textarea value={f.description} onChange={(e) => set({ description: e.target.value })} rows={3} className={`${inp} resize-y`} placeholder="What this requirement covers" /></label>
+                  <div>
+                    <span className={lbl}>Type</span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {TYPES.map((t) => <button key={t.v} type="button" onClick={() => set({ type: t.v })} aria-pressed={f.type === t.v} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold ${f.type === t.v ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}><t.icon size={12} /> {t.label}</button>)}
                     </div>
-                    {x.has
-                      ? <button type="button" onClick={x.open} className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 hover:border-primary hover:text-primary"><Eye size={12} /> Open</button>
-                      : canEdit && !locked && <button type="button" onClick={() => void x.make()} disabled={!!making || !scope().name || looseCompany} className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-primary disabled:opacity-50">{making === x.k ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {x.makeLabel}</button>}
                   </div>
-                ))}
-                <button type="button" onClick={() => openHere({ tab: "rfq" })} className={`${linkBtn} mt-1`}><Boxes size={11} /> Open all of this package's RFQs, quotes and POs</button>
+                </section>
+                <section className={`${card} space-y-3`}>
+                  <h4 className="text-sm font-bold text-slate-800">Who does it</h4>
+                  {locked && (
+                    <p className="flex items-start gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
+                      <Lock size={12} className="mt-0.5 shrink-0" />
+                      <span>Locked: {locks.map((l) => `${l.no} is ${l.label}`).join(", and ")}. {canUnlink && canEdit ? locks.map((l) => <button key={l.kind} type="button" onClick={() => void unlink(l.kind)} className="ml-1 font-bold text-red-600 hover:underline">Unlink {l.no}</button>) : "Only the project's team can unlink it."}</span>
+                    </p>
+                  )}
+                  <fieldset disabled={locked} className="space-y-3 disabled:opacity-70">
+                    <div className="flex gap-1.5">
+                      {([["company", "An outside company"], ["internal", "GT / JV (in-house)"]] as const).map(([k, l]) => (
+                        <button key={k} type="button" onClick={() => set({ responsible: k === "internal" ? { kind: "internal", companyId: "", name: who.kind === "internal" ? who.name : "GT" } : { kind: "company", companyId: "", name: "" } })} aria-pressed={who.kind === k} className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${who.kind === k ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}>{l}</button>
+                      ))}
+                    </div>
+                    {who.kind === "company" ? (
+                      <div>
+                        <span className={lbl}>Company (from the Directory, optional)</span>
+                        <div className="mt-1"><CompanyPicker size="sm" value={who.name} category="vendor" categories={["vendor", "subcontractor", "supplier", "manufacturer", "consultant"]} onNameChange={(v) => set({ responsible: { kind: "company", companyId: "", name: v } })} onSelectCompany={(c) => set({ responsible: { kind: "company", companyId: c._id, name: c.name } })} placeholder="Search the Directory" /></div>
+                        {looseCompany
+                          ? <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600">"{who.name}" is not picked from the Directory. Choose it from the list to save.</p>
+                          : <p className={`mt-1 ${hint}`}>Usually left empty: the winner chosen in Quotes is the package's company.</p>}
+                      </div>
+                    ) : (
+                      <label className="block"><span className={lbl}>Done by</span><input value={who.name} onChange={(e) => set({ responsible: { kind: "internal", companyId: "", name: e.target.value } })} placeholder="GT, or the JV's name" className={inp} /></label>
+                    )}
+                  </fieldset>
+                </section>
+                <section className={`${card} space-y-2`}>
+                  <h4 className="text-sm font-bold text-slate-800">Remarks</h4>
+                  <textarea value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} rows={3} className={`${inp} mt-0 resize-y`} placeholder="Anything worth noting about this package" aria-label="Remarks" />
+                </section>
               </div>
-            )}
-          </Section>
-        )}
-
-        <Section n={outside ? 4 : 3} title="Progress">
-          <label className="block"><span className={lbl}>Status</span><select value={f.status} onChange={(e) => set({ status: e.target.value as WorkPackageStatus })} className={inp}>{STATUSES.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></label>
-          <div>
-            <span className={lbl}>How progress is measured</span>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {([["manual", "Typed"], ["subtasks", "From its subtasks"], ["schedule", "From the schedule"]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => set({ progressMode: k })} aria-pressed={f.progressMode === k} className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold ${f.progressMode === k ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}>{l}</button>)}
-            </div>
-          </div>
-          {f.progressMode === "manual" && <label className="block"><span className={lbl}>Progress: {f.progress}%</span><input type="range" min={0} max={100} step={5} value={f.progress} onChange={(e) => set({ progress: Number(e.target.value) })} className="mt-2 w-full accent-blue-600" /></label>}
-          {f.progressMode === "schedule" && (
-            <label className="block">
-              <span className={lbl}>Task or phase of the current schedule (optional)</span>
-              <select value={f.scheduleRef?.id ? `${f.scheduleRef.kind}:${f.scheduleRef.id}` : ""} onChange={(e) => { const v = e.target.value; const k = v.slice(0, v.indexOf(":")); set({ scheduleRef: v ? { kind: k as "task" | "phase", id: v.slice(k.length + 1) } : { kind: "", id: "" } }); }} className={inp}>
-                <option value="">None</option>
-                {phases.length > 0 && <optgroup label="Phases">{phases.map((c) => <option key={c} value={`phase:${c}`}>{c}</option>)}</optgroup>}
-                <optgroup label="Tasks and milestones">{tasks.map((m) => <option key={m.id} value={`task:${m.id}`}>{m.name}</option>)}</optgroup>
-              </select>
-              {!tasks.length && <span className={`mt-1 block ${hint}`}>The project has no schedule yet.</span>}
-            </label>
-          )}
-          <div>
-            <span className={lbl}>Subtasks / deliverables</span>
-            <div className="mt-1 space-y-1.5">
-              {subs.map((t, i) => (
-                <div key={t.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-1.5">
-                  <div className="flex items-center gap-1">
-                    <input value={t.name} onChange={(e) => setSub(i, { name: e.target.value })} placeholder="Subtask" aria-label="Subtask name" className={`${small} min-w-0 flex-1`} />
-                    <button type="button" onClick={() => moveSub(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>
-                    <button type="button" onClick={() => moveSub(i, 1)} disabled={i === subs.length - 1} aria-label="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>
-                    <button type="button" onClick={() => set({ subtasks: subs.filter((_, j) => j !== i) })} aria-label="Remove the subtask" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
+              <section className={`${card} space-y-3`}>
+                <h4 className="text-sm font-bold text-slate-800">Progress and subtasks</h4>
+                <label className="block"><span className={lbl}>Status</span><select value={f.status} onChange={(e) => set({ status: e.target.value as WorkPackageStatus })} className={inp}>{STATUSES.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></label>
+                <div>
+                  <span className={lbl}>Subtasks / deliverables</span>
+                  <p className={`mt-0.5 ${hint}`}>Numbered {no.replace(/\.0$/, "")}.1, {no.replace(/\.0$/, "")}.2... under the package. With subtasks, the package's progress is worked out from them.</p>
+                  <div className="mt-2 space-y-1.5">
+                    {subs.map((t, i) => (
+                      <div key={t.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-1.5">
+                        <div className="flex items-center gap-1">
+                          <span className="w-8 shrink-0 text-[11px] font-bold tabular-nums text-slate-400">{no.replace(/\.0$/, "")}.{i + 1}</span>
+                          <input value={t.name} onChange={(e) => setSub(i, { name: e.target.value })} placeholder="Subtask, e.g. Civil design" aria-label="Subtask name" className={`${small} min-w-0 flex-1`} />
+                          <button type="button" onClick={() => moveSub(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowUp size={12} /></button>
+                          <button type="button" onClick={() => moveSub(i, 1)} disabled={i === subs.length - 1} aria-label="Move down" className="rounded p-1 text-slate-400 hover:bg-white disabled:opacity-30"><ArrowDown size={12} /></button>
+                          <button type="button" onClick={() => set({ subtasks: subs.filter((_, j) => j !== i) })} aria-label="Remove the subtask" className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1 pl-9">
+                          <select value={t.status} onChange={(e) => setSub(i, { status: e.target.value as WorkPackageStatus })} aria-label="Subtask status" className={small}>{STATUSES.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select>
+                          <input type="number" min={0} max={100} step={5} value={t.progress} onChange={(e) => setSub(i, { progress: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })} aria-label="Subtask progress" className={`${small} w-14 text-right`} /><span className="text-[11px] text-slate-400">%</span>
+                          <input type="date" value={t.dueDate || ""} onChange={(e) => setSub(i, { dueDate: e.target.value })} aria-label="Due date" className={small} />
+                          <input value={t.assignee || ""} onChange={(e) => setSub(i, { assignee: e.target.value })} placeholder="Person" aria-label="Person" className={`${small} w-28`} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <select value={t.status} onChange={(e) => setSub(i, { status: e.target.value as WorkPackageStatus })} aria-label="Subtask status" className={small}>{STATUSES.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select>
-                    <input type="number" min={0} max={100} step={5} value={t.progress} onChange={(e) => setSub(i, { progress: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })} aria-label="Subtask progress" className={`${small} w-14 text-right`} /><span className="text-[11px] text-slate-400">%</span>
-                    <input type="date" value={t.dueDate || ""} onChange={(e) => setSub(i, { dueDate: e.target.value })} aria-label="Due date" className={small} />
-                    <input value={t.assignee || ""} onChange={(e) => setSub(i, { assignee: e.target.value })} placeholder="Person" aria-label="Person" className={`${small} w-24`} />
-                  </div>
+                  <button type="button" onClick={() => set({ subtasks: [...subs, { id: newId(), name: "", status: "not_started", progress: 0 }], ...(f.progressMode === "manual" ? { progressMode: "subtasks" } : {}) })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={12} /> Add a subtask</button>
                 </div>
-              ))}
-            </div>
-            <button type="button" onClick={() => set({ subtasks: [...subs, { id: newId(), name: "", status: "not_started", progress: 0 }], ...(subs.length === 0 && f.progressMode === "manual" ? { progressMode: "subtasks" } : {}) })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={12} /> Add a subtask</button>
-          </div>
-        </Section>
+                <div className="border-t border-slate-100 pt-3">
+                  <span className={lbl}>Progress</span>
+                  {fromSubs ? (
+                    <p className="mt-1 text-xs text-slate-600"><b className="tabular-nums text-slate-900">{subAvg}%</b>, the average of its {subs.length} subtask{subs.length === 1 ? "" : "s"}.</p>
+                  ) : (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {([["manual", "Typed"], ["schedule", "From the schedule"]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => set({ progressMode: k })} aria-pressed={f.progressMode === k} className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold ${f.progressMode === k ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-primary"}`}>{l}</button>)}
+                    </div>
+                  )}
+                  {!fromSubs && f.progressMode === "manual" && <label className="mt-2 block"><span className={hint}>{f.progress}%</span><input type="range" min={0} max={100} step={5} value={f.progress} onChange={(e) => set({ progress: Number(e.target.value) })} className="w-full accent-blue-600" /></label>}
+                  {f.progressMode === "schedule" && (
+                    <label className="mt-2 block">
+                      <span className={hint}>Task or phase of the current schedule</span>
+                      <select value={f.scheduleRef?.id ? `${f.scheduleRef.kind}:${f.scheduleRef.id}` : ""} onChange={(e) => { const v = e.target.value; const k = v.slice(0, v.indexOf(":")); set({ scheduleRef: v ? { kind: k as "task" | "phase", id: v.slice(k.length + 1) } : { kind: "", id: "" } }); }} className={inp}>
+                        <option value="">None</option>
+                        {phases.length > 0 && <optgroup label="Phases">{phases.map((c) => <option key={c} value={`phase:${c}`}>{c}</option>)}</optgroup>}
+                        <optgroup label="Tasks and milestones">{tasks.map((x) => <option key={x.id} value={`task:${x.id}`}>{x.name}</option>)}</optgroup>
+                      </select>
+                      {subs.length > 0 && <button type="button" onClick={() => set({ progressMode: "subtasks" })} className="mt-1 text-[11px] font-bold text-blue-600 hover:underline">Use the subtasks instead</button>}
+                    </label>
+                  )}
+                </div>
+              </section>
+            </fieldset>
+          )}
 
-        {canMoney && (
-          <Section n={outside ? 5 : 4} title="Money" note="The original value is the linked PO's total, else the linked agreement's contract value. For work done in-house, type a budget here. Paid is read from Finances (payments on the vendor's invoices, and approved expenses tagged to this package) and cannot be typed.">
-            <label className="block">
-              <span className={lbl}>{f.poId ? "Contract value / budget (not used: the PO's total applies)" : linkedAgrValue ? "Contract value / budget (not used: the agreement's contract value applies)" : "Contract value / budget"}</span>
-              <input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} disabled={!!f.poId || !!linkedAgrValue} placeholder="0" className={inp} />
-              {!f.poId && f.agreementId && !linkedAgrValue && <span className={`mt-1 block ${hint}`}>The linked agreement has no contract value yet. Enter it on the agreement (Contract value) and it is used here instead.</span>}
-            </label>
-            <div>
-              <span className={lbl}>Change orders</span>
-              <div className="mt-1 space-y-1.5">
-                {cos.map((c, i) => (
-                  <div key={c.id} className="rounded-lg border border-amber-100 bg-amber-50/50 p-1.5">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <input value={c.no} onChange={(e) => setCo(i, { no: e.target.value })} placeholder="CO-01" aria-label="Change order number" className={`${small} w-20`} />
-                      <input type="date" value={c.date} onChange={(e) => setCo(i, { date: e.target.value })} aria-label="Change order date" className={small} />
-                      <input type="number" step="any" value={c.amount ?? ""} onChange={(e) => setCo(i, { amount: Number(e.target.value) || 0 })} placeholder="+ / - amount" aria-label="Change order amount" className={`${small} w-28 text-right`} />
-                      <select value={c.status} onChange={(e) => setCo(i, { status: e.target.value as "proposed" | "approved" })} aria-label="Change order status" className={small}><option value="approved">Approved</option><option value="proposed">Proposed</option></select>
-                      <button type="button" onClick={() => set({ changeOrders: cos.filter((_, j) => j !== i) })} aria-label="Remove the change order" className="ml-auto rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
-                    </div>
-                    <input value={c.reason} onChange={(e) => setCo(i, { reason: e.target.value })} placeholder="Reason, e.g. changed to an 80 ton crane per site requirement" aria-label="Reason" className={`${small} mt-1 w-full`} />
-                    {/* CR 328 (GT Comments 3, picture) - the change order's signed document. */}
-                    <div className="mt-1 flex items-center gap-2 text-[11px]">
-                      {c.document
-                        ? <>
-                            <a href={attachmentUrl(c.document, c.documentName)} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 font-bold text-blue-600 hover:underline"><Paperclip size={11} className="shrink-0" /> <span className="truncate">{c.documentName || "Document"}</span></a>
-                            <button type="button" onClick={() => setCo(i, { document: "", documentName: "" })} aria-label="Remove the document" className="rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={11} /></button>
-                          </>
-                        : <label className={`inline-flex cursor-pointer items-center gap-1 font-bold text-slate-500 hover:text-primary ${coUploading === c.id ? "pointer-events-none opacity-60" : ""}`}>
-                            {coUploading === c.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Attach the change order document
-                            <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void attachCo(c.id, file); }} />
-                          </label>}
-                    </div>
+          {/* CR 381 - the RFQ in place: saved, then each vendor's copy downloaded or emailed one by one. */}
+          {tab === "rfq" && (
+            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="request"
+              seed={{ title: f.name, notes: f.description, lineItems: [{ itemId: newLineId(), description: f.name || pkg.name, qty: "1", unit: "lot", spec: f.description || "" }], vendorIds: [] }}
+              onChanged={onChanged} />
+          )}
+          {/* CR 382 - each vendor's quote (its file and prices), and the winner. */}
+          {tab === "quotes" && (
+            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="quotes"
+              onGoToRequest={() => setTab("rfq")} onChanged={onChanged} onAwarded={() => setTab("agreement")} />
+          )}
+          {tab === "agreement" && (
+            agr === "loading" ? (
+              <p className="inline-flex items-center gap-2 p-6 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading the agreement</p>
+            ) : !agr ? (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                <Handshake size={28} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-bold text-slate-700">No agreement for this package yet</p>
+                <p className="mx-auto mt-1 max-w-md text-xs text-slate-400">{won ? `Made with the winner, ${pkg.winner!.name}, with the accepted quote's total as the contract value. It is written and signed here, and its value is the package's money.` : "Choose the winner in Quotes first: the agreement is made with them, from their quote. Its value is the package's money."}</p>
+                {canEdit && (
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    {!won && <button type="button" onClick={() => setTab("quotes")} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary"><FileText size={13} /> Go to Quotes</button>}
+                    <button type="button" onClick={() => void makeAgreement()} disabled={makingAgr} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">{makingAgr ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} {won ? `Create the agreement with ${pkg.winner!.name}` : "Create an agreement anyway"}</button>
                   </div>
-                ))}
+                )}
               </div>
-              <button type="button" onClick={() => set({ changeOrders: [...cos, { id: newId(), no: `CO-${String(cos.length + 1).padStart(2, "0")}`, date: new Date().toISOString().slice(0, 10), reason: "", amount: 0, status: "approved" }] })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={12} /> Add change order</button>
-              {cos.length > 0 && <p className={`mt-1 ${hint}`}>Approved change orders: <b className="text-slate-700"><Fig>{approved >= 0 ? "+" : "-"}{usd(Math.abs(approved))}</Fig></b>. Only approved ones count towards the current value.</p>}
-            </div>
-            {pkg?.money && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2 text-xs text-slate-600">
-                <span>Original</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(pkg.money.original)}</Fig></b>
-                <span>Current value</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(pkg.money.current)}</Fig></b>
-                <span>Paid</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(pkg.money.paid)}</Fig></b>
-                <span>Remaining</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(pkg.money.remaining)}</Fig></b>
-              </div>
-            )}
-          </Section>
-        )}
+            ) : (
+              <Fragment key={agr._id}><AgreementsPanel ctx={{ kind: "general" }} canManage={canEdit} onlyIds={[agr._id]} openId={agr._id} noCreate ownerPackageId={pkg._id} /></Fragment>
+            )
+          )}
+          {tab === "money" && canMoney && (
+            <fieldset disabled={!canEdit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className={`${card} space-y-3`}>
+                <h4 className="text-sm font-bold text-slate-800">Contract value</h4>
+                {m && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5 text-xs text-slate-600">
+                    <span>Original contract</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(m.original)}</Fig></b>
+                    <span>Change orders</span><b className={`text-right tabular-nums ${m.changes > 0 ? "text-red-600" : m.changes < 0 ? "text-emerald-600" : "text-slate-800"}`}><Fig>{m.changes >= 0 ? "+" : "-"}{usd(Math.abs(m.changes))}</Fig></b>
+                    <span className="font-bold text-slate-700">Current value</span><b className="text-right tabular-nums text-slate-900"><Fig>{usd(m.current)}</Fig></b>
+                    <span>Paid</span><b className="text-right tabular-nums text-slate-800"><Fig>{usd(m.paid)}</Fig></b>
+                    <span>Remaining</span><b className={`text-right tabular-nums ${m.remaining < 0 ? "text-red-600" : "text-slate-800"}`}><Fig>{usd(m.remaining)}</Fig></b>
+                  </div>
+                )}
+                <p className={hint}>{m?.source === "agreement" ? "The original contract is the agreement's contract value; change it on the agreement." : m?.source === "po" ? "The original contract is the purchase order's total." : pkg.agreement ? "The agreement has no contract value yet: enter it on the agreement (Contract value) and it is used here." : "The original contract comes from the package's agreement. For work done in-house, type a budget instead."} Paid is read from Finances (payments on the vendor's invoices, and approved expenses tagged to this package).</p>
+                {!f.poId && !(m?.source === "agreement") && (
+                  <label className="block"><span className={lbl}>Budget (in-house work, or until the agreement has a value)</span><input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} placeholder="0" className={inp} /></label>
+                )}
+              </section>
+              <section className={`${card} space-y-2`}>
+                <h4 className="text-sm font-bold text-slate-800">Change orders</h4>
+                <p className={hint}>Each approved change order adds to (or takes from) the original contract: the original 4,000 plus 2,500 makes 6,500.</p>
+                <div className="space-y-1.5">
+                  {cos.map((c, i) => (
+                    <div key={c.id} className="rounded-lg border border-amber-100 bg-amber-50/50 p-1.5">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <input value={c.no} onChange={(e) => setCo(i, { no: e.target.value })} placeholder="CO-01" aria-label="Change order number" className={`${small} w-20`} />
+                        <input type="date" value={c.date} onChange={(e) => setCo(i, { date: e.target.value })} aria-label="Change order date" className={small} />
+                        <input type="number" step="any" value={c.amount ?? ""} onChange={(e) => setCo(i, { amount: Number(e.target.value) || 0 })} placeholder="+ / - amount" aria-label="Change order amount" className={`${small} w-28 text-right`} />
+                        <select value={c.status} onChange={(e) => setCo(i, { status: e.target.value as "proposed" | "approved" })} aria-label="Change order status" className={small}><option value="approved">Approved</option><option value="proposed">Proposed</option></select>
+                        <button type="button" onClick={() => set({ changeOrders: cos.filter((_, j) => j !== i) })} aria-label="Remove the change order" className="ml-auto rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
+                      </div>
+                      <input value={c.reason} onChange={(e) => setCo(i, { reason: e.target.value })} placeholder="Reason, e.g. changed to an 80 ton crane per site requirement" aria-label="Reason" className={`${small} mt-1 w-full`} />
+                      <div className="mt-1 flex items-center gap-2 text-[11px]">
+                        {c.document
+                          ? <>
+                              <a href={attachmentUrl(c.document, c.documentName)} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 font-bold text-blue-600 hover:underline"><Paperclip size={11} className="shrink-0" /> <span className="truncate">{c.documentName || "Document"}</span></a>
+                              <button type="button" onClick={() => setCo(i, { document: "", documentName: "" })} aria-label="Remove the document" className="rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={11} /></button>
+                            </>
+                          : <label className={`inline-flex cursor-pointer items-center gap-1 font-bold text-slate-500 hover:text-primary ${coUploading === c.id ? "pointer-events-none opacity-60" : ""}`}>
+                              {coUploading === c.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Attach the change order document
+                              <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void attachCo(c.id, file); }} />
+                            </label>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => set({ changeOrders: [...cos, { id: newId(), no: `CO-${String(cos.length + 1).padStart(2, "0")}`, date: new Date().toISOString().slice(0, 10), reason: "", amount: 0, status: "approved" }] })} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={12} /> Add change order</button>
+                {cos.length > 0 && <p className={hint}>Approved change orders: <b className="text-slate-700"><Fig>{approved >= 0 ? "+" : "-"}{usd(Math.abs(approved))}</Fig></b>. Only approved ones count towards the current value (after saving).</p>}
+              </section>
+            </fieldset>
+          )}
+          {/* A purchase order from before packages contracted by agreement: kept, shown here. */}
+          {tab === "po" && pkg.po && (
+            <ProcurementPO projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} openPoId={pkg.po.id} onGoToRFQ={() => setTab("rfq")} onGoToQuotes={() => setTab("quotes")} onChanged={onChanged} />
+          )}
+        </div>
 
-        <Section n={(outside ? 5 : 4) + (canMoney ? 1 : 0)} title="Remarks">
-          <textarea value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} rows={3} className={`${inp} mt-0 resize-y`} placeholder="Anything worth noting about this package" aria-label="Remarks" />
-        </Section>
-      </fieldset>
-      <Fold title="How this list works">
-        <p className={hint}>Work package, then RFQ, vendor quotes, selection of the winner, PO or agreement, execution and progress, payments, completion. The RFQ, quotes, PO, agreement and payments stay where they are made; this list links to them and reads them, so nothing is entered twice.</p>
-      </Fold>
-    </SidePanel>
+        {/* CR 357-style bottom bar: save and close without going back up. */}
+        <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-2 rounded-b-3xl border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+          {dirty && canEdit && <span className="mr-auto rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">Unsaved changes to the details or money</span>}
+          {dirty && canEdit && <button type="button" onClick={() => setF(JSON.parse(saved))} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Undo changes</button>}
+          <button type="button" onClick={() => void close()} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:border-slate-300">Close</button>
+          {canEdit && (dirty || tab === "details" || tab === "money") && <button type="button" onClick={() => void save()} disabled={busy || !dirty || !(f.name || "").trim() || looseCompany} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />} Save</button>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

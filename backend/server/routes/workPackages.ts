@@ -163,7 +163,8 @@ async function shape(projectId: string, list: IWorkPackage[], showMoney: boolean
       else if (po?.vendorName) winner = { name: po.vendorName, place: "", logoUrl: "", companyId: "", internal: false, from: "po" };
     }
     const subs = r.subtasks || [];
-    const progress = r.progressMode === "subtasks" && subs.length ? Math.round(subs.reduce((a, t) => a + (t.progress || 0), 0) / subs.length) : r.progress || 0;
+    // CR 384 - with subtasks, the package's progress is worked out from them (unless it follows the schedule).
+    const progress = r.progressMode !== "schedule" && subs.length ? Math.round(subs.reduce((a, t) => a + (t.progress || 0), 0) / subs.length) : r.progress || 0;
     const out: Record<string, unknown> = {
       ...r,
       progress,

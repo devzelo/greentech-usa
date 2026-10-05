@@ -46,7 +46,7 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-50
 const card = "rounded-2xl border border-slate-200 bg-white";
 const cardHead = "flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/70 rounded-t-2xl";
 
-export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview, ownerPackage, seed }: {
+export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview, ownerPackage, seed, inline = false }: {
   projectId: string;
   projectName: string;
   projectSite?: string;
@@ -64,6 +64,8 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   buildPreview: (draft: ApiRfq) => Promise<Blob>;
   /** CR 345 - made inside a work package: the package is fixed (it owns the RFQ). */
   ownerPackage?: { id: string; name: string };
+  /** CR 381 - shown in place (the work package's RFQ tab), not as a window over the page. */
+  inline?: boolean;
   /** CR 345 - a new RFQ's starting point (the package's name, scope and company). */
   seed?: { title?: string; notes?: string; lineItems?: RfqLineItem[]; vendorIds?: string[] };
 }) {
@@ -222,19 +224,20 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   const err = (bad: boolean) => (tried && bad ? "!border-red-300 bg-red-50/40" : "");
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-start justify-center bg-slate-900/50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-50 rounded-3xl shadow-2xl w-full max-w-6xl my-4" onClick={(e) => e.stopPropagation()}>
+    <div className={inline ? "" : "fixed inset-0 z-[85] flex items-start justify-center bg-slate-900/50 p-2 sm:p-4 overflow-y-auto"}>
+      <div className={`bg-slate-50 rounded-3xl w-full ${inline ? "border border-slate-200" : "shadow-2xl max-w-6xl my-4"}`} onClick={(e) => e.stopPropagation()}>
         {/* Header: what this is, and the three ways out. */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-200 bg-white rounded-t-3xl sticky top-0 z-20">
           <div className="min-w-0">
             <h3 className="text-lg font-display font-bold text-slate-900">{editing ? `RFQ ${rfq!.rfqNo}` : "Create RFQ"}</h3>
-            <p className="text-[11px] text-slate-400">Procurement › RFQs › {editing ? "Edit" : "Create"} · {projectName}</p>
+            <p className="text-[11px] text-slate-400">{ownerPackage ? `Work package › ${ownerPackage.name} › RFQ` : `Procurement › RFQs › ${editing ? "Edit" : "Create"} · ${projectName}`}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => void close()} className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
-            <button onClick={() => void submit(false)} disabled={!!busy} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:border-slate-300 disabled:opacity-50">{busy === "draft" && <Loader2 size={13} className="animate-spin" />} {editing ? "Save" : "Save as draft"}</button>
+            <button onClick={() => void submit(false)} disabled={!!busy} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:border-slate-300 disabled:opacity-50">{busy === "draft" && <Loader2 size={13} className="animate-spin" />} {ownerPackage ? "Save RFQ" : editing ? "Save" : "Save as draft"}</button>
             <button onClick={() => void openPreview()} disabled={!!busy} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-primary/30 bg-white text-xs font-bold text-primary hover:bg-primary/5 disabled:opacity-50">{busy === "preview" ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Preview RFQ</button>
-            {(!editing || rfq!.status === "Draft" || !rfq!.status) && (
+            {/* CR 381 - a work package's RFQ is saved, then each vendor's copy is downloaded or emailed one by one. */}
+            {!ownerPackage && (!editing || rfq!.status === "Draft" || !rfq!.status) && (
               <button onClick={() => void submit(true)} disabled={!!busy} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy === "send" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send RFQ</button>
             )}
           </div>
@@ -313,11 +316,17 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                     </div>
                   ))}
                 </div>
-                <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer">
-                  <input type="checkbox" checked={emailVendors} onChange={(e) => setEmailVendors(e.target.checked)} className="accent-blue-600" />
-                  Email each vendor its own copy when sent
-                </label>
-                <p className="text-[10px] text-slate-400 -mt-1.5">Each vendor gets a price column to compare quotes, and a copy of the RFQ with their details. Replies come to you.</p>
+                {ownerPackage ? (
+                  <p className="text-[10px] text-slate-400">Each vendor gets a price column for its quote. Once saved, download or email each vendor its own copy from the RFQ, one by one.</p>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={emailVendors} onChange={(e) => setEmailVendors(e.target.checked)} className="accent-blue-600" />
+                      Email each vendor its own copy when sent
+                    </label>
+                    <p className="text-[10px] text-slate-400 -mt-1.5">Each vendor gets a price column to compare quotes, and a copy of the RFQ with their details. Replies come to you.</p>
+                  </>
+                )}
               </div>
             </section>
           </div>
