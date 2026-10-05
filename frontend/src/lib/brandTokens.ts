@@ -53,6 +53,17 @@ export const BRAND_ASSETS = {
 let assetOrigin = "";
 export function setAssetOrigin(origin: string) { assetOrigin = origin.replace(/\/+$/, ""); }
 
+/**
+ * CR 368 - most uploads (client and partner logos, signatures, stamps, cover photos) are served only
+ * with a file token, which a PDF's image fetch cannot send as a header. api.ts registers how to add
+ * it; abs() then adds it to every /uploads path that has none, so every PDF prints them.
+ */
+let uploadsUrl: ((url: string) => string) | null = null;
+export function setUploadsUrl(fn: (url: string) => string) { uploadsUrl = fn; }
+
 /** Root-relative asset URLs (/uploads/..., /brand/...) as absolute URLs. */
-export const abs = (url?: string) =>
-  !url ? "" : /^(https?:|data:|blob:)/.test(url) ? url : `${assetOrigin || (typeof window !== "undefined" ? window.location.origin : "")}${url}`;
+export const abs = (url?: string) => {
+  if (!url) return "";
+  if (uploadsUrl && /^\/?uploads\//.test(url) && !/[?&]token=/.test(url)) url = uploadsUrl(url.startsWith("/") ? url : `/${url}`);
+  return /^(https?:|data:|blob:)/.test(url) ? url : `${assetOrigin || (typeof window !== "undefined" ? window.location.origin : "")}${url}`;
+};

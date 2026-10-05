@@ -1,5 +1,6 @@
 // Thin fetch wrapper. In dev, requests are relative and go through Vite's /api proxy → localhost:4000.
 import { fileName } from './fileNames';
+import { setUploadsUrl } from './brandTokens';
 // In production (split hosting), set VITE_API_URL to the backend's origin (e.g. https://api.example.com)
 // so the browser calls the backend directly; /api and /uploads are prefixed with it. Leave it unset
 // to keep same-origin/relative behaviour.
@@ -41,6 +42,8 @@ export async function refreshFileToken(): Promise<void> {
 }
 
 /** Append the current file token to an /uploads URL so the browser can open it directly. */
+// CR 368 - PDFs fetch protected uploads (logos, signatures, stamps) with the file token.
+setUploadsUrl((url) => withFileToken(url));
 export function withFileToken(url: string): string {
   if (!url.startsWith('/uploads')) return url;
   const token = getFileToken();

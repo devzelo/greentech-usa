@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Upload, Image as ImageIcon, X, Loader2, Eye, Save, RotateCcw, CheckCircle2, Wand2 } from "lucide-react";
 import { PDFViewer } from "@react-pdf/renderer";
-import { uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover } from "../../lib/api";
+import { fetchCompany, uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover, type RfpDetails } from "../../lib/api";
+import CompanyPicker from "./CompanyPicker";
 import { toast } from "../../lib/toast";
 import { COMPANY } from "../pdf/brand";
 import { RESTRICTION_LEGEND, defaultSubmitter, CoverOnlyDocument } from "./ProposalPDF";
@@ -85,8 +86,10 @@ const COVER_GROUPS: Array<{ title: string; fields: CoverFieldDef[] }> = [
 ];
 
 export default function ProposalCoverBuilder({
-  projectId, project, cover, onCoverChange, canEdit, volume = "technical", onSave, onCancel, saving = false,
+  projectId, project, cover, onCoverChange, canEdit, volume = "technical", onSave, onCancel, saving = false, rfp,
 }: {
+  /** CR 367 - the RFP details (due date, where it is submitted), which the cover follows. */
+  rfp?: RfpDetails;
   projectId: string;
   project: ApiProject;
   cover: ProposalCover;
@@ -111,6 +114,21 @@ export default function ProposalCoverBuilder({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isJvProject, jvProjectLogo]);
+  // CR 368 - the logos come from the Directory: the client's company, and the JV partner's, when the
+  // cover has none of its own yet.
+  const clientCompanyId = project.clientInfo?.companyId || "";
+  const partnerCompanyId = project.jointVenture?.companyId || "";
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const patch: Partial<ProposalCover> = {};
+      if (!cover.clientLogoUrl && clientCompanyId) { const c = await fetchCompany(clientCompanyId).catch(() => null); if (c?.logoUrl) patch.clientLogoUrl = c.logoUrl; }
+      if (isJvProject && !cover.jvLogoUrl && !jvProjectLogo && partnerCompanyId) { const c = await fetchCompany(partnerCompanyId).catch(() => null); if (c?.logoUrl) patch.jvLogoUrl = c.logoUrl; }
+      if (live && Object.keys(patch).length) onCoverChange({ ...cover, ...patch });
+    })();
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientCompanyId, partnerCompanyId, isJvProject]);
 
   const [uploading, setUploading] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -154,6 +172,9 @@ export default function ProposalCoverBuilder({
       submittedBy: cover.submittedBy || defaultSubmitter(project),
       clientName: cover.clientName || project.clientInfo?.name || "",
       projectName: cover.projectName || project.name,
+      // CR 367 - what the RFP details already say.
+      dueDate: cover.dueDate || rfp?.dueDate || "",
+      submittedTo: cover.submittedTo || (rfp?.submitTo && !/@|https?:/.test(rfp.submitTo) ? rfp.submitTo : "") || "",
       images: cover.images.length ? cover.images : galleryImages.slice(0, 4).map((g) => ({ id: uid(), url: g.url })),
     });
     toast("Standard cover applied. Empty fields were filled; nothing you typed was changed.", "success");
@@ -227,8 +248,22 @@ export default function ProposalCoverBuilder({
                 const id = `cover-${f.key}`;
                 const placeholder = f.key === "projectName" ? project.name
                   : f.key === "clientName" ? (project.clientInfo?.name || "")
+                  : f.key === "dueDate" ? (rfp?.dueDate || "")
+                  : f.key === "submittedTo" && rfp?.submitTo ? `From the RFP: ${rfp.submitTo}`
                   : f.key === "submittedBy" ? defaultSubmitter(project)
                   : (f.placeholder || "");
+                // CR 367 - the client is picked from the Directory; its logo comes with it.
+                if (f.key === "clientName") return (
+                  <div key={f.key} className="space-y-1.5">
+                    <span className={lbl}>{f.label} (from the Directory)</span>
+                    {canEdit ? (
+                      <CompanyPicker size="sm" value={cover.clientName || ""} category="client"
+                        onNameChange={(v) => setCover("clientName", v)}
+                        onSelectCompany={(c) => onCoverChange({ ...cover, clientName: c.name, ...(c.logoUrl ? { clientLogoUrl: c.logoUrl } : {}) })}
+                        placeholder={placeholder || "Search the Directory"} />
+                    ) : <input id={id} value={cover.clientName || ""} disabled placeholder={placeholder} className={inp} />}
+                  </div>
+                );
                 return (
                   <div key={f.key} className={`space-y-1.5 ${f.wide ? "md:col-span-2" : ""}`}>
                     <label htmlFor={id} className={lbl}>{f.label}</label>

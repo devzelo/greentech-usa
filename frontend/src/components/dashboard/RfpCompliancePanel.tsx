@@ -20,7 +20,9 @@ type RfpKey = keyof RfpDetails;
  * its requirements, each linked to the section that answers it with a compliance status. The
  * Compliance Matrix section prints this list with the page numbers.
  */
-export default function RfpCompliancePanel({ rfp, onRfpChange, requirements, onRequirementsChange, sections, canEdit, hasMatrix, onAddMatrix }: {
+export default function RfpCompliancePanel({ rfp, onRfpChange, requirements, onRequirementsChange, sections, canEdit, hasMatrix, onAddMatrix, defaultOpen = true }: {
+  /** CR 354 - opened at once when it is just being added; folded when it already holds details. */
+  defaultOpen?: boolean;
   rfp: RfpDetails;
   onRfpChange: (next: RfpDetails) => void;
   requirements: ProposalRequirement[];
@@ -30,7 +32,7 @@ export default function RfpCompliancePanel({ rfp, onRfpChange, requirements, onR
   hasMatrix: boolean;
   onAddMatrix: () => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const [paste, setPaste] = useState("");
   const setR = (k: RfpKey, v: string) => onRfpChange({ ...rfp, [k]: v });
   const setReq = (id: string, patch: Partial<ProposalRequirement>) =>
@@ -61,6 +63,8 @@ export default function RfpCompliancePanel({ rfp, onRfpChange, requirements, onR
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-100 text-left">
         <span className="font-display font-bold text-slate-900 text-base flex items-center gap-2">
           {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />} RFP details and compliance
+          {/* CR 354 - "just for inside information... not going to be printed": a reminder for the writer. */}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-500" title="A reminder for whoever writes the proposal: due date, where it goes, the rules to follow. It is not printed (the Compliance Matrix section prints the requirements, if you add it).">Internal · not printed</span>
         </span>
         <span className="flex items-center gap-2 flex-wrap justify-end">
           {days !== null && (

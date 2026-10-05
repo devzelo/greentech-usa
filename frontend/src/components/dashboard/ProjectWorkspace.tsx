@@ -695,6 +695,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
   const [proposalSub, setProposalSub] = useState<"overview" | "eoi" | "technical" | "financial">("overview");
+  const [rfpShown, setRfpShown] = useState(false);   // CR 354 - RFP details added on purpose
   // CR-B-19b — if the Financial Proposal is locked and the viewer isn't the owner, never leave them on it.
   useEffect(() => {
     const cu = getAuthUser();
@@ -4565,8 +4566,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       </div>
                     </div>
                   )}
-                  {/* Step 9 (spec 6, 38) - the RFP's rules and requirements; the Compliance Matrix prints them. */}
-                  {(() => {
+                  {/* Step 9 (spec 6, 38) - the RFP's rules and requirements; the Compliance Matrix prints them.
+                      CR 354 - optional: "we don't want to scare people with this long list". It shows once
+                      added (or when it already holds something), as an internal reminder, never printed. */}
+                  {!rfpShown && !Object.values(rfp || {}).some((v) => !!v) && !requirements.length ? (
+                    canEdit ? (
+                      <button type="button" onClick={() => setRfpShown(true)} className="flex w-full items-center gap-3 rounded-[2rem] border border-dashed border-slate-300 bg-white px-5 py-3.5 text-left hover:border-primary hover:bg-primary/5">
+                        <Plus size={16} className="text-primary" />
+                        <span><span className="block text-sm font-bold text-slate-800">Add RFP details and compliance</span><span className="block text-[11px] text-slate-500">Optional, internal: the due date, where it is submitted, page limits and the requirements to follow. A reminder for the writer; not printed.</span></span>
+                      </button>
+                    ) : null
+                  ) : (() => {
                     const tl = resolveProposalLayout(technical);
                     const fl = resolveFinancialLayout(financial);
                     const opts = [
@@ -4582,6 +4592,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         sections={opts}
                         canEdit={canEdit}
                         hasMatrix={tl.some((m) => m.libraryKey === "compliance-matrix")}
+                        defaultOpen={rfpShown}
                         onAddMatrix={() => {
                           addLayoutSection("Compliance Matrix", "", { libraryKey: "compliance-matrix", pageType: "designed", guide: "A table linking each solicitation requirement to the response: RFP Requirement, RFP Reference, Proposal Section, Page Number, Compliance Status. The rows come from Proposal overview, RFP details and compliance." });
                           toast("Compliance Matrix added to the technical proposal.", "success");
@@ -4927,6 +4938,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   onSave={(st) => saveCover("technical", st)}
                   onCancel={() => void cancelCover("technical")}
                   canEdit={canEdit}
+                  rfp={rfp}
                 />
               )}
 
@@ -5131,6 +5143,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onSave={(st) => saveCover("financial", st)}
                     onCancel={() => void cancelCover("financial")}
                     canEdit={canEdit}
+                    rfp={rfp}
                   />
                 </div>
               )}
