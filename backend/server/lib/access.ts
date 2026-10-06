@@ -67,6 +67,17 @@ export function canSeeFigures(
 }
 
 /**
+ * The projects a person may read as linked records (past performance in a proposal), matching
+ * what GET /api/projects lists them. Fails closed: only GT staff (admin, employee) get the broad
+ * filter, every project except other people's drafts; any other role only the open projects they
+ * are a guest on.
+ */
+export function linkedProjectFilter(userId: string, role: string): Record<string, unknown> {
+  if (role === "admin" || role === "employee") return { $or: [{ status: { $ne: "Draft" } }, { ownerId: userId }] };
+  return { "guests.userId": userId, status: { $ne: "Draft" }, archived: { $ne: true } };
+}
+
+/**
  * Resolve a document's `section` to the workspace tab id that owns it, so we can
  * honour per-tab access (tabAccess for employees, tabPermissions for guests).
  * Returns null when the section doesn't belong to a gated tab.

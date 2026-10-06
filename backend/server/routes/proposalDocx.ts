@@ -6,7 +6,7 @@ import Resume from "../models/Resume";
 import SubResume from "../models/SubResume";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { tabAccessGuard, canSeeFigures } from "../lib/access";
+import { tabAccessGuard, canSeeFigures, linkedProjectFilter } from "../lib/access";
 import { brandedSection } from "../lib/docxBrand";
 
 // The proposal as a Word file, in step with the PDF: the section layout of either volume (numbering,
@@ -283,12 +283,8 @@ async function withLiveProjects(pc: PContent, userId: string, role: string): Pro
   const all = [...(t?.similarProjects || []), ...(t?.sections || []).flatMap((s) => s.projects || []), ...(f?.sections || []).flatMap((s) => s.projects || [])];
   const ids = [...new Set(all.map((e) => e.projectId).filter((x): x is string => typeof x === "string" && !!x))];
   if (!ids.length) return pc;
-  // Only the records the requester could list themselves (GET /api/projects): a guest their own
-  // open projects; staff every project except other people's drafts.
-  const visible: Record<string, unknown> = role === "subcontractor"
-    ? { "guests.userId": userId, status: { $ne: "Draft" }, archived: { $ne: true } }
-    : { $or: [{ status: { $ne: "Draft" } }, { ownerId: userId }] };
-  const recs = await Project.find({ projectId: { $in: ids }, ...visible })
+  // Only the records the requester could list themselves (lib/access.ts linkedProjectFilter).
+  const recs = await Project.find({ projectId: { $in: ids }, ...linkedProjectFilter(userId, role) })
     .select("projectId name value description contractNo startDate contractDate endDate status location contractType cpars scopeOfWork category categories projectNature clientInfo ownerId figuresAccess")
     .lean() as LinkedRec[];
   const byId = new Map(recs.map((r) => [String(r.projectId), r]));
@@ -462,7 +458,11 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const kind = req.query.kind === "financial" ? "financial" : "technical";
     const project = await Project.findOne({ projectId: req.params.id }).lean();
     if (!project) return res.status(404).json({ error: "Project not found." });
-    const pc = await withLiveProjects(((project as { proposalContent?: PContent }).proposalContent || {}) as PContent, req.user!.userId, req.user!.role);
+    // Linked past-performance projects print as their records are now. The role is read from the
+    // account, not the token, so a changed role applies at once; no account, no live records.
+    const saved = ((project as { proposalContent?: PContent }).proposalContent || {}) as PContent;
+    const meRole = (await User.findById(req.user!.userId).select("role").lean() as { role?: string } | null)?.role;
+    const pc = meRole ? await withLiveProjects(saved, req.user!.userId, meRole) : saved;
 
     // Key staff: blank cells take the person's resume, as in the PDF.
     const emps = kind === "financial" ? [] : pc.technical?.employees || [];
