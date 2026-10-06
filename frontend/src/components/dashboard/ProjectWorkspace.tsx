@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Globe, Clock, ExternalLink, MapPin,
-  Upload, Download, Eye, FileText, FileImage, ImagePlus, FileCode,
+  Upload, Download, Eye, FileText, FileImage, ImagePlus, ClipboardList, FileCode,
   Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Search,
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, Truck, Scale, Wrench, Calendar,
@@ -695,7 +695,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
   const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
   const [proposalSub, setProposalSub] = useState<"overview" | "eoi" | "technical" | "financial">("overview");
-  const [rfpShown, setRfpShown] = useState(false);   // CR 354 - RFP details added on purpose
+  const [rfpShown, setRfpShown] = useState(false);   // CR 354 - the RFP details window is open
   // CR-B-19b — if the Financial Proposal is locked and the viewer isn't the owner, never leave them on it.
   useEffect(() => {
     const cu = getAuthUser();
@@ -4499,16 +4499,61 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   );
                 })}
                 {/* Owner toggle: lock/unlock the Financial Proposal (CR-B-19b). */}
+                {/* CR 354 - RFP details and compliance: internal, so out of the way; a click opens it. */}
+                {(() => {
+                  const due = rfp?.dueDate ? new Date(`${rfp.dueDate}T${rfp.dueTime || "23:59"}`) : null;
+                  const days = due && !isNaN(due.getTime()) ? Math.ceil((due.getTime() - Date.now()) / 86400000) : null;
+                  return (
+                    <button type="button" onClick={() => setRfpShown(true)} title="The RFP's due date, where it is submitted, page limits and requirements. Internal, not printed."
+                      className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+                      <ClipboardList size={11} /> RFP details
+                      {days !== null && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${days < 0 ? "bg-slate-100 text-slate-500" : days <= 3 ? "bg-red-50 text-red-600" : days <= 7 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{days < 0 ? "Past due" : days === 0 ? "Due today" : `Due in ${days}d`}</span>}
+                      {requirements.length > 0 && <span className="text-slate-400">· {requirements.length}</span>}
+                    </button>
+                  );
+                })()}
                 {isOwner && (
                   <button
                     onClick={() => setFinancialLocked((v) => !v)}
                     title={financialLocked ? "Financial Proposal is locked — click to unlock (remember to Save)" : "Lock the Financial Proposal to the owner (remember to Save)"}
-                    className={`ml-auto shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${financialLocked ? "bg-amber-500 text-white" : "bg-white text-slate-500 border border-slate-200 hover:text-slate-900"}`}
+                    className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${financialLocked ? "bg-amber-500 text-white" : "bg-white text-slate-500 border border-slate-200 hover:text-slate-900"}`}
                   >
                     {financialLocked ? <Lock size={11} /> : <Unlock size={11} />} {financialLocked ? "Financial Locked" : "Lock Financial"}
                   </button>
                 )}
               </div>
+
+              {rfpShown && createPortal((() => {
+                const tl = resolveProposalLayout(technical);
+                const fl = resolveFinancialLayout(financial);
+                const opts = [
+                  ...tl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "technical" as const, label: m.title })),
+                  ...fl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "financial" as const, label: `Financial: ${m.title}` })),
+                ];
+                return (
+                  <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setRfpShown(false); }}>
+                    <div role="dialog" aria-label="RFP details and compliance" className="my-8 w-full max-w-5xl">
+                      <div className="mb-2 flex justify-end">
+                        <button type="button" onClick={() => setRfpShown(false)} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow hover:text-slate-900"><X size={14} /> Close</button>
+                      </div>
+                      <RfpCompliancePanel
+                        rfp={rfp}
+                        onRfpChange={(v) => { setRfp(v); setDirty(true); }}
+                        requirements={requirements}
+                        onRequirementsChange={(v) => { setRequirements(v); setDirty(true); }}
+                        sections={opts}
+                        canEdit={canEdit}
+                        hasMatrix={tl.some((m) => m.libraryKey === "compliance-matrix")}
+                        onAddMatrix={() => {
+                          addLayoutSection("Compliance Matrix", "", { libraryKey: "compliance-matrix", pageType: "designed", guide: "A table linking each solicitation requirement to the response: RFP Requirement, RFP Reference, Proposal Section, Page Number, Compliance Status. The rows come from Proposal overview, RFP details and compliance." });
+                          toast("Compliance Matrix added to the technical proposal.", "success");
+                        }}
+                      />
+                      <p className="mt-2 text-center text-[11px] text-white/80">Changes are kept with the proposal: Save as usual.</p>
+                    </div>
+                  </div>
+                );
+              })(), document.body)}
 
               {/* Step 8 (items 114-117) - the Expression of Interest: one standard letter, no revisions.
                   It sees JV edits not yet saved, so the letter matches what is on screen. */}
@@ -4564,40 +4609,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       </div>
                     </div>
                   )}
-                  {/* Step 9 (spec 6, 38) - the RFP's rules and requirements; the Compliance Matrix prints them.
-                      CR 354 - optional: "we don't want to scare people with this long list". It shows once
-                      added (or when it already holds something), as an internal reminder, never printed. */}
-                  {!rfpShown && !Object.values(rfp || {}).some((v) => !!v) && !requirements.length ? (
-                    canEdit ? (
-                      <button type="button" onClick={() => setRfpShown(true)} className="flex w-full items-center gap-3 rounded-[2rem] border border-dashed border-slate-300 bg-white px-5 py-3.5 text-left hover:border-primary hover:bg-primary/5">
-                        <Plus size={16} className="text-primary" />
-                        <span><span className="block text-sm font-bold text-slate-800">Add RFP details and compliance</span><span className="block text-[11px] text-slate-500">Optional, internal: the due date, where it is submitted, page limits and the requirements to follow. A reminder for the writer; not printed.</span></span>
-                      </button>
-                    ) : null
-                  ) : (() => {
-                    const tl = resolveProposalLayout(technical);
-                    const fl = resolveFinancialLayout(financial);
-                    const opts = [
-                      ...tl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "technical" as const, label: m.title })),
-                      ...fl.filter((m) => m.kind !== "blank").map((m) => ({ id: m.id, volume: "financial" as const, label: `Financial: ${m.title}` })),
-                    ];
-                    return (
-                      <RfpCompliancePanel
-                        rfp={rfp}
-                        onRfpChange={(v) => { setRfp(v); setDirty(true); }}
-                        requirements={requirements}
-                        onRequirementsChange={(v) => { setRequirements(v); setDirty(true); }}
-                        sections={opts}
-                        canEdit={canEdit}
-                        hasMatrix={tl.some((m) => m.libraryKey === "compliance-matrix")}
-                        defaultOpen={rfpShown}
-                        onAddMatrix={() => {
-                          addLayoutSection("Compliance Matrix", "", { libraryKey: "compliance-matrix", pageType: "designed", guide: "A table linking each solicitation requirement to the response: RFP Requirement, RFP Reference, Proposal Section, Page Number, Compliance Status. The rows come from Proposal overview, RFP details and compliance." });
-                          toast("Compliance Matrix added to the technical proposal.", "success");
-                        }}
-                      />
-                    );
-                  })()}
                   {([
                     { which: "technical" as const, title: "Technical Proposal", section: "proposals-technical" },
                     { which: "financial" as const, title: "Financial Proposal", section: "proposals-financial" },
