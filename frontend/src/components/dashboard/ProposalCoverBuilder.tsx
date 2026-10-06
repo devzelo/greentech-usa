@@ -124,7 +124,8 @@ export default function ProposalCoverBuilder({
       const patch: Partial<ProposalCover> = {};
       if (!cover.clientLogoUrl && clientCompanyId) { const c = await fetchCompany(clientCompanyId).catch(() => null); if (c?.logoUrl) patch.clientLogoUrl = c.logoUrl; }
       if (isJvProject && !cover.jvLogoUrl && !jvProjectLogo && partnerCompanyId) { const c = await fetchCompany(partnerCompanyId).catch(() => null); if (c?.logoUrl) patch.jvLogoUrl = c.logoUrl; }
-      if (live && Object.keys(patch).length) onCoverChange({ ...cover, ...patch });
+      // The JV mode is set again here: this lands after the mode sync above and would otherwise undo it.
+      if (live && Object.keys(patch).length) onCoverChange({ ...cover, logoMode: isJvProject ? "dual" : "single", jvLogoUrl: patch.jvLogoUrl || (isJvProject ? cover.jvLogoUrl || jvProjectLogo : ""), ...patch });
     })();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -357,15 +358,17 @@ export default function ProposalCoverBuilder({
             </span>
             <span className="text-[10px] text-slate-400 italic">Set in Project Identity, not here.</span>
           </div>
-          {cover.logoMode === "dual" && (
+          {/* CR 368 - a JV project's cover shows the partner's logo: this cover's own, else the JV's. */}
+          {isJvProject && (
             <div className="flex items-center gap-3">
-              {cover.jvLogoUrl ? (
+              {cover.jvLogoUrl || jvProjectLogo ? (
                 <div className="relative">
-                  <img src={withFileToken(cover.jvLogoUrl)} alt="JV logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
-                  {canEdit && <button onClick={() => setCover("jvLogoUrl", "")} className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
+                  <img src={withFileToken(cover.jvLogoUrl || jvProjectLogo)} alt="Partner logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
+                  {canEdit && !!cover.jvLogoUrl && <button onClick={() => setCover("jvLogoUrl", "")} title="Use the JV's own logo again" className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
+                  {!cover.jvLogoUrl && <span className="mt-0.5 block text-[10px] text-slate-400">From the JV (Project Identity)</span>}
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-400 italic">No partner logo yet.</p>
+                <p className="text-[11px] text-slate-400 italic">No partner logo yet: add it to the JV in Project Identity, or upload one for this cover.</p>
               )}
               {canEdit && (
                 <button onClick={() => jvInput.current?.click()} disabled={uploading === "jv"} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200">

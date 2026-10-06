@@ -344,6 +344,8 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     volume: (c?.volumeLabel || "").trim() || undefined,
     badge: (c?.revisionLabel || "").trim() || undefined,
     clientLogo: c?.clientLogoUrl ? abs(c.clientLogoUrl) : undefined,
+    // CR 368 - a JV project's cover carries the partner's logo too.
+    partnerLogo: jv && (c?.jvLogoUrl || jv.logo) ? abs(c?.jvLogoUrl || jv.logo) : undefined,
     notice: c?.restrictionNotice === false ? "" : RESTRICTION_LEGEND,
   };
 }
@@ -700,7 +702,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   const fin = volume === "financial";
   const LABEL = fin ? "Financial Proposal" : "Technical Proposal";
   const note = footNote(LABEL, project);
-  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
+  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl || (project.jointVenture?.enabled ? project.jointVenture.logo : ""));
   const fullLayout = fin && financial ? resolveFinancialLayout(financial) : resolveProposalLayout(content);
 
   // Item 97/98 - the key personnel with their resumes, key staff first, in the list's order.
@@ -829,7 +831,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     }
     if (files.length) { groups.push({ t: "files", files, key: m.id }); curGrp = null; }
   }
-  const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
+  const hConf = (l: ProposalLetterhead) => lhConfig(l, customLetterheadUrl, logoUrl, cover?.jvLogoUrl || (project.jointVenture?.enabled ? project.jointVenture.logo : ""));
 
   // Step 9 (spec 38) - the Compliance Matrix: each RFP requirement, the section that answers it and
   // the page it starts on (filled in on the second pass, like the contents).
@@ -1094,7 +1096,7 @@ export function OpeningPagesDocument({ volume, cover, coverLetter, project, lett
   const fin = volume === "financial";
   const LABEL = fin ? "Financial Proposal" : "Technical Proposal";
   const note = footNote(LABEL, project);
-  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl);
+  const lh = lhConfig(letterhead, customLetterheadUrl, logoUrl, cover?.jvLogoUrl || (project.jointVenture?.enabled ? project.jointVenture.logo : ""));
   const coverEl = <ProposalCoverPage variant={cover?.coverStyle} data={coverData(fin ? "FINANCIAL PROPOSAL" : "TECHNICAL PROPOSAL", cover, project)} />;
   const letterEl = <CoverLetterPage coverLetter={{ ...coverLetter, enabled: true }} cover={cover} project={project} lh={lh} label={LABEL} note={note} />;
   return asDocument(`${cover?.proposalTitle || project.name} - Cover letter`, coverLetter.position === "before-cover" ? [letterEl, coverEl] : [coverEl, letterEl]);

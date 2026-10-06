@@ -17,8 +17,9 @@ export interface CoverData {
   subtitle: string;
   fields: CoverField[];
   images: string[];    // absolute URLs, first is the feature photo
-  // (No partner-logo chip: it showed as an empty white box whenever the logo did not load. The JV
-  // appears in the fields: "Submitted by" and the partner's contact block.)
+  // CR 368 - the JV partner's logo beside ours. (It was once taken off because it showed as an empty
+  // box: the logo is a protected upload and was fetched without the file token; abs() adds it now.)
+  partnerLogo?: string;
   volume?: string;     // "VOL. II: TECHNICAL PROPOSAL", shown in place of the kind
   badge?: string;      // revision, e.g. "Final Proposal Revision"
   clientLogo?: string; // the client's seal or logo
@@ -52,6 +53,15 @@ function ClientMark({ src, h = 28 }: { src: string; h?: number }) {
   return (
     <View style={{ backgroundColor: BRAND.white, borderRadius: 6, padding: 4 }}>
       <Image src={abs(src)} style={{ height: h, maxWidth: h * 2.6, objectFit: "contain" }} />
+    </View>
+  );
+}
+
+/** CR 368 - the JV partner's logo, on white so any logo reads, next to ours. */
+function PartnerMark({ src, h = 24 }: { src: string; h?: number }) {
+  return (
+    <View style={{ backgroundColor: BRAND.white, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 6 }}>
+      <Image src={abs(src)} style={{ height: h, maxWidth: h * 3.2, objectFit: "contain" }} />
     </View>
   );
 }
@@ -123,6 +133,8 @@ function Hero({ d }: { d: CoverData }) {
         <Scrim w={PAGE.w} h={H} />
         <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
           <Logo h={30} />
+          {!!d.partnerLogo && <View style={{ width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.45)", marginHorizontal: 14 }} />}
+          {!!d.partnerLogo && <PartnerMark src={d.partnerLogo} h={24} />}
         </View>
         {!!d.clientLogo && <View style={{ position: "absolute", top: 34, right: 52 }}><ClientMark src={d.clientLogo} /></View>}
       </View>
@@ -188,6 +200,7 @@ function Formal({ d }: { d: CoverData }) {
       <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <LogoChip h={22} />
+          {!!d.partnerLogo && <View style={{ marginLeft: 10, border: `1 solid ${BRAND.border}`, borderRadius: 8 }}><PartnerMark src={d.partnerLogo} h={26} /></View>}
           <View style={{ flex: 1 }} />
           {!!d.clientLogo && <ClientMark src={d.clientLogo} h={28} />}
         </View>
@@ -238,6 +251,7 @@ function Panel({ d }: { d: CoverData }) {
         <View style={{ flex: 1, padding: 32, justifyContent: "space-between" }}>
           <View>
             <LogoChip h={18} />
+            {!!d.partnerLogo && <View style={{ marginTop: 8, alignSelf: "flex-start" }}><PartnerMark src={d.partnerLogo} h={22} /></View>}
           </View>
           <View>
             <Eyebrow color={BRAND.white}>{d.year}</Eyebrow>
