@@ -840,6 +840,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     }
     const rev = `Rev ${Math.max(0, (d.version || 1) - 1)}`;
     const r = await fetch(savedDocUrl(d.filePath));
+    // A 404 means the revision's file is not on this server: it was filed on another copy of the
+    // platform sharing the same records (the live site and a local one), or removed from the disk.
+    if (r.status === 404) throw new Error(`The file of the ${label} Proposal ${rev} (${d.fileName}) is not on this server, so it cannot be combined here. It was probably uploaded on another copy of the platform (e.g. the live site): combine it there, or upload the file again here.`);
     if (!r.ok) throw new Error(`Could not read the ${label} Proposal ${rev} (${r.status}).`);
     const blob = await r.blob();
     const isPdf = /pdf/i.test(d.fileType || "") || /\.pdf$/i.test(d.fileName || "") || blob.type === "application/pdf";

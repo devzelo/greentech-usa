@@ -61,7 +61,8 @@ export function withFileToken(url: string): string {
 function fileUrl(filePath: string, name?: string, download = false): string {
   const norm = (filePath || '').replace(/\\/g, '/');
   const rel = norm.startsWith('uploads/') ? norm.slice('uploads/'.length) : norm;
-  const url = withFileToken(`/uploads/${rel}`);
+  // Each part of the path encoded, so a file name holding #, ? or % still reaches the file.
+  const url = withFileToken(`/uploads/${rel.split('/').map((seg) => encodeURIComponent(seg)).join('/')}`);
   const clean = (name || '').trim();
   if (!clean) return url;
   const sep = url.includes('?') ? '&' : '?';
