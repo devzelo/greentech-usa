@@ -1,13 +1,15 @@
-import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image, Svg, Path, Circle, Rect } from "@react-pdf/renderer";
+import QRCode from "qrcode";
 import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject, ProposalRequirement } from "../../lib/api";
 import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
+import { resolveClosing } from "../../lib/closingPage";
 import { tableCalc, adjustmentLabel } from "../../lib/pricing";
 import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout, requirementStatus, REQUIREMENT_STATUSES } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
 import {
-  BRAND, COMPANY, PAGE, abs, LETTERHEAD_PAGE, LOGO_MINT, COVER_FALLBACK, registerBrandFonts,
+  BRAND, COMPANY, PAGE, GUTTER, LETTERHEAD, abs, LETTERHEAD_PAGE, COVER_FALLBACK, registerBrandFonts,
   LetterheadHeader, LetterheadFooter, SectionHeading, Subhead, Eyebrow, GradBar,
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
@@ -407,43 +409,118 @@ function CoverLetterPage({ coverLetter, cover, project, lh, label, note }: { cov
 const money = (n: number, currency: string) => `${n < 0 ? "-" : ""}${currency || "$"}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (s: string) => parseFloat(String(s).replace(/[^0-9.-]/g, "")) || 0;
 
-// Closing / back-cover page, on dark like the hero cover. Marketing copy sits on a light card so
-// the editor's dark text stays readable.
-function BackCoverPage({ backCover }: { backCover?: ProposalBackCover }) {
-  if (!backCover?.enabled) return null;
-  const images = (backCover.images || []).slice(0, 4);
-  const contact = ([["WEB", backCover.website], ["EMAIL", backCover.email], ["PHONE", backCover.phone], ["ADDRESS", backCover.address]] as Array<[string, string]>).filter(([, v]) => !!v?.trim());
+// ── The Last Page ("Thank You") ──────────────────────────────────────────────
+// 2026-10-06 - closes both volumes, after every attachment: the brand band over a navy page, the
+// message, then the contact panel with a QR code to the website.
+const CLOSE = { ground: BRAND.slate, panel: "#16233A", line: "#26364F", text: "#CBD5E1", mint: BRAND.cyan } as const;
+
+/** A QR code drawn as vector modules (one path, row runs merged), crisp at any zoom. */
+function QrCode({ value, size, color }: { value: string; size: number; color: string }) {
+  const qr = QRCode.create(value, { errorCorrectionLevel: "M" });
+  const n = qr.modules.size;
+  let d = "";
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (!qr.modules.get(r, c)) continue;
+      let len = 1;
+      while (c + len < n && qr.modules.get(r, c + len)) len++;
+      d += `M${c} ${r}h${len}v1h-${len}z`;
+      c += len - 1;
+    }
+  }
   return (
-    <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter", padding: 56, justifyContent: "space-between" }}>
-      <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="backTop" /></View>
-      <Image src={abs(LOGO_MINT)} style={{ width: 30 * (1588 / 295), height: 30 }} />
-      <View>
-        {!!backCover.tagline && <Text style={{ fontFamily: "Outfit", fontSize: 26, fontWeight: 700, color: BRAND.white, lineHeight: 1.15, marginBottom: 16 }}>{backCover.tagline}</Text>}
-        {!!backCover.marketing?.trim() && (
-          <View style={{ backgroundColor: BRAND.white, borderRadius: 8, padding: 14, marginBottom: 16 }}>
-            <RichText html={backCover.marketing} keyBase="back-mkt" />
-          </View>
-        )}
-        {images.length > 0 && (
-          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-            {images.map((im, i) => <Image key={i} src={abs(im.url)} style={{ width: (PAGE.w - 112 - 18) / 4, height: 80, objectFit: "cover", borderRadius: 6, marginRight: i < images.length - 1 ? 6 : 0 }} />)}
-          </View>
-        )}
+    <Svg width={size} height={size} viewBox={`0 0 ${n} ${n}`}>
+      <Path d={d} fill={color} />
+    </Svg>
+  );
+}
+
+/** Line icons for the contact panel (24-unit grid, stroked). */
+function ContactIcon({ kind, size = 11, color }: { kind: "web" | "email" | "phone" | "address"; size?: number; color: string }) {
+  const st = { stroke: color, strokeWidth: 2, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {kind === "web" && <><Circle cx={12} cy={12} r={10} {...st} /><Path d="M12 2a14.5 14.5 0 0 0 0 20a14.5 14.5 0 0 0 0-20" {...st} /><Path d="M2 12h20" {...st} /></>}
+      {kind === "email" && <><Rect x={2} y={4} width={20} height={16} rx={2} ry={2} {...st} /><Path d="M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" {...st} /></>}
+      {kind === "phone" && <Path d="M22 16.92v3a2 2 0 0 1-2.18 2a19.79 19.79 0 0 1-8.63-3.07a19.5 19.5 0 0 1-6-6a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72a12.84 12.84 0 0 0 .7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45a12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" {...st} />}
+      {kind === "address" && <><Path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0" {...st} /><Circle cx={12} cy={10} r={3} {...st} /></>}
+    </Svg>
+  );
+}
+
+function ClosingPage({ backCover }: { backCover?: ProposalBackCover }) {
+  const c = resolveClosing(backCover);
+  const words = c.heading.split(/\s+/);
+  const lead = words.length > 1 ? `${words.slice(0, -1).join(" ")} ` : "";
+  const accent = words[words.length - 1];
+  const contact: Array<["web" | "email" | "phone" | "address", string, string]> = [
+    ["web", "WEB", c.website], ["email", "EMAIL", c.email], ["phone", "PHONE", c.phone], ["address", "ADDRESS", c.address],
+  ];
+  const inner = PAGE.w - GUTTER * 2;
+  return (
+    <Page size="LETTER" style={{ backgroundColor: CLOSE.ground, fontFamily: "Inter", paddingTop: LETTERHEAD.header.h + 28, paddingBottom: 46, paddingHorizontal: GUTTER }}>
+      <LetterheadHeader />
+      {/* Faint rings at the top right, after the swirl in the logo; clear of the text column. The box
+          stays inside the margins: react-pdf loops trying to split a graphic that crosses the bottom one. */}
+      <View fixed style={{ position: "absolute", top: 52, left: 470 }}>
+        <Svg width={280} height={280} viewBox="0 0 280 280">
+          {[130, 100, 70, 40].map((r, i) => (
+            <Circle key={r} cx={140} cy={140} r={r} stroke={i % 2 ? BRAND.blue : CLOSE.mint} strokeWidth={1.2} strokeOpacity={0.14 + i * 0.05} fill="none" />
+          ))}
+          <Circle cx={140} cy={140} r={20} fill={CLOSE.mint} fillOpacity={0.08} />
+        </Svg>
       </View>
-      <View>
-        <GradBar w={PAGE.w - 112} h={3} id="backRule" />
-        <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
-          {contact.map(([l, v]) => (
-            <View key={l} style={{ width: "50%", marginBottom: 10, paddingRight: 12 }}>
-              <Text style={{ fontSize: 6.6, fontWeight: 600, color: BRAND.s400, letterSpacing: 1.4 }}>{l}</Text>
-              <Text style={{ fontSize: 9.5, fontWeight: 700, color: BRAND.white, marginTop: 3 }}>{v}</Text>
+
+      <View style={{ flex: 1, justifyContent: "center", paddingRight: 70 }}>
+        <GradBar w={56} h={4} r={2} id="closeRule" />
+        <Text style={{ fontFamily: "Outfit", fontSize: 46, fontWeight: 700, color: BRAND.white, lineHeight: 1.1, marginTop: 18, marginBottom: 22 }}>
+          {lead}<Text style={{ color: CLOSE.mint }}>{accent}</Text>
+        </Text>
+        {c.paragraphs.map((p, i) => (
+          <Text key={i} style={{ fontSize: 12.5, color: CLOSE.text, lineHeight: 1.65, marginBottom: 12 }}>{p}</Text>
+        ))}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 14 }}>
+          <View style={{ width: 3, height: 26, backgroundColor: CLOSE.mint, borderRadius: 1.5, marginRight: 10 }} />
+          <View>
+            <Text style={{ fontSize: 11, fontWeight: 700, color: BRAND.white }}>{COMPANY.name}</Text>
+            <Text style={{ fontSize: 8.5, color: BRAND.s400, marginTop: 2 }}>{COMPANY.tagline}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View wrap={false} style={{ flexDirection: "row", alignItems: "center", backgroundColor: CLOSE.panel, border: `0.8 solid ${CLOSE.line}`, borderRadius: 10, padding: 16, width: inner }}>
+        <View style={{ flex: 1, flexDirection: "row", flexWrap: "wrap" }}>
+          {contact.map(([k, label, v], i) => (
+            <View key={k} style={{ width: "50%", flexDirection: "row", alignItems: "center", marginTop: i > 1 ? 14 : 0, paddingRight: 8 }}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "#12343B", alignItems: "center", justifyContent: "center", marginRight: 9 }}>
+                <ContactIcon kind={k} color={CLOSE.mint} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 6.6, fontWeight: 700, color: BRAND.s400, letterSpacing: 1.4 }}>{label}</Text>
+                <Text style={{ fontSize: 9.5, fontWeight: 600, color: BRAND.white, marginTop: 2 }}>{v}</Text>
+              </View>
             </View>
           ))}
         </View>
-        {!!backCover.social && <Text style={{ fontSize: 8, color: BRAND.s400, marginTop: 4 }}>{backCover.social}</Text>}
+        <View style={{ width: 0.8, alignSelf: "stretch", backgroundColor: CLOSE.line, marginHorizontal: 16 }} />
+        <View style={{ alignItems: "center", width: 84 }}>
+          <View style={{ backgroundColor: BRAND.white, borderRadius: 6, padding: 5 }}>
+            <QrCode value={c.qrUrl} size={64} color={BRAND.slate} />
+          </View>
+          <Text style={{ fontSize: 7, fontWeight: 600, color: CLOSE.text, marginTop: 6, textAlign: "center" }}>Scan to visit our website</Text>
+        </View>
       </View>
+
+      {/* The page number is stamped afterwards at the bottom right; the company sits opposite it. */}
+      <Text style={{ position: "absolute", left: GUTTER, bottom: 18, fontSize: 7.5, lineHeight: 1, color: BRAND.s500 }}>{COMPANY.name}  ·  {c.website}</Text>
+      <View style={{ position: "absolute", left: 0, bottom: 0 }}><GradBar w={PAGE.w} h={4} r={0} id="closeFoot" /></View>
     </Page>
   );
+}
+
+/** The Last Page alone, for its preview in the builder. */
+export function ClosingPageDocument({ backCover }: { backCover?: ProposalBackCover }) {
+  return createElement(Document, { title: "Last Page", author: COMPANY.name }, <ClosingPage backCover={backCover} />);
 }
 
 // ── Technical Proposal PDF ───────────────────────────────────────────────────
@@ -451,7 +528,7 @@ type SectionFile = { name: string; url: string };
 /** The technical document as an ordered run of pages and uploaded files (see proposalParts). */
 // `numbers`: the page prints page numbers of other sections (the Compliance Matrix), so its part is
 // rendered again once they are known, like the contents.
-type SeqItem = { page: ReactElement; numbers?: boolean } | { files: SectionFile[]; key?: string };
+type SeqItem = { page: ReactElement; numbers?: boolean; last?: boolean } | { files: SectionFile[]; key?: string };
 type TechArgs = {
   project: ApiProject; content: TechnicalProposalContent; cover?: ProposalCover; coverLetter?: ProposalCoverLetter; backCover?: ProposalBackCover;
   letterhead?: ProposalLetterhead; customLetterheadUrl?: string; logoUrl?: string; resumes?: ProposalTeamResume[];
@@ -1106,7 +1183,8 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
     </Sheet>,
   ));
 
-  if (backCover?.enabled) page(<BackCoverPage backCover={backCover} />);
+  // The Last Page closes the volume (after the attachments too, see proposalParts).
+  if (!backCover?.off) seq.push({ page: <ClosingPage backCover={backCover} />, last: true });
   return seq;
 }
 
@@ -1216,7 +1294,8 @@ export function proposalParts(p: ProposalPdfProps, ctx: PageCtx = {}): ProposalP
   // run holding the Compliance Matrix.
   const flush = () => { if (pages.length) parts.push({ type: "doc", element: asDocument(title, pages), usesPageNumbers: parts.length === 0 || numbered }); pages = []; numbered = false; };
   for (const s of seq) {
-    if ("page" in s) { pages.push(s.page); if (s.numbers) numbered = true; }
+    if ("page" in s && s.last) { flush(); parts.push({ type: "doc", element: asDocument(title, [s.page]), last: true }); }
+    else if ("page" in s) { pages.push(s.page); if (s.numbers) numbered = true; }
     else { flush(); parts.push({ type: "files", files: s.files, key: s.key }); }
   }
   flush();

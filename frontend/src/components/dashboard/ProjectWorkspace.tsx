@@ -69,6 +69,7 @@ import ReminderButton from "./ReminderButton";
 import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
+import ProposalClosingBuilder from "./ProposalClosingBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
@@ -702,7 +703,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     logoMode: "single", jvLogoUrl: "", images: [], coverStyle: "hero", subtitle: "", restrictionNotice: true,
   });
   const emptyCoverLetter = (): ProposalCoverLetter => ({ enabled: false, body: "", useEmailSignature: false, signatories: [] });
-  const emptyBackCover = (): ProposalBackCover => ({ enabled: false, tagline: "", website: "", email: "", phone: "", address: "", social: "", marketing: "", images: [] });
+  // 2026-10-06 - the Last Page prints unless turned off; blank fields take the standard wording.
+  const emptyBackCover = (): ProposalBackCover => ({});
   const [proposalSub, setProposalSub] = useState<"overview" | "eoi" | "technical" | "financial">("overview");
   const [rfpShown, setRfpShown] = useState(false);   // CR 354 - the RFP details window is open
   // CR-B-19b — if the Financial Proposal is locked and the viewer isn't the owner, never leave them on it.
@@ -711,7 +713,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const owner = !!(project && cu && (project as ApiProject & { ownerId?: string }).ownerId === cu.id);
     if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
   }, [financialLocked, project, proposalSub]);
-  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
+  const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "closing" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
@@ -4944,7 +4946,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     { k: "cover" as const, label: "Cover Page", hint: "The front page: its style, the titles, the solicitation and client details, and the photos." },
                     { k: "letter" as const, label: "Cover Letter", hint: "The covering letter to the client, printed with the cover (page 1 or 2), signed by whoever you pick." },
                     { k: "builder" as const, label: "Builder", hint: "The body of the proposal: its sections, their content and their order." },
-                    { k: "attachments" as const, label: "Attachments", hint: "Files that print at the end, or inside a section set to Government form or External." },
+                    { k: "closing" as const, label: "Last Page", hint: "The closing Thank You page with our contact details and a QR code to the website. It closes both volumes, after the attachments." },
+                    { k: "attachments" as const, label: "Attachments", hint: "Files that print at the end (before the Last Page), or inside a section set to Government form or External." },
                     { k: "versions" as const, label: "Saved Versions", hint: "Every revision filed so far, including the ones marked Final. Older revisions stay for the record." },
                   ]).map((t) => (
                     <button
@@ -4973,6 +4976,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   volume={proposalSub}
                   letterhead={letterhead}
                   customLetterheadUrl={customLetterheadUrl}
+                  onSave={() => handleSave()}
+                />
+              )}
+
+              {/* 2026-10-06 - the Last Page, one for both volumes. */}
+              {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "closing" && (
+                <ProposalClosingBuilder
+                  value={backCover}
+                  onChange={(b) => { setBackCover(b); setDirty(true); }}
+                  canEdit={canEdit}
                   onSave={() => handleSave()}
                 />
               )}

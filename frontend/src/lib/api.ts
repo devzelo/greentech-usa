@@ -471,17 +471,20 @@ export interface RfpDetails {
   instructions?: string;     // anything else the RFP asks
 }
 
-// Customizable closing / back-cover page (brochure-style).
+/**
+ * 2026-10-06 - the Last Page: a "Thank You" page that closes both volumes, after every attachment.
+ * It prints unless turned off; a blank field takes the standard wording or the company's details
+ * (lib/closingPage.ts). The older brochure-style back cover never had an editor and is retired.
+ */
 export interface ProposalBackCover {
-  enabled: boolean;
-  tagline: string;
-  website: string;
-  email: string;
-  phone: string;
-  address: string;
-  social: string;
-  marketing: string; // HTML
-  images: ProposalCoverImage[];
+  off?: boolean;
+  heading?: string;
+  message?: string;      // plain text; a blank line starts a new paragraph
+  website?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  qrUrl?: string;        // where the QR code points; blank = the website
 }
 
 export interface ProposalContent {

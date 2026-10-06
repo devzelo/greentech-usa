@@ -5,7 +5,7 @@ import { PAGE_NUMBER_POS, abs } from "../components/pdf/brand";
 
 /** A piece of an assembled proposal: generated pages, or uploaded files inserted as they are. */
 export type ProposalPart =
-  | { type: "doc"; element: unknown; usesPageNumbers?: boolean }   // usesPageNumbers: re-rendered once page numbers are known
+  | { type: "doc"; element: unknown; usesPageNumbers?: boolean; last?: boolean }   // usesPageNumbers: re-rendered once page numbers are known; last: after the trailing attachments (the Last Page)
   | { type: "files"; files: Array<{ name: string; url: string }>; key?: string }   // key: the section these files start
   | { type: "bytes"; name: string; bytes: ArrayBuffer };   // a file already in memory (e.g. chosen but not yet uploaded)
 
@@ -160,8 +160,11 @@ export async function assembleProposalParts(
     const w = img.width * scale, h = img.height * scale;
     page.drawImage(img, { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h });
   };
-  for (const srcs of rendered) for (const s of srcs) await append(s);
+  const isLast = (i: number) => { const p = parts[i]; return p.type === "doc" && !!p.last; };
+  for (let i = 0; i < rendered.length; i++) if (!isLast(i)) for (const s of rendered[i]) await append(s);
   for (const a of trailing) { const s = await fetchFile(a.name, documentUrl(a), skipped); if (s) await append(s); }
+  // The Last Page closes the file, after the attachments.
+  for (let i = 0; i < rendered.length; i++) if (isLast(i)) for (const s of rendered[i]) await append(s);
 
   // Page numbers, in the letterhead footer's right-hand slot (level with its reference line).
   const font = await merged.embedFont(StandardFonts.Helvetica);

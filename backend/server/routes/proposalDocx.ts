@@ -47,7 +47,18 @@ interface Fin {
 interface Req { id: string; label?: string; rfpRef?: string; volume?: string; sectionId?: string; status?: string; done?: boolean }
 interface Cover { proposalTitle?: string; projectName?: string; solicitationNo?: string; taskOrderNo?: string; contractNo?: string; clientName?: string; dueDate?: string; submissionDate?: string; submittedTo?: string; attentionTo?: string; submittedBy?: string }
 interface CoverLetter { enabled?: boolean; body?: string; signatories?: Array<{ name?: string; title?: string }> }
-interface PContent { cover?: Cover; coverFinancial?: Cover; coverLetter?: CoverLetter; coverLetterFinancial?: CoverLetter; technical?: Tech; financial?: Fin; requirements?: Req[] }
+interface BackCover { off?: boolean; heading?: string; message?: string; website?: string; email?: string; phone?: string; address?: string }
+interface PContent { cover?: Cover; coverFinancial?: Cover; coverLetter?: CoverLetter; coverLetterFinancial?: CoverLetter; technical?: Tech; financial?: Fin; requirements?: Req[]; backCover?: BackCover }
+
+// 2026-10-06 - the Last Page's standard wording and our details, as in the PDF (frontend lib/closingPage.ts).
+const CLOSING = {
+  heading: "Thank You",
+  message: [
+    "Thank you for considering GreenTech USA LLC for this opportunity. We appreciate your time and the opportunity to submit our proposal. We look forward to the possibility of working together and supporting your project goals with our experience, commitment, and dedication to delivering reliable and sustainable solutions.",
+    "Please do not hesitate to contact us if you have any questions or require additional information.",
+  ].join("\n\n"),
+  website: "www.gt-usa.com", email: "info@gt-usa.com", phone: "+1 571-337-1358", address: "Chantilly, Virginia, USA",
+};
 
 const TECH_BUILTINS: Array<[string, string]> = [
   ["description", "Technical Description"], ["personnel", "Key Personnel"],
@@ -445,6 +456,19 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
       if (s.projects?.length && PROJECT_KEYS.has(m.libraryKey || "")) body.push(...projectBlocks(s.projects, sheetLabel(false, m.libraryKey), m.libraryKey === "project-references"));
       const files = (s.attachments || []).map((a) => a.name).filter(Boolean);
       if (files.length) body.push(p(`Attached in the PDF, as uploaded: ${files.join(", ")}.`, { italic: true, size: 19, color: "64748B" }));
+    }
+
+    // The Last Page: "Thank You", the message and our contact details, unless turned off.
+    const bc = pc.backCover || {};
+    if (!bc.off) {
+      const pick = (v: string | undefined, d: string) => (v || "").trim() || d;
+      body.push(new Paragraph({ pageBreakBefore: true, heading: HeadingLevel.HEADING_2, spacing: { before: 1600, after: 240 }, children: [new TextRun({ text: pick(bc.heading, CLOSING.heading), font: "Calibri", bold: true, size: 56, color: "0F172A" })] }));
+      for (const para of pick(bc.message, CLOSING.message).split(/\n\s*\n/).map((x) => x.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean)) body.push(p(para, { size: 24 }));
+      body.push(p(""));
+      body.push(kvLine("Web", pick(bc.website, CLOSING.website)));
+      body.push(kvLine("Email", pick(bc.email, CLOSING.email)));
+      body.push(kvLine("Phone", pick(bc.phone, CLOSING.phone)));
+      body.push(kvLine("Address", pick(bc.address, CLOSING.address)));
     }
 
     // US Letter with the letterhead header and a page-numbered footer, like every document we print.
