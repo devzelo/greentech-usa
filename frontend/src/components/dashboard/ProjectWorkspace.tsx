@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Globe, Clock, ExternalLink, MapPin,
-  Upload, Download, Eye, FileText, FileImage, FileCode,
+  Upload, Download, Eye, FileText, FileImage, ImagePlus, FileCode,
   Plus, X, MoreHorizontal, ChevronRight, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Search,
   AlertCircle, Check, Users, Building2, FileSpreadsheet,
   Receipt, Truck, Scale, Wrench, Calendar,
@@ -3922,30 +3922,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             {hasCover && (
               <>
                 <img src={assetSrc(project.image)} alt="" aria-hidden onError={() => setCoverBroken(true)} className="absolute inset-0 w-full h-full object-cover" />
-                {/* a soft shade at the top, so the picture button reads on any photo */}
-                <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-900/30 to-transparent" />
               </>
             )}
-            {/* CR 349 - the cover picture's controls stay in one place, the box's top-right corner:
-                "Add cover picture" without one; "Change" and "Remove" with one. */}
-            {isOwner && (
-              <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1">
-                {imageUploading ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-600 shadow-sm ring-1 ring-slate-200"><Loader2 size={12} className="animate-spin" /> Saving…</span>
-                ) : (
-                  <>
-                    <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-white hover:text-primary cursor-pointer transition-colors" title={hasCover ? "Change the cover picture" : "Add a cover picture behind the project's details"}>
-                      <FileImage size={12} /> {hasCover ? "Change picture" : "Add cover picture"}
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
-                    </label>
-                    {!!project.image && (
-                      <button type="button" onClick={() => void removeProjectImage()} className="inline-flex items-center justify-center h-[30px] w-[30px] rounded-lg bg-white/90 text-slate-500 shadow-sm ring-1 ring-slate-200 hover:bg-white hover:text-red-600 transition-colors" title="Remove the cover picture" aria-label="Remove the cover picture"><Trash2 size={13} /></button>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-4 mt-14 sm:mt-16 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : `p-4 sm:p-5 ${isOwner ? "pt-14 sm:pt-5 sm:pr-56" : ""}`}`}>
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-5 mt-10 sm:mt-12 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : "p-4 sm:p-5"}`}>
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
@@ -3991,6 +3970,25 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   projectId={project.id}
                   projectName={project.name}
                 />
+                {/* CR 349 - the cover picture's controls sit here, in the card, always in this spot:
+                    "Add cover picture" without one; "Change picture" and Remove with one. */}
+                {isOwner && (
+                  <span className="inline-flex items-center">
+                    {imageUploading ? (
+                      <span className="inline-flex items-center p-1.5 text-slate-400" title="Saving the picture"><Loader2 size={16} className="animate-spin" /></span>
+                    ) : (
+                      <>
+                        <label className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50 cursor-pointer transition-all" title={hasCover ? "Change the cover picture" : "Add a cover picture behind the project's details"} aria-label={hasCover ? "Change the cover picture" : "Add a cover picture"}>
+                          {hasCover ? <FileImage size={16} /> : <ImagePlus size={16} />}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
+                        </label>
+                        {!!project.image && (
+                          <button type="button" onClick={() => void removeProjectImage()} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all" title="Remove the cover picture" aria-label="Remove the cover picture"><Trash2 size={16} /></button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
               </div>
               {/* CR 182: subcontractors and vendors get the project name and their tabs only. */}
               {!isGuest && (<>
