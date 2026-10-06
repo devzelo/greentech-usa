@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import PdfFrame from "./PdfFrame";
-import { Eye, Plus, X } from "lucide-react";
+import { Check, Eye, Loader2, Pencil, Plus, Undo2, X } from "lucide-react";
 import {
   fetchSignatories, fetchStamps, uploadProposalAsset, withFileToken,
   type ApiProject, type ApiSignatory, type CompanyFile, type ProposalCover, type ProposalCoverLetter, type ProposalLetterhead, type ProposalSignatory,
@@ -10,26 +10,27 @@ import RichTextEditor from "./RichTextEditor";
 import { COMPANY } from "../pdf/brand";
 import { OpeningPagesDocument, defaultSubmitter } from "./ProposalPDF";
 
-// CR-P (93) - the transmittal letter, laid out as on the client's samples: Date, To, Subject,
+// CR-P (93) - the cover letter (CR 358, was "transmittal letter"), laid out as on the client's samples: Date, To, Subject,
 // Dear ..., the paragraphs, Sincerely, then the signature with the company seal and the signer's
 // name, title, company, mobile and email. The header fills itself from the cover page.
 
-const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
-const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
-const card = "bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4";
+// 2026-10-06 - compact: smaller boxes, four to a row, less padding.
+const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
+const lbl = "text-[9px] font-bold text-slate-400 uppercase tracking-widest";
+const card = "bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3";
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
 type HeaderKey = "date" | "toName" | "toTitle" | "toOffice" | "toAgency" | "toAddress" | "subject" | "salutation" | "closing";
-const HEADER_FIELDS: Array<{ key: HeaderKey; label: string; type?: string; wide?: boolean }> = [
+const HEADER_FIELDS: Array<{ key: HeaderKey; label: string; type?: string; span?: string }> = [
   { key: "date", label: "Date", type: "date" },
   { key: "toName", label: "To (name)" },
   { key: "toTitle", label: "Title" },
   { key: "toOffice", label: "Office" },
   { key: "toAgency", label: "Agency / client" },
-  { key: "toAddress", label: "Address / location" },
-  { key: "subject", label: "Subject", wide: true },
-  { key: "salutation", label: "Salutation" },
-  { key: "closing", label: "Closing" },
+  { key: "toAddress", label: "Address / location", span: "col-span-2 md:col-span-3" },
+  { key: "subject", label: "Subject", span: "col-span-2 md:col-span-4" },
+  { key: "salutation", label: "Salutation", span: "col-span-2" },
+  { key: "closing", label: "Closing", span: "col-span-2" },
 ];
 
 const longDate = (s: string) => {
@@ -38,8 +39,10 @@ const longDate = (s: string) => {
 };
 
 export default function ProposalLetterBuilder({
-  projectId, project, cover, letter, onChange, canEdit, volume = "technical", letterhead, customLetterheadUrl,
+  projectId, project, cover, letter, onChange, canEdit, volume = "technical", letterhead, customLetterheadUrl, onSave,
 }: {
+  /** 2026-10-06 - Save: the proposal is saved and the letter goes back to its read view. */
+  onSave?: () => Promise<unknown> | void;
   volume?: "technical" | "financial";
   letterhead?: ProposalLetterhead;
   customLetterheadUrl?: string;
@@ -52,6 +55,14 @@ export default function ProposalLetterBuilder({
 }) {
   const [staff, setStaff] = useState<ApiSignatory[]>([]);
   const [preview, setPreview] = useState(false);
+  // 2026-10-06 - read view by default; Edit opens the form, Save keeps it, Cancel puts it back.
+  const [editing, setEditing] = useState(false);
+  const [before, setBefore] = useState<ProposalCoverLetter | null>(null);
+  const [saving, setSaving] = useState(false);
+  const startEdit = () => { setBefore(letter); setEditing(true); };
+  const cancelEdit = () => { if (before) onChange(before); setEditing(false); };
+  const save = async () => { setSaving(true); try { await onSave?.(); setEditing(false); } finally { setSaving(false); } };
+  const edit = canEdit && editing;
   const [stamps, setStamps] = useState<CompanyFile[]>([]);
   useEffect(() => {
     fetchSignatories().then(setStaff).catch(() => {});
@@ -97,33 +108,43 @@ export default function ProposalLetterBuilder({
   };
   const removeSig = (sid: string) => set("signatories", letter.signatories.filter((s) => s.id !== sid));
 
+  const shown = (k: HeaderKey) => (letter[k] || "").trim() || d[k] || "";
+  const toLines = [shown("toName"), shown("toTitle"), shown("toOffice"), shown("toAgency"), shown("toAddress")].filter(Boolean);
+  const bodyEmpty = !letter.body.replace(/<[^>]*>/g, "").trim();
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className={card}>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h4 className="font-bold text-slate-800 text-sm">Cover Letter</h4>
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
-              <input type="checkbox" checked={letter.enabled} onChange={(e) => set("enabled", e.target.checked)} disabled={!canEdit} className="accent-emerald-600" />
-              Include in the proposal
-            </label>
-            {/* CR 195 - which page the letter is. */}
-            <select
-              value={letter.position || "after-cover"}
-              onChange={(e) => set("position", e.target.value as ProposalCoverLetter["position"])}
-              disabled={!canEdit || !letter.enabled}
-              aria-label="Letter position"
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 disabled:opacity-50"
-            >
-              <option value="after-cover">Page 2, after the cover</option>
-              <option value="before-cover">Page 1, before the cover</option>
-            </select>
-            <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200">
-              <Eye size={12} /> Preview letter
-            </button>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 text-sm">Cover Letter</h4>
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${letter.enabled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{letter.enabled ? (letter.position === "before-cover" ? "Included · page 1" : "Included · page 2") : "Not included"}</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {edit && (
+              <>
+                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+                  <input type="checkbox" checked={letter.enabled} onChange={(e) => set("enabled", e.target.checked)} className="accent-emerald-600" />
+                  Include
+                </label>
+                {/* CR 195 - which page the letter is. */}
+                <select value={letter.position || "after-cover"} onChange={(e) => set("position", e.target.value as ProposalCoverLetter["position"])} disabled={!letter.enabled} aria-label="Letter position"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 disabled:opacity-50">
+                  <option value="after-cover">Page 2, after the cover</option>
+                  <option value="before-cover">Page 1, before the cover</option>
+                </select>
+              </>
+            )}
+            <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Eye size={12} /> Preview</button>
+            {canEdit && !editing && <button type="button" onClick={startEdit} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Pencil size={12} /> Edit</button>}
+            {edit && (
+              <>
+                <button type="button" onClick={cancelEdit} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Undo2 size={12} /> Cancel</button>
+                <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60">{saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save</button>
+              </>
+            )}
           </div>
         </div>
-        {!letter.enabled && <p className="text-[11px] font-bold text-amber-600">Not included yet: tick "Include in the proposal" for the letter to print.</p>}
         {preview && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex flex-col" onClick={() => setPreview(false)}>
             <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100" onClick={(e) => e.stopPropagation()}>
@@ -137,128 +158,103 @@ export default function ProposalLetterBuilder({
             </div>
           </div>
         )}
-        <p className="text-[11px] text-slate-500">
-          The header fills itself from the <strong>Cover Page</strong>. Type in a box to change a line for this letter only; clear it to go back to the cover's value.
-        </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {HEADER_FIELDS.map((f) => {
-            const id = `letter-${f.key}`;
-            return (
-              <div key={f.key} className={`space-y-1.5 ${f.wide ? "md:col-span-2" : ""}`}>
-                <label htmlFor={id} className={lbl}>{f.label}</label>
-                <input
-                  id={id}
-                  type={f.type || "text"}
-                  value={letter[f.key] || ""}
-                  onChange={(e) => set(f.key, e.target.value)}
-                  disabled={!canEdit}
-                  placeholder={f.type === "date" ? "" : d[f.key]}
-                  className={inp}
-                />
-                {f.type === "date" && !letter.date && <p className="text-[10px] text-slate-400">Empty: {longDate(d.date)} (the cover's submission date, else today)</p>}
+        {!edit ? (
+          /* Read view: the letter as it prints, in a few lines. */
+          <div className="grid grid-cols-1 gap-3 text-xs text-slate-700 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+            <dl className="space-y-1.5 rounded-xl bg-slate-50 px-3 py-2.5">
+              <div><dt className={lbl}>Date</dt><dd className="font-semibold">{longDate(shown("date"))}</dd></div>
+              <div><dt className={lbl}>To</dt><dd className="font-semibold leading-snug">{toLines.length ? toLines.map((l, i) => <span key={i} className="block">{l}</span>) : <span className="text-slate-400">Not set</span>}</dd></div>
+              <div><dt className={lbl}>Signed by</dt><dd className="font-semibold">{letter.signatories.length ? letter.signatories.map((x) => `${x.name}${x.title ? `, ${x.title}` : ""}`).join("; ") : <span className="text-amber-600">No signatory yet</span>}</dd></div>
+            </dl>
+            <div className="min-w-0 space-y-1.5">
+              <p><span className={lbl}>Subject </span><span className="font-semibold">{shown("subject") || <span className="text-slate-400">Not set</span>}</span></p>
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-100 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+                <p className="mb-1">{shown("salutation")}</p>
+                {bodyEmpty ? <p className="italic text-slate-400">No letter body yet.{canEdit ? " Edit, then Insert the standard letter." : ""}</p> : <div className="[&_p]:mb-1.5" dangerouslySetInnerHTML={{ __html: letter.body }} />}
+                <p className="mt-1">{shown("closing")}</p>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className={lbl}>Letter body</span>
-            {canEdit && (
-              <button type="button" onClick={insertStandard} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-[11px] font-bold hover:bg-primary/20">
-                <Plus size={12} /> Insert the standard letter
-              </button>
-            )}
+            </div>
           </div>
-          <RichTextEditor
-            value={letter.body}
-            onChange={(html) => set("body", html)}
-            disabled={!canEdit}
-            minHeight={220}
-            placeholder="The letter's paragraphs: who you are, what is enclosed, why you are the right choice, and an offer to answer questions."
-            onImageUpload={async (file) => (await uploadProposalAsset(projectId, file)).url}
-          />
-        </div>
-      </div>
-
-      <div className={card}>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h4 className="font-bold text-slate-800 text-sm">Signed by</h4>
-          {canEdit && (
-            <select
-              value=""
-              onChange={(e) => { addSignatory(e.target.value); e.target.value = ""; }}
-              className={`${inp} w-auto appearance-none`}
-              aria-label="Add a signatory"
-            >
-              <option value="">+ Add signatory...</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
-            </select>
-          )}
-        </div>
-        {letter.signatories.length === 0 ? (
-          <p className="text-[11px] text-slate-400 italic">No signatory yet. Add one: their signature image, title, email and phone come from their profile and can be edited here.</p>
         ) : (
-          <div className="space-y-3">
-            {letter.signatories.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 p-3 rounded-2xl border border-slate-100 bg-slate-50/50">
-                <div className="w-24 h-14 shrink-0 rounded-lg bg-white border border-slate-100 flex items-center justify-center overflow-hidden">
-                  {s.signatureUrl ? <img src={withFileToken(s.signatureUrl)} alt={`${s.name} signature`} className="max-h-12 max-w-full object-contain" /> : <span className="text-[9px] text-slate-400 text-center px-1">No signature on profile</span>}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
-                  <input value={s.name} onChange={(e) => updateSig(s.id, { name: e.target.value })} disabled={!canEdit} placeholder="Name" aria-label="Signatory name" className={inp} />
-                  <input value={s.title} onChange={(e) => updateSig(s.id, { title: e.target.value })} disabled={!canEdit} placeholder="Title, e.g. Director or JV Representative" aria-label="Signatory title" className={inp} />
-                  <input value={s.phone || ""} onChange={(e) => updateSig(s.id, { phone: e.target.value })} disabled={!canEdit} placeholder="Mobile" aria-label="Signatory mobile" className={inp} />
-                  <input value={s.email || ""} onChange={(e) => updateSig(s.id, { email: e.target.value })} disabled={!canEdit} placeholder="Email" aria-label="Signatory email" className={inp} />
-                </div>
-                {canEdit && <button onClick={() => removeSig(s.id)} aria-label={`Remove ${s.name}`} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500"><X size={14} /></button>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="border-t border-slate-100 pt-4 space-y-2">
-          <span className={lbl}>Company seal</span>
-          {sealChoices.length === 0 ? (
-            <p className="text-[11px] text-slate-400 italic">No seals yet. Upload the company seal in Company Documents, under the Stamps tab.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Company seal">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={!letter.stampUrl}
-                disabled={!canEdit}
-                onClick={() => set("stampUrl", "")}
-                className={`h-16 px-3 rounded-xl border text-[11px] font-bold ${!letter.stampUrl ? "border-primary ring-2 ring-primary/20 text-slate-800" : "border-slate-100 text-slate-400 hover:border-slate-300"}`}
-              >
-                None
-              </button>
-              {sealChoices.map((s) => {
-                const on = letter.stampUrl === s.url;
+          <>
+            <p className="text-[10px] text-slate-400">The header fills itself from the <strong>Cover Page</strong>; type in a box to change a line for this letter only, clear it to go back.</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {HEADER_FIELDS.map((f) => {
+                const id = `letter-${f.key}`;
                 return (
-                  <button
-                    key={s.url}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    disabled={!canEdit}
-                    onClick={() => set("stampUrl", s.url)}
-                    title={s.name}
-                    className={`h-16 w-16 rounded-xl border bg-white p-1.5 ${on ? "border-primary ring-2 ring-primary/20" : "border-slate-100 hover:border-slate-300"}`}
-                  >
-                    <img src={withFileToken(s.url)} alt={s.name} className="w-full h-full object-contain" />
-                  </button>
+                  <div key={f.key} className={`space-y-0.5 ${f.span || ""}`}>
+                    <label htmlFor={id} className={lbl}>{f.label}</label>
+                    <input id={id} type={f.type || "text"} value={letter[f.key] || ""} onChange={(e) => set(f.key, e.target.value)}
+                      placeholder={f.type === "date" ? "" : d[f.key]} title={f.type === "date" && !letter.date ? `Empty: ${longDate(d.date)} (the cover's submission date, else today)` : undefined} className={inp} />
+                  </div>
                 );
               })}
             </div>
-          )}
-        </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className={lbl}>Letter body</span>
+                <button type="button" onClick={insertStandard} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold hover:bg-primary/20"><Plus size={11} /> Insert the standard letter</button>
+              </div>
+              <RichTextEditor
+                value={letter.body}
+                onChange={(html) => set("body", html)}
+                minHeight={160}
+                placeholder="The letter's paragraphs: who you are, what is enclosed, why you are the right choice, and an offer to answer questions."
+                onImageUpload={async (file) => (await uploadProposalAsset(projectId, file)).url}
+              />
+            </div>
+            {/* Signed by and the seal, in the same card. */}
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={lbl}>Signed by</span>
+                  <select value="" onChange={(e) => { addSignatory(e.target.value); e.target.value = ""; }} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600" aria-label="Add a signatory">
+                    <option value="">+ Add signatory...</option>
+                    {staff.map((x) => <option key={x.id} value={x.id}>{x.name}{x.jobTitle ? ` · ${x.jobTitle}` : ""}</option>)}
+                  </select>
+                </div>
+                {letter.signatories.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">No signatory yet: their signature, title, email and phone come from their profile.</p>
+                ) : letter.signatories.map((x) => (
+                  <div key={x.id} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/50 p-1.5">
+                    <div className="w-16 h-9 shrink-0 rounded-md bg-white border border-slate-100 flex items-center justify-center overflow-hidden">
+                      {x.signatureUrl ? <img src={withFileToken(x.signatureUrl)} alt={`${x.name} signature`} className="max-h-8 max-w-full object-contain" /> : <span className="text-[8px] text-slate-400 text-center px-1">No signature</span>}
+                    </div>
+                    <div className="grid flex-1 grid-cols-2 gap-1.5 md:grid-cols-4">
+                      <input value={x.name} onChange={(e) => updateSig(x.id, { name: e.target.value })} placeholder="Name" aria-label="Signatory name" className={inp} />
+                      <input value={x.title} onChange={(e) => updateSig(x.id, { title: e.target.value })} placeholder="Title" aria-label="Signatory title" className={inp} />
+                      <input value={x.phone || ""} onChange={(e) => updateSig(x.id, { phone: e.target.value })} placeholder="Mobile" aria-label="Signatory mobile" className={inp} />
+                      <input value={x.email || ""} onChange={(e) => updateSig(x.id, { email: e.target.value })} placeholder="Email" aria-label="Signatory email" className={inp} />
+                    </div>
+                    <button onClick={() => removeSig(x.id)} aria-label={`Remove ${x.name}`} className="p-1 rounded-lg text-slate-300 hover:text-red-500"><X size={13} /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <span className={lbl}>Company seal</span>
+                {sealChoices.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">No seals yet: add them in Documents, Classified, Stamps.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Company seal">
+                    <button type="button" role="radio" aria-checked={!letter.stampUrl} onClick={() => set("stampUrl", "")}
+                      className={`h-11 px-2 rounded-lg border text-[10px] font-bold ${!letter.stampUrl ? "border-primary ring-2 ring-primary/20 text-slate-800" : "border-slate-100 text-slate-400 hover:border-slate-300"}`}>None</button>
+                    {sealChoices.map((x) => {
+                      const on = letter.stampUrl === x.url;
+                      return (
+                        <button key={x.url} type="button" role="radio" aria-checked={on} onClick={() => set("stampUrl", x.url)} title={x.name}
+                          className={`h-11 w-11 rounded-lg border bg-white p-1 ${on ? "border-primary ring-2 ring-primary/20" : "border-slate-100 hover:border-slate-300"}`}>
+                          <img src={withFileToken(x.url)} alt={x.name} className="w-full h-full object-contain" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
-
-      {canEdit && letter.signatories.length === 0 && staff.length === 0 && (
-        <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><Plus size={12} /> Staff appear in the signatory list once they exist in User Management.</p>
-      )}
     </div>
   );
 }

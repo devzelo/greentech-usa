@@ -4645,6 +4645,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     setDirty(true);
                   })()}
                   canEdit={canEdit}
+                  onSave={() => handleSave()}
                 />
               )}
 
@@ -4958,6 +4959,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   volume={proposalSub}
                   letterhead={letterhead}
                   customLetterheadUrl={customLetterheadUrl}
+                  onSave={() => handleSave()}
                 />
               )}
 

@@ -2,14 +2,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fileName } from "../../lib/fileNames";
 import { pdf } from "@react-pdf/renderer";
 import PdfFrame from "./PdfFrame";
-import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine } from "lucide-react";
+import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine, Pencil, Undo2 } from "lucide-react";
 import { fetchSigners, fetchStamps, withFileToken, type ApiProject, type ApiSigner, type CompanyFile, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
 import { COMPANY } from "../../lib/brandTokens";
 import EoiPDF from "../pdf/EoiPDF";
 
-const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
-const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
+// 2026-10-06 - compact: smaller boxes, four to a row, less padding.
+const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
+const lbl = "text-[9px] font-bold text-slate-400 uppercase tracking-widest";
 
 type TextKey = "solicitationNo" | "projectTitle" | "projectType" | "location" | "country" | "recipientName" | "recipientTitle" | "agency" | "bondingPercent" | "pocName" | "pocPhone" | "pocEmail";
 type PartKey = "letter" | "body" | "experience" | "company" | "signature";
@@ -17,8 +18,8 @@ type PartKey = "letter" | "body" | "experience" | "company" | "signature";
 /** CR 360 - every part of the EOI opens and closes, like the letter. */
 function Part({ title, note, open, onToggle, children, right }: { title: string; note?: ReactNode; open: boolean; onToggle: () => void; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="bg-white rounded-[2rem] border border-slate-100 shadow-sm">
-      <div className="flex items-center justify-between gap-3 px-6 py-4">
+    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
           {open ? <ChevronDown size={16} className="shrink-0 text-slate-400" /> : <ChevronRight size={16} className="shrink-0 text-slate-400" />}
           <span className="min-w-0">
@@ -28,7 +29,7 @@ function Part({ title, note, open, onToggle, children, right }: { title: string;
         </button>
         {right}
       </div>
-      {open && <div className="space-y-4 border-t border-slate-50 px-6 pb-6 pt-4">{children}</div>}
+      {open && <div className="space-y-3 border-t border-slate-50 px-4 pb-4 pt-3">{children}</div>}
     </section>
   );
 }
@@ -42,13 +43,15 @@ function Part({ title, note, open, onToggle, children, right }: { title: string;
  * user with the signature (and block) of their choice, the stamps come from Classified Documents,
  * and the preview prints the signature and the stamps.
  */
-export default function EoiBuilder({ project, cover, value, onChange, onReset, canEdit }: {
+export default function EoiBuilder({ project, cover, value, onChange, onReset, canEdit, onSave }: {
   project: ApiProject;
   cover: ProposalCover | undefined;
   value: EoiContent;
   onChange: (next: EoiContent) => void;
   onReset: () => void;
   canEdit: boolean;
+  /** 2026-10-06 - Save: the proposal is saved and the EOI goes back to its read view. */
+  onSave?: () => Promise<unknown> | void;
 }) {
   const [signers, setSigners] = useState<ApiSigner[]>([]);
   const [stamps, setStamps] = useState<CompanyFile[]>([]);
@@ -56,6 +59,14 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<Record<PartKey, boolean>>({ letter: true, body: false, experience: false, company: false, signature: true });
   const toggle = (k: PartKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  // 2026-10-06 - read view by default; Edit opens the form, Save keeps it, Cancel puts it back.
+  const [editing, setEditing] = useState(false);
+  const [before, setBefore] = useState<EoiContent | null>(null);
+  const [saving, setSaving] = useState(false);
+  const startEdit = () => { setBefore(value); setEditing(true); };
+  const cancelEdit = () => { if (before) onChange(before); setEditing(false); };
+  const save = async () => { setSaving(true); try { await onSave?.(); setEditing(false); } finally { setSaving(false); } };
+  const edit = canEdit && editing;
   useEffect(() => {
     fetchSigners().then(setSigners).catch(() => {});
     fetchStamps().then(setStamps).catch(() => {});
@@ -100,7 +111,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const changed = Object.keys(value.body || {}).length;
 
   const field = (k: TextKey, label: string, opts: { wide?: boolean; list?: string } = {}) => (
-    <div className={`space-y-1.5 ${opts.wide ? "md:col-span-2" : ""}`}>
+    <div className={`space-y-0.5 ${opts.wide ? "col-span-2" : ""}`}>
       <label htmlFor={`eoi-${k}`} className={lbl}>{label}</label>
       <input id={`eoi-${k}`} value={value[k] || ""} onChange={(e) => set(k, e.target.value)} disabled={!canEdit} placeholder={String(d[k] || "")} list={opts.list} className={inp} />
     </div>
@@ -121,34 +132,66 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
 
   const missing = [!r.solicitationNo && "solicitation number", !r.recipientName && "recipient", !r.signatory && "signatory", r.jv && !r.firmUei && "the JV's UEI"].filter(Boolean) as string[];
   const actions = (
-    <div className="flex flex-wrap items-center gap-2">
-      <button onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Eye size={13} /> Preview</button>
-      <button onClick={() => void download()} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF</button>
-      {canEdit && <button onClick={onReset} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-slate-900"><RotateCcw size={13} /> Start a new EOI</button>}
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button onClick={() => setPreview(true)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Eye size={12} /> Preview</button>
+      {!edit && <button onClick={() => void download()} disabled={busy} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50">{busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Download PDF</button>}
+      {canEdit && !edit && <button onClick={onReset} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-slate-900"><RotateCcw size={12} /> Start a new EOI</button>}
+      {canEdit && !edit && <button onClick={startEdit} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary"><Pencil size={12} /> Edit</button>}
+      {edit && <button onClick={cancelEdit} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Undo2 size={12} /> Cancel</button>}
+      {edit && <button onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60">{saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save</button>}
     </div>
   );
+  const longDay = (v: string) => { const dd = new Date(`${v}T00:00:00`); return isNaN(dd.getTime()) ? v : dd.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }); };
+  const row = (label: string, v: ReactNode) => <div className="flex gap-2"><dt className={`${lbl} w-24 shrink-0 pt-0.5`}>{label}</dt><dd className="min-w-0 font-semibold text-slate-700">{v || <span className="font-normal text-slate-400">Not set</span>}</dd></div>;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">Expression of Interest</h3>
-          <p className="text-[11px] text-slate-400">For {project.name}. One letter with the standard EOI wording; change any field or paragraph for this EOI. No revisions: a new EOI replaces this one.</p>
+          <h3 className="text-lg font-display font-bold text-slate-900">Expression of Interest</h3>
+          <p className="text-[11px] text-slate-400">{edit ? "Change any field or paragraph for this EOI, then Save." : "One letter with the standard EOI wording, filled from the project. No revisions: a new EOI replaces this one."}</p>
         </div>
         {actions}
       </div>
 
       {missing.length > 0 && (
-        <p className="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl px-3 py-2">Still to fill in: {missing.join(", ")}.</p>
+        <p className="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5">Still to fill in: {missing.join(", ")}.</p>
       )}
+
+      {/* Read view: the EOI as it prints, in a few lines. */}
+      {!edit && (
+        <section className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-xs shadow-sm lg:grid-cols-2">
+          <dl className="space-y-1.5">
+            {row("Date", longDay(r.date))}
+            {row("Solicitation", r.solicitationNo)}
+            {row("Project", [r.projectTitle, r.projectType && `(${r.projectType})`].filter(Boolean).join(" "))}
+            {row("Location", [r.location, r.country && !r.location.toLowerCase().includes(r.country.toLowerCase()) ? r.country : ""].filter(Boolean).join(", "))}
+            {row("To", [r.recipientName, r.recipientTitle, r.agency].filter(Boolean).join(", "))}
+          </dl>
+          <dl className="space-y-1.5">
+            {row("Submitted by", `${r.firmName}${r.firmUei ? ` · UEI ${r.firmUei}` : ""}`)}
+            {row("Contact", [r.pocName, r.pocPhone, r.pocEmail].filter(Boolean).join(" · "))}
+            {row("Signed by", r.signatory ? (
+              <span className="flex items-center gap-2">
+                {r.signatory.signatureUrl && <img src={withFileToken(r.signatory.signatureUrl)} alt="" className="h-7 max-w-[5rem] object-contain" />}
+                <span>{r.signatory.name}{r.signatory.title ? `, ${r.signatory.title}` : ""}</span>
+                {chosenStamps.map((u) => <img key={u} src={withFileToken(u)} alt="" className="h-7 w-7 object-contain" />)}
+              </span>
+            ) : "")}
+            {row("Letter", `${changed ? `${changed} paragraph${changed === 1 ? "" : "s"} changed` : "Standard wording"} · ${bullets.length} experience line${bullets.length === 1 ? "" : "s"} · bonding ${r.bondingPercent || "40"}%`)}
+          </dl>
+        </section>
+      )}
+
+      {edit && <>
 
       <Part title="The letter" note={[r.solicitationNo && `Solicitation ${r.solicitationNo}`, r.projectTitle, r.recipientName].filter(Boolean).join(" · ")} open={open.letter} onToggle={() => toggle("letter")}>
         <p className="text-[11px] text-slate-500">Every box shows what prints: the project and the <strong>Cover Page</strong> fill it. Type to change a line for this EOI; clear it to go back.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="space-y-0.5">
             <label htmlFor="eoi-date" className={lbl}>Date</label>
             <input id="eoi-date" type="date" value={value.date || ""} onChange={(e) => set("date", e.target.value)} disabled={!canEdit} className={inp} />
-            {!value.date && <p className="text-[10px] text-slate-400">Empty: today.</p>}
+            {!value.date && <p className="text-[9px] text-slate-400">Empty: today.</p>}
           </div>
           {field("solicitationNo", "Solicitation No.")}
           {field("projectTitle", "Project", { wide: true })}
@@ -158,7 +201,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
           {field("agency", "Announced by (office / agency)")}
           {field("recipientName", "Recipient")}
           {field("recipientTitle", "Recipient's title")}
-          <div className="space-y-1.5">
+          <div className="space-y-0.5">
             <label htmlFor="eoi-firm" className={lbl}>Submitted by</label>
             <select id="eoi-firm" value={value.firm || (d.jv ? "jv" : "gt")} onChange={(e) => set("firm", e.target.value as "gt" | "jv")} disabled={!canEdit} className={inp}>
               <option value="gt">GreenTech USA LLC</option>
@@ -211,7 +254,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
           <div className="rounded-xl bg-slate-50 px-3 py-2"><span className={lbl}>Address</span><p className="font-bold text-slate-700">{r.firmAddress || "-"}</p></div>
         </div>
         {r.jv && <p className="text-[10px] text-slate-400">The JV's legal name, UEI, address and combined logo come from Project Identity → Joint Venture.</p>}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {field("pocName", "Point of contact")}
           {field("pocPhone", "Telephone")}
           {field("pocEmail", "Email")}
@@ -220,7 +263,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
       </Part>
 
       <Part title="Signature and stamps" note={[r.signatory ? `Signed by ${r.signatory.name}${r.signatory.title ? `, ${r.signatory.title}` : ""}` : "No signer yet", chosenStamps.length ? `${chosenStamps.length} stamp${chosenStamps.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")} open={open.signature} onToggle={() => toggle("signature")}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="space-y-1.5">
               <label htmlFor="eoi-signer" className={lbl}>Signed by</label>
@@ -286,6 +329,8 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
           </div>
         </div>
       </Part>
+
+      </>}
 
       {/* CR 357 - the same actions at the bottom. */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
