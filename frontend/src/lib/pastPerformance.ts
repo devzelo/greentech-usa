@@ -1,5 +1,5 @@
-import type { ApiProject, ProposalSimilarProject } from "./api";
-import { projectCategories } from "./api";
+import type { ApiProject, ProposalSection, ProposalSimilarProject } from "./api";
+import { fetchProjects, projectCategories } from "./api";
 
 /**
  * Step 6 (items 100 to 102; spec 21 to 23): past performance, relevant experience and project
@@ -10,13 +10,15 @@ import { projectCategories } from "./api";
 /** Library sections that list our projects. */
 export const PROJECT_SECTION_KEYS = new Set(["past-performance", "relevant-experience", "project-references", "appx-experience-sheets"]);
 
-/** Project References print as one table (spec 23); the others as a summary table, then one data sheet per project. */
+/** Project References open with the reference table (spec 23), the others with a summary table. Both then print one page per project. */
 export const referencesOnly = (libraryKey?: string) => libraryKey === "project-references";
 
-/** The label on each data sheet: "Past Performance 1", "Relevant Experience 2", ... */
+/** The label on each project page, numbered "#1", "#2": "Past Performance #1", "Project Reference #2", ... */
 export function sheetLabel(builtin: boolean, libraryKey?: string): string {
   if (builtin || libraryKey === "past-performance") return "Past Performance";
   if (libraryKey === "relevant-experience") return "Relevant Experience";
+  if (libraryKey === "project-references") return "Project Reference";
+  if (libraryKey === "appx-experience-sheets") return "Relevant Project";
   return "Project";
 }
 
@@ -43,7 +45,8 @@ export function entryFromProject(p: ApiProject, prev?: ProposalSimilarProject): 
     projectId: p.id,
     name: p.name || "",
     client: p.clientInfo?.name || "",
-    value: p.value || "",
+    // A reader without the figures right gets the record with no value: keep the one already saved.
+    value: p.canSeeFigures === false ? prev?.value || "" : p.value || "",
     year: (p.endDate || start).slice(0, 4),
     summary: p.description || "",
     contractNo: p.contractNo || "",
@@ -58,9 +61,41 @@ export function entryFromProject(p: ApiProject, prev?: ProposalSimilarProject): 
     pocPhone: p.clientInfo?.phone || "",
     cpars: p.cpars || "",
     photo: prev?.photo && photos.includes(prev.photo) ? prev.photo : photos[0] || "",
+    scope: (p.scopeOfWork || []).map((x) => x.trim()).filter(Boolean),
     showValue: prev?.showValue,
     showPhoto: prev?.showPhoto,
   };
+}
+
+/**
+ * 2026-10-06 - "all data should come from the project information": an entry picked from our
+ * records prints what the record says when the proposal is built, so a change to the project's
+ * description or scope shows in every proposal that lists it. Only the per-proposal choices stay
+ * (photo, print value, print photo, order). A record no longer found prints the copy saved here.
+ */
+type WithProjects = { similarProjects?: ProposalSimilarProject[]; sections?: ProposalSection[] };
+export function withLiveProjects<T extends WithProjects>(c: T, pool: ApiProject[]): T {
+  if (!pool.length) return c;
+  const byId = new Map(pool.map((p) => [p.id, p]));
+  const live = (xs: ProposalSimilarProject[]) => xs.map((e) => {
+    const p = e.projectId ? byId.get(e.projectId) : undefined;
+    return p ? entryFromProject(p, e) : e;
+  });
+  return {
+    ...c,
+    ...(c.similarProjects ? { similarProjects: live(c.similarProjects) } : {}),
+    ...(c.sections ? { sections: c.sections.map((s) => (s.projects?.length ? { ...s, projects: live(s.projects) } : s)) } : {}),
+  };
+}
+
+/** True when any entry in the volume is linked to a project record. */
+export const hasLinkedProjects = (c: WithProjects) =>
+  [...(c.similarProjects || []), ...(c.sections || []).flatMap((s) => s.projects || [])].some((e) => !!e.projectId);
+
+/** The records a linked entry can point at: the open projects and the archived ones. */
+export async function linkedProjectPool(): Promise<ApiProject[]> {
+  const [open, archived] = await Promise.all([fetchProjects("all").catch(() => []), fetchProjects("archived").catch(() => [])]);
+  return [...open, ...archived];
 }
 
 export const blankEntry = (): ProposalSimilarProject => ({ id: uid(), name: "", client: "", value: "", year: "", summary: "", status: "Completed" });

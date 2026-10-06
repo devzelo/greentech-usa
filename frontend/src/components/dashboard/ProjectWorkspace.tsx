@@ -57,7 +57,7 @@ import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import SectionGroupTemplates from "./SectionGroupTemplates";
 import { makeZip } from "../../lib/zip";
-import { PROJECT_SECTION_KEYS, referencesOnly } from "../../lib/pastPerformance";
+import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
@@ -1655,9 +1655,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const buildProposalBlob = async (which: "technical" | "financial", withAttachments: boolean): Promise<Blob> => {
     if (!project || !id) throw new Error("Project not loaded.");
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
+    // 2026-10-06 - projects picked from our records print what their Project Info says now.
+    const pool = hasLinkedProjects(technical) || hasLinkedProjects(financial) ? await linkedProjectPool() : [];
+    const tech = withLiveProjects(technical, pool), fin = withLiveProjects(financial, pool);
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
-    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical, financial, logoUrl, resumes: teamResumes, requirements }, ctx);
+    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical: tech, financial: fin, logoUrl, resumes: teamResumes, requirements }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     // Item 104 / spec 6 - warn when a company document in the proposal has expired.
     {

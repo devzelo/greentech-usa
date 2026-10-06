@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, X, Check, ChevronUp, ChevronDown, RefreshCw, FolderSearch, Link2, Search, Loader2, ImageOff } from "lucide-react";
-import { fetchProjects, withFileToken, CONTRACT_TYPES, type ApiProject, type ProposalSimilarProject } from "../../lib/api";
-import { entryFromProject, blankEntry, projectTags, projectPhotos, periodOf } from "../../lib/pastPerformance";
-import { toast } from "../../lib/toast";
+import { Plus, Trash2, X, Check, ChevronUp, ChevronDown, FolderSearch, Link2, Search, Loader2, ImageOff, ExternalLink } from "lucide-react";
+import { withFileToken, CONTRACT_TYPES, type ApiProject, type ProposalSimilarProject } from "../../lib/api";
+import { entryFromProject, blankEntry, projectTags, projectPhotos, periodOf, linkedProjectPool } from "../../lib/pastPerformance";
 
 const inp = "w-full bg-white border border-slate-100 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
 const lbl = "text-[9px] font-bold text-slate-400 uppercase tracking-widest";
 
 /**
  * Step 6 (items 100 to 102): the projects in a Past Performance, Relevant Experience or Project
- * References section, picked from our own project records (filtered by category / nature), filled
- * from the record and editable here. `mode="references"` is the one-table layout (spec 23).
+ * References section, picked from our own project records (filtered by category / nature).
+ * 2026-10-06: a picked project stays linked to its Project Info, which is what prints (one page per
+ * project); only the photo, the value and the order are chosen here. Typed-in projects are edited
+ * here. `mode="references"` opens with the reference table (spec 23) instead of the summary table.
  */
 export default function ProposalProjectsEditor({ title, items, onChange, canEdit, currentProjectId, mode, onAddLetters, lettersAdded }: {
   title: string;
@@ -27,11 +28,12 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
   const [tag, setTag] = useState("");
   const [q, setQ] = useState("");
 
-  // The project list is needed for the picker, photo choices and Refresh.
+  // The project list is needed for the picker and to show the linked projects as they are now
+  // (archived ones too, as the print reads them).
   const needPool = pickerOpen || items.some((e) => !!e.projectId);
   useEffect(() => {
     if (!needPool || pool) return;
-    fetchProjects("all").then(setPool).catch(() => setPool([]));
+    linkedProjectPool().then(setPool).catch(() => setPool([]));
   }, [needPool, pool]);
   const byId = useMemo(() => new Map((pool || []).map((p) => [p.id, p])), [pool]);
 
@@ -43,12 +45,6 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
     [next[i], next[j]] = [next[j], next[i]];
     onChange(next);
   };
-  const refresh = (i: number) => {
-    const p = byId.get(items[i].projectId || "");
-    if (!p) { toast("That project record is no longer available.", "error"); return; }
-    onChange(items.map((e, k) => (k === i ? entryFromProject(p, e) : e)));
-    toast(`Refreshed from the "${p.name}" record.`, "success");
-  };
   const toggleProject = (p: ApiProject) => {
     const at = items.findIndex((e) => e.projectId === p.id);
     onChange(at >= 0 ? items.filter((_, k) => k !== at) : [...items, entryFromProject(p)]);
@@ -56,7 +52,7 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
 
   // Candidates: every other project that is not a draft, finished work first, newest first.
   const candidates = useMemo(() => (pool || [])
-    .filter((p) => p.id !== currentProjectId && p.status !== "Draft")
+    .filter((p) => p.id !== currentProjectId && p.status !== "Draft" && !p.archived)
     .sort((a, b) => Number(["Completed", "Closed", "Warranty"].includes(b.status)) - Number(["Completed", "Closed", "Warranty"].includes(a.status))
       || (b.endDate || b.startDate || "").localeCompare(a.endDate || a.startDate || "")), [pool, currentProjectId]);
   const tagCounts = useMemo(() => {
@@ -74,8 +70,8 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
         <div>
           <h4 className="font-bold text-slate-800 text-sm">{title}</h4>
           <p className="text-[11px] text-slate-400">
-            {sheets ? "Prints a summary table, then a one-page data sheet for each project." : "Prints one reference table: project, client, contract number, value, dates, point of contact and location."}
-            {" "}Pick the 3 to 5 most relevant projects.
+            {sheets ? "Prints a summary table" : "Prints a reference table (project, client, contract number, value, dates, point of contact and location)"}
+            , then one page per project, numbered #1, #2, #3. Pick the 3 to 5 most relevant projects.
           </p>
         </div>
         {canEdit && (
@@ -90,18 +86,24 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
 
       {items.map((e, i) => {
         const rec = e.projectId ? byId.get(e.projectId) : undefined;
+        const linked = !!e.projectId;
+        // A linked entry shows, and prints, the record as it is now (withLiveProjects at print time).
+        const v = rec ? entryFromProject(rec, e) : e;
+        const missing = linked && pool !== null && !rec;
         const photos = rec ? projectPhotos(rec) : e.photo ? [e.photo] : [];
+        const scope = v.scope || [];
         return (
           <div key={e.id} className="rounded-2xl border border-slate-100 p-4 space-y-2.5 bg-slate-50/50">
             <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-              <input value={e.name} onChange={(ev) => set(i, { name: ev.target.value })} disabled={!canEdit} placeholder="Project name" className={`${inp} text-sm font-bold`} />
-              {e.projectId
-                ? <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600" title="Filled from our project record"><Link2 size={11} /> Record</span>
+              {linked
+                ? <p className="flex-1 min-w-0 px-1 text-sm font-bold text-slate-800 truncate">{v.name || "Untitled project"}</p>
+                : <input value={e.name} onChange={(ev) => set(i, { name: ev.target.value })} disabled={!canEdit} placeholder="Project name" className={`${inp} text-sm font-bold`} />}
+              {linked
+                ? <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600" title="Printed from the project's Project Info"><Link2 size={11} /> Linked to Project Info</span>
                 : <span className="shrink-0 text-[10px] font-bold text-slate-400">Typed in</span>}
               {canEdit && (
                 <div className="flex items-center shrink-0">
-                  {e.projectId && <button onClick={() => refresh(i)} title="Refresh from the project record (replaces the fields below)" className="p-1.5 rounded text-slate-400 hover:text-primary"><RefreshCw size={13} /></button>}
                   <button onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="p-1.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronUp size={14} /></button>
                   <button onClick={() => move(i, 1)} disabled={i === items.length - 1} aria-label="Move down" className="p-1.5 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ChevronDown size={14} /></button>
                   <button onClick={() => onChange(items.filter((_, k) => k !== i))} aria-label="Remove" className="p-1.5 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
@@ -109,75 +111,127 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <label className="space-y-0.5"><span className={lbl}>Client / agency</span><input value={e.client} onChange={(ev) => set(i, { client: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>Location</span><input value={e.location || ""} onChange={(ev) => set(i, { location: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>Contract no.</span><input value={e.contractNo || ""} onChange={(ev) => set(i, { contractNo: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>Start</span><input value={e.start || ""} onChange={(ev) => set(i, { start: ev.target.value })} disabled={!canEdit} placeholder="yyyy-mm" className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>End</span><input value={e.end || ""} onChange={(ev) => set(i, { end: ev.target.value })} disabled={!canEdit} placeholder="yyyy-mm, blank if ongoing" className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>Status</span>
-                <select value={e.status || "Completed"} onChange={(ev) => set(i, { status: ev.target.value })} disabled={!canEdit} className={inp}>
-                  <option value="Completed">Completed</option>
-                  <option value="Ongoing">Ongoing</option>
-                </select>
-              </label>
-              <label className="space-y-0.5"><span className={lbl}>Contract value</span>
-                <div className="flex items-center gap-2">
-                  <input value={e.value} onChange={(ev) => set(i, { value: ev.target.value })} disabled={!canEdit} className={inp} />
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 shrink-0" title="Item 100: the total amount is optional">
-                    <input type="checkbox" checked={e.showValue !== false} onChange={(ev) => set(i, { showValue: ev.target.checked })} disabled={!canEdit} className="rounded" /> Print
-                  </span>
-                </div>
-              </label>
-              <label className="space-y-0.5"><span className={lbl}>Contract type</span>
-                <input value={e.contractType || ""} onChange={(ev) => set(i, { contractType: ev.target.value })} disabled={!canEdit} list="pp-contract-types" className={inp} />
-              </label>
-              <label className="space-y-0.5"><span className={lbl}>Work type</span><input value={e.workType || ""} onChange={(ev) => set(i, { workType: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <label className="space-y-0.5"><span className={lbl}>Client point of contact</span><input value={e.poc || ""} onChange={(ev) => set(i, { poc: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>POC email</span><input value={e.pocEmail || ""} onChange={(ev) => set(i, { pocEmail: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>POC phone</span><input value={e.pocPhone || ""} onChange={(ev) => set(i, { pocPhone: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-              <label className="space-y-0.5"><span className={lbl}>CPARS / evaluation</span>
-                <select value={e.cpars || ""} onChange={(ev) => set(i, { cpars: ev.target.value })} disabled={!canEdit} className={inp}>
-                  <option value="">Not stated</option>
-                  <option value="Yes">Yes, on file</option>
-                  <option value="Pending">Pending</option>
-                  <option value="No">No</option>
-                </select>
-              </label>
-            </div>
-
-            {sheets && (
+            {linked ? (
               <>
-                {/* Item 100 - "an optional picture": from the project's own gallery. */}
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3">
-                    <span className={lbl}>Photo</span>
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                      <input type="checkbox" checked={e.showPhoto !== false} onChange={(ev) => set(i, { showPhoto: ev.target.checked })} disabled={!canEdit || !e.photo} className="rounded" /> Print the photo
-                    </span>
+                <p className="text-[11px] text-slate-400">
+                  {missing
+                    ? "This project record is no longer available. The copy saved with the proposal prints."
+                    : <>Everything below comes from the project's Project Info and prints as it is when the proposal is built. To change it, edit the project.{" "}
+                        <a href={`/dashboard/projects/${encodeURIComponent(e.projectId || "")}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">Open project <ExternalLink size={10} /></a></>}
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2">
+                  {([
+                    ["Client / agency", v.client], ["Location", v.location], ["Contract no.", v.contractNo],
+                    ["Period of performance", periodOf(v)], ["Status", v.status], ["Contract type", v.contractType],
+                    ["Work type", v.workType], ["CPARS / evaluation", v.cpars === "Yes" ? "Yes, on file" : v.cpars],
+                    ["Client point of contact", [v.poc, v.pocEmail, v.pocPhone].filter(Boolean).join(" · ")],
+                  ] as Array<[string, string | undefined]>).map(([l, val]) => (
+                    <div key={l} className="min-w-0">
+                      <p className={lbl}>{l}</p>
+                      <p className="text-xs font-medium text-slate-700 break-words">{val?.trim() || "-"}</p>
+                    </div>
+                  ))}
+                  <div className="min-w-0">
+                    <p className={lbl}>Contract value</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-medium text-slate-700">{v.value?.trim() || "-"}</p>
+                      <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500" title="Item 100: the total amount is optional">
+                        <input type="checkbox" checked={e.showValue !== false} onChange={(ev) => set(i, { showValue: ev.target.checked })} disabled={!canEdit} className="rounded" /> Print
+                      </label>
+                    </div>
                   </div>
-                  {photos.length === 0
-                    ? <p className="text-[11px] text-slate-400 flex items-center gap-1"><ImageOff size={12} /> {e.projectId ? "This project has no photos. Add them in its Showcase gallery." : "Only projects from our records bring photos."}</p>
+                </div>
+                <div>
+                  <p className={lbl}>Description of work</p>
+                  <p className="text-xs text-slate-600 whitespace-pre-line line-clamp-4">{v.summary?.trim() || "No description in Project Info yet."}</p>
+                </div>
+                <div>
+                  <p className={lbl}>Key scope of work</p>
+                  {scope.length === 0
+                    ? <p className="text-xs text-slate-400">No key scope in Project Info yet (About This Project).</p>
                     : (
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {photos.map((url) => (
-                          <button key={url} type="button" disabled={!canEdit} onClick={() => set(i, { photo: url, showPhoto: true })}
-                            className={`relative shrink-0 w-24 h-16 rounded-lg overflow-hidden border-2 ${e.photo === url ? "border-primary" : "border-transparent opacity-70 hover:opacity-100"}`}>
-                            <img src={withFileToken(url)} alt="" className="w-full h-full object-cover" />
-                            {e.photo === url && <span className="absolute top-1 right-1 bg-primary text-white rounded-full p-0.5"><Check size={9} /></span>}
-                          </button>
-                        ))}
-                      </div>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 text-xs text-slate-600 list-disc pl-4">
+                        {scope.slice(0, 8).map((line, k) => <li key={k}>{line}</li>)}
+                        {scope.length > 8 && <li className="list-none -ml-4 text-slate-400">and {scope.length - 8} more</li>}
+                      </ul>
                     )}
                 </div>
-                <label className="block space-y-0.5"><span className={lbl}>Description of the work (printed on the data sheet)</span>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <label className="space-y-0.5"><span className={lbl}>Client / agency</span><input value={e.client} onChange={(ev) => set(i, { client: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>Location</span><input value={e.location || ""} onChange={(ev) => set(i, { location: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>Contract no.</span><input value={e.contractNo || ""} onChange={(ev) => set(i, { contractNo: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>Start</span><input value={e.start || ""} onChange={(ev) => set(i, { start: ev.target.value })} disabled={!canEdit} placeholder="yyyy-mm" className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>End</span><input value={e.end || ""} onChange={(ev) => set(i, { end: ev.target.value })} disabled={!canEdit} placeholder="yyyy-mm, blank if ongoing" className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>Status</span>
+                    <select value={e.status || "Completed"} onChange={(ev) => set(i, { status: ev.target.value })} disabled={!canEdit} className={inp}>
+                      <option value="Completed">Completed</option>
+                      <option value="Ongoing">Ongoing</option>
+                    </select>
+                  </label>
+                  <label className="space-y-0.5"><span className={lbl}>Contract value</span>
+                    <div className="flex items-center gap-2">
+                      <input value={e.value} onChange={(ev) => set(i, { value: ev.target.value })} disabled={!canEdit} className={inp} />
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 shrink-0" title="Item 100: the total amount is optional">
+                        <input type="checkbox" checked={e.showValue !== false} onChange={(ev) => set(i, { showValue: ev.target.checked })} disabled={!canEdit} className="rounded" /> Print
+                      </span>
+                    </div>
+                  </label>
+                  <label className="space-y-0.5"><span className={lbl}>Contract type</span>
+                    <input value={e.contractType || ""} onChange={(ev) => set(i, { contractType: ev.target.value })} disabled={!canEdit} list="pp-contract-types" className={inp} />
+                  </label>
+                  <label className="space-y-0.5"><span className={lbl}>Work type</span><input value={e.workType || ""} onChange={(ev) => set(i, { workType: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  <label className="space-y-0.5"><span className={lbl}>Client point of contact</span><input value={e.poc || ""} onChange={(ev) => set(i, { poc: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>POC email</span><input value={e.pocEmail || ""} onChange={(ev) => set(i, { pocEmail: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>POC phone</span><input value={e.pocPhone || ""} onChange={(ev) => set(i, { pocPhone: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  <label className="space-y-0.5"><span className={lbl}>CPARS / evaluation</span>
+                    <select value={e.cpars || ""} onChange={(ev) => set(i, { cpars: ev.target.value })} disabled={!canEdit} className={inp}>
+                      <option value="">Not stated</option>
+                      <option value="Yes">Yes, on file</option>
+                      <option value="Pending">Pending</option>
+                      <option value="No">No</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block space-y-0.5"><span className={lbl}>Description of work</span>
                   <textarea value={e.summary} onChange={(ev) => set(i, { summary: ev.target.value })} disabled={!canEdit} rows={3} className={`${inp} resize-y`} />
+                </label>
+                <label className="block space-y-0.5"><span className={lbl}>Key scope of work (one per line)</span>
+                  <textarea value={(e.scope || []).join("\n")} disabled={!canEdit} rows={3} className={`${inp} resize-y`}
+                    onChange={(ev) => set(i, { scope: ev.target.value.split("\n").map((l) => l.replace(/^[-*\u2022]\s*/, "")) })}
+                    onBlur={(ev) => set(i, { scope: ev.target.value.split("\n").map((l) => l.replace(/^[-*\u2022]\s*/, "").trim()).filter(Boolean) })} />
                 </label>
               </>
             )}
+
+            {/* Item 100 - "an optional picture": from the project's own gallery, beside the information table. */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-3">
+                <span className={lbl}>Photo</span>
+                <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                  <input type="checkbox" checked={e.showPhoto !== false} onChange={(ev) => set(i, { showPhoto: ev.target.checked })} disabled={!canEdit || !v.photo} className="rounded" /> Print the photo
+                </span>
+              </div>
+              {photos.length === 0
+                ? <p className="text-[11px] text-slate-400 flex items-center gap-1"><ImageOff size={12} /> {linked ? "This project has no photos. Add them in its Showcase gallery." : "Only projects from our records bring photos."}</p>
+                : (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {photos.map((url) => (
+                      <button key={url} type="button" disabled={!canEdit} onClick={() => set(i, { photo: url, showPhoto: true })}
+                        className={`relative shrink-0 w-24 h-16 rounded-lg overflow-hidden border-2 ${v.photo === url ? "border-primary" : "border-transparent opacity-70 hover:opacity-100"}`}>
+                        <img src={withFileToken(url)} alt="" className="w-full h-full object-cover" />
+                        {v.photo === url && <span className="absolute top-1 right-1 bg-primary text-white rounded-full p-0.5"><Check size={9} /></span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </div>
           </div>
         );
       })}

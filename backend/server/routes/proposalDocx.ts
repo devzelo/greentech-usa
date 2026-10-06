@@ -6,7 +6,7 @@ import Resume from "../models/Resume";
 import SubResume from "../models/SubResume";
 import User from "../models/User";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { tabAccessGuard } from "../lib/access";
+import { tabAccessGuard, canSeeFigures } from "../lib/access";
 import { brandedSection } from "../lib/docxBrand";
 
 // The proposal as a Word file, in step with the PDF: the section layout of either volume (numbering,
@@ -26,6 +26,7 @@ interface Sub { id?: string; heading?: string; body?: string }
 interface PP {
   name?: string; client?: string; value?: string; year?: string; summary?: string; contractNo?: string; start?: string; end?: string;
   status?: string; location?: string; contractType?: string; workType?: string; poc?: string; pocEmail?: string; pocPhone?: string; cpars?: string; showValue?: boolean;
+  projectId?: string; scope?: string[];
 }
 interface Sec { id: string; heading?: string; body?: string; attachments?: Att[]; subsections?: Sub[]; projects?: PP[] }
 interface SecMeta { id: string; kind: string; refId?: string; title: string; hidden?: boolean; appendix?: boolean; pageType?: string; libraryKey?: string; divider?: boolean }
@@ -193,46 +194,115 @@ function pricingBlocks(f: Fin): Block[] {
   return out;
 }
 
-/** Past performance / relevant experience: summary table, then each project; references: one table. */
+/** A two-column "label | value" table: the project information on a project page. */
+function infoTable(rows: Array<[string, string]>): Table {
+  const cell = (text: string, label: boolean) => new TableCell({
+    width: { size: label ? 32 : 68, type: WidthType.PERCENTAGE },
+    shading: label ? { type: ShadingType.CLEAR, color: "auto", fill: "F8FAFC" } : undefined,
+    children: text.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: "Calibri", bold: label, size: 19 })] })),
+  });
+  return table([
+    new TableRow({ tableHeader: true, children: [tcell("PROJECT INFORMATION", { head: true, span: 2 })] }),
+    ...rows.map(([k, v]) => new TableRow({ children: [cell(k, true), cell(v, false)] })),
+  ]);
+}
+
+/**
+ * Past performance, relevant experience and references: the summary (or reference) table, then one
+ * page per project, "Past Performance #1": the information table, the description of work and the
+ * key scope of work, as the PDF prints them.
+ */
 function projectBlocks(items: PP[], label: string, referencesOnly: boolean): Block[] {
   const shown = (e: PP) => (e.showValue !== false && e.value?.trim() ? e.value.trim() : "");
-  if (referencesOnly) {
-    return [table([
-      headRow(["Project", "Agency / client", "Contract no.", "Value", "Dates", "Point of contact", "Location"]),
-      ...items.map((e) => new TableRow({ children: [
-        tcell(e.name || "-", { bold: true }), tcell(e.client || "-"), tcell(e.contractNo || "-"), tcell(shown(e) || "-"),
-        tcell(periodOf(e) || "-"), tcell([e.poc, e.pocEmail, e.pocPhone].filter(Boolean).join(", ") || "-"), tcell(e.location || "-"),
-      ] })),
-    ])];
-  }
-  const out: Block[] = [table([
-    headRow(["No.", "Project", "Client", "Location", "Contract no.", "Period", "Value"], [false, false, false, false, false, false, true]),
-    ...items.map((e, i) => new TableRow({ children: [
-      tcell(String(i + 1)), tcell(e.name || "-", { bold: true }), tcell(e.client || "-"), tcell(e.location || "-"), tcell(e.contractNo || "-"),
-      tcell(`${periodOf(e) || "-"}${e.status ? ` (${e.status})` : ""}`), tcell(shown(e) || "-", { right: true }),
-    ] })),
-  ])];
+  const out: Block[] = [referencesOnly
+    ? table([
+        headRow(["Project", "Agency / client", "Contract no.", "Value", "Dates", "Point of contact", "Location"]),
+        ...items.map((e) => new TableRow({ children: [
+          tcell(e.name || "-", { bold: true }), tcell(e.client || "-"), tcell(e.contractNo || "-"), tcell(shown(e) || "-"),
+          tcell(periodOf(e) || "-"), tcell([e.poc, e.pocEmail, e.pocPhone].filter(Boolean).join(", ") || "-"), tcell(e.location || "-"),
+        ] })),
+      ])
+    : table([
+        headRow(["No.", "Project", "Client", "Location", "Contract no.", "Period", "Value"], [false, false, false, false, false, false, true]),
+        ...items.map((e, i) => new TableRow({ children: [
+          tcell(String(i + 1)), tcell(e.name || "-", { bold: true }), tcell(e.client || "-"), tcell(e.location || "-"), tcell(e.contractNo || "-"),
+          tcell(`${periodOf(e) || "-"}${e.status ? ` (${e.status})` : ""}`), tcell(shown(e) || "-", { right: true }),
+        ] })),
+      ])];
   items.forEach((e, i) => {
-    out.push(h3(`${label} ${i + 1}: ${e.name || "Untitled project"}`));
-    out.push(kvLine("Client", e.client));
-    out.push(kvLine("Location", e.location));
-    out.push(kvLine("Contract no.", e.contractNo));
-    if (e.contractType) out.push(kvLine("Contract type", e.contractType));
-    if (e.workType) out.push(kvLine("Work type", e.workType));
-    out.push(kvLine("Period of performance", periodOf(e)));
-    if (e.status) out.push(kvLine("Status", e.status));
-    if (shown(e)) out.push(kvLine("Contract value", shown(e)));
-    if (e.cpars) out.push(kvLine("CPARS / evaluation", e.cpars === "Yes" ? "Yes, on file" : e.cpars));
-    const poc = [e.poc, e.pocEmail, e.pocPhone].filter(Boolean).join(", ");
-    if (poc) out.push(kvLine("Client point of contact", poc));
-    for (const para of (e.summary || "").split(/\n+/).map((x) => x.trim()).filter(Boolean)) out.push(p(para));
+    out.push(new Paragraph({ pageBreakBefore: true, spacing: { after: 40 }, children: [new TextRun({ text: `${label} #${i + 1}`.toUpperCase(), font: "Calibri", bold: true, size: 19, color: "10B981" })] }));
+    out.push(new Paragraph({ heading: HeadingLevel.HEADING_3, spacing: { after: 120 }, children: [new TextRun({ text: e.name || "Untitled project", font: "Calibri", bold: true, size: 28, color: "0F172A" })] }));
+    const rows = ([
+      ["Client / Agency", e.client], ["Location", e.location], ["Contract No.", e.contractNo], ["Contract Type", e.contractType],
+      ["Work Type", e.workType], ["Period of Performance", periodOf(e)], ["Status", e.status], ["Contract Value", shown(e)],
+      ["CPARS / Evaluation", e.cpars === "Yes" ? "Yes, on file" : e.cpars],
+      ["Client Point of Contact", [e.poc, e.pocEmail, e.pocPhone].map((x) => x?.trim()).filter(Boolean).join("\n")],
+    ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim()) as Array<[string, string]>;
+    if (rows.length) out.push(infoTable(rows));
+    const paras = (e.summary || "").split(/\n+/).map((x) => x.trim()).filter(Boolean);
+    if (paras.length) { out.push(h3("Description of Work")); for (const para of paras) out.push(p(para)); }
+    const scope = (e.scope || []).map((x) => String(x || "").trim()).filter(Boolean);
+    if (scope.length) { out.push(h3("Key Scope of Work")); for (const line of scope) out.push(p(`•  ${line}`)); }
   });
   return out;
 }
 
 const STATUS_LABEL: Record<string, string> = { compliant: "Compliant", partial: "Partially compliant", "not-addressed": "Not yet addressed", "n/a": "Not applicable" };
 const PROJECT_KEYS = new Set(["past-performance", "relevant-experience", "project-references", "appx-experience-sheets"]);
-const sheetLabel = (builtin: boolean, key?: string) => (builtin || key === "past-performance" ? "Past Performance" : key === "relevant-experience" ? "Relevant Experience" : "Project");
+const sheetLabel = (builtin: boolean, key?: string) => (builtin || key === "past-performance" ? "Past Performance"
+  : key === "relevant-experience" ? "Relevant Experience" : key === "project-references" ? "Project Reference"
+  : key === "appx-experience-sheets" ? "Relevant Project" : "Project");
+
+// 2026-10-06 - "all data should come from the project information": an entry picked from our records
+// prints what the record says now, as the PDF does (frontend lib/pastPerformance.ts entryFromProject).
+// Only the per-proposal choices are kept (print value, order); a record not found prints the saved copy.
+const DONE = new Set(["Completed", "Closed", "Warranty"]);
+interface LinkedRec {
+  projectId?: string; name?: string; value?: string; description?: string; contractNo?: string; startDate?: string; contractDate?: string;
+  endDate?: string; status?: string; location?: string; contractType?: string; cpars?: string; scopeOfWork?: string[];
+  category?: string; categories?: string[]; projectNature?: { selected?: string[] };
+  clientInfo?: { name?: string; contactName?: string; email?: string; phone?: string };
+  ownerId?: unknown; figuresAccess?: Record<string, boolean> | null;
+}
+function liveEntry(r: LinkedRec, prev: PP, figures: boolean): PP {
+  const start = r.startDate || r.contractDate || "";
+  const cats = r.categories?.length ? r.categories : r.category ? [r.category] : [];
+  return {
+    ...prev,
+    name: r.name || "", client: r.clientInfo?.name || "", value: figures ? r.value || "" : prev.value || "",
+    year: (r.endDate || start).slice(0, 4), summary: r.description || "", contractNo: r.contractNo || "",
+    start, end: r.endDate || "", status: DONE.has(r.status || "") ? "Completed" : "Ongoing",
+    location: r.location || "", contractType: r.contractType || "",
+    workType: [...new Set([...cats, ...(r.projectNature?.selected || [])].filter(Boolean))].join(", "),
+    poc: r.clientInfo?.contactName || "", pocEmail: r.clientInfo?.email || "", pocPhone: r.clientInfo?.phone || "",
+    cpars: r.cpars || "", scope: (r.scopeOfWork || []).map((x) => String(x || "").trim()).filter(Boolean),
+  };
+}
+async function withLiveProjects(pc: PContent, userId: string, role: string): Promise<PContent> {
+  const t = pc.technical, f = pc.financial;
+  const all = [...(t?.similarProjects || []), ...(t?.sections || []).flatMap((s) => s.projects || []), ...(f?.sections || []).flatMap((s) => s.projects || [])];
+  const ids = [...new Set(all.map((e) => e.projectId).filter((x): x is string => typeof x === "string" && !!x))];
+  if (!ids.length) return pc;
+  // Only the records the requester could list themselves (GET /api/projects): a guest their own
+  // open projects; staff every project except other people's drafts.
+  const visible: Record<string, unknown> = role === "subcontractor"
+    ? { "guests.userId": userId, status: { $ne: "Draft" }, archived: { $ne: true } }
+    : { $or: [{ status: { $ne: "Draft" } }, { ownerId: userId }] };
+  const recs = await Project.find({ projectId: { $in: ids }, ...visible })
+    .select("projectId name value description contractNo startDate contractDate endDate status location contractType cpars scopeOfWork category categories projectNature clientInfo ownerId figuresAccess")
+    .lean() as LinkedRec[];
+  const byId = new Map(recs.map((r) => [String(r.projectId), r]));
+  const live = (xs?: PP[]) => xs?.map((e) => {
+    const r = e.projectId ? byId.get(e.projectId) : undefined;
+    return r ? liveEntry(r, e, canSeeFigures(r, userId, role)) : e;
+  });
+  const secs = (ss?: Sec[]) => ss?.map((s) => (s.projects?.length ? { ...s, projects: live(s.projects) } : s));
+  return {
+    ...pc,
+    ...(t ? { technical: { ...t, similarProjects: live(t.similarProjects), sections: secs(t.sections) } } : {}),
+    ...(f ? { financial: { ...f, sections: secs(f.sections) } } : {}),
+  };
+}
 
 export type ResumeLite = { title?: string; citizenship?: string; yearsOfExperience?: string; subcontractorName?: string };
 
@@ -392,7 +462,7 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const kind = req.query.kind === "financial" ? "financial" : "technical";
     const project = await Project.findOne({ projectId: req.params.id }).lean();
     if (!project) return res.status(404).json({ error: "Project not found." });
-    const pc = ((project as { proposalContent?: PContent }).proposalContent || {}) as PContent;
+    const pc = await withLiveProjects(((project as { proposalContent?: PContent }).proposalContent || {}) as PContent, req.user!.userId, req.user!.role);
 
     // Key staff: blank cells take the person's resume, as in the PDF.
     const emps = kind === "financial" ? [] : pc.technical?.employees || [];

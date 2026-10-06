@@ -258,7 +258,8 @@ export interface ProposalEmployee {
 export interface ProposalSimilarProject {
   id: string; name: string; client: string; value: string; year: string; summary: string;
   // Step 6 (item 100, spec 21-23): filled from our own project record (spec 6: linked records, not
-  // free text) and editable per proposal. "Refresh" re-reads the record.
+  // free text). 2026-10-06: an entry with a projectId prints what the record says at print time
+  // (lib/pastPerformance.ts withLiveProjects); only the typed-in entries are edited here.
   projectId?: string;
   contractNo?: string;
   start?: string; end?: string;          // period of performance (yyyy-mm-dd or yyyy-mm)
@@ -269,6 +270,7 @@ export interface ProposalSimilarProject {
   poc?: string; pocEmail?: string; pocPhone?: string;   // client point of contact
   cpars?: string;                        // "Yes" | "No" | "Pending" | ""
   photo?: string;
+  scope?: string[];                      // 2026-10-06 - key scope of work, from the project's About This Project
   showValue?: boolean;                   // item 100 - "total amount (optional)"; default shown
   showPhoto?: boolean;                   // default shown when there is a photo
 }

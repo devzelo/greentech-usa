@@ -112,22 +112,28 @@ const styles = StyleSheet.create({
   // Step 6 - project tables and data sheets (the company profile's featured-project style)
   ppTh: { fontSize: 6.4, paddingVertical: 5, paddingHorizontal: 4 },
   ppTd: { fontSize: 7.4, paddingVertical: 5, paddingHorizontal: 4, lineHeight: 1.35 },
+  // 2026-10-06 - one page per project: the information table on the left, a photo on the right,
+  // then the description of work and the key scope (the client's reference layout).
   ppHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 },
-  ppTitle: { fontFamily: "Outfit", fontSize: 16, fontWeight: 700, color: BRAND.slate, lineHeight: 1.2, flex: 1, paddingRight: 14 },
-  ppSide: { alignItems: "flex-end" },
-  ppValue: { fontFamily: "Outfit", fontSize: 13, fontWeight: 700, color: BRAND.emerald, lineHeight: 1.2 },
-  ppPill: { marginTop: 4, paddingVertical: 2.5, paddingHorizontal: 6, borderRadius: 4, backgroundColor: "#ECFDF5" },
+  ppTitle: { fontFamily: "Outfit", fontSize: 15, fontWeight: 700, color: BRAND.slate, lineHeight: 1.2, flex: 1, paddingRight: 14 },
+  ppPill: { marginTop: 3, paddingVertical: 2.5, paddingHorizontal: 6, borderRadius: 4, backgroundColor: "#ECFDF5" },
   ppPillOngoing: { backgroundColor: "#EFF6FF" },
   ppPillText: { fontSize: 6.8, fontWeight: 700, letterSpacing: 0.8, color: "#047857", lineHeight: 1.2 },
   ppPillTextOngoing: { color: "#1D4ED8" },
-  ppPhoto: { width: "100%", height: 200, objectFit: "cover", borderRadius: 8, marginBottom: 12 },
-  ppFacts: { flexDirection: "row", flexWrap: "wrap", borderTop: `0.8 solid ${BRAND.border}`, marginBottom: 12 },
-  ppFact: { width: "50%", paddingVertical: 6, paddingRight: 10, borderBottom: `0.8 solid ${BRAND.border}` },
-  ppFactLabel: { fontSize: 6.4, fontWeight: 700, color: BRAND.s400, letterSpacing: 0.9, lineHeight: 1.3 },
-  ppFactValue: { fontSize: 9, color: BRAND.slate, fontWeight: 500, marginTop: 2, lineHeight: 1.35 },
-  ppPoc: { backgroundColor: BRAND.mist, borderLeft: `3 solid ${BRAND.emerald}`, borderRadius: 6, padding: 10, marginBottom: 12 },
-  ppPocName: { fontSize: 10, fontWeight: 700, color: BRAND.slate, marginTop: 3, lineHeight: 1.3 },
-  ppPocLine: { fontSize: 8.5, color: BRAND.s600, marginTop: 2, lineHeight: 1.3 },
+  ppTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  ppInfo: { flex: 1, border: `0.8 solid ${BRAND.border}` },
+  ppInfoHead: { backgroundColor: BRAND.slate, paddingVertical: 5, paddingHorizontal: 7 },
+  ppInfoHeadText: { fontSize: 7, fontWeight: 700, color: BRAND.white, letterSpacing: 1, lineHeight: 1.2 },
+  ppRow: { flexDirection: "row", borderTop: `0.6 solid ${BRAND.border}` },
+  ppRowLabel: { width: "38%", backgroundColor: BRAND.mist, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 7.4, fontWeight: 700, color: BRAND.s600, lineHeight: 1.3 },
+  ppRowValue: { flex: 1, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 8, color: BRAND.slate, lineHeight: 1.35 },
+  ppPhotoBox: { width: "38%", marginLeft: 14 },
+  ppPhoto: { width: "100%", height: 170, objectFit: "cover", borderRadius: 6 },
+  ppSecHead: { flexDirection: "row", alignItems: "center", marginTop: 4, marginBottom: 6, paddingBottom: 3, borderBottom: `0.8 solid ${BRAND.border}` },
+  ppSecBar: { width: 3, height: 10, backgroundColor: BRAND.emerald, borderRadius: 1, marginRight: 6 },
+  ppSecText: { fontSize: 8.5, fontWeight: 700, color: BRAND.slate, letterSpacing: 0.8, lineHeight: 1.2 },
+  ppScope: { flexDirection: "row", flexWrap: "wrap", marginBottom: 6 },
+  ppScopeItem: { width: "50%", flexDirection: "row", paddingRight: 10, marginBottom: 3 },
   totalRow: { flexDirection: "row", marginTop: 8, justifyContent: "flex-end" },
   totalBox: { backgroundColor: BRAND.mist, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 16, borderLeft: `3 solid ${BRAND.emerald}` },
   totalLabel: { fontSize: 7.5, color: BRAND.s500, letterSpacing: 1 },
@@ -644,52 +650,79 @@ function ProjectReferencesTable({ items }: { items: ProposalSimilarProject[] }) 
 }
 
 /** Item 100 - one project's data sheet: the expanded page after the summary table. */
+/** A small heading on the project page: an emerald tick, spaced caps and a rule. */
+function PpHeading({ children }: { children: string }) {
+  return (
+    <View style={styles.ppSecHead} minPresenceAhead={40}>
+      <View style={styles.ppSecBar} />
+      <Text style={styles.ppSecText}>{children}</Text>
+    </View>
+  );
+}
+
+/** One project, one page: "Past Performance #1", the information table beside a photo, then the
+ *  description of work and the key scope of work. Linked entries arrive already refreshed from the
+ *  project record (withLiveProjects). */
 function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: string }) {
   const photo = e.showPhoto !== false && e.photo ? abs(e.photo) : "";
-  const value = shownValue(e);
-  const facts = ([
-    ["CLIENT", e.client], ["LOCATION", e.location], ["CONTRACT NO.", e.contractNo], ["CONTRACT TYPE", e.contractType],
-    ["WORK TYPE", e.workType], ["PERIOD OF PERFORMANCE", periodOf(e)], ["STATUS", e.status],
-    ["CONTRACT VALUE", value], ["CPARS / EVALUATION", e.cpars === "Yes" ? "Yes, on file" : e.cpars],
+  const poc = [e.poc, e.pocEmail, e.pocPhone].map((x) => x?.trim()).filter(Boolean).join("\n");
+  const rows = ([
+    ["Client / Agency", e.client], ["Location", e.location], ["Contract No.", e.contractNo], ["Contract Type", e.contractType],
+    ["Work Type", e.workType], ["Period of Performance", periodOf(e)], ["Status", e.status],
+    ["Contract Value", shownValue(e)], ["CPARS / Evaluation", e.cpars === "Yes" ? "Yes, on file" : e.cpars],
+    ["Client Point of Contact", poc],
   ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim());
   const paras = (e.summary || "").split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  const scope = (e.scope || []).map((x) => x.trim()).filter(Boolean);
   const ongoing = e.status === "Ongoing";
   return (
     <View>
       <Eyebrow>{label.toUpperCase()}</Eyebrow>
       <View style={styles.ppHead}>
         <Text style={styles.ppTitle}>{e.name || "Untitled project"}</Text>
-        <View style={styles.ppSide}>
-          {!!value && <Text style={styles.ppValue}>{value}</Text>}
-          {!!e.status && (
-            <View style={[styles.ppPill, ongoing ? styles.ppPillOngoing : {}]}>
-              <Text style={[styles.ppPillText, ongoing ? styles.ppPillTextOngoing : {}]}>{e.status.toUpperCase()}</Text>
+        {!!e.status && (
+          <View style={[styles.ppPill, ongoing ? styles.ppPillOngoing : {}]}>
+            <Text style={[styles.ppPillText, ongoing ? styles.ppPillTextOngoing : {}]}>{e.status.toUpperCase()}</Text>
+          </View>
+        )}
+      </View>
+      {(rows.length > 0 || !!photo) && (
+        <View style={styles.ppTop} wrap={false}>
+          {rows.length > 0 && (
+            <View style={styles.ppInfo}>
+              <View style={styles.ppInfoHead}><Text style={styles.ppInfoHeadText}>PROJECT INFORMATION</Text></View>
+              {rows.map(([l, v]) => (
+                <View key={l} style={styles.ppRow}>
+                  <Text style={styles.ppRowLabel}>{l}</Text>
+                  <Text style={styles.ppRowValue}>{v}</Text>
+                </View>
+              ))}
             </View>
           )}
-        </View>
-      </View>
-      {!!photo && <Image src={photo} style={styles.ppPhoto} />}
-      {facts.length > 0 && (
-        <View style={styles.ppFacts}>
-          {facts.map(([l, v]) => (
-            <View key={l} style={styles.ppFact} wrap={false}>
-              <Text style={styles.ppFactLabel}>{l}</Text>
-              <Text style={styles.ppFactValue}>{v}</Text>
+          {!!photo && (
+            <View style={rows.length ? styles.ppPhotoBox : { width: "100%" }}>
+              <Image src={photo} style={rows.length ? styles.ppPhoto : [styles.ppPhoto, { height: 220 }]} />
             </View>
-          ))}
-        </View>
-      )}
-      {(!!e.poc || !!e.pocEmail || !!e.pocPhone) && (
-        <View style={styles.ppPoc} wrap={false}>
-          <Text style={styles.ppFactLabel}>CLIENT POINT OF CONTACT</Text>
-          {!!e.poc && <Text style={styles.ppPocName}>{e.poc}</Text>}
-          {(!!e.pocEmail || !!e.pocPhone) && <Text style={styles.ppPocLine}>{[e.pocEmail, e.pocPhone].filter(Boolean).join("   ·   ")}</Text>}
+          )}
         </View>
       )}
       {paras.length > 0 && (
         <>
-          <Subhead>DESCRIPTION OF WORK</Subhead>
+          <PpHeading>DESCRIPTION OF WORK</PpHeading>
           {paras.map((p, k) => <Text key={k} style={styles.para}>{p}</Text>)}
+        </>
+      )}
+      {scope.length > 0 && (
+        <>
+          <View style={{ marginTop: 6 }}><PpHeading>KEY SCOPE OF WORK</PpHeading></View>
+          <View style={styles.ppScope}>
+            {scope.map((line, k) => (
+              <View key={k} style={styles.ppScopeItem} wrap={false}>
+                <Text style={styles.bullet}>•</Text>
+                <Text style={styles.listText}>{line}</Text>
+              </View>
+            ))}
+          </View>
         </>
       )}
     </View>
@@ -823,9 +856,9 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
         curGrp.items.push(m);
       }
     }
-    // Step 6 - after the summary table, one data sheet per project (References are a table only).
+    // Step 6 - after the summary (or references) table, one page per project.
     const projs = m.kind === "pastPerformance" ? content.similarProjects : (s?.projects || []);
-    if (!original && !isHost && projs.length && !(m.kind === "custom" && referencesOnly(m.libraryKey))) {
+    if (!original && !isHost && projs.length) {
       groups.push({ t: "sheets", m, lh: elh, items: projs });
       curGrp = null;
     }
@@ -913,7 +946,7 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
       <View key={m.id}>
         {heading}
         <ProjectSummaryTable items={content.similarProjects} />
-        <Text style={[styles.cardMeta, { marginTop: 2 }]}>A data sheet for each project follows.</Text>
+        <Text style={[styles.cardMeta, { marginTop: 2 }]}>A page for each project follows.</Text>
       </View>
     );
     if (m.kind === "pricing") return (
@@ -958,12 +991,12 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
             <RichText html={ss.body} keyBase={`sub-${ss.id}`} />
           </View>
         ))}
-        {!!s?.projects?.length && (referencesOnly(m.libraryKey)
-          ? <ProjectReferencesTable items={s.projects} />
-          : <>
-              <ProjectSummaryTable items={s.projects} />
-              <Text style={[styles.cardMeta, { marginTop: 2 }]}>A data sheet for each project follows.</Text>
-            </>)}
+        {!!s?.projects?.length && (
+          <>
+            {referencesOnly(m.libraryKey) ? <ProjectReferencesTable items={s.projects} /> : <ProjectSummaryTable items={s.projects} />}
+            <Text style={[styles.cardMeta, { marginTop: 2 }]}>A page for each project follows.</Text>
+          </>
+        )}
       </View>
     );
   };
@@ -1014,11 +1047,11 @@ function technicalSequence({ project, content, cover, coverLetter, backCover, le
   groups.forEach((g, gi) => {
     if (g.t === "files") { seq.push({ files: g.files, key: g.key }); return; }
     if (g.t === "sheets") {
-      // Item 100 - "Past Performance 1, 2, 3...": one page each, after the summary table.
+      // Item 100 - "Past Performance #1, #2, #3...": one page each, after the summary table.
       const label = sheetLabel(g.m.kind === "pastPerformance", g.m.libraryKey);
       g.items.forEach((e, i) => page(
         <Sheet lh={hConf(g.lh)} label={LABEL} note={note}>
-          <ProjectDataSheet e={e} label={`${label} ${i + 1}`} />
+          <ProjectDataSheet e={e} label={`${label} #${i + 1}`} />
         </Sheet>,
       ));
       return;
