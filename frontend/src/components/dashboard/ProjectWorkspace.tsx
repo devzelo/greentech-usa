@@ -308,6 +308,14 @@ const GLASS = [
   "[&_.text-slate-300]:text-slate-500 [&_.text-slate-400]:text-slate-600 [&_.text-slate-500]:text-slate-700",
 ].join(" ");
 
+/** Rich text as plain lines (paragraphs and line breaks become new lines). Parsed inertly: nothing in it runs. */
+const htmlToText = (html: string) => {
+  if (!html.replace(/<[^>]*>/g, "").trim()) return "";
+  const marked = html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n");
+  const text = new DOMParser().parseFromString(marked, "text/html").body.textContent || "";
+  return text.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+};
+
 export default function ProjectWorkspace() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -1767,7 +1775,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         postalCode: project.siteAddress?.postalCode || "",
         country: project.siteAddress?.country || "",
       },
-      description: project.description || "",
+      // 2026-10-06 - one description (the Short Description of Project Info). A project with only
+      // report notes from before starts with their text, so nothing written there is lost.
+      description: project.description || htmlToText(project.reportNotes || ""),
       reportNotes: project.reportNotes || "",
       fiscal: project.fiscal || "",
       compliance: project.compliance || "",
@@ -7557,28 +7567,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </div>
                 </>)}
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Short Description <span className="text-slate-300 normal-case tracking-normal">· the same text as Project Info, About This Project; printed as the project report's Executive Summary</span></label>
                   <textarea
-                    rows={4}
+                    rows={6}
                     value={identityForm.description}
                     onChange={(e) => setIdentityForm({ ...identityForm, description: e.target.value })}
                     placeholder="Brief project description..."
                     disabled={!isOwner}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-none disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 resize-y disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
-                {/* Report notes — rich text (tables & pictures) rendered into the project report PDF. */}
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Report Notes &amp; Narrative <span className="text-slate-300 normal-case tracking-normal">— appears in the downloadable project report; supports tables &amp; pictures</span></label>
-                  <RichTextEditor
-                    value={identityForm.reportNotes}
-                    onChange={(html) => setIdentityForm({ ...identityForm, reportNotes: html })}
-                    disabled={!isOwner}
-                    minHeight={140}
-                    placeholder="Executive summary, status narrative, tables, photos…"
-                    onImageUpload={id ? (file) => uploadInlineImage(id, file) : undefined}
-                  />
-                </div>
+                {/* 2026-10-06 - "Report Notes & Narrative" was the same text again: it is gone; the report
+                    prints the Short Description above. */}
               </div>
 
               {/* §M — Joint Venture (moved here from the Client tab) */}

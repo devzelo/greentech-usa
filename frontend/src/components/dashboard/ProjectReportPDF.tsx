@@ -158,7 +158,6 @@ export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: s
   { key: "summary", label: "Executive summary", hint: "The project's description" },
   { key: "milestones", label: "Phases and milestones", hint: "The schedule behind the progress" },
   { key: "phases", label: "Timeline phases", hint: "The older phase list, when one is kept" },
-  { key: "notes", label: "Notes and narrative", hint: "What was written in the report notes" },
   { key: "financials", label: "Financial summary", hint: "Value, income, expenses, profit" },
   { key: "subs", label: "Subcontractors", hint: "Who is working under this project" },
   { key: "vendors", label: "Vendors", hint: "The suppliers on this project" },
@@ -307,13 +306,6 @@ export default function ProjectReportPDF({ project, financials, include, client,
           </View>
         )}
 
-        {/* Narrative / notes, rich text (tables and pictures) from the report notes editor */}
-        {on("notes") && !!project.reportNotes?.trim() && (
-          <View>
-            <SectionHeading title="Notes & Narrative" />
-            <ReportRichText html={project.reportNotes} />
-          </View>
-        )}
 
         {/* Financial summary */}
         {on("financials") && (
@@ -329,11 +321,12 @@ export default function ProjectReportPDF({ project, financials, include, client,
         </View>
         )}
 
-        {/* Executive summary */}
-        {on("summary") && !!project.description && (
+        {/* Executive summary: the project's description (Project Info's Short Description). A project
+            from before, with report notes and no description, prints its notes here instead. */}
+        {on("summary") && (!!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim()) && (
           <View>
             <SectionHeading title="Executive Summary" />
-            <Text style={s.body}>{project.description}</Text>
+            {project.description?.trim() ? <Text style={s.body}>{project.description}</Text> : <ReportRichText html={project.reportNotes || ""} />}
           </View>
         )}
 
