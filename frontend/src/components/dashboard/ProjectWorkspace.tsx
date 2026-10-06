@@ -827,13 +827,35 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     toast("Financial cover copied from the technical one.", "success");
   };
 
+  /**
+   * The latest version of one volume for the combined pack: the newest revision in its table,
+   * whether it was built here or uploaded (2026-10-06: an uploaded proposal was left out, the pack
+   * was always rebuilt from the builder). Only when nothing is filed yet is the builder's own PDF used.
+   */
+  const latestVolume = async (which: "technical" | "financial") => {
+    const label = which === "financial" ? "Financial" : "Technical";
+    const d = propDocs[which][0];
+    if (!d) {
+      return { blob: await buildProposalBlob(which, true), name: fileName([project?.name, `${label} Proposal`], "pdf"), rev: "the builder (nothing filed yet)", isPdf: true, label };
+    }
+    const rev = `Rev ${Math.max(0, (d.version || 1) - 1)}`;
+    const r = await fetch(savedDocUrl(d.filePath));
+    if (!r.ok) throw new Error(`Could not read the ${label} Proposal ${rev} (${r.status}).`);
+    const blob = await r.blob();
+    const isPdf = /pdf/i.test(d.fileType || "") || /\.pdf$/i.test(d.fileName || "") || blob.type === "application/pdf";
+    return { blob, name: d.fileName || fileName([project?.name, `${label} Proposal`], "pdf"), rev, isPdf, label };
+  };
+
   // CR-P (87) - the combined pack: the technical and financial proposals merged into the single
-  // file the client actually receives. Built from the latest revision of each.
+  // file the client actually receives. Built from the latest revision of each (uploaded or built).
   const buildCombinedProposal = async () => {
     if (!id) return;
     setProposalDownloading("combined");
     try {
-      const [tech, fin] = await Promise.all([buildProposalBlob("technical", true), buildProposalBlob("financial", true)]);
+      const [techV, finV] = await Promise.all([latestVolume("technical"), latestVolume("financial")]);
+      const notPdf = [techV, finV].filter((v) => !v.isPdf);
+      if (notPdf.length) throw new Error(`${notPdf.map((v) => `The ${v.label} Proposal ${v.rev} (${v.name})`).join(" and ")} ${notPdf.length === 1 ? "is not a PDF" : "are not PDFs"}, so it cannot be merged. Upload it as a PDF, or use ZIP latest to send the files as they are.`);
+      const tech = techV.blob, fin = finV.blob;
       const merged = await PDFDocument.create();
       for (const blob of [tech, fin]) {
         const src = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { ignoreEncryption: true });
@@ -859,9 +881,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
       // CR-P (113) - record exactly WHAT went into this pack, so later you can tell whether the
       // client got technical only, financial only, or the combination, and which revisions.
-      const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
-      const finRev = Math.max(0, ((propDocs.financial[0]?.version) || 1) - 1);
-      const note = `Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(out.size)}${overLimit ? " · over the 30 MB email limit" : ""}`;
+      const note = `Technical ${techV.rev} + Financial ${finV.rev} · ${mb(out.size)}${overLimit ? " · over the 30 MB email limit" : ""}`;
       // CR-P (87) - the pack is a produced document, not a draft: drafts live in the builder tabs.
       await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial", note, status: "final" }, out, `${safe}.pdf`);
       await loadNextFinalVer();
@@ -877,16 +897,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!id) return;
     setProposalDownloading("combined-zip");
     try {
-      const [tech, fin] = await Promise.all([buildProposalBlob("technical", true), buildProposalBlob("financial", true)]);
+      // The latest of each volume, uploaded or built here, in whatever format it was filed.
+      const [techV, finV] = await Promise.all([latestVolume("technical"), latestVolume("financial")]);
       const base = String(project?.name || "Project");
+      const ext = (n: string, fallback: string) => (/\.[a-z0-9]{2,5}$/i.exec(n)?.[0] || fallback).slice(1);
+      const techName = fileName([base, "Technical Proposal"], ext(techV.name, ".pdf"));
+      const finName = fileName([base, "Financial Proposal"], ext(finV.name, ".pdf"));
       const zip = makeZip([
-        { name: fileName([base, "Technical Proposal"], "pdf"), data: new Uint8Array(await tech.arrayBuffer()) },
-        { name: fileName([base, "Financial Proposal"], "pdf"), data: new Uint8Array(await fin.arrayBuffer()) },
+        { name: techName, data: new Uint8Array(await techV.blob.arrayBuffer()) },
+        { name: finName === techName ? `2_${finName}` : finName, data: new Uint8Array(await finV.blob.arrayBuffer()) },
       ]);
       const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
-      const techRev = Math.max(0, ((propDocs.technical[0]?.version) || 1) - 1);
-      const finRev = Math.max(0, ((propDocs.financial[0]?.version) || 1) - 1);
-      const note = `ZIP: Technical Rev ${techRev} + Financial Rev ${finRev} · ${mb(zip.size)}`;
+      const note = `ZIP: Technical ${techV.rev} + Financial ${finV.rev} · ${mb(zip.size)}`;
       await saveDocumentVersion(id, { kind: "proposal", refId: "combined", title: "Technical + Financial (ZIP)", note, status: "final" }, zip, `${base}_Proposals.zip`);
       await loadNextFinalVer();
       downloadBlob(zip, fileName([base, "Proposals"], "zip"));
