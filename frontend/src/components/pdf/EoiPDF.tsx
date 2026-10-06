@@ -100,7 +100,8 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
           <Text style={s.sigName}>{r.signatory?.name || r.pocName || ""}</Text>
           {!!r.signatory?.title && <Text style={s.sigLine}>{r.signatory.title}</Text>}
           <Text style={s.sigLine}>{r.firmName}</Text>
-          {!!r.signatory && <Text style={s.sigLine}>{[r.signatory.phone, r.signatory.email, r.signatory.website || COMPANY.website].filter(Boolean).join("  ·  ")}</Text>}
+          {/* The signer's contact details one under another: phone, email, website (then the address). */}
+          {!!r.signatory && [r.signatory.phone, r.signatory.email, r.signatory.website || COMPANY.website].filter(Boolean).map((line) => <Text key={line} style={s.sigLine}>{line}</Text>)}
           {!!r.signatory?.address && <Text style={s.sigLine}>{r.signatory.address}</Text>}
         </View>
         <LetterheadFooter note={`Expression of Interest · ${r.solicitationNo || projectName}`} />
