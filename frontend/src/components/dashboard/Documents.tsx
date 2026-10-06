@@ -690,10 +690,15 @@ export default function Documents() {
               <>
                 {/* CR 291 - the PIN control lives in here, behind the lock, not above it. CR 366 - the
                     website credentials open from a button beside it, so the files get the full width. */}
-                {isAdmin
-                  ? <ClassifiedPinManager access={clsAccess} onChange={setClsAccess}>{vaultButton}</ClassifiedPinManager>
-                  : <div className="flex justify-end">{vaultButton}</div>}
-                <ClassifiedDocs />
+                {/* The two buttons sit on the same line as the classified banner (top right), not on a row of their own. */}
+                <div className="relative">
+                  <div className="mb-3 sm:absolute sm:right-0 sm:top-0 sm:z-10 sm:mb-0">
+                    {isAdmin
+                      ? <ClassifiedPinManager access={clsAccess} onChange={setClsAccess}>{vaultButton}</ClassifiedPinManager>
+                      : <div className="flex justify-end">{vaultButton}</div>}
+                  </div>
+                  <ClassifiedDocs />
+                </div>
                 {vaultOpen && createPortal(
                   <div className="fixed inset-0 z-[160] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setVaultOpen(false); }}>
                     <div className="my-10 h-[36rem] w-full max-w-lg">
