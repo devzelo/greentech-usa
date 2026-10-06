@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import PdfFrame from "./PdfFrame";
+import DOMPurify from "dompurify";
 import { Check, Eye, Loader2, Pencil, Plus, Undo2, X } from "lucide-react";
 import {
   fetchSignatories, fetchStamps, uploadProposalAsset, withFileToken,
@@ -171,7 +172,7 @@ export default function ProposalLetterBuilder({
               <p><span className={lbl}>Subject </span><span className="font-semibold">{shown("subject") || <span className="text-slate-400">Not set</span>}</span></p>
               <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-100 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
                 <p className="mb-1">{shown("salutation")}</p>
-                {bodyEmpty ? <p className="italic text-slate-400">No letter body yet.{canEdit ? " Edit, then Insert the standard letter." : ""}</p> : <div className="[&_p]:mb-1.5" dangerouslySetInnerHTML={{ __html: letter.body }} />}
+                {bodyEmpty ? <p className="italic text-slate-400">No letter body yet.{canEdit ? " Edit, then Insert the standard letter." : ""}</p> : <div className="[&_p]:mb-1.5" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(letter.body, { USE_PROFILES: { html: true } }) }} />}
                 <p className="mt-1">{shown("closing")}</p>
               </div>
             </div>
