@@ -2739,8 +2739,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       if (editingGuest) {
         await updateGuest(id, editingGuest.userId, {
           tabPermissions,
-          name: gName.trim() || undefined,
-          password: gPassword.trim() || undefined,
+          // Only the JV partner's window shows these (see the access window below).
+          name: grantingPartner ? gName.trim() || undefined : undefined,
+          password: grantingPartner ? gPassword.trim() || undefined : undefined,
           expiresAt,
         });
         await setFigures(editingGuest.userId, gFigures);
@@ -8237,7 +8238,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               {/* Step 2 — Per-tab access matrix */}
               {(editingGuest || guestStep === 2) && (
                 <div className="space-y-4">
-                  {editingGuest && (
+                  {/* 2026-10-07 - a subcontractor's or vendor's name and password are the login's, not this
+                      project's: they are changed on the company's Access tab in the Directory. A JV
+                      partner may have no Directory company, so the partner keeps them here. */}
+                  {editingGuest && !grantingPartner && (
+                    <p className="text-[11px] text-slate-400">To rename this login or reset its password, open the company in the Directory, Access tab.</p>
+                  )}
+                  {editingGuest && grantingPartner && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name</label>
