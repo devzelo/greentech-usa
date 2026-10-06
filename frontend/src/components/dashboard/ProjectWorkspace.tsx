@@ -1398,6 +1398,40 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setDirty(true);
     toast(`"${meta.title}" deleted.`, "success");
   };
+  /**
+   * 2026-10-06 - each section's own header in the builder, as in General Agreements: the title edits
+   * in place, Lock keeps a finished section from being edited, moved or deleted, and X deletes it
+   * (asking first, saying what it holds). A locked section's editor below cannot be typed in.
+   */
+  const sectionHead = (m: ProposalSectionMeta, i: number, layout: ProposalSectionMeta[], vol: Vol, canEdit: boolean) => {
+    const locked = !!m.locked;
+    const patchMeta = (patch: Partial<ProposalSectionMeta>) => setLayout(layout.map((x) => (x.id === m.id ? { ...x, ...patch } : x)), vol);
+    const toggleLock = () => patchMeta({ locked: !locked, history: [...(m.history || []), { at: new Date().toISOString(), by: getAuthUser()?.name || "Someone", text: locked ? "Unlocked" : "Locked" }] });
+    return (
+      <div className="flex items-center gap-2 mb-1 px-1">
+        {canEdit && (
+          <div className="flex items-center">
+            <button disabled={locked || i === 0} onClick={() => moveProposalSection(i, -1, vol)} title={locked ? "Locked sections stay in place" : "Move up"} className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={14} /></button>
+            <button disabled={locked || i === layout.length - 1} onClick={() => moveProposalSection(i, 1, vol)} title={locked ? "Locked sections stay in place" : "Move down"} className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={14} /></button>
+          </div>
+        )}
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">{i + 1}.</span>
+        {canEdit && !locked ? (
+          <input value={m.title} onChange={(e) => patchMeta({ title: e.target.value })} placeholder="Section title" aria-label={`Title of section ${i + 1}`} title="The section's title, as printed in the document and the table of contents"
+            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-600 outline-none hover:border-slate-200 focus:border-primary/40 focus:bg-white" />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-xs font-bold uppercase tracking-wider text-slate-600">{m.title}{locked && <Lock size={11} className="ml-1.5 inline text-amber-500" aria-label="Locked" />}</span>
+        )}
+        {(m.hidden || m.divider) && <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">{m.hidden ? "hidden" : ""}{m.hidden && m.divider ? " · " : ""}{m.divider ? "divider page" : ""}</span>}
+        {canEdit && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button onClick={toggleLock} title={locked ? "Unlock section" : "Lock section: no editing, moving or deleting"} aria-label={locked ? "Unlock section" : "Lock section"} className={`p-1 rounded ${locked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600"}`}>{locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+            <button onClick={() => void removeLayoutSection(m, vol)} disabled={locked} title={locked ? "Unlock it to delete" : "Delete section"} aria-label="Delete section" className="p-1 rounded text-slate-300 hover:text-red-500 disabled:opacity-30"><X size={15} /></button>
+          </div>
+        )}
+      </div>
+    );
+  };
   // CR 206 - include a company document: a new appendix carrying that file, printed as uploaded.
   const includeCompanyDoc = (doc: ProposalDoc, vol: Vol = "technical") => {
     editVol(vol, (b) => {
@@ -5153,16 +5187,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   {/* Section editors in document order, each with on-box reorder arrows */}
                   {techLayout.map((m, i) => (
                     <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
-                      <div className="flex items-center gap-2 mb-1 px-1">
-                        {canEdit && (
-                          <div className="flex items-center">
-                            <button disabled={i === 0} onClick={() => moveProposalSection(i, -1)} title="Move up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={14} /></button>
-                            <button disabled={i === techLayout.length - 1} onClick={() => moveProposalSection(i, 1)} title="Move down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={14} /></button>
-                          </div>
-                        )}
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{i + 1}. {m.title}{m.hidden ? " · hidden" : ""}{m.divider ? " · divider page" : ""}</span>
-                      </div>
-                      {editorFor(m)}
+                      {sectionHead(m, i, techLayout, "technical", canEdit)}
+                      <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{editorFor(m)}</div>
                     </div>
                   ))}
                 </div>
@@ -5439,16 +5465,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
                   {finLayout.map((m, i) => (
                     <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
-                      <div className="flex items-center gap-2 mb-1 px-1">
-                        {canEdit && (
-                          <div className="flex items-center">
-                            <button disabled={i === 0} onClick={() => moveProposalSection(i, -1, "financial")} title="Move up" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={14} /></button>
-                            <button disabled={i === finLayout.length - 1} onClick={() => moveProposalSection(i, 1, "financial")} title="Move down" className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowDown size={14} /></button>
-                          </div>
-                        )}
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{i + 1}. {m.title}{m.hidden ? " · hidden" : ""}{m.divider ? " · divider page" : ""}</span>
-                      </div>
-                      {finEditorFor(m)}
+                      {sectionHead(m, i, finLayout, "financial", canEdit)}
+                      <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{finEditorFor(m)}</div>
                     </div>
                   ))}
                 </div>
