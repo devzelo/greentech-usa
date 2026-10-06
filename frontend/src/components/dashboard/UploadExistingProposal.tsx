@@ -67,6 +67,8 @@ export default function UploadExistingProposal({ stream: initialStream, streams,
 
   const pick = (f: File | undefined) => {
     if (!f) return;
+    // A proposal is a document: an image (e.g. a screenshot) filed as a revision cannot be sent or combined.
+    if (!/\.(pdf|docx?)$/i.test(f.name)) { setFile(null); setError(`"${f.name}" is not a proposal document. Choose a PDF (or a Word file).`); return; }
     setFile(f);
     setError("");
   };
@@ -106,7 +108,7 @@ export default function UploadExistingProposal({ stream: initialStream, streams,
               <span className="block text-xs font-bold text-slate-800 truncate">{file ? file.name : "Choose the file"}</span>
               <span className="block text-[10px] text-slate-400">{file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB · click to change` : "PDF is best: it can be previewed and compared"}</span>
             </span>
-            <input type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+            <input type="file" accept=".pdf,.doc,.docx,application/pdf" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
           </label>
 
           {streams.length > 1 && (

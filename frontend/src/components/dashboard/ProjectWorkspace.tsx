@@ -832,21 +832,33 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
    * whether it was built here or uploaded (2026-10-06: an uploaded proposal was left out, the pack
    * was always rebuilt from the builder). Only when nothing is filed yet is the builder's own PDF used.
    */
-  const latestVolume = async (which: "technical" | "financial") => {
+  const latestVolume = async (which: "technical" | "financial", needPdf: boolean) => {
     const label = which === "financial" ? "Financial" : "Technical";
-    const d = propDocs[which][0];
-    if (!d) {
+    const docs = propDocs[which];
+    if (!docs.length) {
       return { blob: await buildProposalBlob(which, true), name: fileName([project?.name, `${label} Proposal`], "pdf"), rev: "the builder (nothing filed yet)", isPdf: true, label };
     }
-    const rev = `Rev ${Math.max(0, (d.version || 1) - 1)}`;
-    const r = await fetch(savedDocUrl(d.filePath));
-    // A 404 means the revision's file is not on this server: it was filed on another copy of the
-    // platform sharing the same records (the live site and a local one), or removed from the disk.
-    if (r.status === 404) throw new Error(`The file of the ${label} Proposal ${rev} (${d.fileName}) is not on this server, so it cannot be combined here. It was probably uploaded on another copy of the platform (e.g. the live site): combine it there, or upload the file again here.`);
-    if (!r.ok) throw new Error(`Could not read the ${label} Proposal ${rev} (${r.status}).`);
-    const blob = await r.blob();
-    const isPdf = /pdf/i.test(d.fileType || "") || /\.pdf$/i.test(d.fileName || "") || blob.type === "application/pdf";
-    return { blob, name: d.fileName || fileName([project?.name, `${label} Proposal`], "pdf"), rev, isPdf, label };
+    const revOf = (d: ApiSavedDocument) => `Rev ${Math.max(0, (d.version || 1) - 1)}`;
+    const pdfByRecord = (d: ApiSavedDocument) => /pdf/i.test(d.fileType || "") || /\.pdf$/i.test(d.fileName || "");
+    // Newest first: the first revision that can be used. One that cannot (not a PDF, for the merged
+    // pack; or its file is not on this server, e.g. it was filed on the live site and this is a
+    // local copy sharing the same records) is said, and an older one is only used when agreed.
+    const skipped: string[] = [];
+    for (const d of docs) {
+      if (needPdf && !pdfByRecord(d)) { skipped.push(`${revOf(d)} (${d.fileName}) is not a PDF`); continue; }
+      const r = await fetch(savedDocUrl(d.filePath));
+      if (r.status === 404) { skipped.push(`${revOf(d)} (${d.fileName}): its file is not on this server`); continue; }
+      if (!r.ok) throw new Error(`Could not read the ${label} Proposal ${revOf(d)} (${r.status}).`);
+      if (skipped.length && !(await brandedConfirm({
+        title: `The latest ${label} Proposal cannot be used`,
+        message: `${skipped.join("; ")}. Use ${revOf(d)} (${d.fileName}), the newest ${label.toLowerCase()} revision that can be, instead? To use the latest one, upload it again as a PDF${needPdf ? "" : ""}.`,
+        confirmLabel: `Use ${revOf(d)}`,
+        danger: false,
+      }))) return null;
+      const blob = await r.blob();
+      return { blob, name: d.fileName || fileName([project?.name, `${label} Proposal`], "pdf"), rev: revOf(d), isPdf: pdfByRecord(d) || blob.type === "application/pdf", label };
+    }
+    throw new Error(`No ${label} Proposal revision can be used here: ${skipped.join("; ")}. Upload the ${label.toLowerCase()} proposal again as a PDF.`);
   };
 
   // CR-P (87) - the combined pack: the technical and financial proposals merged into the single
@@ -855,7 +867,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     if (!id) return;
     setProposalDownloading("combined");
     try {
-      const [techV, finV] = await Promise.all([latestVolume("technical"), latestVolume("financial")]);
+      // One after the other, so a question about one volume is not mixed with the other's.
+      const techV = await latestVolume("technical", true);
+      const finV = techV && await latestVolume("financial", true);
+      if (!techV || !finV) { setProposalDownloading(null); return; }
       const notPdf = [techV, finV].filter((v) => !v.isPdf);
       if (notPdf.length) throw new Error(`${notPdf.map((v) => `The ${v.label} Proposal ${v.rev} (${v.name})`).join(" and ")} ${notPdf.length === 1 ? "is not a PDF" : "are not PDFs"}, so it cannot be merged. Upload it as a PDF, or use ZIP latest to send the files as they are.`);
       const tech = techV.blob, fin = finV.blob;
@@ -901,7 +916,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     setProposalDownloading("combined-zip");
     try {
       // The latest of each volume, uploaded or built here, in whatever format it was filed.
-      const [techV, finV] = await Promise.all([latestVolume("technical"), latestVolume("financial")]);
+      const techV = await latestVolume("technical", false);
+      const finV = techV && await latestVolume("financial", false);
+      if (!techV || !finV) { setProposalDownloading(null); return; }
       const base = String(project?.name || "Project");
       const ext = (n: string, fallback: string) => (/\.[a-z0-9]{2,5}$/i.exec(n)?.[0] || fallback).slice(1);
       const techName = fileName([base, "Technical Proposal"], ext(techV.name, ".pdf"));
