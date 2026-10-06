@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Image as ImageIcon, Table as TableIcon, Loader2, Baseline, Highlighter,
-  Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2,
+  Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2, RemoveFormatting,
 } from "lucide-react";
 import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS, DOC_COLORS } from "../../lib/docStyle";
 
@@ -63,6 +63,55 @@ const HIGHLIGHTS = [
 // same while it is being typed as it does once the document is printed.
 const CELL_BORDER = TABLE_CELL_CSS;
 const HEAD_STYLE = TABLE_HEAD_CSS;
+
+/**
+ * 2026-10-06 - "Use default style": text pasted from elsewhere (a website, Word) brings its own
+ * fonts, sizes, colours, links and highlights. This keeps only the structure (paragraphs, line
+ * breaks, lists, tables, pictures) and drops every other tag and attribute, so the text takes
+ * GreenTech's default style.
+ */
+const BLOCK_TAGS = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "PRE", "SECTION", "ARTICLE", "HEADER", "FOOTER", "ADDRESS", "FIGURE", "FIGCAPTION", "DT", "DD"]);
+const KEEP_TAGS = new Set(["UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH", "CAPTION", "IMG", "BR"]);
+const DROP_TAGS = new Set(["STYLE", "SCRIPT", "META", "LINK", "TITLE", "NOSCRIPT", "TEMPLATE", "IFRAME", "OBJECT", "svg", "SVG", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
+function cleanNode(node: Node, out: Node, doc: Document) {
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) { out.appendChild(doc.createTextNode(child.textContent || "")); return; }
+    if (child.nodeType !== Node.ELEMENT_NODE) return;   // comments (Word's <!-- --> blocks)
+    const el = child as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+    if (DROP_TAGS.has(el.tagName) || DROP_TAGS.has(tag) || tag.includes(":")) return;   // and Word's <o:p>
+    if (KEEP_TAGS.has(tag) || BLOCK_TAGS.has(tag)) {
+      const keep = doc.createElement(BLOCK_TAGS.has(tag) ? "p" : tag.toLowerCase());
+      if (tag === "IMG") { const src = el.getAttribute("src"); if (!src) return; keep.setAttribute("src", src); const alt = el.getAttribute("alt"); if (alt) keep.setAttribute("alt", alt); const w = el.style.width; if (w) (keep as HTMLElement).style.width = w; }
+      if (tag === "TD" || tag === "TH") for (const a of ["colspan", "rowspan"]) { const v = el.getAttribute(a); if (v) keep.setAttribute(a, v); }
+      // A paragraph inside a list item or a cell adds nothing but a gap.
+      const target = BLOCK_TAGS.has(tag) && out instanceof HTMLElement && ["LI", "TD", "TH", "P"].includes(out.tagName) ? out : keep;
+      // Two paragraphs in one list item or cell stay on separate lines.
+      if (target === out && out.textContent?.trim() && out.lastChild?.nodeName !== "BR") out.appendChild(doc.createElement("br"));
+      cleanNode(el, target, doc);
+      if (target === keep && !(BLOCK_TAGS.has(tag) && !keep.textContent?.trim() && !keep.querySelector("img,br"))) out.appendChild(keep);
+      return;
+    }
+    cleanNode(el, out, doc);   // span, font, a, b, strong, i, em, u, sup, mark... : the text stays, the formatting goes
+  });
+}
+export function toDefaultStyle(html: string): string {
+  const doc = document.implementation.createHTMLDocument("");
+  const src = doc.createElement("div");
+  src.innerHTML = html;
+  const out = doc.createElement("div");
+  cleanNode(src, out, doc);
+  // Loose text at the top level goes into paragraphs.
+  const wrapped = doc.createElement("div");
+  let para: HTMLElement | null = null;
+  out.childNodes.forEach((n) => {
+    const inline = n.nodeType === Node.TEXT_NODE || n.nodeName === "BR";
+    if (inline) { if (!para) { para = doc.createElement("p"); wrapped.appendChild(para); } para.appendChild(n.cloneNode(true)); }
+    else { para = null; wrapped.appendChild(n.cloneNode(true)); }
+  });
+  wrapped.querySelectorAll("p").forEach((pEl) => { while (pEl.lastChild && pEl.lastChild.nodeName === "BR") pEl.removeChild(pEl.lastChild); if (!pEl.textContent?.trim() && !pEl.querySelector("img")) pEl.remove(); });
+  return wrapped.innerHTML.replace(/\u00a0/g, " ");
+}
 
 export default function RichTextEditor({
   value,
@@ -132,6 +181,21 @@ export default function RichTextEditor({
   };
 
   const focusEditor = () => { ref.current?.focus(); restoreSelection(); };
+  // "Use default style": the selected text, or the whole box when nothing is selected.
+  const useDefaultStyle = () => {
+    const el = ref.current;
+    if (!el) return;
+    const sel = window.getSelection();
+    const inside = sel && sel.rangeCount && !sel.isCollapsed && el.contains(sel.getRangeAt(0).commonAncestorContainer);
+    if (inside) {
+      const box = document.createElement("div");
+      box.appendChild(sel!.getRangeAt(0).cloneContents());
+      document.execCommand("insertHTML", false, toDefaultStyle(box.innerHTML) || " ");
+    } else {
+      el.innerHTML = toDefaultStyle(el.innerHTML);
+    }
+    emit();
+  };
 
   // execCommand without CSS styling (structural: bold/italic/lists/blocks).
   // Read the formatting under the caret so the toolbar can show what's active (bold/italic/…,
@@ -393,24 +457,40 @@ export default function RichTextEditor({
       {node}
     </button>
   );
-  const toggleMenu = (m: typeof menu) => setMenu((cur) => (cur === m ? null : m));
+  // 2026-10-06 - the menus open in their own layer above everything (fixed, portaled), under their
+  // button: inside the editor's box they were cut off, and inside a window (Edit Identity, New
+  // Project) they seemed not to work at all.
+  const [menuAt, setMenuAt] = useState<{ top: number; left: number } | null>(null);
+  const toggleMenu = (m: typeof menu, at?: DOMRect) => {
+    if (at) setMenuAt({ top: at.bottom + 4, left: at.left });
+    setMenu((cur) => (cur === m ? null : m));
+  };
   const closeMenu = () => setMenu(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => { const t = e.target as Node | null; if (t && (t as HTMLElement).closest?.("[data-rte-menu]")) return; setMenu(null); };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [menu]);
 
   // Popover trigger + panel. Panel content stays interactive without losing the
   // editor selection because every control uses onMouseDown preventDefault.
   const popover = (id: NonNullable<typeof menu>, trigger: ReactNode, panel: ReactNode, width = 200, title?: string) => (
     <div className="relative">
-      <button type="button" title={title} onMouseDown={(e) => { e.preventDefault(); toggleMenu(id); }}
+      <button type="button" title={title} onMouseDown={(e) => { e.preventDefault(); toggleMenu(id, e.currentTarget.getBoundingClientRect()); }}
         className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${menu === id ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}>
         {trigger}<ChevronDown size={12} />
       </button>
-      {menu === id && (
+      {menu === id && menuAt && createPortal(
         <>
-          <button type="button" aria-label="Close" onMouseDown={(e) => e.preventDefault()} onClick={closeMenu} className="fixed inset-0 z-10 cursor-default" />
-          <div onMouseDown={(e) => e.preventDefault()} className="absolute z-20 mt-1 left-0 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5" style={{ width }}>
+          <button type="button" aria-label="Close" onMouseDown={(e) => e.preventDefault()} onClick={closeMenu} className="fixed inset-0 z-[300] cursor-default" />
+          <div data-rte-menu onMouseDown={(e) => e.preventDefault()} className="fixed z-[301] max-h-[70vh] overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl p-1.5"
+            style={{ width, top: Math.min(menuAt.top, window.innerHeight - 120), left: Math.max(8, Math.min(menuAt.left, window.innerWidth - width - 8)) }}>
             {panel}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
@@ -418,7 +498,7 @@ export default function RichTextEditor({
   const editorNode = (
     // CR-B-02 — full screen covers the ENTIRE viewport (portaled to <body>, z above the side nav
     // z-[110]) so it never sits behind the platform's side navigation or inside a modal's clip.
-    <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[130] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
+    <div className={`border border-slate-100 bg-slate-50 overflow-hidden ${disabled ? "opacity-60" : ""} ${fullscreen ? "fixed inset-0 z-[250] m-0 rounded-none flex flex-col" : "rounded-2xl"}`}>
       {!disabled && (
         <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-white px-2 py-1.5">
           {/* Block style — trigger shows the caret's current style. */}
@@ -548,6 +628,11 @@ export default function RichTextEditor({
             </div>, 260, "Table")}
 
           <span className="w-px h-5 bg-slate-200 mx-1" />
+          <button type="button" title="Use default style: removes the pasted text's own fonts, sizes, colours and links, so it looks like the rest of the document (the selected text, or the whole box when nothing is selected)"
+            onMouseDown={(e) => { e.preventDefault(); useDefaultStyle(); }}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+            <RemoveFormatting size={14} /> Default style
+          </button>
           {btn("fullscreen", fullscreen ? "Exit full screen" : "Full screen (bigger editing area)", fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />, () => setFullscreen((v) => !v))}
 
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onImagePicked(e.target.files?.[0])} />
