@@ -162,6 +162,7 @@ export interface IProject extends Document {
     invoiceAmount: string; // legacy manual total (kept for back-compat; income now sums the invoice table)
     userId: string; // linked login account id — ties their logged expenses to this record
     acceptedOfferId?: string; // §L — the accepted offer's document id (gates Agreement & Scope)
+    companyId?: string; // 2026-10-07 - its Directory company, where its login is managed
     customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }>; // per-sub custom tab tree
   }>;
   customTabs: Array<{
@@ -389,6 +390,7 @@ const ProjectSchema = new Schema<IProject>(
         invoiceAmount: { type: String, default: "" },
         userId: { type: String, default: "" },
         acceptedOfferId: { type: String, default: "" },
+        companyId: { type: String, default: "" },
         customTabs: [{ tabId: String, label: String, parentId: { type: String, default: "" }, notes: { type: String, default: "" } }],
       },
     ],

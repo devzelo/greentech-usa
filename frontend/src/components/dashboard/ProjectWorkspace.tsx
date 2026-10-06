@@ -100,7 +100,7 @@ import { fileName } from "../../lib/fileNames";
 import { fetchSubInvoices, addSubInvoice, updateSubInvoice, deleteSubInvoice, uploadSubInvoiceAttachment, deleteSubInvoiceAttachment, type ApiSubInvoice } from "../../lib/api";
 import { fetchInvoices, type ApiInvoice } from "../../lib/api";
 import { fetchUsers, createReminder, type AdminUser } from "../../lib/api";
-import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, fetchCompany, companyCategories, withFileToken, type ApiVendor, type ApiCompany } from "../../lib/api";
+import { fetchVendors, addVendor, updateVendor, deleteVendor, uploadProjectContract, deleteProjectContract, fetchCompany, fetchCompanies, fetchCompanyLogin, companyCategories, withFileToken, type ApiVendor, type ApiCompany } from "../../lib/api";
 import CompanyPicker from "./CompanyPicker";
 import YesNo from "./YesNo";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
@@ -383,6 +383,8 @@ export default function ProjectWorkspace() {
   const [guestsList, setGuestsList] = useState<ApiGuest[]>([]);
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [editingGuest, setEditingGuest] = useState<ApiGuest | null>(null);
+  // 2026-10-07 - a Directory login being given access to this project (no login is made here).
+  const [grantTo, setGrantTo] = useState<{ userId: string; email: string; name: string; companyId: string } | null>(null);
   const [guestStep, setGuestStep] = useState<1 | 2 | 3>(1);
   const [gFigures, setGFigures] = useState(false);   // financial figures access in the access wizard
   const [gName, setGName] = useState("");
@@ -1915,7 +1917,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // Subcontractors
-  type SubContractor = { name: string; scope: string; subId: string; contact: string; email: string; phone: string; notes: string; invoiceAmount: string; userId: string; acceptedOfferId?: string; customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }> };
+  type SubContractor = { name: string; scope: string; subId: string; contact: string; email: string; phone: string; notes: string; invoiceAmount: string; userId: string; acceptedOfferId?: string; /** 2026-10-07 - its Directory company (where its login lives) */ companyId?: string; customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }> };
   const [subcontractors, setSubcontractors] = useState<SubContractor[]>([]);
   const [subDocs, setSubDocs] = useState<Record<string, ApiDocument[]>>({});
   const [subInvoiceDocs, setSubInvoiceDocs] = useState<Record<string, ApiDocument[]>>({});
@@ -2126,13 +2128,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       setSubcontractors((prev) => prev.map((s, i) => (i === editingSubIdx ? { ...subForm } : s)));
     } else {
       // CR-P (80) — the same flow as the employees: picked from the Directory, then straight on to
-      // which tabs its login can see (every tab starts Hidden). No email means no login yet, so
-      // that step waits until one is added.
+      // which tabs its login can see (every tab starts Hidden). 2026-10-07: the login itself is made
+      // in the Directory; with none yet, a note says so and the tabs wait.
       const idx = subcontractors.length;
       const added = { ...subForm };
       setSubcontractors((prev) => [...prev, added]);
       setActiveSubIdx(idx);
-      if (isOwner && added.email.trim()) void openGrantAccessFor(idx, added);
+      if (isOwner) void openGrantAccessFor(idx, added, true);
     }
     setShowSubModal(false);
     setEditingSubIdx(null);
@@ -2491,22 +2493,58 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // Open the access wizard pre-filled for a specific subcontractor record (and link on save).
-  const openGrantAccessFor = async (idx: number, sub: SubContractor) => {
-    await openCreateGuest();
-    setGExistingId(null);
-    setGName(sub.name || "");
-    setGEmail(sub.email || "");
-    setGrantingForSubIdx(idx);
+  // 2026-10-07 - "all the settings regarding login and password should be handled inside the
+  // directory": a subcontractor's or vendor's login is created, renamed and given a new password on
+  // its Directory company (Access tab). Here we only choose what that login sees on this project.
+  // The company is found by its link, else by email, else by name.
+  const directoryLoginFor = async (who: { companyId?: string; email?: string; name?: string }) => {
+    const all = await fetchCompanies().catch(() => [] as ApiCompany[]);
+    const email = (who.email || "").trim().toLowerCase();
+    const name = (who.name || "").trim().toLowerCase();
+    const company = (who.companyId ? all.find((c) => c._id === who.companyId) : undefined)
+      || (email ? all.find((c) => (c.email || "").trim().toLowerCase() === email || (c.contactPersons || []).some((p) => (p.email || "").trim().toLowerCase() === email)) : undefined)
+      || (name ? all.find((c) => c.name.trim().toLowerCase() === name) : undefined);
+    const login = company ? await fetchCompanyLogin(company._id).catch(() => null) : null;
+    return { company, login };
+  };
+  const openDirectory = (company: ApiCompany | undefined, name: string, category: "subcontractor" | "vendor") => {
+    const qs = company ? `open=${encodeURIComponent(company._id)}` : `category=${category}&new=1&name=${encodeURIComponent(name)}`;
+    window.open(`/dashboard/directory?${qs}`, "_blank", "noopener");
+  };
+  /** Choose the tabs for a Directory login on this project: the access window, every tab Hidden. */
+  const openDirectoryAccess = async (who: { companyId?: string; email?: string; name?: string }, kind: "subcontractor" | "vendor", quiet = false) => {
+    const label = who.name || (kind === "vendor" ? "This vendor" : "This subcontractor");
+    const { company, login } = await directoryLoginFor(who);
+    if (!company || !login?.exists || login.archived) {
+      const why = !company
+        ? `${label} is not in the Directory yet. Add it there and create its login on the Access tab, then come back here to choose which tabs it can see.`
+        : login?.archived
+          ? `${company.name}'s login is archived in the Directory. Restore it there first.`
+          : `${company.name} has no login yet. Create it in the Directory, on the company's Access tab, then come back here to choose which tabs it can see.`;
+      if (quiet) { toast(why, "info"); return false; }
+      if (await brandedConfirm({ title: "Login is set up in the Directory", message: why, confirmLabel: "Open in Directory", cancelLabel: "Close" })) openDirectory(company, label, kind);
+      return false;
+    }
+    // A fresh window (not closeGuestModal: that would forget which subcontractor row this is for).
+    setEditingGuest(null); setGExistingId(null); setGrantingPartner(false);
+    setGName(""); setGEmail(""); setGPassword(""); setGAlsoProjects([]);
+    setGrantingVendor(kind === "vendor");
+    setGrantTo({ userId: login.userId || "", email: login.email, name: login.name || company.name, companyId: company._id });
+    setGPerms({}); setGExpiry(""); setGFigures(false); setGuestStep(2);
+    setShowGuestModal(true);
+    return true;
   };
 
-  // CR-P (80) — a vendor's login gets project access through the same wizard (tabs start Hidden).
+  const openGrantAccessFor = async (idx: number, sub: SubContractor, quiet = false) => {
+    setGrantingForSubIdx(idx);
+    if (!(await openDirectoryAccess(sub, "subcontractor", quiet))) setGrantingForSubIdx(null);
+  };
+
+  // CR-P (80) — a vendor's login gets project access through the same window (tabs start Hidden).
   // The login is matched back to the vendor by its email, like the JV partner's.
   const openGrantAccessForVendor = async (v: ApiVendor) => {
-    await openCreateGuest();
-    setGExistingId(null);
-    setGName(v.name || "");
-    setGEmail(v.email || "");
-    setGrantingVendor(true);
+    setGrantingForSubIdx(null);
+    await openDirectoryAccess({ companyId: v.companyId, email: v.email, name: v.name }, "vendor");
   };
 
   // Grant the JV PARTNER a login — reuses the subcontractor guest system, but pre-granted FULL
@@ -2714,7 +2752,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   const closeGuestModal = () => {
-    setShowGuestModal(false); setEditingGuest(null);
+    setShowGuestModal(false); setEditingGuest(null); setGrantTo(null);
     setGName(""); setGEmail(""); setGPassword(""); setGPerms({}); setGAlsoProjects([]); setGExpiry(""); setGuestStep(1);
     setGExistingId(null); setGrantingForSubIdx(null); setGrantingPartner(false);
   };
@@ -2724,10 +2762,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   const handleSaveGuest = async () => {
     if (!id) return;
-    if (!editingGuest && !gExistingId && (!gEmail.trim() || !gPassword.trim())) {
+    if (!editingGuest && !grantTo && !gExistingId && (!gEmail.trim() || !gPassword.trim())) {
       toast(`Email and password are required for a new ${guestNounLc}.`, "error"); return;
     }
-    if (!editingGuest && gExistingId && !gEmail.trim()) {
+    if (!editingGuest && !grantTo && gExistingId && !gEmail.trim()) {
       toast(`Select an existing ${guestNounLc} or create a new one.`, "error"); return;
     }
     // Build tabPermissions: drop "none".
@@ -2746,6 +2784,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         });
         await setFigures(editingGuest.userId, gFigures);
         toast(`${guestNoun} updated.`, "success");
+      } else if (grantTo) {
+        // The Directory login, reused by email: no password, and its name is left as it is.
+        const created = await createGuest(id, { name: grantTo.name, email: grantTo.email, tabPermissions, expiresAt, companyId: grantTo.companyId });
+        const uid = created?.userId || grantTo.userId;
+        if (grantingForSubIdx !== null && uid) {
+          const next = subcontractors.map((x, idx) => (idx === grantingForSubIdx ? { ...x, userId: uid, companyId: x.companyId || grantTo.companyId } : x));
+          setSubcontractors(next);
+          try { await updateProject(id, { subcontractors: next } as Partial<ApiProject>); } catch { /* ignore */ }
+        }
+        if (uid) await setFigures(uid, gFigures);
+        toast(`Access saved for ${grantTo.name}.`, "success");
       } else {
         const created = await createGuest(id, {
           name: gName.trim() || gEmail.split("@")[0],
@@ -5995,7 +6044,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 <td className="px-3 py-2.5"><button onClick={() => setActiveVendorId(v._id)} className="text-xs font-bold text-slate-800 hover:text-primary text-left">{v.name || "Vendor"}</button></td>
                                 <td className="px-3 py-2.5 text-xs text-slate-600">{[v.contactName, v.email].filter(Boolean).join(" · ") || <span className="text-slate-300">-</span>}</td>
                                 <td className="px-3 py-2.5">
-                                  {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
+                                  {!g ? <span title="No access to this project yet. Manage access gives its Directory login the tabs you choose." className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No access</span>
                                     : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
                                     : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
                                   {g && figuresOn(g.userId, true) && figuresBadge}
@@ -6170,7 +6219,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{s.scope || <span className="text-slate-300">-</span>}</td>
                                 <td className="px-3 py-2.5 text-xs text-slate-600 align-top">{[s.contact, s.email].filter(Boolean).join(" · ") || <span className="text-slate-300">-</span>}</td>
                                 <td className="px-3 py-2.5 align-top">
-                                  {!g ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No login</span>
+                                  {!g ? <span title="No access to this project yet. Manage access gives its Directory login the tabs you choose." className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold whitespace-nowrap">No access</span>
                                     : tabs === 0 ? <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[10px] font-bold whitespace-nowrap">No tabs</span>
                                     : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold whitespace-nowrap">{tabs} of {allTabsAll.length} tabs</span>}
                                   {g && figuresOn(g.userId, true) && figuresBadge}
@@ -6273,7 +6322,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               {linked ? (
                                 <p className="text-[11px] text-slate-500 mt-2">Has a login — {linked.email}{linked.expiresAt ? ` · access until ${new Date(linked.expiresAt).toLocaleDateString()}` : " · no expiry"}. Their logged expenses appear in the Expenses tab automatically.</p>
                               ) : (
-                                <p className="text-[11px] text-slate-400 italic mt-2">No login yet. Grant access so this subcontractor can sign in and log their own expenses.</p>
+                                <p className="text-[11px] text-slate-400 italic mt-2">No access to this project yet. Its login is made in the Directory (Access tab); Grant access chooses what it can see here, so it can sign in and log its own expenses.</p>
                               )}
                             </div>
                           )}
@@ -7648,8 +7697,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <CompanyPicker
                     value={subForm.name}
                     category="subcontractor"
-                    onNameChange={(v) => setSubForm((f) => ({ ...f, name: v }))}
-                    onSelectCompany={(c) => setSubForm((f) => ({ ...f, name: c.name, contact: c.contactPersons?.[0]?.name || f.contact, email: c.email || c.contactPersons?.[0]?.email || f.email, phone: c.phone || c.contactPersons?.[0]?.phone || f.phone }))}
+                    onNameChange={(v) => setSubForm((f) => ({ ...f, name: v, companyId: f.name === v ? f.companyId : undefined }))}
+                    onSelectCompany={(c) => setSubForm((f) => ({ ...f, companyId: c._id, name: c.name, contact: c.contactPersons?.[0]?.name || f.contact, email: c.email || c.contactPersons?.[0]?.email || f.email, phone: c.phone || c.contactPersons?.[0]?.phone || f.phone }))}
                     placeholder="Search or add a subcontractor from the Directory…"
                   />
                 </div>
@@ -8167,16 +8216,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-2xl shadow-2xl max-h-[88vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-xl font-display font-bold text-slate-900">{editingGuest ? `Edit ${guestNoun} Access` : `Add ${guestNoun}`}</h3>
+                  <h3 className="text-xl font-display font-bold text-slate-900">{editingGuest ? `Edit ${guestNoun} Access` : grantTo ? `${guestNoun} Access` : `Add ${guestNoun}`}</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    {editingGuest ? `Update this ${guestNounLc}'s per-tab access and timeline.` : `Create a ${guestNounLc} login and choose what they can see and edit.`}
+                    {editingGuest ? `Update this ${guestNounLc}'s per-tab access and timeline.`
+                      : grantTo ? `Choose what ${grantTo.name} (${grantTo.email}) can see and edit on this project. Every tab starts Hidden.`
+                      : `Create a ${guestNounLc} login and choose what they can see and edit.`}
                   </p>
                 </div>
                 <button onClick={closeGuestModal} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
 
               {/* Step 1 — Pick an existing guest or create a new one (create only) */}
-              {!editingGuest && guestStep === 1 && (
+              {!editingGuest && !grantTo && guestStep === 1 && (
                 <div className="space-y-5">
                   {guestDirectory.length > 0 && (
                     <div className="space-y-2">
@@ -8241,7 +8292,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   {/* 2026-10-07 - a subcontractor's or vendor's name and password are the login's, not this
                       project's: they are changed on the company's Access tab in the Directory. A JV
                       partner may have no Directory company, so the partner keeps them here. */}
-                  {editingGuest && !grantingPartner && (
+                  {(editingGuest || grantTo) && !grantingPartner && (
                     <p className="text-[11px] text-slate-400">To rename this login or reset its password, open the company in the Directory, Access tab.</p>
                   )}
                   {editingGuest && grantingPartner && (
@@ -8341,7 +8392,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               )}
 
               {/* Step 3 — Also assign to other projects (create only) */}
-              {!editingGuest && guestStep === 3 && (
+              {!editingGuest && !grantTo && guestStep === 3 && (
                 <div className="space-y-4">
                   <p className="text-sm font-bold text-slate-700">Assign to other projects (optional)</p>
                   <p className="text-[10px] text-slate-400">The same tab permissions will be applied. You can fine-tune each project later.</p>
@@ -8371,7 +8422,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
               {/* Footer */}
               <div className="flex gap-3 mt-8">
-                {editingGuest ? (
+                {editingGuest || grantTo ? (
                   <>
                     <button onClick={closeGuestModal} className="flex-1 py-3 rounded-2xl border border-slate-200 font-bold text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
                     <button onClick={handleSaveGuest} disabled={gSaving} className="flex-1 py-3 rounded-2xl bg-gt-gradient text-white font-bold text-sm shadow-lg disabled:opacity-40 flex items-center justify-center gap-2">
