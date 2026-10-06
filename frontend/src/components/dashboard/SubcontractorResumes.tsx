@@ -10,6 +10,7 @@ import { toast } from "../../lib/toast";
 import ResumePDF from "./ResumePDF";
 import ResumePageBadge from "./ResumePageBadge";
 import { ConfirmDialog } from "./Dialogs";
+import CompanyPicker from "./CompanyPicker";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium text-slate-700 focus:bg-white focus:ring-2 focus:ring-primary/10 outline-none transition-all";
 const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
@@ -236,7 +237,7 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
                 <input className={`${inp} md:col-span-2`} value={p.name} onChange={(ev) => set("projects", updateAt(draft.projects, i, { name: ev.target.value }))} placeholder="Project name" />
                 <input className={inp} value={p.employer || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { employer: ev.target.value }))} placeholder="Employer" />
                 <input className={inp} value={p.role} onChange={(ev) => set("projects", updateAt(draft.projects, i, { role: ev.target.value }))} placeholder="Position held" />
-                <input className={inp} value={p.client || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { client: ev.target.value }))} placeholder="Client" />
+                <CompanyPicker size="sm" value={p.client || ""} category="client" onNameChange={(v) => set("projects", updateAt(draft.projects, i, { client: v }))} onSelectCompany={(c) => set("projects", updateAt(draft.projects, i, { client: c.name }))} placeholder="Client, from the Directory (e.g. US Dept. of State)" />
                 <input className={inp} value={p.solicitationNo || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { solicitationNo: ev.target.value }))} placeholder="Solicitation #" />
                 <input className={inp} value={p.contractNo || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { contractNo: ev.target.value }))} placeholder="Contract #" />
                 <input className={inp} value={p.start} onChange={(ev) => set("projects", updateAt(draft.projects, i, { start: ev.target.value }))} placeholder="Start" />

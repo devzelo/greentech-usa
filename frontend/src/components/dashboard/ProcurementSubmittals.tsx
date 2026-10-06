@@ -21,6 +21,7 @@ import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useTableSort, SortTh } from "../../lib/useTableSort";
+import CompanyPicker from "./CompanyPicker";
 
 const DISPO: { k: SubmittalDisposition; label: string; cls: string }[] = [
   { k: "Pending", label: "Pending", cls: "bg-amber-50 text-amber-600" },
@@ -513,7 +514,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                         </div>
                       </div>
                       <div className={`grid grid-cols-1 md:grid-cols-3 gap-2 ${roCls}`}>
-                        <label className="text-[11px] text-slate-500">Client name<input value={rev.clientName || ""} onChange={(e) => saveRevField(sub._id, rev._id, "clientName", e.target.value)} placeholder={clientName || "Client company / person"} className={`${inp} mt-1`} /></label>
+                        {/* CR 371 - the client from the Directory. */}
+                        <div className="text-[11px] text-slate-500">Client name<div className="mt-1"><CompanyPicker size="sm" value={rev.clientName || ""} category="client" onNameChange={(v) => saveRevField(sub._id, rev._id, "clientName", v)} onSelectCompany={(c) => saveRevField(sub._id, rev._id, "clientName", c.name)} placeholder={clientName || "Search the Directory"} /></div></div>
                         <label className="text-[11px] text-slate-500">Submitted by (GT)<input value={rev.submittedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "submittedBy", e.target.value)} placeholder="Who submitted it" className={`${inp} mt-1`} /></label>
                         <label className="text-[11px] text-slate-500">Received by (client side)<input value={rev.receivedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "receivedBy", e.target.value)} placeholder="Who received / returned it" className={`${inp} mt-1`} /></label>
                       </div>
