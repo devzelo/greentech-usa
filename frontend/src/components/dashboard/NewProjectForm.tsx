@@ -24,6 +24,7 @@ import {
   Receipt, ShoppingCart, Truck, Scale, Calendar,
   DollarSign, ChevronRight, AlertCircle, Globe
 } from "lucide-react";
+import { SHOW_PENDING_PROJECT_FIELDS } from "../../lib/pendingDesign";
 
 // ── Shared data ────────────────────────────────────────────────────────────
 
@@ -667,6 +668,8 @@ export default function NewProjectForm() {
             />
             <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>
           </div>
+          {/* Hidden until the client's design for them arrives (lib/pendingDesign). */}
+          {SHOW_PENDING_PROJECT_FIELDS && (<>
           <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiscal / Funding</label>
             <input
@@ -701,6 +704,7 @@ export default function NewProjectForm() {
           <div className="md:col-span-2 lg:col-span-4">
             <WipFields value={wip} onChange={setWip} contractValue={projectValue} />
           </div>
+          </>)}
           {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
           <div className="space-y-1 md:col-span-2 lg:col-span-4">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bonding &amp; letter of credit</label>

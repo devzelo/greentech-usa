@@ -120,6 +120,7 @@ import { resolveProposalLayout, resolveFinancialLayout, FINANCIAL_BUILTINS, PROP
 import PortalMenu from "./PortalMenu";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
+import { SHOW_PENDING_PROJECT_FIELDS } from "../../lib/pendingDesign";
 
 // ── Employee pool ──────────────────────────────────────────────────────────
 const EMPLOYEE_POOL = [
@@ -7514,6 +7515,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   />
                   <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>
                 </div>
+                {/* Hidden until the client's design for them arrives (lib/pendingDesign). */}
+                {SHOW_PENDING_PROJECT_FIELDS && (<>
                 {project?.canSeeFigures !== false && (
                   <div className="md:col-span-2">
                     <WipFields value={identityForm.wip} onChange={(wip) => setIdentityForm({ ...identityForm, wip })} contractValue={identityForm.value} disabled={!isOwner} />
@@ -7552,6 +7555,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
+                </>)}
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</label>
                   <textarea
