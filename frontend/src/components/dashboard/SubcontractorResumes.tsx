@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { FileText, Plus, Trash2, Save, Loader2, Download, X, Pencil, Library, Search, ArrowUp, ArrowDown, Eye } from "lucide-react";
-import { PDFDownloadLink, PDFViewer } from "@react-pdf/renderer";
+import { PDFDownloadLink } from "@react-pdf/renderer";
+import PdfFrame from "./PdfFrame";
 import {
   fetchSubResumes, createSubResume, updateSubResume, deleteSubResume,
   fetchMySubResumes, createMySubResume, updateMySubResume, deleteMySubResume,
@@ -377,13 +378,13 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
               <button onClick={() => setPreviewDraft(false)} className="text-xs font-bold text-slate-500 hover:text-slate-900">Close</button>
             </div>
             <div className="flex-grow">
-              <PDFViewer width="100%" height="100%" showToolbar>
+              <PdfFrame>
                 <ResumePDF
                   resume={{ ...draft, skills: skillsText.split(",").map((s) => s.trim()).filter(Boolean) }}
                   person={{ name: draft.personName, email: draft.contact?.email, phone: draft.contact?.phone, avatarUrl: draft.photoUrl }}
                   logoUrl={`${window.location.origin}/gt-usa-logo-new.png`}
                 />
-              </PDFViewer>
+              </PdfFrame>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PDFViewer } from "@react-pdf/renderer";
+import PdfFrame from "./PdfFrame";
 import { Eye, Plus, X } from "lucide-react";
 import {
   fetchSignatories, fetchStamps, uploadProposalAsset, withFileToken,
@@ -131,9 +131,9 @@ export default function ProposalLetterBuilder({
               <button type="button" onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
             </div>
             <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>
-              <PDFViewer width="100%" height="100%" showToolbar>
+              <PdfFrame>
                 <OpeningPagesDocument volume={volume} cover={cover} coverLetter={letter} project={project} letterhead={letterhead} customLetterheadUrl={customLetterheadUrl} logoUrl={`${window.location.origin}/gt-usa-logo-new.png`} />
-              </PDFViewer>
+              </PdfFrame>
             </div>
           </div>
         )}

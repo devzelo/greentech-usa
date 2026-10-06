@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import { FileText, Plus, Trash2, Save, Loader2, Download, FolderPlus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Eye } from "lucide-react";
-import { PDFDownloadLink, PDFViewer, pdf } from "@react-pdf/renderer";
+import { PDFDownloadLink, pdf } from "@react-pdf/renderer";
+import PdfFrame from "./PdfFrame";
 import {
   fetchMyResume, saveMyResume,
   fetchSavedResumes, saveResumeVersion, updateSavedResume, deleteSavedResume,
@@ -364,13 +365,13 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
               <button onClick={() => setShowPreview(false)} className="text-xs font-bold text-slate-500 hover:text-slate-900">Close</button>
             </div>
             <div className="flex-grow">
-              <PDFViewer width="100%" height="100%" showToolbar>
+              <PdfFrame>
                 <ResumePDF
                   resume={pdfResume}
                   person={{ name: me.name, email: me.email, phone: me.phone, avatarUrl: me.avatarUrl }}
                   logoUrl={`${window.location.origin}/gt-usa-logo-new.png`}
                 />
-              </PDFViewer>
+              </PdfFrame>
             </div>
           </div>
         </div>

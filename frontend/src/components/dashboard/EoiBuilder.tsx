@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { fileName } from "../../lib/fileNames";
-import { PDFViewer, pdf } from "@react-pdf/renderer";
+import { pdf } from "@react-pdf/renderer";
+import PdfFrame from "./PdfFrame";
 import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine } from "lucide-react";
 import { fetchSigners, fetchStamps, withFileToken, type ApiProject, type ApiSigner, type CompanyFile, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
@@ -299,7 +300,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
             <button onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
           </div>
           <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>
-            <PDFViewer width="100%" height="100%" showToolbar><EoiPDF r={r} projectName={project.name} /></PDFViewer>
+            <PdfFrame><EoiPDF r={r} projectName={project.name} /></PdfFrame>
           </div>
         </div>
       )}
