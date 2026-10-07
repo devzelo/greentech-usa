@@ -60,6 +60,7 @@ import { makeZip } from "../../lib/zip";
 import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import StandardAppendices from "./StandardAppendices";
+import SharedMoneyInput from "./MoneyInput";
 import type { StandardAppendixItem } from "../../lib/api";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
@@ -183,23 +184,11 @@ function AutoTextarea({ value, onChange, onBlur, className, disabled }: {
   );
 }
 
-// Money input that shows a formatted currency value when blurred and the raw number while editing.
+// Money input: the shared currency box (2026-10-07: "$58,000" while typing, "$58,000.00" after).
 function MoneyInput({ value, currency, onChange, onBlur, className, disabled }: {
   value: string; currency?: string; onChange: (v: string) => void; onBlur?: (v: string) => void; className?: string; disabled?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-  const display = focused ? value : (fmtMoney(value, currency) || value);
-  return (
-    <input
-      value={display}
-      disabled={disabled}
-      inputMode="decimal"
-      onFocus={() => setFocused(true)}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={(e) => { setFocused(false); onBlur?.(e.target.value); }}
-      className={className}
-    />
-  );
+  return <SharedMoneyInput value={value} currency={currency || "USD"} onChange={onChange} onCommit={onBlur} className={className} disabled={disabled} />;
 }
 
 function SectionHeader({ title }: { title: string }) {
@@ -5432,7 +5421,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                       <td key={c.id} className="px-1 py-1">
                                         {c.kind === "amount" && calc.isComputed(r)
                                           ? <div className="min-w-[5rem] px-3 py-2.5 text-right font-bold text-slate-700 bg-slate-50 rounded-xl" title="Quantity × unit price, calculated">{fmtMoney(calc.amountOf(r))}</div>
-                                          : <input value={r.cells[c.id] || ""} onChange={(e) => setCell(tb.id, r.id, c.id, e.target.value)} disabled={!canEdit} className={`${inp} min-w-[5rem] ${c.kind === "amount" || c.kind === "rate" ? "text-right" : ""} ${c.kind === "amount" ? "font-bold" : ""}`} />}
+                                          : c.kind === "amount" || c.kind === "rate"
+                                            ? <MoneyInput value={r.cells[c.id] || ""} currency={financial.currency || "$"} onChange={(v) => setCell(tb.id, r.id, c.id, v)} disabled={!canEdit} className={`${inp} min-w-[6rem] text-right ${c.kind === "amount" ? "font-bold" : ""}`} />
+                                            : <input value={r.cells[c.id] || ""} onChange={(e) => setCell(tb.id, r.id, c.id, e.target.value)} disabled={!canEdit} className={`${inp} min-w-[5rem]`} />}
                                       </td>
                                     ))}
                                     {del}
@@ -5474,7 +5465,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 <option value="percent">% of the lines</option>
                                 <option value="fixed">Fixed amount</option>
                               </select>
-                              <input value={a.value} onChange={(e) => setAdjustment(tb.id, a.id, { value: e.target.value })} disabled={!canEdit} placeholder={a.mode === "percent" ? "15" : "-5000"} aria-label="Value" className={`${inp} text-right`} />
+                              {a.mode === "fixed"
+                                ? <SharedMoneyInput value={a.value} currency={financial.currency || "$"} allowNegative onChange={(v) => setAdjustment(tb.id, a.id, { value: v })} disabled={!canEdit} placeholder="-$5,000.00" aria-label="Value" className={`${inp} text-right`} />
+                                : <input value={a.value} onChange={(e) => setAdjustment(tb.id, a.id, { value: e.target.value })} disabled={!canEdit} placeholder="15" aria-label="Value" className={`${inp} text-right`} />}
                               <span className="text-right text-xs font-bold text-slate-700">{fmtMoney(calc.adjustments.find((x) => x.id === a.id)?.amount || 0)}</span>
                               {canEdit ? <button onClick={() => removeAdjustment(tb.id, a.id)} aria-label="Remove line" className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button> : <span />}
                             </div>
@@ -6695,7 +6688,12 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                           <tr key={row._id} className="hover:bg-slate-50/40">
                             {cell("poNumber")}
                             {cell("vendor")}
-                            {cell("amount")}
+                            <td className="px-1 py-1 align-top">
+                              <MoneyInput value={row.amount || ""} disabled={!canEdit}
+                                onChange={(v) => setPoRows((prev) => prev.map((r) => (r._id === row._id ? { ...r, amount: v } : r)))}
+                                onBlur={(v) => updatePurchaseOrder(id, row._id, { amount: v })}
+                                className="w-full px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium" />
+                            </td>
                             {cell("date", "date")}
                             {select("status", ["Draft", "Ordered", "Received", "Paid", "Cancelled"])}
                             <td className="px-2 py-1 align-top">
@@ -7618,12 +7616,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project Value / Worth</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <SharedMoneyInput
                     value={identityForm.value}
-                    onChange={(e) => setIdentityForm({ ...identityForm, value: sanitizeMoney(e.target.value) })}
-                    placeholder="e.g. $2,500,000"
+                    onChange={(v) => setIdentityForm({ ...identityForm, value: sanitizeMoney(v) })}
+                    placeholder="e.g. $2,500,000.00"
                     disabled={!isOwner}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-70 disabled:cursor-not-allowed"
                   />

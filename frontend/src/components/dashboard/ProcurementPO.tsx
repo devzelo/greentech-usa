@@ -24,6 +24,7 @@ import PresenceBar from "./PresenceBar";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
+import MoneyInput from "./MoneyInput";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import AssignColleague from "./AssignColleague";
 import FileActions from "./FileActions";
@@ -446,7 +447,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
                   <td className="px-1 py-1"><input className={`${inp} min-w-[12rem]`} placeholder="Description" value={li.description || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "description", e.target.value)} onBlur={() => commitLines(po)} /></td>
                   <td className="px-1 py-1"><input className={`${inp} w-16`} value={li.qty || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "qty", e.target.value)} onBlur={() => commitLines(po)} /></td>
                   <td className="px-1 py-1"><input className={`${inp} w-16`} placeholder="ea" value={li.unit || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "unit", e.target.value)} onBlur={() => commitLines(po)} /></td>
-                  <td className="px-1 py-1"><input className={`${inp} w-24`} placeholder="0.00" value={li.unitPrice || ""} disabled={!canEdit} onChange={(e) => editLine(po, i, "unitPrice", e.target.value)} onBlur={() => commitLines(po)} /></td>
+                  <td className="px-1 py-1"><MoneyInput className={`${inp} w-28`} value={li.unitPrice || ""} disabled={!canEdit} onChange={(v) => editLine(po, i, "unitPrice", v)} onCommit={() => commitLines(po)} aria-label="Unit price" /></td>
                   <td className="px-3 py-1.5 font-bold text-slate-700 whitespace-nowrap">{money(n(li.qty) * n(li.unitPrice))}</td>
                   <td className="px-2 py-1.5">{canEdit && <button onClick={() => removeLine(po, i)} title="Remove line" className="p-1 rounded text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>}</td>
                 </tr>
@@ -541,7 +542,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
           <p className="text-[10px] text-slate-400 mb-2">Record the vendor's invoice here and upload its file below. Once the number, amount and date are in, it goes to <span className="font-bold">Invoices Received</span> by itself (with the file), where it is paid; the payment is recorded in Expenses.{ownerPackage ? "" : " It is also listed in Procurement > Invoices."}</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input className={inp} placeholder="Invoice #" value={po.invoiceNo} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceNo: e.target.value })} onBlur={(e) => save(po._id, "invoiceNo", e.target.value)} />
-            <input className={inp} placeholder="Invoice amount" value={po.invoiceAmount} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceAmount: e.target.value })} onBlur={(e) => save(po._id, "invoiceAmount", e.target.value)} />
+            <MoneyInput className={inp} placeholder="Invoice amount" value={po.invoiceAmount} disabled={!canEdit} onChange={(v) => patch(po._id, { invoiceAmount: v })} onCommit={(v) => save(po._id, "invoiceAmount", v)} aria-label="Invoice amount" />
             <input type="date" className={inp} value={po.invoiceDate} disabled={!canEdit} onChange={(e) => patch(po._id, { invoiceDate: e.target.value })} onBlur={(e) => save(po._id, "invoiceDate", e.target.value)} />
           </div>
         </div>

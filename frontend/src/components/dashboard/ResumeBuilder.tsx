@@ -13,6 +13,8 @@ import ResumePDF from "./ResumePDF";
 import ResumePageBadge from "./ResumePageBadge";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import CompanyPicker from "./CompanyPicker";
+import MoneyInput from "./MoneyInput";
+import { sanitizeMoney } from "../../lib/money";
 
 const EMPTY: ApiResume = {
   title: "", summary: "", citizenship: "",
@@ -227,8 +229,8 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
                 <input className={inp} value={p.employer || ""} onChange={(ev) => set("projects", updateAt(resume.projects, i, { employer: ev.target.value }))} placeholder="Employer (e.g. GreenTech)" />
                 <input className={inp} value={p.role} onChange={(ev) => set("projects", updateAt(resume.projects, i, { role: ev.target.value }))} placeholder="Your role on it" />
                 <CompanyPicker size="sm" value={p.client || ""} category="client" onNameChange={(v) => set("projects", updateAt(resume.projects, i, { client: v }))} onSelectCompany={(c) => set("projects", updateAt(resume.projects, i, { client: c.name }))} placeholder="Client, from the Directory (e.g. US Dept. of State)" />
-                <input className={inp} value={p.value || ""} onChange={(ev) => set("projects", updateAt(resume.projects, i, { value: ev.target.value }))} placeholder="Project value (e.g. $1,250,000)" />
-                <input className={inp} value={p.cost || ""} onChange={(ev) => set("projects", updateAt(resume.projects, i, { cost: ev.target.value }))} placeholder="Cost (e.g. $246,451)" />
+                <MoneyInput className={inp} value={p.value || ""} onChange={(v) => set("projects", updateAt(resume.projects, i, { value: sanitizeMoney(v) }))} placeholder="Project value (e.g. $1,250,000.00)" aria-label="Project value" />
+                <MoneyInput className={inp} value={p.cost || ""} onChange={(v) => set("projects", updateAt(resume.projects, i, { cost: sanitizeMoney(v) }))} placeholder="Cost (e.g. $246,451.00)" aria-label="Cost" />
                 <input className={inp} value={p.solicitationNo || ""} onChange={(ev) => set("projects", updateAt(resume.projects, i, { solicitationNo: ev.target.value }))} placeholder="Solicitation #" />
                 <input className={inp} value={p.contractNo || ""} onChange={(ev) => set("projects", updateAt(resume.projects, i, { contractNo: ev.target.value }))} placeholder="Contract #" />
                 <div className="flex gap-3">

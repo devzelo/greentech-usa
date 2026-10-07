@@ -2,8 +2,9 @@ import { useState } from "react";
 import DirectoryNameField from "./DirectoryNameField";
 import { ShieldCheck, Landmark, Pencil, Loader2 } from "lucide-react";
 import {
-  bondingLines, feeAmount, fromAmount, fromPercent, moneyNum, withBonding, type BondLine, type ProjectBonding,
+  bondingLines, feeAmount, fromAmount, fromPercent, money, moneyNum, withBonding, type BondLine, type ProjectBonding,
 } from "../../lib/bonding";
+import MoneyInput from "./MoneyInput";
 import { updateProject, type ApiProject } from "../../lib/api";
 import { toast } from "../../lib/toast";
 
@@ -83,8 +84,8 @@ export default function BondingEditor({ value, onChange, contractValue }: {
                       value={l.percent} onChange={(e) => setLine(bd.key, fromPercent(e.target.value.replace(/[^0-9.]/g, ""), contract))} aria-label={`${bd.label} percent`} />
                   </td>
                   <td className="px-2 py-1.5">
-                    <input className={inp} inputMode="decimal" placeholder="$" disabled={off}
-                      value={l.amount} onChange={(e) => setLine(bd.key, fromAmount(e.target.value.replace(/[^0-9.,$]/g, ""), contract))} aria-label={`${bd.label} amount`} />
+                    <MoneyInput className={inp} disabled={off}
+                      value={l.amount} onChange={(v) => setLine(bd.key, fromAmount(v ? money(moneyNum(v)) : "", contract))} aria-label={`${bd.label} amount`} />
                   </td>
                 </tr>
               );
@@ -115,7 +116,7 @@ export default function BondingEditor({ value, onChange, contractValue }: {
             <label className="space-y-0.5"><span className={lbl}>%</span>
               <input className={inp} inputMode="decimal" value={value.iloc.percent} onChange={(e) => setIloc(fromPercent(e.target.value.replace(/[^0-9.]/g, ""), contract))} placeholder="40" /></label>
             <label className="space-y-0.5"><span className={lbl}>Amount</span>
-              <input className={inp} inputMode="decimal" value={value.iloc.amount} onChange={(e) => setIloc(fromAmount(e.target.value.replace(/[^0-9.,$]/g, ""), contract))} placeholder="$" /></label>
+              <MoneyInput className={inp} value={value.iloc.amount} onChange={(v) => setIloc(fromAmount(v ? money(moneyNum(v)) : "", contract))} /></label>
             <div className="col-span-2 space-y-0.5 sm:col-span-1"><span className={lbl}>Bank / institution</span>
               <DirectoryNameField value={value.iloc.bank} categories={["financial", "other"]} title="Bank / institution" placeholder="Pick from the Directory"
                 onPick={(c) => setIloc({ bank: c.name })} onClear={() => setIloc({ bank: "" })} /></div>

@@ -7,6 +7,7 @@ import {
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { AddressPicker } from "./AddressPicker";
+import MoneyInput from "./MoneyInput";
 import CompanyEditorModal from "./CompanyEditorModal";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { usePackageBar, type SetPackageBar } from "../../lib/packageBar";
@@ -397,7 +398,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
                         <td className="px-1 py-1"><textarea value={r.spec} onChange={(e) => setRow(r.key, { spec: e.target.value })} rows={2} placeholder="e.g. Ø110 mm, PN16, uPVC, 6 m length (BS EN 1452)" className={`${inp} resize-y`} /></td>
                         <td className="px-1 py-1"><input value={r.unit} onChange={(e) => setRow(r.key, { unit: e.target.value })} placeholder="m / ea" className={inp} /></td>
                         <td className="px-1 py-1"><input value={r.qty} onChange={(e) => setRow(r.key, { qty: e.target.value })} inputMode="decimal" placeholder="0" className={`${inp} text-right ${err(n(r.qty) <= 0)}`} /></td>
-                        <td className="px-1 py-1"><input value={r.targetUnitPrice || ""} onChange={(e) => setRow(r.key, { targetUnitPrice: e.target.value })} inputMode="decimal" placeholder="-" className={`${inp} text-right`} /></td>
+                        <td className="px-1 py-1"><MoneyInput value={r.targetUnitPrice || ""} currency={currency || "USD"} onChange={(v) => setRow(r.key, { targetUnitPrice: v })} placeholder="-" aria-label="Target unit price" className={`${inp} text-right`} /></td>
                         <td className="px-2 py-2 text-right font-bold text-slate-700 whitespace-nowrap">{n(r.targetUnitPrice) ? fmt(n(r.qty) * n(r.targetUnitPrice)) : <span className="text-slate-300">-</span>}</td>
                         <td className="px-1 py-1"><textarea value={r.vendorNote || ""} onChange={(e) => setRow(r.key, { vendorNote: e.target.value })} rows={2} placeholder="e.g. Provide brand and data sheet." className={`${inp} resize-y`} /></td>
                         <td className="px-1 py-1">

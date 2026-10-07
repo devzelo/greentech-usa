@@ -4,6 +4,7 @@ import ProcurementRFQ, { quoteTotal } from "./ProcurementRFQ";
 import ProcurementPO from "./ProcurementPO";
 import AgreementsPanel from "./agreements/AgreementsPanel";
 import InvoiceLedger from "./InvoiceLedger";
+import MoneyInput from "./MoneyInput";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
@@ -1033,7 +1034,7 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                 )}
                 <p className={hint}>{m?.source === "agreement" ? "The original contract is the agreement's contract value; change it on the agreement." : m?.source === "po" ? "The original contract is the purchase order's total." : pkg.agreement ? "The agreement has no contract value yet: enter it on the agreement (Contract value) and it is used here." : "The original contract comes from the package's agreement. For work done in-house, type a budget instead."} Paid is the payments on the invoices above (they are in Finances too), plus approved expenses tagged to this package.</p>
                 {!f.poId && !(m?.source === "agreement") && (
-                  <label className="block"><span className={lbl}>Budget (in-house work, or until the agreement has a value)</span><input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} placeholder="0" className={inp} /></label>
+                  <label className="block"><span className={lbl}>Budget (in-house work, or until the agreement has a value)</span><MoneyInput value={f.budget || ""} onChange={(v) => set({ budget: Math.max(0, Number(v) || 0) })} className={inp} /></label>
                 )}
               </section>
               <section className={`${card} space-y-2`}>
@@ -1045,7 +1046,7 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                       <div className="flex flex-wrap items-center gap-1">
                         <input value={c.no} onChange={(e) => setCo(i, { no: e.target.value })} placeholder="CO-01" aria-label="Change order number" className={`${small} w-20`} />
                         <input type="date" value={c.date} onChange={(e) => setCo(i, { date: e.target.value })} aria-label="Change order date" className={small} />
-                        <input type="number" step="any" value={c.amount ?? ""} onChange={(e) => setCo(i, { amount: Number(e.target.value) || 0 })} placeholder="+ / - amount" aria-label="Change order amount" className={`${small} w-28 text-right`} />
+                        <MoneyInput allowNegative value={c.amount ?? ""} onChange={(v) => setCo(i, { amount: Number(v) || 0 })} placeholder="+ / - amount" aria-label="Change order amount" className={`${small} w-32 text-right`} />
                         <select value={c.status} onChange={(e) => setCo(i, { status: e.target.value as "proposed" | "approved" })} aria-label="Change order status" className={small}><option value="approved">Approved</option><option value="proposed">Proposed</option></select>
                         <button type="button" onClick={() => set({ changeOrders: cos.filter((_, j) => j !== i) })} aria-label="Remove the change order" className="ml-auto rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={12} /></button>
                       </div>

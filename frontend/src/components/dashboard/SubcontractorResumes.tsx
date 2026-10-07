@@ -12,6 +12,8 @@ import ResumePDF from "./ResumePDF";
 import ResumePageBadge from "./ResumePageBadge";
 import { ConfirmDialog } from "./Dialogs";
 import CompanyPicker from "./CompanyPicker";
+import MoneyInput from "./MoneyInput";
+import { sanitizeMoney } from "../../lib/money";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-sm font-medium text-slate-700 focus:bg-white focus:ring-2 focus:ring-primary/10 outline-none transition-all";
 const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
@@ -243,8 +245,8 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
                 <input className={inp} value={p.contractNo || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { contractNo: ev.target.value }))} placeholder="Contract #" />
                 <input className={inp} value={p.start} onChange={(ev) => set("projects", updateAt(draft.projects, i, { start: ev.target.value }))} placeholder="Start" />
                 <input className={inp} value={p.end} onChange={(ev) => set("projects", updateAt(draft.projects, i, { end: ev.target.value }))} placeholder="End" />
-                <input className={inp} value={p.value || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { value: ev.target.value }))} placeholder="Project value (e.g. $1,250,000)" />
-                <input className={inp} value={p.cost || ""} onChange={(ev) => set("projects", updateAt(draft.projects, i, { cost: ev.target.value }))} placeholder="Cost (e.g. $246,451)" />
+                <MoneyInput className={inp} value={p.value || ""} onChange={(v) => set("projects", updateAt(draft.projects, i, { value: sanitizeMoney(v) }))} placeholder="Project value (e.g. $1,250,000.00)" aria-label="Project value" />
+                <MoneyInput className={inp} value={p.cost || ""} onChange={(v) => set("projects", updateAt(draft.projects, i, { cost: sanitizeMoney(v) }))} placeholder="Cost (e.g. $246,451.00)" aria-label="Cost" />
                 <textarea rows={2} className={`${inp} resize-none md:col-span-2`} value={p.description} onChange={(ev) => set("projects", updateAt(draft.projects, i, { description: ev.target.value }))} placeholder="Scope / description…" />
               </div>
             )))}

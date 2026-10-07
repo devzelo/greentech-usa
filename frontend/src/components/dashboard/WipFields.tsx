@@ -2,6 +2,7 @@ import { Landmark } from "lucide-react";
 import { money } from "../../lib/bonding";
 import { COMPETITION, plannedProfit, type ProjectWip } from "../../lib/wip";
 import { sanitizeMoney } from "../../lib/money";
+import MoneyInput from "./MoneyInput";
 
 /**
  * CR 312 (2026-09-25): the project figures the bank reports (WIP, opportunities) need, in one small
@@ -40,16 +41,16 @@ export default function WipFields({ value, onChange, contractValue, disabled }: 
           <input className={inp} disabled={disabled} inputMode="decimal" value={value.winChance} onChange={(e) => set({ winChance: pct(e.target.value) })} placeholder="70" />
         </label>
         <label className="space-y-0.5"><span className={lbl}>Funded value</span>
-          <input className={inp} disabled={disabled} inputMode="decimal" value={value.fundedValue} onChange={(e) => set({ fundedValue: sanitizeMoney(e.target.value) })} placeholder="$0" />
+          <MoneyInput className={inp} disabled={disabled} value={value.fundedValue} onChange={(v) => set({ fundedValue: sanitizeMoney(v) })} />
         </label>
         <label className="space-y-0.5"><span className={lbl}>Est. gross profit % {profit ? <span className="normal-case tracking-normal text-slate-500">= {money(profit)}</span> : null}</span>
           <input className={inp} disabled={disabled} inputMode="decimal" value={value.grossProfitPct} onChange={(e) => set({ grossProfitPct: pct(e.target.value) })} placeholder="20" />
         </label>
         <label className="space-y-0.5"><span className={lbl}>Approved change orders</span>
-          <input className={inp} disabled={disabled} inputMode="decimal" value={value.approvedChanges} onChange={(e) => set({ approvedChanges: sanitizeMoney(e.target.value) })} placeholder="$0" />
+          <MoneyInput className={inp} disabled={disabled} value={value.approvedChanges} onChange={(v) => set({ approvedChanges: sanitizeMoney(v) })} />
         </label>
         <label className="col-span-2 space-y-0.5"><span className={lbl}>Estimated cost to complete the remaining work</span>
-          <input className={inp} disabled={disabled} inputMode="decimal" value={value.costToComplete} onChange={(e) => set({ costToComplete: sanitizeMoney(e.target.value) })} placeholder="Update as the work goes on" />
+          <MoneyInput className={inp} disabled={disabled} value={value.costToComplete} onChange={(v) => set({ costToComplete: sanitizeMoney(v) })} placeholder="Update as the work goes on" />
         </label>
       </div>
     </div>

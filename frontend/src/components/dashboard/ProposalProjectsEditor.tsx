@@ -3,6 +3,8 @@ import { Plus, Trash2, X, Check, ChevronUp, ChevronDown, FolderSearch, Link2, Se
 import { withFileToken, CONTRACT_TYPES, type ApiProject, type ProposalSimilarProject } from "../../lib/api";
 import { entryFromProject, blankEntry, projectTags, projectPhotos, periodOf, linkedProjectPool } from "../../lib/pastPerformance";
 import DirectoryNameField from "./DirectoryNameField";
+import MoneyInput from "./MoneyInput";
+import { sanitizeMoney } from "../../lib/money";
 import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
 
 /** 2026-10-07 - a typed-in project's client is a Directory company; its contact is one of its people. */
@@ -192,7 +194,7 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
                   </label>
                   <label className="space-y-0.5"><span className={lbl}>Contract value</span>
                     <div className="flex items-center gap-2">
-                      <input value={e.value} onChange={(ev) => set(i, { value: ev.target.value })} disabled={!canEdit} className={inp} />
+                      <MoneyInput value={e.value} onChange={(v) => set(i, { value: sanitizeMoney(v) })} disabled={!canEdit} className={inp} aria-label="Contract value" />
                       <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 shrink-0" title="Item 100: the total amount is optional">
                         <input type="checkbox" checked={e.showValue !== false} onChange={(ev) => set(i, { showValue: ev.target.checked })} disabled={!canEdit} className="rounded" /> Print
                       </span>

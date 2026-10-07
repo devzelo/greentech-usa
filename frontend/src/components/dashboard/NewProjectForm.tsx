@@ -16,6 +16,7 @@ import CategoryMultiSelect from "./CategoryMultiSelect";
 import { PROJECT_STATUSES, statusMeta } from "../../lib/projectStatus";
 import { sanitizeMoney } from "../../lib/money";
 import AddressBox from "./AddressBox";
+import MoneyInput from "./MoneyInput";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 import { EMPTY_SITE_ADDRESS, shortLocation, type SiteAddress } from "../../lib/address";
 import {
@@ -661,12 +662,10 @@ export default function NewProjectForm() {
           </div>
           <div className="space-y-1 md:col-span-2 lg:col-span-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Project Value / Worth</label>
-            <input
-              type="text"
-              inputMode="decimal"
+            <MoneyInput
               value={projectValue}
-              onChange={(e) => setProjectValue(sanitizeMoney(e.target.value))}
-              placeholder="e.g. $2,500,000"
+              onChange={(v) => setProjectValue(sanitizeMoney(v))}
+              placeholder="e.g. $2,500,000.00"
               className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
             />
             <p className="text-[10px] text-slate-400">Enter the full dollar amount (numbers only) — used for the All Projects total value.</p>

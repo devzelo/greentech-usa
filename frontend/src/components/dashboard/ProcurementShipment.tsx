@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fileName } from "../../lib/fileNames";
+import SharedMoneyInput from "./MoneyInput";
 import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Container, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
@@ -42,24 +43,8 @@ const COST_FIELDS = [
 function MoneyInput({ value, onChange, className, placeholder }: {
   value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [raw, setRaw] = useState("");
-  const shown = editing ? raw : (n(value) ? money(n(value)) : "");
-  return (
-    <input
-      className={className}
-      inputMode="decimal"
-      value={shown}
-      placeholder={placeholder}
-      onFocus={() => { setRaw(n(value) ? String(n(value)) : ""); setEditing(true); }}
-      onChange={(e) => { setRaw(e.target.value); onChange(e.target.value); }}
-      onBlur={() => {
-        setEditing(false);
-        // Nothing but stray characters clears the box rather than writing $0.00.
-        onChange(/[0-9]/.test(raw) ? money(n(raw)) : "");
-      }}
-    />
-  );
+  // 2026-10-07 - the shared currency box; the stored text stays "$12,100.00" once the box is left.
+  return <SharedMoneyInput className={className} placeholder={placeholder} value={value} onChange={onChange} onCommit={(raw) => onChange(raw ? money(n(raw)) : "")} />;
 }
 
 // Cost of goods = sum of the linked POs' invoice amounts (falling back to the PO total). Pulled

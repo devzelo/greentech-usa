@@ -12,6 +12,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import DocumentViewer from "./DocumentViewer";
 import CompanyPicker from "./CompanyPicker";
 import PdfPreviewModal from "./PdfPreviewModal";
+import MoneyInput from "./MoneyInput";
 import { buildExpensePdf } from "../../lib/expensePdf";
 import { Fig } from "./FiguresPrivacy";
 
@@ -611,7 +612,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
                       {showCat && <td className="px-1 py-1"><CategorySelect cats={cats} value={it.category || ""} onChange={(v) => setItem(it.key, { category: v })} disabled={!editable} className={inp} /></td>}
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.qty} onChange={(e) => setItem(it.key, { qty: e.target.value })} inputMode="decimal" /></td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unit} onChange={(e) => setItem(it.key, { unit: e.target.value })} placeholder="pcs" /></td>
-                      <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.unitPrice} onChange={(e) => setItem(it.key, { unitPrice: e.target.value })} placeholder="0.00" inputMode="decimal" /></td>
+                      <td className="px-1 py-1"><MoneyInput className={inp} disabled={!editable} value={it.unitPrice} currency={currency || "USD"} onChange={(v) => setItem(it.key, { unitPrice: v })} aria-label="Unit price" /></td>
                       <td className="px-2 py-1.5 text-right font-bold text-slate-700 whitespace-nowrap">{fmtCur((num(it.qty) || 0) * num(it.unitPrice))}</td>
                       <td className="px-1 py-1"><input className={inp} disabled={!editable} value={it.remark || ""} onChange={(e) => setItem(it.key, { remark: e.target.value })} placeholder="e.g. Diesel for generator" /></td>
                       <td className="px-1 py-1 whitespace-nowrap">

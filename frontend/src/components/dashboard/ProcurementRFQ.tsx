@@ -25,6 +25,7 @@ import PresenceBar from "./PresenceBar";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
+import MoneyInput from "./MoneyInput";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import { AddressPicker } from "./AddressPicker";
 import AssignColleague from "./AssignColleague";
@@ -931,9 +932,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                             const ql = q.lineItems.find((x) => x.itemId === li.itemId);
                             return (
                               <td key={q._id} className={`px-2 py-1 ${q.status === "Awarded" ? "bg-emerald-50/50" : ""}`}>
-                                <input className={inp} placeholder="unit $" value={ql?.unitPrice || ""} disabled={!canEdit}
-                                  onChange={(e) => setQuoteLine(rfq._id, q, li.itemId, e.target.value)}
-                                  onBlur={() => { const cur = rfqs.find((r) => r._id === rfq._id)?.quotes.find((x) => x._id === q._id); if (cur) saveQuoteLines(rfq._id, q._id, cur.lineItems); }} />
+                                <MoneyInput className={inp} placeholder="Unit price" value={ql?.unitPrice || ""} disabled={!canEdit} currency={rfq.currency || "USD"}
+                                  onChange={(v) => setQuoteLine(rfq._id, q, li.itemId, v)}
+                                  onCommit={() => { const cur = rfqs.find((r) => r._id === rfq._id)?.quotes.find((x) => x._id === q._id); if (cur) saveQuoteLines(rfq._id, q._id, cur.lineItems); }} />
                               </td>
                             );
                           })}
@@ -944,9 +945,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                         <td className="px-3 py-1.5 sticky left-0 bg-slate-50/60 text-[11px] font-bold text-slate-600" title="Optional — enter one lump-sum item total instead of unit prices above">Total cost (enter once)</td>
                         {rfq.quotes.map((q) => (
                           <td key={q._id} className={`px-2 py-1 ${q.status === "Awarded" ? "bg-emerald-50/50" : ""}`}>
-                            <input className={inp} placeholder="lump sum $" value={q.totalOverride || ""} disabled={!canEdit}
-                              onChange={(e) => setQuoteField(rfq._id, q, "totalOverride", e.target.value)}
-                              onBlur={(e) => saveQuoteField(rfq._id, q._id, "totalOverride", e.target.value)} />
+                            <MoneyInput className={inp} placeholder="Lump sum" value={q.totalOverride || ""} disabled={!canEdit} currency={rfq.currency || "USD"}
+                              onChange={(v) => setQuoteField(rfq._id, q, "totalOverride", v)}
+                              onCommit={(v) => saveQuoteField(rfq._id, q._id, "totalOverride", v)} />
                           </td>
                         ))}
                       </tr>
@@ -956,9 +957,13 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                           <td className="px-3 py-1.5 sticky left-0 bg-white text-[11px] font-bold text-slate-500">{label}</td>
                           {rfq.quotes.map((q) => (
                             <td key={q._id} className={`px-2 py-1 ${q.status === "Awarded" ? "bg-emerald-50/50" : ""}`}>
-                              <input className={inp} value={(q[field] as string) || ""} disabled={!canEdit}
-                                onChange={(e) => setQuoteField(rfq._id, q, field, e.target.value)}
-                                onBlur={(e) => saveQuoteField(rfq._id, q._id, field, e.target.value)} />
+                              {field === "leadTimeDays"
+                                ? <input className={inp} value={(q[field] as string) || ""} disabled={!canEdit}
+                                    onChange={(e) => setQuoteField(rfq._id, q, field, e.target.value)}
+                                    onBlur={(e) => saveQuoteField(rfq._id, q._id, field, e.target.value)} />
+                                : <MoneyInput className={inp} value={(q[field] as string) || ""} disabled={!canEdit} currency={rfq.currency || "USD"}
+                                    onChange={(v) => setQuoteField(rfq._id, q, field, v)}
+                                    onCommit={(v) => saveQuoteField(rfq._id, q._id, field, v)} />}
                             </td>
                           ))}
                         </tr>

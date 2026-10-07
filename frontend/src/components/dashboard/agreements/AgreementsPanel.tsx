@@ -30,6 +30,7 @@ import { usePackageBar, type SetPackageBar } from "../../../lib/packageBar";
 import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import PdfPreviewModal from "../PdfPreviewModal";
+import MoneyInput from "../MoneyInput";
 import RichTextEditor from "../RichTextEditor";
 import { useUnsavedGuard } from "../../../lib/useUnsavedGuard";
 import { useHighlight } from "../../../lib/useHighlight";
@@ -1666,7 +1667,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                 {/* CR 328 (GT Comments 3) - what the agreement is worth, so a work package on it takes its
                     original value from here instead of a figure typed twice. Internal, never printed. */}
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contract value <span className="font-medium normal-case text-slate-400">(internal, not printed)</span>
-                  <input inputMode="decimal" className={`${inp} mt-1`} value={draft.contractValue} onChange={(e) => setDraft({ ...draft, contractValue: e.target.value.replace(/[^0-9.,$ ]/g, "") })} placeholder="e.g. 45,000" />
+                  <MoneyInput className={`${inp} mt-1`} value={draft.contractValue} onChange={(v) => setDraft({ ...draft, contractValue: v })} />
                   <span className="block mt-1 text-[9px] font-medium normal-case text-slate-400">A work package linked to this agreement takes its original value from here.</span>
                 </label>
               </>

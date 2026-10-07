@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import MoneyInput from "./MoneyInput";
 import { Loader2, Plus, Trash2, X, FileText, Upload, DollarSign, Link2, Wallet, Eye, Download, Send, Settings2, CheckCircle2 } from "lucide-react";
 import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
@@ -533,7 +534,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                       {po && <button onClick={() => viewPO(po)} title={`Open the PO ${po.poNo} document`} className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/5 border border-primary/15 text-[9px] font-bold text-primary hover:bg-primary hover:text-white transition-colors"><Eye size={9} /> PO {po.poNo}</button>}
                     </td>
                     <td className="px-1 py-1"><input className={inp} value={row.description} disabled={!canEdit} onChange={(e) => edit(row._id, "description", e.target.value)} onBlur={(e) => save(row._id, "description", e.target.value)} placeholder="—" /></td>
-                    <td className="px-1 py-1"><input className={`${inp} font-bold`} value={row.amount} disabled={!canEdit} onChange={(e) => edit(row._id, "amount", e.target.value)} onBlur={(e) => save(row._id, "amount", e.target.value)} placeholder="0.00" /></td>
+                    <td className="px-1 py-1"><MoneyInput className={`${inp} font-bold`} value={row.amount} disabled={!canEdit} onChange={(v) => edit(row._id, "amount", v)} onCommit={(v) => save(row._id, "amount", v)} aria-label="Total" /></td>
                     <td className="px-3 py-2 font-bold text-emerald-600 whitespace-nowrap">{rPaid ? money(rPaid) : "—"}</td>
                     <td className={`px-3 py-2 font-bold whitespace-nowrap ${rLeft > 0 ? (isSent ? "text-blue-600" : "text-amber-600") : "text-slate-400"}`}>{n(row.amount) ? money(rLeft) : "—"}</td>
                     <td className="px-1 py-1"><input type="date" className={inp} value={row.date} disabled={!canEdit} onChange={(e) => edit(row._id, "date", e.target.value)} onBlur={(e) => save(row._id, "date", e.target.value)} /></td>
@@ -766,7 +767,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                           <tr key={i} className="border-t border-slate-50">
                             <td className="px-2 py-1"><input className={inp} value={it.description} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} placeholder="Item / service" /></td>
                             <td className="px-2 py-1"><input className={inp} value={it.qty} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} /></td>
-                            <td className="px-2 py-1"><input className={inp} value={it.unitPrice} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} placeholder="0.00" /></td>
+                            <td className="px-2 py-1"><MoneyInput className={inp} value={it.unitPrice} onChange={(v) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, unitPrice: v } : x)) })} aria-label="Unit price" /></td>
                             <td className="px-3 py-1 text-right font-bold text-slate-700 whitespace-nowrap">{money(n(it.qty) * n(it.unitPrice))}</td>
                             <td className="px-2 py-1"><input className={inp} value={it.remarks || ""} onChange={(e) => setB({ lineItems: bDraft.lineItems.map((x, j) => (j === i ? { ...x, remarks: e.target.value } : x)) })} placeholder="—" /></td>
                             <td className="px-2 py-1 text-right"><button onClick={() => setB({ lineItems: bDraft.lineItems.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-500"><X size={13} /></button></td>
@@ -797,7 +798,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     </div>
                     {/* CR-P (169) — the total of the uploaded invoice, entered here. */}
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest max-w-xs">Invoice total
-                      <input className={`${finp} mt-1 font-bold`} value={bDraft.amount} onChange={(e) => setB({ amount: e.target.value })} placeholder="0.00" inputMode="decimal" /></label>
+                      <MoneyInput className={`${finp} mt-1 font-bold`} value={bDraft.amount} onChange={(v) => setB({ amount: v })} /></label>
                   </div>
                 )}
 
@@ -952,7 +953,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     )}
                     {!!bDraft.contractRef.source && (
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contract value
-                        <input className={`${finp} mt-1 font-bold`} value={bDraft.contractTotal} onChange={(e) => setB({ contractTotal: e.target.value })} placeholder="0.00" /></label>
+                        <MoneyInput className={`${finp} mt-1 font-bold`} value={bDraft.contractTotal} onChange={(v) => setB({ contractTotal: v })} /></label>
                     )}
                   </div>
                   {!!bDraft.contractRef.source && (<>
@@ -1102,7 +1103,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amount paid
-                  <input className={`${finp} mt-1 font-bold`} value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} placeholder="0.00" /></label>
+                  <MoneyInput className={`${finp} mt-1 font-bold`} value={pay.amount} onChange={(v) => setPay({ ...pay, amount: v })} /></label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date
                   <input type="date" className={`${finp} mt-1`} value={pay.date} onChange={(e) => setPay({ ...pay, date: e.target.value })} /></label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Method
