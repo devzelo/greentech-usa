@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { BellPlus, Loader2, X } from "lucide-react";
 import { createReminder } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -74,7 +75,10 @@ export default function ReminderButton({ title, contextLabel, link, compact, pro
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
+        // 2026-10-07 - opened on <body>: inside a card with a blur (the project header) a fixed
+        // window is trapped in that card instead of covering the page.
+        createPortal(
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-16" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
               <div className="flex items-center gap-2"><BellPlus size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">Set a reminder</p></div>
@@ -108,7 +112,9 @@ export default function ReminderButton({ title, contextLabel, link, compact, pro
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
+        )
       )}
     </>
   );
