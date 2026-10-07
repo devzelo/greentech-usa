@@ -251,6 +251,16 @@ router.patch("/:did", async (req: AuthedRequest, res: Response, next: NextFuncti
       if (target.projectId !== req.params.id) return res.status(404).json({ error: "Document not found." });
       target.folder = cleanFolder(req.body.folder);
     }
+    // 2026-10-07 - rename: the name shown and downloaded (the stored file stays where it is). No
+    // path or reserved characters, and the file keeps its type: a name without it gets it back.
+    if (typeof req.body?.name === "string") {
+      if (target.projectId !== req.params.id) return res.status(404).json({ error: "Document not found." });
+      let name = req.body.name.replace(/[\\/:*?"<>|\x00-\x1f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+      if (!name || name === ".") return res.status(400).json({ error: "Give the file a name." });
+      const ext = path.extname(target.name).toLowerCase();
+      if (ext && path.extname(name).toLowerCase() !== ext) name = `${name}${ext}`;
+      target.name = name;
+    }
     await target.save();
     res.json(target);
   } catch (err) {

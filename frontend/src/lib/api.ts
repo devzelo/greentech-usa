@@ -1905,6 +1905,10 @@ export async function setDocumentPublic(projectId: string, did: string, isPublic
 }
 
 // Update a document's per-file description (J3).
+/** 2026-10-07 - rename a project file (its shown and downloaded name; it keeps its type). */
+export async function renameDocument(projectId: string, did: string, name: string): Promise<ApiDocument> {
+  return request<ApiDocument>(`/projects/${projectId}/documents/${did}`, { method: "PATCH", body: JSON.stringify({ name }) });
+}
 export async function updateDocumentDescription(projectId: string, did: string, description: string): Promise<ApiDocument> {
   return request<ApiDocument>(`/projects/${projectId}/documents/${did}`, {
     method: 'PATCH',

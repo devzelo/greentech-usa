@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw, Plus, Folder, FolderOpen, FolderPlus, FolderUp, ChevronRight, Trash2, Pencil, Scissors, ClipboardPaste, Move } from "lucide-react";
+import { Upload, FileText, Eye, Download, X, Loader2, Globe, Archive, RotateCcw, Plus, Folder, FolderOpen, FolderPlus, FolderUp, ChevronRight, Trash2, Pencil, Scissors, ClipboardPaste, Move, Wand2, Undo2 } from "lucide-react";
 import {
   fetchDocuments,
   fetchDocFolders,
@@ -11,6 +11,7 @@ import {
   deleteDocument,
   setDocumentPublic,
   updateDocumentDescription,
+  renameDocument,
   setDocumentArchived,
   documentUrl,
   ApiDocument,
@@ -21,6 +22,7 @@ import ShareMenu from "./ShareMenu";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { AnimatePresence } from "motion/react";
+import { splitExt, suggestDocName, uniqueName } from "../../lib/docNaming";
 
 interface Props {
   projectId: string;
@@ -62,6 +64,10 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
   const [descEdit, setDescEdit] = useState<{ doc?: ApiDocument; folder?: string; value: string; had: boolean } | null>(null);
   const [descSaving, setDescSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false); // CR-P-10
+  // 2026-10-07 - naming files: right after an upload (with suggested names), or Rename on one file.
+  type NameRow = { doc: ApiDocument; base: string; ext: string; suggested: string };
+  const [naming, setNaming] = useState<{ rows: NameRow[]; afterUpload: boolean; description: string } | null>(null);
+  const [namingSaving, setNamingSaving] = useState(false);
   const folderInput = useRef<HTMLInputElement>(null);
   // CR 332 - files and folders are moved into each other by dragging, or with Cut and Paste here.
   const [clip, setClip] = useState<{ files: string[]; folders: string[] }>({ files: [], folders: [] });
@@ -69,7 +75,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
   const dragging = useRef<{ kind: "file" | "folder"; id: string } | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = async (): Promise<ApiDocument[]> => {
     setLoading(true);
     try {
       const [list, fl] = await Promise.all([
@@ -78,8 +84,9 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
       ]);
       setDocs(list);
       setFolders(fl);
+      return list;
     } catch {
-      /* ignore */
+      return docs;
     } finally {
       setLoading(false);
     }
@@ -112,18 +119,63 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
   const uploadFiles = async (files: File[], folderOf: (f: File) => string) => {
     if (!files.length) return;
     setUploading({ done: 0, total: files.length });
-    let last: ApiDocument | null = null;
+    const made: ApiDocument[] = [];
     let failed = 0;
     for (let i = 0; i < files.length; i++) {
-      try { last = await uploadDocument(projectId, files[i], section, false, folderOf(files[i])); }
+      try { made.push(await uploadDocument(projectId, files[i], section, false, folderOf(files[i]))); }
       catch { failed++; }
       setUploading({ done: i + 1, total: files.length });
     }
     setUploading(null);
-    await refresh();
+    const fresh = await refresh();
     if (failed) toast(`${failed} of ${files.length} file${files.length === 1 ? "" : "s"} could not be uploaded.`, "error");
-    else if (files.length > 1) toast(`${files.length} files uploaded.`, "success");
-    if (files.length === 1 && last && !failed) setDescEdit({ doc: last, value: "", had: false });
+    // 2026-10-07 - then name them: each with a suggested name, changed or kept (and, for one file,
+    // its description, as before).
+    if (made.length) openNaming(made, true, fresh);
+  };
+
+  // The suggested name of a file where it sits: Project No_Place_File_Date, unique in its folder.
+  const suggestionsFor = (list: ApiDocument[], all: ApiDocument[]): string[] => {
+    const ids = new Set(list.map((d) => d._id));
+    const taken = new Map<string, Set<string>>();
+    const takenIn = (f: string) => { if (!taken.has(f)) taken.set(f, new Set(all.filter((d) => !ids.has(d._id) && (d.folder || "") === f).map((d) => d.name.toLowerCase()))); return taken.get(f)!; };
+    return list.map((d) => {
+      const f = d.folder || "";
+      const name = uniqueName(suggestDocName({ projectNo: projectId, place: f ? leafOf(f) : title, original: d.name, date: d.uploadedAt }), takenIn(f));
+      takenIn(f).add(name.toLowerCase());
+      return name;
+    });
+  };
+  const openNaming = (list: ApiDocument[], afterUpload: boolean, all: ApiDocument[] = docs) => {
+    const sugg = suggestionsFor(list, all);
+    setNaming({
+      afterUpload, description: "",
+      rows: list.map((doc, i) => {
+        const [base, ext] = splitExt(afterUpload ? sugg[i] : doc.name);
+        return { doc, base, ext: ext || splitExt(doc.name)[1], suggested: sugg[i] };
+      }),
+    });
+  };
+  const setRow = (i: number, base: string) => setNaming((n) => (n ? { ...n, rows: n.rows.map((r, k) => (k === i ? { ...r, base } : r)) } : n));
+  const nameOf = (r: NameRow) => `${r.base.trim()}${r.ext ? `.${r.ext}` : ""}`;
+  const saveNaming = async () => {
+    if (!naming) return;
+    if (naming.rows.some((r) => !r.base.trim())) { toast("Every file needs a name.", "error"); return; }
+    setNamingSaving(true);
+    let renamed = 0, failed = 0;
+    try {
+      for (const r of naming.rows) {
+        const next = nameOf(r);
+        if (next === r.doc.name) continue;
+        try { await renameDocument(projectId, r.doc._id, next); renamed++; } catch { failed++; }
+      }
+      if (naming.rows.length === 1 && naming.description.trim()) await updateDocumentDescription(projectId, naming.rows[0].doc._id, naming.description.trim());
+      await refresh();
+      setNaming(null);
+      if (failed) toast(`${failed} file${failed === 1 ? "" : "s"} could not be renamed.`, "error");
+      else toast(renamed ? `${renamed} file${renamed === 1 ? "" : "s"} renamed.` : naming.afterUpload ? "Files kept with the names they were uploaded with." : "Name unchanged.", "success");
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
+    finally { setNamingSaving(false); }
   };
 
   const handleUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -403,6 +455,7 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
                   <Globe size={13} />
                 </button>
               )}
+              {canMove && <button onClick={() => openNaming([d], false)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-primary" title="Rename (with a suggested name)"><Pencil size={13} /></button>}
               {canMove && <button onClick={() => toggleCut("file", d._id)} className={`p-1.5 rounded-lg hover:bg-white ${cut ? "text-primary" : "text-slate-400 hover:text-primary"}`} title={cut ? "Cancel cut" : "Cut (then paste it into a folder)"}><Scissors size={13} /></button>}
               {canEdit && (
                 <button onClick={() => archiveDoc(d, !showArchived)} className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-amber-600" title={showArchived ? "Restore" : "Archive"}>{showArchived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
@@ -455,6 +508,57 @@ export default function DocSection({ projectId, section, title, canEdit, canPubl
           />
         )}
       </AnimatePresence>
+
+      {/* 2026-10-07 - name the files: suggested names after an upload, or Rename on one file. */}
+      {naming && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div role="dialog" aria-label="Name the files" className="bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900">{!naming.afterUpload ? "Rename file" : naming.rows.length === 1 ? "Name the uploaded file" : `Name the ${naming.rows.length} uploaded files`}</h3>
+                <p className="text-[11px] text-slate-400">Suggested: Project No_Place_File_Date. Change any name, or keep the one it was uploaded with.</p>
+              </div>
+              <button onClick={() => setNaming(null)} aria-label="Close" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 shrink-0"><X size={18} /></button>
+            </div>
+            {naming.rows.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                <button onClick={() => setNaming({ ...naming, rows: naming.rows.map((r) => ({ ...r, base: splitExt(r.suggested)[0] })) })} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[11px] font-bold hover:bg-primary/20"><Wand2 size={11} /> Suggested for all</button>
+                <button onClick={() => setNaming({ ...naming, rows: naming.rows.map((r) => ({ ...r, base: splitExt(r.doc.name)[0] })) })} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200"><Undo2 size={11} /> Original for all</button>
+              </div>
+            )}
+            <div className="mt-3 space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
+              {naming.rows.map((r, i) => {
+                const sugBase = splitExt(r.suggested)[0];
+                const curBase = splitExt(r.doc.name)[0];
+                return (
+                  <div key={r.doc._id} className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
+                    <p className="text-[10px] text-slate-400 truncate" title={r.doc.name}>{naming.afterUpload ? "Uploaded as" : "Now"}: <span className="font-semibold text-slate-500">{r.doc.name}</span>{r.doc.folder ? ` · in ${r.doc.folder}` : ""}</p>
+                    <div className="mt-1 flex items-center rounded-lg border border-slate-200 bg-white focus-within:ring-2 focus-within:ring-primary/15">
+                      <input autoFocus={i === 0} value={r.base} onChange={(e) => setRow(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && naming.rows.length === 1) void saveNaming(); }} aria-label={`Name for ${r.doc.name}`} className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm font-medium text-slate-800 outline-none" />
+                      {r.ext && <span className="shrink-0 pr-2.5 text-sm text-slate-400">.{r.ext}</span>}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                      {r.base !== sugBase && <button onClick={() => setRow(i, sugBase)} className="inline-flex min-w-0 items-center gap-1 text-[10px] font-bold text-primary hover:underline" title={r.suggested}><Wand2 size={10} className="shrink-0" /> <span className="truncate">Use suggested: {r.suggested}</span></button>}
+                      {r.base !== curBase && <button onClick={() => setRow(i, curBase)} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:underline"><Undo2 size={10} /> {naming.afterUpload ? "Keep original" : "Undo"}</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {naming.afterUpload && naming.rows.length === 1 && (
+              <label className="mt-3 block">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Description (optional)</span>
+                <textarea value={naming.description} onChange={(e) => setNaming({ ...naming, description: e.target.value })} rows={2} placeholder="What is this file? e.g. Appendix A: geotechnical report"
+                  className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+              </label>
+            )}
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button onClick={() => setNaming(null)} disabled={namingSaving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">{naming.afterUpload ? "Later" : "Cancel"}</button>
+              <button onClick={() => void saveNaming()} disabled={namingSaving} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 inline-flex items-center gap-1.5">{namingSaving && <Loader2 size={13} className="animate-spin" />} Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Description popup — explicit Save / Remove (client request, v2). */}
       {descEdit && (
