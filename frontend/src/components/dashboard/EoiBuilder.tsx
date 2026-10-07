@@ -3,7 +3,8 @@ import { fileName } from "../../lib/fileNames";
 import { pdf } from "@react-pdf/renderer";
 import PdfFrame from "./PdfFrame";
 import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine, Pencil, Undo2 } from "lucide-react";
-import { fetchSigners, fetchStamps, withFileToken, type ApiProject, type ApiSigner, type CompanyFile, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
+import { fetchSigners, withFileToken, type ApiProject, type ApiSigner, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
+import StampPicker, { stampSrc } from "./StampPicker";
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
 import { COMPANY } from "../../lib/brandTokens";
 import EoiPDF from "../pdf/EoiPDF";
@@ -55,7 +56,6 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   onSave?: () => Promise<unknown> | void;
 }) {
   const [signers, setSigners] = useState<ApiSigner[]>([]);
-  const [stamps, setStamps] = useState<CompanyFile[]>([]);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<Record<PartKey, boolean>>({ letter: true, body: false, experience: false, company: false, signature: true });
@@ -70,7 +70,6 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const edit = canEdit && editing;
   useEffect(() => {
     fetchSigners().then(setSigners).catch(() => {});
-    fetchStamps().then(setStamps).catch(() => {});
   }, []);
 
   const set = <K extends keyof EoiContent>(k: K, v: EoiContent[K]) => onChange({ ...value, [k]: v, updatedAt: new Date().toISOString() });
@@ -85,15 +84,10 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const bullets = value.bullets ?? EOI_STANDARD_BULLETS;
   const setBullets = (b: string[]) => set("bullets", b);
   const jv = jvOn ? project.jointVenture : undefined;
-  const sealChoices = [
-    ...stamps.map((x) => ({ name: x.name, url: x.url })),
-    ...(jv?.stamps || []).map((x) => ({ name: `${jv?.partnerName || "Partner"}: ${x.name}`, url: x.url })),
-  ];
+  // 2026-10-07 - one stamp, from the Stamps folder (or the JV partner's), chosen like the signature.
+  const partnerStamps = (jv?.stamps || []).map((x) => ({ name: `${jv?.partnerName || "Partner"}: ${x.name}`, url: x.url, note: "JV partner" }));
   const chosenStamps = value.stampUrls ?? (value.stampUrl ? [value.stampUrl] : []);
-  const toggleStamp = (url: string) => {
-    const next = chosenStamps.includes(url) ? chosenStamps.filter((u) => u !== url) : [...chosenStamps, url];
-    onChange({ ...value, stampUrls: next, stampUrl: next[0] || "", updatedAt: new Date().toISOString() });
-  };
+  const pickStamp = (url: string) => onChange({ ...value, stampUrls: url ? [url] : [], stampUrl: url, updatedAt: new Date().toISOString() });
 
   // CR 361 - who signs: any GreenTech user; then which of their signatures (each with its block).
   const signer = signers.find((x) => x.id === value.signatory?.userId) || signers.find((x) => x.name === value.signatory?.name);
@@ -180,7 +174,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
               <span className="flex items-center gap-2">
                 {r.signatory.signatureUrl && <img src={withFileToken(r.signatory.signatureUrl)} alt="" className="h-7 max-w-[5rem] object-contain" />}
                 <span>{r.signatory.name}{r.signatory.title ? `, ${r.signatory.title}` : ""}</span>
-                {chosenStamps.map((u) => <img key={u} src={withFileToken(u)} alt="" className="h-7 w-7 object-contain" />)}
+                {chosenStamps.slice(0, 1).map((u) => <img key={u} src={stampSrc(u)} alt="" className="h-7 w-7 object-contain" />)}
               </span>
             ) : "")}
             {row("Letter", `${changed ? `${changed} paragraph${changed === 1 ? "" : "s"} changed` : "Standard wording"} · ${bullets.length} experience line${bullets.length === 1 ? "" : "s"} · bonding ${r.bondingPercent || "40"}%`)}
@@ -275,7 +269,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
         <p className="text-[10px] text-slate-400">Empty: the signer's name, phone and email.</p>
       </Part>
 
-      <Part title="Signature and stamps" note={[r.signatory ? `Signed by ${r.signatory.name}${r.signatory.title ? `, ${r.signatory.title}` : ""}` : "No signer yet", chosenStamps.length ? `${chosenStamps.length} stamp${chosenStamps.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")} open={open.signature} onToggle={() => toggle("signature")}>
+      <Part title="Signature and stamps" note={[r.signatory ? `Signed by ${r.signatory.name}${r.signatory.title ? `, ${r.signatory.title}` : ""}` : "No signer yet", chosenStamps.length ? "1 stamp" : ""].filter(Boolean).join(" · ")} open={open.signature} onToggle={() => toggle("signature")}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -321,23 +315,11 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
                 {canEdit && <button onClick={() => set("signatory", undefined)} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-red-600"><X size={12} /> Remove the signer</button>}
               </div>
             ) : <p className="text-[11px] text-slate-400">Choose who signs: their name, title and contact details fill in here.</p>}
-            {/* CR 362 - "which seal you want to add?": the company stamps kept in Classified Documents. */}
+            {/* CR 362 - "which seal you want to add?". 2026-10-07: one, chosen like the signature. */}
             <div className="space-y-1.5">
-              <span className={lbl}>Stamps / seals (optional, from Classified Documents › Stamps)</span>
-              <div className="flex flex-wrap gap-2">
-                {sealChoices.length === 0 && <p className="text-[11px] text-slate-400">No stamps yet. Add them in Documents › Classified › Stamps.</p>}
-                {sealChoices.map((x) => {
-                  const on = chosenStamps.includes(x.url);
-                  return (
-                    <button key={x.url} type="button" disabled={!canEdit} onClick={() => toggleStamp(x.url)} title={x.name} aria-pressed={on}
-                      className={`relative h-16 w-16 rounded-xl border bg-white p-1 ${on ? "border-primary ring-2 ring-primary/20" : "border-slate-100 hover:border-slate-300"}`}>
-                      <img src={withFileToken(x.url)} alt={x.name} className="w-full h-full object-contain" />
-                      {on && <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-white"><Check size={10} /></span>}
-                    </button>
-                  );
-                })}
-              </div>
-              {chosenStamps.length > 0 && <p className="text-[10px] text-slate-400">{chosenStamps.length} chosen: printed beside the signature.</p>}
+              <span className={lbl}>Stamp / seal (optional, from Classified Documents › Stamps)</span>
+              <StampPicker value={chosenStamps[0] || ""} onChange={pickStamp} disabled={!canEdit} extra={partnerStamps} />
+              {chosenStamps.length > 0 && <p className="text-[10px] text-slate-400">Printed beside the signature.</p>}
             </div>
           </div>
         </div>

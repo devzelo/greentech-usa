@@ -14,6 +14,7 @@ import {
 } from "../pdf/brand";
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
 import { resolveLetter } from "../../lib/proposalLetter";
+import { pdfAssetUrl } from "../pdf/RichText";
 import type { ProposalPart, PageCtx } from "../../lib/proposalExport";
 
 // The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
@@ -384,13 +385,13 @@ function CoverLetterPage({ coverLetter, cover, project, lh, label, note }: { cov
       <RichText html={coverLetter.body} keyBase="cover-letter" />
       <View wrap={false} style={{ marginTop: 14 }}>
         <Text style={styles.para}>{L.closing}</Text>
-        {coverLetter.signatories.length === 0 && !!seal && <Image src={abs(seal)} style={styles.sealImg} />}
+        {coverLetter.signatories.length === 0 && !!seal && <Image src={pdfAssetUrl(seal)} style={styles.sealImg} />}
         <View style={styles.sigRow}>
           {coverLetter.signatories.map((s, i) => (
             <View key={s.id || i} style={styles.sigBlock}>
               <View style={{ flexDirection: "row", alignItems: "center", minHeight: 48, marginBottom: 4 }}>
                 {!!s.signatureUrl && <Image src={abs(s.signatureUrl)} style={styles.sigImg} />}
-                {i === 0 && !!seal && <Image src={abs(seal)} style={[styles.sealImg, { marginLeft: 10 }]} />}
+                {i === 0 && !!seal && <Image src={pdfAssetUrl(seal)} style={[styles.sealImg, { marginLeft: 10 }]} />}
               </View>
               <Text style={styles.sigName}>{s.name || "-"}</Text>
               {!!s.title && <Text style={styles.sigTitle}>{s.title}</Text>}

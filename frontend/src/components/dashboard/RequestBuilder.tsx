@@ -49,6 +49,7 @@ import { downloadHtmlAsWord, escapeHtml } from "../../lib/wordExport";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
+import StampPicker from "./StampPicker";
 import { useDialogs } from "../../lib/useDialogs";
 import ShareMenu from "./ShareMenu";
 import FileActions from "./FileActions";
@@ -219,8 +220,6 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     onSectionsChange(r._id, keepQuestionsLast(arr), true);
   };
   // CR-P (146) — the company stamps (classified Stamps tab) for the GreenTech signer.
-  const [stamps, setStamps] = useState<CompanyFile[]>([]);
-  useEffect(() => { fetchStamps().then(setStamps).catch(() => {}); }, []);
   const saveFields = (r: ApiProjectRequest, body: Parameters<typeof updateProjectRequest>[2]) => {
     patch({ ...r, ...body });
     saveStatus.track(updateProjectRequest(projectId, r._id, body).then(patch)).catch(() => {});
@@ -503,12 +502,9 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                             </select>
                             {r.signatureUrl && <div className="flex items-center gap-3 mt-2"><img src={sigSrc(r.signatureUrl)} alt="signature" className="h-10 object-contain bg-white rounded-lg px-2 py-1 border border-slate-200" /><span className="text-[11px] font-bold text-slate-600 normal-case">{r.signerName}{r.signerTitle ? ` · ${r.signerTitle}` : ""}</span></div>}
                             {/* CR-P (146) — the company stamp beside the GreenTech signature. */}
-                            <div className="flex items-center gap-2 mt-2">
-                              <select className={`${inp} font-bold max-w-xs`} value={r.stampUrl || ""} onChange={(e) => saveFields(r, { stampUrl: e.target.value })} title="Company stamp">
-                                <option value="">— No stamp —</option>
-                                {stamps.map((s) => <option key={s._id} value={s.filePath || s.url}>{s.name}</option>)}
-                              </select>
-                              {r.stampUrl && <img src={sigSrc(r.stampUrl)} alt="stamp" className="h-10 object-contain bg-white rounded-lg px-1 border border-slate-200" />}
+                            <div className="mt-2 space-y-1 font-normal normal-case tracking-normal">
+                              <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">Company stamp</span>
+                              <StampPicker value={r.stampUrl || ""} onChange={(v) => saveFields(r, { stampUrl: v })} />
                             </div>
                           </div>
                         )}

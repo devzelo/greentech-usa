@@ -31,6 +31,7 @@ import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import PdfPreviewModal from "../PdfPreviewModal";
 import MoneyInput from "../MoneyInput";
+import StampPicker from "../StampPicker";
 import RichTextEditor from "../RichTextEditor";
 import { useUnsavedGuard } from "../../../lib/useUnsavedGuard";
 import { useHighlight } from "../../../lib/useHighlight";
@@ -2157,6 +2158,9 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   <option value="">— Select a signer —</option>
                   {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
                 </select>
+                {/* 2026-10-07 - the company stamp beside the signature: one, from the Stamps folder. */}
+                <p className="pt-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Company stamp</p>
+                <StampPicker value={draft.company.stampUrl || ""} onChange={(v) => setDraft({ ...draft, company: { ...draft.company, stampUrl: v } })} />
               </div>
               </>)}
 

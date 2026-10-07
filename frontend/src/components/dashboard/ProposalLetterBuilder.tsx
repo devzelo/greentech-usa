@@ -3,14 +3,15 @@ import PdfFrame from "./PdfFrame";
 import DOMPurify from "dompurify";
 import { Check, Eye, Loader2, Pencil, Plus, Undo2, X } from "lucide-react";
 import {
-  fetchSignatories, fetchStamps, uploadProposalAsset, withFileToken,
-  type ApiProject, type ApiSignatory, type CompanyFile, type ProposalCover, type ProposalCoverLetter, type ProposalLetterhead, type ProposalSignatory,
+  fetchSignatories, uploadProposalAsset, withFileToken,
+  type ApiProject, type ApiSignatory, type ProposalCover, type ProposalCoverLetter, type ProposalLetterhead, type ProposalSignatory,
 } from "../../lib/api";
 import { letterDefaults } from "../../lib/proposalLetter";
 import RichTextEditor from "./RichTextEditor";
 import { COMPANY } from "../pdf/brand";
 import { OpeningPagesDocument, defaultSubmitter } from "./ProposalPDF";
 import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
+import StampPicker from "./StampPicker";
 
 // CR-P (93) - the cover letter (CR 358, was "transmittal letter"), laid out as on the client's samples: Date, To, Subject,
 // Dear ..., the paragraphs, Sincerely, then the signature with the company seal and the signer's
@@ -65,10 +66,8 @@ export default function ProposalLetterBuilder({
   const cancelEdit = () => { if (before) onChange(before); setEditing(false); };
   const save = async () => { setSaving(true); try { await onSave?.(); setEditing(false); } finally { setSaving(false); } };
   const edit = canEdit && editing;
-  const [stamps, setStamps] = useState<CompanyFile[]>([]);
   useEffect(() => {
     fetchSignatories().then(setStaff).catch(() => {});
-    fetchStamps().then(setStamps).catch(() => {});
   }, []);
 
   const d = letterDefaults(cover, project);
@@ -80,10 +79,7 @@ export default function ProposalLetterBuilder({
 
   // Seals: the company's (Company Documents, Stamps tab) and, on a JV, the partner's.
   const jv = project.jointVenture?.enabled ? project.jointVenture : undefined;
-  const sealChoices = [
-    ...stamps.map((s) => ({ name: s.name, url: s.url })),
-    ...(jv?.stamps || []).map((s) => ({ name: `${jv?.partnerName || "Partner"}: ${s.name}`, url: s.url })),
-  ];
+  const partnerStamps = (jv?.stamps || []).map((s) => ({ name: `${jv?.partnerName || "Partner"}: ${s.name}`, url: s.url, note: "JV partner" }));
 
   const addSignatory = (staffId: string) => {
     const s = staff.find((x) => x.id === staffId);
@@ -254,23 +250,8 @@ export default function ProposalLetterBuilder({
               </div>
               <div className="space-y-1.5">
                 <span className={lbl}>Company seal</span>
-                {sealChoices.length === 0 ? (
-                  <p className="text-[11px] text-slate-400 italic">No seals yet: add them in Documents, Classified, Stamps.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Company seal">
-                    <button type="button" role="radio" aria-checked={!letter.stampUrl} onClick={() => set("stampUrl", "")}
-                      className={`h-11 px-2 rounded-lg border text-[10px] font-bold ${!letter.stampUrl ? "border-primary ring-2 ring-primary/20 text-slate-800" : "border-slate-100 text-slate-400 hover:border-slate-300"}`}>None</button>
-                    {sealChoices.map((x) => {
-                      const on = letter.stampUrl === x.url;
-                      return (
-                        <button key={x.url} type="button" role="radio" aria-checked={on} onClick={() => set("stampUrl", x.url)} title={x.name}
-                          className={`h-11 w-11 rounded-lg border bg-white p-1 ${on ? "border-primary ring-2 ring-primary/20" : "border-slate-100 hover:border-slate-300"}`}>
-                          <img src={withFileToken(x.url)} alt={x.name} className="w-full h-full object-contain" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                {/* 2026-10-07 - one seal, from the Stamps folder (or the JV partner's), like the signature. */}
+                <StampPicker value={letter.stampUrl || ""} onChange={(v) => set("stampUrl", v)} extra={partnerStamps} />
               </div>
             </div>
           </>

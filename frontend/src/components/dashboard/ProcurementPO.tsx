@@ -24,6 +24,7 @@ import PresenceBar from "./PresenceBar";
 import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
+import StampPicker from "./StampPicker";
 import MoneyInput from "./MoneyInput";
 import SavedVersionsPanel from "./SavedVersionsPanel";
 import AssignColleague from "./AssignColleague";
@@ -581,11 +582,10 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
                 {signatories.length === 0 && <p className="text-[10px] text-amber-600 mt-1">No staff have uploaded a signature. Each person uploads theirs in Profile.</p>}
               </div>
               {po.signatureUrl && <div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400">Signature:</span><img src={imgSrc(po.signatureUrl)} alt="signature" className="h-8 object-contain" /></div>}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-slate-400">Stamp:</span>
-                {po.stampUrl ? <img src={imgSrc(po.stampUrl)} alt="stamp" className="h-10 object-contain" /> : <span className="text-[11px] text-slate-400 italic">none</span>}
-                {canEdit && <button onClick={() => setStampPickerFor(po._id)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200"><Stamp size={11} /> {po.stampUrl ? "Change" : "Add stamp"}</button>}
-                {canEdit && po.stampUrl && <button onClick={() => pickStamp(po._id, "")} className="text-[10px] font-bold text-slate-400 hover:text-red-500">Remove</button>}
+              {/* 2026-10-07 - one stamp from the Stamps folder, chosen like the signature. */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-slate-400">Stamp</span>
+                <StampPicker value={po.stampUrl || ""} disabled={!canEdit} onChange={(v) => void pickStamp(po._id, v)} />
               </div>
             </div>
             {/* Partner side — JV only (uploaded manually; partners have no staff/classified stamps) */}
@@ -940,30 +940,6 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
       })()}
 
       {/* Stamp picker — company stamps from the classified Stamps tab */}
-      {stampPickerFor && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-16" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
-              <div className="flex items-center gap-2"><Stamp size={16} className="text-primary" /><p className="text-sm font-bold text-slate-900">Choose a company stamp</p></div>
-              <button onClick={() => setStampPickerFor(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              {stamps.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-6">No stamps yet. An admin uploads stamps in <span className="font-bold">Documents → Classified → Stamps</span>.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {stamps.map((s) => (
-                    <button key={s._id} onClick={() => pickStamp(stampPickerFor, s.filePath || s.url)} className="border border-slate-100 rounded-2xl p-3 hover:border-primary hover:shadow-md transition-all flex flex-col items-center gap-2">
-                      <img src={imgSrc(s.filePath || s.url)} alt={s.name} className="h-20 object-contain" />
-                      <span className="text-[10px] font-bold text-slate-500 truncate w-full text-center">{s.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
