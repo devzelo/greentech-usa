@@ -6,7 +6,7 @@ import AgreementsPanel from "./agreements/AgreementsPanel";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
-  FileUp, Filter, GripVertical, Handshake, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Search, Settings2, Trash2, Truck, Wrench, X,
+  FileUp, Filter, GripVertical, Handshake, Printer, HardHat, HelpCircle, Loader2, Lock, MoreVertical, Paperclip, Package, PenTool, Pencil, Plus, Save, Search, Settings2, Trash2, Truck, Wrench, X,
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
@@ -24,6 +24,7 @@ import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { GREENTECH } from "../../lib/poPdf";
 import PdfPreviewModal from "./PdfPreviewModal";
 import ShareMenu from "./ShareMenu";
+import type { PackageBar } from "../../lib/packageBar";
 
 /**
  * CR 328 (2026-09-28): Work Packages. The project manager's master list of everything the project
@@ -542,6 +543,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
           <Fragment key={p._id}><PackageWindow
             pkg={p} no={`${numberOf.get(p._id) || p.order}.0`} project={project} projectInfo={projectInfo}
             canEdit={canEdit} canUnlink={canUnlink} canMoney={canMoney} confirm={confirm} tab={win.tab}
+            sheet={{ fileName: sheetFile(p), build: () => sheetPdf(p), share: async () => shareFile(await sheetPdf(p), sheetFile(p)) }}
             onSaved={replace} onChanged={() => void load()} onClose={() => { setWin(null); void load(); }}
           /></Fragment>
         );
@@ -600,8 +602,10 @@ const inputOf = (p: ApiWorkPackage): WorkPackageInput => ({
   progressMode: p.progressMode, progress: p.progress, scheduleRef: p.scheduleRef, subtasks: p.subtasks, budget: p.budget || 0, changeOrders: p.changeOrders, remarks: p.remarks,
 });
 
-function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canMoney, confirm, tab: initialTab, onSaved, onChanged, onClose }: {
+function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canMoney, confirm, tab: initialTab, sheet, onSaved, onChanged, onClose }: {
   pkg: ApiWorkPackage; no: string; project: ApiProject; projectInfo?: ProjectPdfInfo; canEdit: boolean; canMoney: boolean;
+  /** The package's sheet as a PDF: its file name, made on demand, and filed for sharing (its link). */
+  sheet: { fileName: string; build: () => Promise<Blob>; share: () => Promise<string> };
   /** CR 328 - may unlink a signed document (the project's own team, not a guest). */
   canUnlink: boolean; confirm: ReturnType<typeof useDialogs>["confirm"];
   tab: WinTab;
@@ -611,6 +615,9 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<WinTab>(initialTab);
+  // 2026-10-07 - the open document's actions (RFQ, quotes, agreement, PO), drawn on the bottom bar.
+  const [docBar, setDocBar] = useState<PackageBar | null>(null);
+  const [sheetPreview, setSheetPreview] = useState(false);
   const [f, setF] = useState<WorkPackageInput>(() => inputOf(pkg));
   const [saved, setSaved] = useState(() => JSON.stringify(inputOf(pkg)));
   const dirty = JSON.stringify(f) !== saved;
@@ -706,6 +713,9 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
     { k: "po", label: "Purchase order", show: !!pkg.po },
   ];
   const card = "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm";
+  const docTab = tab === "rfq" || tab === "quotes" || tab === "agreement" || tab === "po";
+  const barBtn = "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-50";
+  const barPrimary = "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50";
 
   return createPortal(
     <div className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-2 sm:p-4">
@@ -837,13 +847,13 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
 
           {/* CR 381 - the RFQ in place: saved, then each vendor's copy downloaded or emailed one by one. */}
           {tab === "rfq" && (
-            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="request"
+            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="request" onBar={setDocBar}
               seed={{ title: f.name, notes: f.description, lineItems: [{ itemId: newLineId(), description: f.name || pkg.name, qty: "1", unit: "lot", spec: f.description || "" }], vendorIds: [] }}
               onChanged={onChanged} />
           )}
           {/* CR 382 - each vendor's quote (its file and prices), and the winner. */}
           {tab === "quotes" && (
-            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="quotes"
+            <ProcurementRFQ projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} inline="quotes" onBar={setDocBar}
               onGoToRequest={() => setTab("rfq")} onChanged={onChanged} onAwarded={() => setTab("agreement")} />
           )}
           {tab === "agreement" && (
@@ -862,7 +872,7 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                 )}
               </div>
             ) : (
-              <Fragment key={agr._id}><AgreementsPanel ctx={{ kind: "general" }} canManage={canEdit} onlyIds={[agr._id]} openId={agr._id} noCreate ownerPackageId={pkg._id} /></Fragment>
+              <Fragment key={agr._id}><AgreementsPanel ctx={{ kind: "general" }} canManage={canEdit} onlyIds={[agr._id]} openId={agr._id} noCreate ownerPackageId={pkg._id} onBar={setDocBar} /></Fragment>
             )
           )}
           {tab === "money" && canMoney && (
@@ -918,17 +928,43 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
           )}
           {/* A purchase order from before packages contracted by agreement: kept, shown here. */}
           {tab === "po" && pkg.po && (
-            <ProcurementPO projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} openPoId={pkg.po.id} onGoToRFQ={() => setTab("rfq")} onGoToQuotes={() => setTab("quotes")} onChanged={onChanged} />
+            <ProcurementPO projectId={project.id} canEdit={canEdit} projectInfo={projectInfo} ownerPackage={owner} openPoId={pkg.po.id} onGoToRFQ={() => setTab("rfq")} onGoToQuotes={() => setTab("quotes")} onChanged={onChanged} onBar={setDocBar} />
           )}
         </div>
 
-        {/* CR 357-style bottom bar: save and close without going back up. */}
+        {/* CR 357-style bottom bar: save and close without going back up. 2026-10-07: one bar for
+            every tab, with what applies there: Cancel or Close, Save as Draft, Save, Preview,
+            Download and Share (the RFQ, the quotes, the agreement, the PO, or the package itself). */}
         <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-2 rounded-b-3xl border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-          {dirty && canEdit && <span className="mr-auto rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">Unsaved changes to the details or money</span>}
-          {dirty && canEdit && <button type="button" onClick={() => setF(JSON.parse(saved))} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Undo changes</button>}
-          <button type="button" onClick={() => void close()} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:border-slate-300">Close</button>
-          {canEdit && (dirty || tab === "details" || tab === "money") && <button type="button" onClick={() => void save()} disabled={busy || !dirty || !(f.name || "").trim() || looseCompany} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />} Save</button>}
+          {docTab ? (
+            <>
+              <span className="mr-auto min-w-0 max-w-full truncate text-[11px] text-slate-500" title={docBar?.note}>{docBar?.note || ""}</span>
+              {docBar?.busy && <Loader2 size={14} className="animate-spin text-slate-400" />}
+              {docBar?.preview && <button type="button" onClick={docBar.preview} disabled={docBar.busy} className={barBtn}><Eye size={13} /> Preview</button>}
+              {docBar?.download && <button type="button" onClick={docBar.download} disabled={docBar.busy} className={barBtn}><Download size={13} /> Download</button>}
+              {docBar?.share && <ShareMenu variant="button" fileName={docBar.share.fileName} fileUrl="" projectName={project.name} prepareFile={docBar.share.prepare} size={13} className={barBtn} />}
+              {(docBar?.preview || docBar?.download || docBar?.share) && <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />}
+              {docBar?.cancel
+                ? <button type="button" onClick={docBar.cancel} className={barBtn}><X size={13} /> Cancel</button>
+                : <button type="button" onClick={() => void close()} className={barBtn}>Close</button>}
+              {docBar?.saveDraft && <button type="button" onClick={docBar.saveDraft} disabled={docBar.busy} className={barBtn}><FileText size={13} /> Save as Draft</button>}
+              {docBar?.save && <button type="button" onClick={docBar.save} disabled={docBar.busy} className={barPrimary}><Save size={13} /> Save</button>}
+            </>
+          ) : (
+            <>
+              {dirty && canEdit
+                ? <span className="mr-auto rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">Unsaved changes to the details or money</span>
+                : <span className="mr-auto" />}
+              <button type="button" onClick={() => setSheetPreview(true)} className={barBtn}><Eye size={13} /> Preview</button>
+              <ShareMenu variant="button" fileName={sheet.fileName} fileUrl="" projectName={project.name} prepareFile={sheet.share} size={13} className={barBtn} />
+              <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
+              {dirty && canEdit && <button type="button" onClick={() => setF(JSON.parse(saved))} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Undo changes</button>}
+              <button type="button" onClick={() => void close()} className={barBtn}>{dirty && canEdit ? <><X size={13} /> Cancel</> : "Close"}</button>
+              {canEdit && <button type="button" onClick={() => void save()} disabled={busy || !dirty || !(f.name || "").trim() || looseCompany} className={barPrimary}>{busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save</button>}
+            </>
+          )}
         </div>
+        {sheetPreview && <PdfPreviewModal title={`Work package ${no} · ${pkg.name}`} fileName={sheet.fileName} build={sheet.build} onClose={() => setSheetPreview(false)} />}
       </div>
     </div>,
     document.body,

@@ -26,6 +26,7 @@ import CompanyEditorModal from "../CompanyEditorModal";
 import { downloadHtmlAsWord, escapeHtml } from "../../../lib/wordExport";
 import { GREENTECH } from "../../../lib/poPdf";
 import { downloadBlob } from "../../../lib/proposalExport";
+import { usePackageBar, type SetPackageBar } from "../../../lib/packageBar";
 import { toast } from "../../../lib/toast";
 import { useDialogs } from "../../../lib/useDialogs";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -161,8 +162,10 @@ type Draft = {
 };
 const BLANK_ASSIGNEES = { scope: "", terms: "", paymentConditions: "", deliveryConditions: "" };
 
-export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults, onlyIds, openId, noCreate, ownerPackageId }: {
+export default function AgreementsPanel({ ctx, canManage, canSign = false, defaults, onlyIds, openId, noCreate, ownerPackageId, onBar }: {
   ctx: AgreementCtx; canManage: boolean; canSign?: boolean; defaults?: AgreementDefaults;
+  /** 2026-10-07 - in a work package's window: the agreement's Preview, Download and Share go on its bar. */
+  onBar?: SetPackageBar;
   /** CR 345 - shown inside a work package: only these agreements, the given one opened, no new ones from here. */
   onlyIds?: string[]; openId?: string; noCreate?: boolean;
   /** CR 347 - the work package whose own agreements these are. */
@@ -1126,6 +1129,19 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       </button>
     </div>
   );
+
+  // 2026-10-07 - in a work package, with the editor closed: the agreement's Preview, Download and
+  // Share on the package's bar (Save, Save as Draft and Cancel are in the editor, Manage opens it).
+  const barAg = ownerPackageId ? list.find((a) => a._id === openId) || list[0] : undefined;
+  const agFile = (ag: ApiAgreement) => `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`;
+  usePackageBar(onBar, !ownerPackageId ? undefined : editor || !barAg ? null : {
+    preview: () => setPreview(barAg.documentMode === "uploaded"
+      ? { title: barAg.title || barAg.agreementType || "Agreement", fileName: agFile(barAg), build: () => uploadedMergedBlob(barAg) }
+      : { title: [barAg.agreementNo, barAg.title || agreementHeading(barAg)].filter(Boolean).join(" · "), fileName: agFile(barAg), build: () => buildAgreementPdf(barAg) }),
+    download: () => void download(barAg),
+    share: canManage ? { fileName: `${barAg.agreementNo || barAg.name || "agreement"}.pdf`, prepare: async () => (storedShareFile(barAg) ? attachmentUrl(storedShareFile(barAg).replace(/^\/+/, "")) : shareCopyUrl(barAg)) } : undefined,
+    note: `Agreement ${barAg.agreementNo || barAg.name || ""}: ${barAg.status}. Manage opens it to edit, save, sign and send.`,
+  });
 
   if (loading) return <div className="py-8 flex justify-center text-slate-300"><Loader2 size={20} className="animate-spin" /></div>;
 
@@ -2234,6 +2250,22 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     setPreview({ title: previewAg.name || "Agreement", fileName: "agreement.pdf", build: () => buildAgreementPdf(previewAg) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5"><Eye size={13} /> Preview</button>
                 )}
+                {/* 2026-10-07 - Share in the editor too (the saved agreement's PDF), as on its row. */}
+                {canManage && (() => {
+                  const cur = editor.aid ? list.find((a) => a._id === editor.aid) : undefined;
+                  if (!cur) return null;
+                  return (
+                    <ShareMenu
+                      variant="button"
+                      fileName={`${cur.agreementNo || cur.name || "agreement"}.pdf`}
+                      fileUrl={storedShareFile(cur) ? attachmentUrl(storedShareFile(cur).replace(/^\/+/, "")) : ""}
+                      prepareFile={storedShareFile(cur) ? undefined : () => shareCopyUrl(cur)}
+                      onSent={(e) => { void logAgreementEmail(ctx, cur._id, e.to).then(patch).catch(() => {}); }}
+                      size={13}
+                      className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-slate-50"
+                    />
+                  );
+                })()}
                 {/* CR-B-14a — standard action set (Save/Save as Draft/Export/Reset/Cancel-with-confirm).
                     Send stays a separate row action (CR-P-11). */}
                 <BuilderActions

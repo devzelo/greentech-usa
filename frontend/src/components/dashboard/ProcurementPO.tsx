@@ -3,7 +3,7 @@ import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileTe
 import {
   fetchProcurementPOs, createProcurementPO, createManualPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
   uploadPOAttachment, deletePOAttachment, fetchRfqs, fetchVendors, attachmentUrl,
-  fetchProcurementItems, fetchProcurementSections, uploadDocument,
+  fetchProcurementItems, fetchProcurementSections, uploadDocument, documentUrl,
   fetchSignatories, fetchStamps, uploadPOPartyImage, attachPOFile, fetchSubmittals, invoiceFromPO, fetchInvoices,
   fetchCompanies, withFileToken, COMPANY_CATEGORIES,
   type ApiProcurementPO, type ApiRfq, type ApiVendor, type ApiProcurementItem, type ApiProcurementSection,
@@ -28,6 +28,7 @@ import SavedVersionsPanel from "./SavedVersionsPanel";
 import AssignColleague from "./AssignColleague";
 import FileActions from "./FileActions";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
+import { usePackageBar, type SetPackageBar } from "../../lib/packageBar";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -35,7 +36,9 @@ const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5
 const STATUSES = ["Sent", "Confirmed", "InvoiceReceived", "Paid"] as const;
 const statusCls: Record<string, string> = { Sent: "bg-amber-50 text-amber-600", Confirmed: "bg-blue-50 text-blue-600", InvoiceReceived: "bg-indigo-50 text-indigo-600", Paid: "bg-emerald-50 text-emerald-600" };
 
-export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes, openPoId, onOpenedPo, ownerPackage, onChanged }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void; /** CR 328 - open this PO (a link from a work package). */ openPoId?: string; onOpenedPo?: () => void;
+export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToBOQ, onGoToRFQ, onGoToQuotes, openPoId, onOpenedPo, ownerPackage, onChanged, onBar }: {
+  /** 2026-10-07 - in a work package's window: the PO's actions go on the window's bottom bar. */
+  onBar?: SetPackageBar; projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToBOQ?: () => void; onGoToRFQ?: () => void; onGoToQuotes?: () => void; /** CR 328 - open this PO (a link from a work package). */ openPoId?: string; onOpenedPo?: () => void;
   /** CR 345 - shown inside a work package: only its POs, and new ones belong to it. */
   ownerPackage?: { id: string; name: string };
   onChanged?: () => void }) {
@@ -327,6 +330,28 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
       toast(err instanceof Error ? err.message : "Could not build the summary.", "error");
     }
   };
+
+  // 2026-10-07 - in a work package: Save, Preview, Download and Share for its purchase order. Its
+  // fields save as they are changed; Save makes sure the last one is in.
+  const barPo = ownerPackage ? pos.find((p) => p._id === openPoId) || pos[0] : undefined;
+  const [barBusy, setBarBusy] = useState(false);
+  const poPdf = async (po: ApiProcurementPO) => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob;
+  const busyRun = async (fn: () => Promise<void>) => { setBarBusy(true); try { await fn(); } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PDF.", "error"); } finally { setBarBusy(false); } };
+  usePackageBar(onBar, !ownerPackage ? undefined : !barPo ? null : {
+    save: canEdit ? () => void busyRun(async () => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      await new Promise((r) => setTimeout(r, 350));
+      const fresh = await fetchProcurementPOs(projectId, false, { package: ownerPackage.id }).catch(() => null);
+      if (fresh) setPOs(fresh);
+      onChanged?.();
+      toast(`PO ${barPo.poNo} saved.`, "success");
+    }) : undefined,
+    preview: () => setPreview({ title: `Purchase Order ${barPo.poNo}`, fileName: `PO_${barPo.poNo}.pdf`, build: () => poPdf(barPo) }),
+    download: () => void busyRun(async () => downloadBlob(await poPdf(barPo), `PO_${barPo.poNo}.pdf`)),
+    share: { fileName: `PO_${barPo.poNo}.pdf`, prepare: async () => documentUrl(await uploadDocument(projectId, new File([await poPdf(barPo)], `PO_${barPo.poNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder)) },
+    busy: barBusy,
+    note: `PO ${barPo.poNo}${pos.length > 1 ? ` (${pos.length} purchase orders on this package)` : ""}. Edits save as you make them.`,
+  });
 
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
 

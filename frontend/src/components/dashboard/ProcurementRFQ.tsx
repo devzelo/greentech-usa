@@ -4,7 +4,7 @@ import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
   addVendorQuote, updateVendorQuote, deleteVendorQuote, awardVendorQuote, createProcurementPO,
   uploadVendorQuoteAttachment, deleteVendorQuoteAttachment, uploadRfqLineFile, deleteRfqLineFile, uploadRfqDocument, deleteRfqDocument, uploadRfqAttachment, deleteRfqAttachment, RFQ_REQUESTS, emailRfqToVendor,
-  fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument,
+  fetchProcurementItems, fetchProcurementSections, fetchSubmittals, attachmentUrl, uploadDocument, documentUrl,
   fetchCompanies, COMPANY_CATEGORIES,
   type ApiVendor, type ApiRfq, type ApiVendorQuote, type RfqLineItem, type ApiProcurementItem, type ApiProcurementSection, type ApiSubmittal, type RfqStatus, type ApiCompany, type RfqRecipient,
 } from "../../lib/api";
@@ -29,6 +29,8 @@ import { AddressPicker } from "./AddressPicker";
 import AssignColleague from "./AssignColleague";
 import FileActions from "./FileActions";
 import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
+import { usePackageBar, type SetPackageBar } from "../../lib/packageBar";
+import { buildQuoteComparisonPdf } from "../../lib/quoteComparisonPdf";
 
 const n = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
 const money = (v: number) => v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -50,7 +52,9 @@ export function quoteTotal(rfq: ApiRfq, q: ApiVendorQuote): number {
   return quoteItemsTotal(rfq, q) + n(q.shipping) + n(q.tax);
 }
 
-export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq, ownerPackage, startNew, seed, onChanged, inline, onGoToRequest, onAwarded }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: (poId?: string) => void; openRfqId?: string; onOpenedRfq?: () => void;
+export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoToPO, openRfqId, onOpenedRfq, ownerPackage, startNew, seed, onChanged, inline, onGoToRequest, onAwarded, onBar }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToPO?: (poId?: string) => void; openRfqId?: string; onOpenedRfq?: () => void;
+  /** 2026-10-07 - in a work package's window: this tab's actions go on the window's bottom bar. */
+  onBar?: SetPackageBar;
   /** CR 345 - shown inside a work package: only its RFQs, and new ones belong to it. */
   ownerPackage?: { id: string; name: string };
   /** CR 345 - open the Create RFQ window straight away, starting from `seed`. */
@@ -93,6 +97,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [chooseNew, setChooseNew] = useState(false); // CR-PR-02 — "New RFQ" choice popup (build vs upload)
   // CR 335 - the Create RFQ window (rfq null), or the same window editing an RFQ.
   const [form, setForm] = useState<{ rfq: ApiRfq | null } | null>(null);
+  const [formRev, setFormRev] = useState(0);
   const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
   const [manageId, setManageId] = useState<string | null>(null); // §A1 — actions via popup
@@ -333,6 +338,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     }
     void autoSaveRfqDoc(saved);   // the documents copy follows every save
     if (!base) setOpenId(rfq._id);
+    if (r.stay) { setForm({ rfq: saved }); setFormRev((v) => v + 1); }
     if (problems.length) toast(`RFQ ${saved.rfqNo} saved, but these did not go through: ${[...new Set(problems)].join(", ")}. Open it to try again.`, "error");
     else toast(r.send ? `RFQ ${saved.rfqNo} sent to ${r.vendors.length} vendor${r.vendors.length === 1 ? "" : "s"}.${r.email ? mailNote : " Download each vendor's copy from the RFQ to send it."}` : base ? `RFQ ${saved.rfqNo} saved.` : `RFQ ${saved.rfqNo} saved as a draft.`, r.email && /not set up|Not emailed/.test(mailNote) ? "info" : "success");
     return true;
@@ -610,6 +616,44 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     try { const blob = await buildRfqWithSubmittals(rfq, vendors.find((v) => v._id === vendorId)); downloadBlob(blob, `RFQ_${rfq.rfqNo}${vendorId ? "_" + vendorName(vendorId).replace(/\s+/g, "_") : ""}.pdf`); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not build PDF.", "error"); }
   };
+
+  // 2026-10-07 - a package's RFQ PDF, filed with the package's documents, for the share menu.
+  const shareRfqFile = async (blob: Blob, fileName: string) => documentUrl(await uploadDocument(projectId, new File([blob], fileName, { type: "application/pdf" }), docSection, true, docFolder));
+  // The quotes on one RFQ side by side (a work package's Quotes tab: preview, download, share).
+  const comparisonPdf = (rfq: ApiRfq) => buildQuoteComparisonPdf({
+    projectName: projectInfo?.name || "", projectNo: projectId, rfqNo: rfq.rfqNo, title: rfq.title || "", date: rfq.date, dueDate: rfq.dueDate, currency: rfq.currency || "USD",
+    items: rfq.lineItems.filter((l) => !l.cancelled).map((l) => ({ id: l.itemId, description: l.description, qty: l.qty, unit: l.unit })),
+    offers: rfq.quotes.map((q) => ({
+      vendor: vendorName(q.vendorId), items: quoteItemsTotal(rfq, q), shipping: n(q.shipping), tax: n(q.tax), total: quoteTotal(rfq, q), lead: q.leadTimeDays || "",
+      status: q.status, unitPrices: Object.fromEntries(q.lineItems.map((x) => [x.itemId, n(x.unitPrice)])),
+      inclusions: q.inclusions || "", exclusions: q.exclusions || "", notes: q.notes || "",
+    })),
+  });
+  const barRfq = inline ? (rfqs.find((r) => r.quotes.some((q) => q.status === "Awarded")) || rfqs[rfqs.length - 1]) : undefined;
+  const [barBusy, setBarBusy] = useState(false);
+  const busyRun = async (fn: () => Promise<void>) => { setBarBusy(true); try { await fn(); } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PDF.", "error"); } finally { setBarBusy(false); } };
+  usePackageBar(onBar, !inline || form ? undefined : !barRfq ? null : inline === "request" ? {
+    preview: () => setPreview({ title: `RFQ ${barRfq.rfqNo}`, fileName: `RFQ_${barRfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(barRfq) }),
+    download: () => void busyRun(async () => downloadBlob(await buildRfqWithSubmittals(barRfq), `RFQ_${barRfq.rfqNo}.pdf`)),
+    share: { fileName: `RFQ_${barRfq.rfqNo}.pdf`, prepare: async () => shareRfqFile(await buildRfqWithSubmittals(barRfq), `RFQ_${barRfq.rfqNo}.pdf`) },
+    busy: barBusy,
+    note: `RFQ ${barRfq.rfqNo}${rfqs.length > 1 ? ` (${rfqs.length} RFQs on this package)` : ""}. Edit RFQ changes it; each vendor's copy is below.`,
+  } : {
+    // Prices save as they are typed (on leaving a box); Save makes sure the last one is in.
+    save: canEdit ? () => void busyRun(async () => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      await new Promise((r) => setTimeout(r, 350));
+      const fresh = await fetchRfqs(projectId, showArchived, scope).catch(() => null);
+      if (fresh) setRfqs(fresh);
+      onChanged?.();
+      toast("Quotes saved.", "success");
+    }) : undefined,
+    preview: () => setPreview({ title: `Quote comparison · RFQ ${barRfq.rfqNo}`, fileName: `Quotes_${barRfq.rfqNo}.pdf`, build: () => comparisonPdf(barRfq) }),
+    download: () => void busyRun(async () => downloadBlob(await comparisonPdf(barRfq), `Quotes_${barRfq.rfqNo}.pdf`)),
+    share: { fileName: `Quotes_${barRfq.rfqNo}.pdf`, prepare: async () => shareRfqFile(await comparisonPdf(barRfq), `Quotes_${barRfq.rfqNo}.pdf`) },
+    busy: barBusy,
+    note: `Quotes on RFQ ${barRfq.rfqNo}. Prices save as you type.`,
+  });
 
   // Full RFQ editor — shown in the actions modal (shipping, add quotes, prices, award, versions).
   const renderRfqDetail = (rfq: ApiRfq, section?: "request" | "quotes") => {
@@ -1206,7 +1250,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       })()}
 
       {form && canEdit && (
-        <RfqForm
+        <Fragment key={`${form.rfq?._id || "new"}:${formRev}`}><RfqForm
           projectId={projectId}
           projectName={projectInfo?.name || ""}
           projectSite={projectInfo?.siteAddress || projectInfo?.location}
@@ -1218,11 +1262,13 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           secNames={secNames}
           onClose={() => setForm(null)}
           onSave={(r) => saveForm(form.rfq, r)}
+          onBar={inline === "request" ? onBar : undefined}
+          shareFile={shareRfqFile}
           buildPreview={(draft) => buildRfqWithSubmittals(draft)}
           ownerPackage={ownerPackage}
           seed={form.rfq ? undefined : seed}
           inline={inline === "request"}
-        />
+        /></Fragment>
       )}
       {dialogs}
       {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}

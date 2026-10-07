@@ -9,6 +9,8 @@ import { useDialogs } from "../../lib/useDialogs";
 import { AddressPicker } from "./AddressPicker";
 import CompanyEditorModal from "./CompanyEditorModal";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
+import { usePackageBar, type SetPackageBar } from "../../lib/packageBar";
+import { downloadBlob } from "../../lib/proposalExport";
 
 /**
  * CR 335 - the Create RFQ window. The client's example (an RFQ for PVC pipes) sets what an RFQ holds
@@ -27,6 +29,8 @@ export type RfqFormResult = {
   send: boolean;
   /** CR 338 - email each vendor its own copy when sent. */
   email: boolean;
+  /** 2026-10-07 - Save as Draft in a work package: saved, and the form stays open on it. */
+  stay?: boolean;
 };
 
 type Row = RfqLineItem & { key: string };
@@ -46,7 +50,11 @@ const lbl = "block text-[10px] font-bold uppercase tracking-widest text-slate-50
 const card = "rounded-2xl border border-slate-200 bg-white";
 const cardHead = "flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/70 rounded-t-2xl";
 
-export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview, ownerPackage, seed, inline = false }: {
+export default function RfqForm({ projectId, projectName, projectSite, rfq, companies, onCompanyAdded, boqItems, approvalOf, secNames, onClose, onSave, buildPreview, ownerPackage, seed, inline = false, onBar, shareFile }: {
+  /** 2026-10-07 - in a work package the actions sit on the package's bar, not in this header. */
+  onBar?: SetPackageBar;
+  /** Files the RFQ PDF where the project keeps it and returns its link (for Share). */
+  shareFile?: (blob: Blob, fileName: string) => Promise<string>;
   projectId: string;
   projectName: string;
   projectSite?: string;
@@ -183,7 +191,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
     if (send && !chosen.length) out.push("Choose at least one vendor to send it to.");
     return out;
   };
-  const submit = async (send: boolean) => {
+  const submit = async (send: boolean, stay = false) => {
     setTried(true);
     const p = problems(send);
     if (p.length) { toast(p[0], "error"); return; }
@@ -197,8 +205,8 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
     }))) return;
     setBusy(send ? "send" : "draft");
     try {
-      const ok = await onSave({ fields: fields(), vendors: chosen, newFiles, removeAttachmentIds: removed, send, email: send && emailVendors });
-      if (ok) onClose();
+      const ok = await onSave({ fields: fields(), vendors: chosen, newFiles, removeAttachmentIds: removed, send, email: send && emailVendors, stay });
+      if (ok && !stay) onClose();
     } finally { setBusy(""); }
   };
   const draftRfq = (): ApiRfq => ({
@@ -223,6 +231,25 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
   };
   const err = (bad: boolean) => (tried && bad ? "!border-red-300 bg-red-50/40" : "");
 
+  // 2026-10-07 - in a work package: Cancel, Save as Draft (saved, the form stays open), Save (saved
+  // and closed), Preview, Download and Share, on the package's bar.
+  const pdfName = `RFQ_${rfq?.rfqNo || "draft"}.pdf`;
+  const draftPdf = async () => {
+    setBusy("preview");
+    try { return await buildPreview(draftRfq()); } finally { setBusy(""); }
+  };
+  const isDraft = !editing || rfq!.status === "Draft" || !rfq!.status;
+  usePackageBar(onBar, onBar ? {
+    cancel: () => void close(),
+    saveDraft: isDraft ? () => void submit(false, true) : undefined,
+    save: () => void submit(false),
+    preview: () => void openPreview(),
+    download: () => void draftPdf().then((b) => downloadBlob(b, pdfName)).catch((e) => toast(e instanceof Error ? e.message : "Could not make the PDF.", "error")),
+    share: shareFile ? { fileName: pdfName, prepare: async () => shareFile(await draftPdf(), pdfName) } : undefined,
+    busy: !!busy,
+    note: editing ? `RFQ ${rfq!.rfqNo}` : "New RFQ",
+  } : undefined);
+
   return (
     <div className={inline ? "" : "fixed inset-0 z-[85] flex items-start justify-center bg-slate-900/50 p-2 sm:p-4 overflow-y-auto"}>
       <div className={`bg-slate-50 rounded-3xl w-full ${inline ? "border border-slate-200" : "shadow-2xl max-w-6xl my-4"}`} onClick={(e) => e.stopPropagation()}>
@@ -232,7 +259,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
             <h3 className="text-lg font-display font-bold text-slate-900">{editing ? `RFQ ${rfq!.rfqNo}` : "Create RFQ"}</h3>
             <p className="text-[11px] text-slate-400">{ownerPackage ? `Work package › ${ownerPackage.name} › RFQ` : `Procurement › RFQs › ${editing ? "Edit" : "Create"} · ${projectName}`}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {!onBar && <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => void close()} className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
             <button onClick={() => void submit(false)} disabled={!!busy} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:border-slate-300 disabled:opacity-50">{busy === "draft" && <Loader2 size={13} className="animate-spin" />} {ownerPackage ? "Save RFQ" : editing ? "Save" : "Save as draft"}</button>
             <button onClick={() => void openPreview()} disabled={!!busy} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-primary/30 bg-white text-xs font-bold text-primary hover:bg-primary/5 disabled:opacity-50">{busy === "preview" ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Preview RFQ</button>
@@ -240,7 +267,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
             {!ownerPackage && (!editing || rfq!.status === "Draft" || !rfq!.status) && (
               <button onClick={() => void submit(true)} disabled={!!busy} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy === "send" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send RFQ</button>
             )}
-          </div>
+          </div>}
         </div>
 
         <div className="p-3 sm:p-5 space-y-4">
