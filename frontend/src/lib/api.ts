@@ -488,6 +488,7 @@ export interface ProposalBackCover {
   phone?: string;
   address?: string;
   qrUrl?: string;        // where the QR code points; blank = the website
+  headingSize?: number;  // 2026-10-07 - the heading's size in points (blank = the standard 32)
 }
 
 export interface ProposalContent {

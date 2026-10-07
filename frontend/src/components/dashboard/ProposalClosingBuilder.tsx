@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, Eye, Globe, Loader2, Mail, MapPin, Pencil, Phone, RotateCcw, Undo2, X } from "lucide-react";
 import PdfFrame from "./PdfFrame";
 import type { ProposalBackCover } from "../../lib/api";
-import { CLOSING_DEFAULTS, resolveClosing } from "../../lib/closingPage";
+import { CLOSING_DEFAULTS, CLOSING_HEADING_SIZE, CLOSING_HEADING_SIZES, resolveClosing } from "../../lib/closingPage";
 import { ClosingPageDocument } from "./ProposalPDF";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
@@ -104,8 +104,17 @@ export default function ProposalClosingBuilder({ value, onChange, canEdit, onSav
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] gap-2">
             <div className="space-y-0.5">
               <label htmlFor="closing-heading" className={lbl}>Heading</label>
-              <input id="closing-heading" value={value.heading || ""} onChange={(e) => set("heading", e.target.value)} placeholder={CLOSING_DEFAULTS.heading} className={inp} />
-              <p className="text-[10px] text-slate-400">The last word prints in the brand mint.</p>
+              <div className="flex gap-1.5">
+                <input id="closing-heading" value={value.heading || ""} onChange={(e) => set("heading", e.target.value)} placeholder={CLOSING_DEFAULTS.heading} className={inp} />
+                {/* 2026-10-07 - the heading's font size. */}
+                <select value={c.headingSize} onChange={(e) => set("headingSize", Number(e.target.value) === CLOSING_HEADING_SIZE ? undefined : Number(e.target.value))}
+                  aria-label="Heading font size" title="Heading font size (points)" className={`${inp} w-auto shrink-0`}>
+                  {(CLOSING_HEADING_SIZES.includes(c.headingSize) ? CLOSING_HEADING_SIZES : [...CLOSING_HEADING_SIZES, c.headingSize].sort((a, b) => a - b)).map((n) => (
+                    <option key={n} value={n}>{n} pt{n === CLOSING_HEADING_SIZE ? " (standard)" : ""}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[10px] text-slate-400">The last word prints in the brand mint. Next to it: the font size.</p>
             </div>
             <div className="space-y-0.5">
               <div className="flex items-center justify-between gap-2">

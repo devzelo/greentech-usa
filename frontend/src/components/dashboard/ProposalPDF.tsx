@@ -4,7 +4,7 @@ import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
 import type { ApiProject, TechnicalProposalContent, FinancialProposalContent, TeamResume, ProposalCover, ProposalCoverLetter, ProposalLetterhead, ProposalSectionMeta, ProposalBackCover, ProposalSimilarProject, ProposalRequirement } from "../../lib/api";
 import { periodOf, referencesOnly, sheetLabel } from "../../lib/pastPerformance";
-import { resolveClosing } from "../../lib/closingPage";
+import { resolveClosing, CLOSING_SIGNATURE } from "../../lib/closingPage";
 import { tableCalc, adjustmentLabel } from "../../lib/pricing";
 import { resolveProposalLayout, resolveFinancialTables, resolveFinancialLayout, requirementStatus, REQUIREMENT_STATUSES } from "../../lib/api";
 import { ResumeBlock } from "./ResumePDF";
@@ -473,18 +473,15 @@ function ClosingPage({ backCover }: { backCover?: ProposalBackCover }) {
 
       <View style={{ flex: 1, justifyContent: "center", paddingRight: 70 }}>
         <GradBar w={56} h={4} r={2} id="closeRule" />
-        <Text style={{ fontFamily: "Outfit", fontSize: 46, fontWeight: 700, color: BRAND.white, lineHeight: 1.1, marginTop: 18, marginBottom: 22 }}>
+        <Text style={{ fontFamily: "Outfit", fontSize: c.headingSize, fontWeight: 700, color: BRAND.white, lineHeight: 1.1, marginTop: 18, marginBottom: 20 }}>
           {lead}<Text style={{ color: CLOSE.mint }}>{accent}</Text>
         </Text>
         {c.paragraphs.map((p, i) => (
           <Text key={i} style={{ fontSize: 12.5, color: CLOSE.text, lineHeight: 1.65, marginBottom: 12 }}>{p}</Text>
         ))}
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 14 }}>
-          <View style={{ width: 3, height: 26, backgroundColor: CLOSE.mint, borderRadius: 1.5, marginRight: 10 }} />
-          <View>
-            <Text style={{ fontSize: 11, fontWeight: 700, color: BRAND.white }}>{COMPANY.name}</Text>
-            <Text style={{ fontSize: 8.5, color: BRAND.s400, marginTop: 2 }}>{COMPANY.tagline}</Text>
-          </View>
+          <View style={{ width: 3, height: 16, backgroundColor: CLOSE.mint, borderRadius: 1.5, marginRight: 10 }} />
+          <Text style={{ fontSize: 11, fontWeight: 700, color: BRAND.white }}>{CLOSING_SIGNATURE}</Text>
         </View>
       </View>
 
@@ -512,7 +509,7 @@ function ClosingPage({ backCover }: { backCover?: ProposalBackCover }) {
       </View>
 
       {/* The page number is stamped afterwards at the bottom right; the company sits opposite it. */}
-      <Text style={{ position: "absolute", left: GUTTER, bottom: 18, fontSize: 7.5, lineHeight: 1, color: BRAND.s500 }}>{COMPANY.name}  ·  {c.website}</Text>
+      <Text style={{ position: "absolute", left: GUTTER, bottom: 18, fontSize: 7.5, lineHeight: 1, color: BRAND.s500 }}>{CLOSING_SIGNATURE}  ·  {c.website}</Text>
       <View style={{ position: "absolute", left: 0, bottom: 0 }}><GradBar w={PAGE.w} h={4} r={0} id="closeFoot" /></View>
     </Page>
   );

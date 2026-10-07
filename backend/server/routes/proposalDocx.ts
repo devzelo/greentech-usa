@@ -47,14 +47,14 @@ interface Fin {
 interface Req { id: string; label?: string; rfpRef?: string; volume?: string; sectionId?: string; status?: string; done?: boolean }
 interface Cover { proposalTitle?: string; projectName?: string; solicitationNo?: string; taskOrderNo?: string; contractNo?: string; clientName?: string; dueDate?: string; submissionDate?: string; submittedTo?: string; attentionTo?: string; submittedBy?: string }
 interface CoverLetter { enabled?: boolean; body?: string; signatories?: Array<{ name?: string; title?: string }> }
-interface BackCover { off?: boolean; heading?: string; message?: string; website?: string; email?: string; phone?: string; address?: string }
+interface BackCover { off?: boolean; heading?: string; message?: string; website?: string; email?: string; phone?: string; address?: string; headingSize?: number }
 interface PContent { cover?: Cover; coverFinancial?: Cover; coverLetter?: CoverLetter; coverLetterFinancial?: CoverLetter; technical?: Tech; financial?: Fin; requirements?: Req[]; backCover?: BackCover }
 
 // 2026-10-06 - the Last Page's standard wording and our details, as in the PDF (frontend lib/closingPage.ts).
 const CLOSING = {
   heading: "Thank You",
   message: [
-    "Thank you for considering GreenTech USA LLC for this opportunity. We appreciate your time and the opportunity to submit our proposal. We look forward to the possibility of working together and supporting your project goals with our experience, commitment, and dedication to delivering reliable and sustainable solutions.",
+    "Thank you for considering GreenTech USA for this opportunity. We appreciate your time and the opportunity to submit our proposal. We look forward to the possibility of working together and supporting your project goals with our experience, commitment, and dedication to delivering reliable and sustainable solutions.",
     "Please do not hesitate to contact us if you have any questions or require additional information.",
   ].join("\n\n"),
   website: "www.gt-usa.com", email: "info@gt-usa.com", phone: "+1 571-337-1358", address: "Chantilly, Virginia, USA",
@@ -462,7 +462,7 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
     const bc = pc.backCover || {};
     if (!bc.off) {
       const pick = (v: string | undefined, d: string) => (v || "").trim() || d;
-      body.push(new Paragraph({ pageBreakBefore: true, heading: HeadingLevel.HEADING_2, spacing: { before: 1600, after: 240 }, children: [new TextRun({ text: pick(bc.heading, CLOSING.heading), font: "Calibri", bold: true, size: 56, color: "0F172A" })] }));
+      body.push(new Paragraph({ pageBreakBefore: true, heading: HeadingLevel.HEADING_2, spacing: { before: 1600, after: 240 }, children: [new TextRun({ text: pick(bc.heading, CLOSING.heading), font: "Calibri", bold: true, size: Math.round(Math.min(60, Math.max(16, Number(bc.headingSize) || 28)) * 2), color: "0F172A" })] }));
       for (const para of pick(bc.message, CLOSING.message).split(/\n\s*\n/).map((x) => x.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean)) body.push(p(para, { size: 24 }));
       body.push(p(""));
       body.push(kvLine("Web", pick(bc.website, CLOSING.website)));
