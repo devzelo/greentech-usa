@@ -49,10 +49,10 @@ function LogoChip({ h = 22, padX }: { h?: number; padX?: number }) {
 }
 
 /** The client's seal or logo (e.g. the agency seal), on white opposite our logo. */
-function ClientMark({ src, h = 28 }: { src: string; h?: number }) {
+function ClientMark({ src, h = 28, maxW }: { src: string; h?: number; maxW?: number }) {
   return (
     <View style={{ backgroundColor: BRAND.white, borderRadius: 6, padding: 4 }}>
-      <Image src={abs(src)} style={{ height: h, maxWidth: h * 2.6, objectFit: "contain" }} />
+      <Image src={abs(src)} style={{ height: h, maxWidth: maxW ?? h * 2.6, objectFit: "contain" }} />
     </View>
   );
 }
@@ -132,11 +132,12 @@ function Hero({ d }: { d: CoverData }) {
         <Mosaic images={d.images} w={PAGE.w} h={H} />
         <Scrim w={PAGE.w} h={H} />
         <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
-          <Logo h={30} />
+          {/* 2026-10-08 - logos as on every cover: ours 1.5 times (30 to 45), the client's 4 times (28 to 112). */}
+          <Logo h={45} />
           {!!d.partnerLogo && <View style={{ width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.45)", marginHorizontal: 14 }} />}
           {!!d.partnerLogo && <PartnerMark src={d.partnerLogo} h={24} />}
         </View>
-        {!!d.clientLogo && <View style={{ position: "absolute", top: 34, right: 52 }}><ClientMark src={d.clientLogo} /></View>}
+        {!!d.clientLogo && <View style={{ position: "absolute", top: 34, right: 52 }}><ClientMark src={d.clientLogo} h={112} maxW={d.partnerLogo ? 130 : 220} /></View>}
       </View>
 
       <View style={{ paddingHorizontal: 52, flex: 1, justifyContent: "space-between", paddingTop: 16, paddingBottom: 34 }}>
@@ -199,10 +200,11 @@ function Formal({ d }: { d: CoverData }) {
       <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="formalTop" /></View>
       <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <LogoChip h={22} />
+          {/* 2026-10-08 - ours 1.5 times (22 to 33), the client's 4 times (28 to 112). */}
+          <LogoChip h={33} padX={16} />
           {!!d.partnerLogo && <View style={{ marginLeft: 10, border: `1 solid ${BRAND.border}`, borderRadius: 8 }}><PartnerMark src={d.partnerLogo} h={26} /></View>}
-          <View style={{ flex: 1 }} />
-          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={28} />}
+          <View style={{ flex: 1, minWidth: 12 }} />
+          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={112} maxW={d.partnerLogo ? 130 : 230} />}
         </View>
 
         <View style={{ flex: 1, justifyContent: "center", paddingVertical: 18 }}>
