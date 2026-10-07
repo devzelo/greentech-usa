@@ -4685,7 +4685,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     </button>
                   );
                 })()}
-                {isOwner && (
+                {/* 2026-10-07 - it is about the financial volume: shown on Overview and Financial only. */}
+                {isOwner && (proposalSub === "overview" || proposalSub === "financial") && (
                   <button
                     onClick={() => setFinancialLocked((v) => !v)}
                     title={financialLocked ? "Financial Proposal is locked — click to unlock (remember to Save)" : "Lock the Financial Proposal to the owner (remember to Save)"}
