@@ -4,6 +4,7 @@ import type { ApiProject } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
 import { effectiveEndDate, fmtDate, milestoneLength, parseDate, phasePercent, planSchedule } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
+import { SHOW_PENDING_PROJECT_FIELDS } from "../../lib/pendingDesign";
 
 registerBrandFonts();
 
@@ -57,6 +58,29 @@ const s = StyleSheet.create({
   kvValue: { flex: 1, fontSize: 9, color: BRAND.slate, fontWeight: 500, lineHeight: 1.4 },
   // The client's own mark, sized to sit inside a row without pushing the column about.
   clientLogo: { height: 34, maxWidth: 120, objectFit: "contain" },
+
+  // 2026-10-07 - the first page as on a past performance page: the information table on the left,
+  // the project's picture and the client (with its logo) on the right.
+  top: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  info: { flex: 1, border: `0.8 solid ${BRAND.border}` },
+  infoHead: { backgroundColor: BRAND.slate, paddingVertical: 5, paddingHorizontal: 7 },
+  infoHeadText: { fontSize: 7, fontWeight: 700, color: BRAND.white, letterSpacing: 1, lineHeight: 1.2 },
+  infoRow: { flexDirection: "row", borderTop: `0.6 solid ${BRAND.border}` },
+  infoLabel: { width: "38%", backgroundColor: BRAND.mist, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 7.4, fontWeight: 700, color: BRAND.s600, lineHeight: 1.3 },
+  infoValue: { flex: 1, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 8, color: BRAND.slate, lineHeight: 1.35 },
+  side: { width: "38%", marginLeft: 14 },
+  photo: { width: "100%", height: 130, objectFit: "cover", borderRadius: 6, marginBottom: 10 },
+  clientCard: { border: `0.8 solid ${BRAND.border}`, borderRadius: 6, padding: 10, borderLeft: `3 solid ${BRAND.emerald}` },
+  clientLabel: { fontSize: 6.6, fontWeight: 700, color: BRAND.s500, letterSpacing: 0.9, lineHeight: 1.3, marginBottom: 5 },
+  clientCardLogo: { height: 30, maxWidth: 140, objectFit: "contain", marginBottom: 6 },
+  clientName: { fontSize: 10, fontWeight: 700, color: BRAND.slate, lineHeight: 1.3 },
+  clientLine: { fontSize: 8, color: BRAND.s600, lineHeight: 1.4, marginTop: 1.5 },
+  scope: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
+  scopeItem: { width: "50%", flexDirection: "row", paddingRight: 10, marginBottom: 3 },
+  gallery: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
+  galleryCell: { width: "31.8%", marginBottom: 10 },
+  galleryImg: { width: "100%", height: 108, objectFit: "cover", borderRadius: 5 },
+  galleryCaption: { fontSize: 7.4, color: BRAND.s600, lineHeight: 1.35, marginTop: 3 },
 
   tHead: { flexDirection: "row", backgroundColor: BRAND.slate },
   th: { fontSize: 6.8, fontWeight: 700, color: BRAND.white, letterSpacing: 0.6, lineHeight: 1.3, paddingVertical: 5, paddingHorizontal: 6 },
@@ -148,19 +172,25 @@ function ReportRichText({ html }: { html: string }) {
  * and the person printing it can leave out whatever does not belong in this particular copy.
  */
 export type ReportSection =
-  | "overview" | "projectInfo" | "clientInfo" | "summary" | "milestones" | "phases"
-  | "notes" | "financials" | "subs" | "vendors" | "team";
+  | "overview" | "projectInfo" | "clientInfo" | "photo" | "summary" | "milestones" | "phases"
+  | "notes" | "financials" | "subs" | "vendors" | "gallery" | "workPackages" | "team";
 
+// 2026-10-07 - the first page shows the project at a glance (as a past performance page does), then
+// the description, the timeline, the subcontractors, the finance status, the pictures and the work
+// packages.
 export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: string }> = [
-  { key: "overview", label: "Key figures and progress", hint: "Dates, team size, overall completion" },
-  { key: "projectInfo", label: "Project information", hint: "Identity, contract, categories, scope of work" },
-  { key: "clientInfo", label: "Client information", hint: "From the Directory, with the client's logo" },
-  { key: "summary", label: "Executive summary", hint: "The project's description" },
-  { key: "milestones", label: "Phases and milestones", hint: "The schedule behind the progress" },
-  { key: "phases", label: "Timeline phases", hint: "The older phase list, when one is kept" },
-  { key: "financials", label: "Financial summary", hint: "Value, income, expenses, profit" },
+  { key: "projectInfo", label: "Project information", hint: "First page: identity, contract, type and dates" },
+  { key: "photo", label: "Project picture", hint: "First page: the project's cover picture" },
+  { key: "clientInfo", label: "Client and logo", hint: "First page: the client from the Directory, with its logo" },
+  { key: "overview", label: "Key figures and progress", hint: "First page: dates, team size, overall completion" },
+  { key: "summary", label: "Description and scope", hint: "The project's description and key scope of work" },
+  { key: "milestones", label: "Timeline", hint: "The phases and milestones behind the progress" },
+  { key: "phases", label: "Older timeline phases", hint: "The earlier phase list, when one is kept" },
   { key: "subs", label: "Subcontractors", hint: "Who is working under this project" },
   { key: "vendors", label: "Vendors", hint: "The suppliers on this project" },
+  { key: "financials", label: "Finance status", hint: "Value, income, expenses, profit" },
+  { key: "gallery", label: "Picture gallery", hint: "The pictures in the project's gallery" },
+  { key: "workPackages", label: "Work packages", hint: "Each package: who does it, status and progress" },
   { key: "team", label: "Assigned team", hint: "The people assigned" },
 ];
 
@@ -175,6 +205,9 @@ export interface ReportClient {
 
 export interface ReportVendor { name?: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string }
 
+/** A work package as the report lists it. Money only for someone allowed to see the figures. */
+export interface ReportPackage { no: number; name: string; who: string; status: string; progress: number; current?: number; paid?: number }
+
 interface Props {
   project: ApiProject;
   /** Kept for callers; the letterhead band carries the logo now. */
@@ -185,9 +218,18 @@ interface Props {
   include?: Partial<Record<ReportSection, boolean>>;
   client?: ReportClient;
   vendors?: ReportVendor[];
+  /** The project's cover picture, as a data URL (read before the PDF is made). */
+  photo?: string;
+  /** The gallery's pictures, as data URLs, with their captions. */
+  gallery?: Array<{ src: string; caption?: string }>;
+  /** How many pictures the gallery holds in all (the report prints the first ones). */
+  galleryTotal?: number;
+  packages?: { money: boolean; items: ReportPackage[] };
+  /** The assigned people by name (the project holds their employee ids). */
+  team?: string[];
 }
 
-export default function ProjectReportPDF({ project, financials, include, client, vendors = [] }: Props) {
+export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photo, gallery = [], galleryTotal = 0, packages, team }: Props) {
   const on = (k: ReportSection) => include?.[k] !== false;
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
@@ -199,9 +241,29 @@ export default function ProjectReportPDF({ project, financials, include, client,
   const expenses = financials?.expenses ?? 0;
   const profit = income - expenses;
   const [pillBg, pillFg] = STATUS_TONE[project.status] || STATUS_TONE.Planning;
-  const kv = (label: string, value?: string) => (
-    <View style={s.kv} wrap={false}><Text style={s.kvLabel}>{label}</Text><Text style={s.kvValue}>{value || "-"}</Text></View>
-  );
+  const end = effectiveEndDate(project);
+  const site = project.siteAddress?.full || [project.siteAddress?.line1, project.siteAddress?.city, project.siteAddress?.country].filter(Boolean).join(", ");
+  // The first page's table: only what is filled in. Funding, disciplines and compliance wait for
+  // their design (lib/pendingDesign.ts), as they do in Create and Edit Project.
+  const infoRows = ([
+    ["Project No.", project.id], ["Location", project.location], ["Site Address", site],
+    ["Project Type", projectCategories(project).join(", ")], ["Contract No.", project.contractNo], ["Solicitation No.", project.solicitationNo],
+    ["Contract Type", project.contractType],
+    ["Period", [project.startDate, end].filter(Boolean).join(" to ") + (end && end !== project.endDate ? " (extended)" : "")],
+    ["Contract Value", project.value], ["Status", project.status], ["Owner", project.owner],
+    ...(SHOW_PENDING_PROJECT_FIELDS ? [["Funding", project.fiscal], ["Disciplines", project.disciplines?.join(", ")], ["Compliance", project.compliance]] : []),
+  ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim()) as Array<[string, string]>;
+  const showPhoto = on("photo") && !!photo;
+  const clientName = client?.name || project.clientInfo?.name || "";
+  const clientLines = [
+    client?.clientType,
+    [client?.contactName || project.clientInfo?.contactName, client?.role].filter(Boolean).join(", "),
+    client?.email || project.clientInfo?.email, client?.phone || project.clientInfo?.phone,
+    client?.address || project.clientInfo?.address, client?.website,
+  ].map((x) => (x || "").trim()).filter(Boolean);
+  const showClient = on("clientInfo") && (!!clientName || !!client?.logo);
+  const scope = (project.scopeOfWork || []).map((x) => (x || "").trim()).filter(Boolean);
+  const hasDescription = !!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim();
 
   return (
     <Document title={`${project.name} - Project Report`} author="GreenTech USA LLC">
@@ -222,6 +284,36 @@ export default function ProjectReportPDF({ project, financials, include, client,
           <Text style={s.meta}>Owner: {project.owner || "-"}</Text>
         </View>
 
+        {/* 2026-10-07 - the project at a glance, as on a past performance page. */}
+        {(on("projectInfo") || showPhoto || showClient) && (
+          <View style={s.top} wrap={false}>
+            {on("projectInfo") && (
+              <View style={s.info}>
+                <View style={s.infoHead}><Text style={s.infoHeadText}>PROJECT INFORMATION</Text></View>
+                {infoRows.map(([l, v]) => (
+                  <View key={l} style={s.infoRow}>
+                    <Text style={s.infoLabel}>{l}</Text>
+                    <Text style={s.infoValue}>{v}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {(showPhoto || showClient) && (
+              <View style={on("projectInfo") ? s.side : { width: "100%" }}>
+                {showPhoto && <Image src={photo!} style={on("projectInfo") ? s.photo : [s.photo, { height: 200 }]} />}
+                {showClient && (
+                  <View style={s.clientCard}>
+                    <Text style={s.clientLabel}>CLIENT</Text>
+                    {!!client?.logo && <Image src={client.logo} style={s.clientCardLogo} />}
+                    <Text style={s.clientName}>{clientName}</Text>
+                    {clientLines.map((l, i) => <Text key={i} style={s.clientLine}>{l}</Text>)}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Key figures */}
         {on("overview") && (
           <>
@@ -229,7 +321,7 @@ export default function ProjectReportPDF({ project, financials, include, client,
               { label: "START DATE", value: project.startDate || "-" },
               { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: effectiveEndDate(project) || "-" },
               { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
-              { label: "VISIBILITY", value: project.published ? "Public" : "Internal" },
+              { label: "COMPLETION", value: `${progress}%`, tone: BRAND.emerald },
             ]} />
             <View style={s.progress} wrap={false}>
               <View style={s.progressHead}>
@@ -241,35 +333,20 @@ export default function ProjectReportPDF({ project, financials, include, client,
           </>
         )}
 
-        {/* CR 286 - the project's own facts, as the Project Identity block holds them. */}
-        {on("projectInfo") && (
+        {/* The project's description (Project Info's Short Description) and its key scope. A project
+            from before, with report notes and no description, prints its notes instead. */}
+        {on("summary") && (hasDescription || scope.length > 0) && (
           <View>
-            <SectionHeading title="Project Information" />
-            <View style={s.twoCol}>
-              <View style={[s.col, { marginRight: 18 }]}>
-                {kv("PROJECT", project.name)}
-                {kv("PROJECT NO.", project.id)}
-                {kv("LOCATION", project.location)}
-                {kv("SITE ADDRESS", project.siteAddress?.full || [project.siteAddress?.line1, project.siteAddress?.city, project.siteAddress?.country].filter(Boolean).join(", "))}
-                {kv("PROJECT TYPE", projectCategories(project).join(", "))}
-                {kv("STATUS", project.status)}
-              </View>
-              <View style={s.col}>
-                {kv("CONTRACT NO.", project.contractNo)}
-                {kv("SOLICITATION #", project.solicitationNo)}
-                {kv("CONTRACT TYPE", project.contractType)}
-                {kv("START", project.startDate)}
-                {kv("TARGET END", effectiveEndDate(project))}
-                {kv("DISCIPLINES", project.disciplines?.join(", "))}
-                {kv("FUNDING", project.fiscal)}
-              </View>
-            </View>
-            {(project.scopeOfWork || []).filter((x) => x && x.trim()).length > 0 && (
-              <View style={{ marginTop: 8 }}>
-                <Text style={s.progressLabel}>KEY SCOPE OF WORK</Text>
-                {(project.scopeOfWork || []).filter((x) => x && x.trim()).map((line, i) => (
-                  <View key={i} style={s.rtLi}><Text style={s.rtBullet}>•</Text><Text style={s.rtLiText}>{line.trim()}</Text></View>
-                ))}
+            <SectionHeading title="Description" />
+            {project.description?.trim() ? <Text style={s.body}>{project.description}</Text> : <ReportRichText html={project.reportNotes || ""} />}
+            {scope.length > 0 && (
+              <View style={{ marginTop: 4 }}>
+                <Text style={s.progressLabel} minPresenceAhead={40}>KEY SCOPE OF WORK</Text>
+                <View style={s.scope}>
+                  {scope.map((line, i) => (
+                    <View key={i} style={s.scopeItem}><Text style={s.rtBullet}>•</Text><Text style={s.rtLiText}>{line}</Text></View>
+                  ))}
+                </View>
               </View>
             )}
           </View>
@@ -306,61 +383,6 @@ export default function ProjectReportPDF({ project, financials, include, client,
           </View>
         )}
 
-
-        {/* Financial summary */}
-        {on("financials") && (
-        <View wrap={false}>
-          <SectionHeading title="Financial Summary" />
-          <KpiRow items={[
-            { label: "PROJECT VALUE", value: project.value || "-" },
-            { label: "INCOME (INVOICED)", value: money(income) },
-            { label: "EXPENSES", value: money(expenses) },
-            { label: profit >= 0 ? "CURRENT PROFIT" : "CURRENT LOSS", value: money(profit), tone: profit >= 0 ? BRAND.emerald : RED },
-          ]} />
-          <Text style={s.note}>Income is the total invoiced to the client (Invoice Sent). Expenses are the total logged in the Expenses tab (quantity × unit price), across all contributors.</Text>
-        </View>
-        )}
-
-        {/* Executive summary: the project's description (Project Info's Short Description). A project
-            from before, with report notes and no description, prints its notes here instead. */}
-        {on("summary") && (!!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim()) && (
-          <View>
-            <SectionHeading title="Executive Summary" />
-            {project.description?.trim() ? <Text style={s.body}>{project.description}</Text> : <ReportRichText html={project.reportNotes || ""} />}
-          </View>
-        )}
-
-        {/* CR 286 - the client as the project page shows them, read from the Directory, with their
-            logo beside the facts. Fiscal and compliance keep their column. */}
-        {on("clientInfo") && (
-          <View>
-            <SectionHeading title="Client Information" />
-            <View style={s.twoCol}>
-              <View style={[s.col, { marginRight: 18 }]}>
-                {kv("CLIENT / AGENCY", client?.name || project.clientInfo?.name)}
-                {kv("CLIENT TYPE", client?.clientType)}
-                {kv("CONTACT", [client?.contactName || project.clientInfo?.contactName, client?.role].filter(Boolean).join(" - "))}
-                {kv("EMAIL", client?.email || project.clientInfo?.email)}
-                {kv("PHONE", client?.phone || project.clientInfo?.phone)}
-                {kv("WEBSITE", client?.website)}
-              </View>
-              <View style={s.col}>
-                {kv("LOCATION", client?.location || project.clientInfo?.country)}
-                {kv("ADDRESS", client?.address || project.clientInfo?.address)}
-                {kv("REFERENCE", client?.reference || project.clientInfo?.reference)}
-                {kv("FUNDING", project.fiscal)}
-                {kv("COMPLIANCE", project.compliance)}
-                {client?.logo ? (
-                  <View style={s.kv} wrap={false}>
-                    <Text style={s.kvLabel}>CLIENT LOGO</Text>
-                    <View style={{ flex: 1 }}><Image src={client.logo} style={s.clientLogo} /></View>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-            {!!client?.notes?.trim() && <Text style={s.note}>{client.notes.trim()}</Text>}
-          </View>
-        )}
 
         {/* Timeline */}
         {on("phases") && phases.length > 0 && (
@@ -423,11 +445,84 @@ export default function ProjectReportPDF({ project, financials, include, client,
           </View>
         )}
 
+        {/* Finance status */}
+        {on("financials") && (
+        <View wrap={false}>
+          <SectionHeading title="Finance Status" />
+          <KpiRow items={[
+            { label: "PROJECT VALUE", value: project.value || "-" },
+            { label: "INCOME (INVOICED)", value: money(income) },
+            { label: "EXPENSES", value: money(expenses) },
+            { label: profit >= 0 ? "CURRENT PROFIT" : "CURRENT LOSS", value: money(profit), tone: profit >= 0 ? BRAND.emerald : RED },
+          ]} />
+          <Text style={s.note}>Income is the total invoiced to the client (Invoice Sent). Expenses are the total logged in the Expenses tab (quantity × unit price), across all contributors.</Text>
+        </View>
+        )}
+
+        {/* 2026-10-07 - the project's pictures, three to a row. */}
+        {on("gallery") && gallery.length > 0 && (
+          <View>
+            {Array.from({ length: Math.ceil(gallery.length / 3) }, (_, r) => (
+              <View key={r} wrap={false}>
+                {r === 0 && <SectionHeading title="Picture Gallery" />}
+                <View style={s.gallery}>
+                  {gallery.slice(r * 3, r * 3 + 3).map((g, i) => (
+                    <View key={i} style={[s.galleryCell, { marginRight: i === 2 ? 0 : "2.3%" }]}>
+                      <Image src={g.src} style={s.galleryImg} />
+                      {!!g.caption?.trim() && <Text style={s.galleryCaption}>{g.caption.trim()}</Text>}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+            {galleryTotal > gallery.length && <Text style={s.note}>The first {gallery.length} of {galleryTotal} pictures; the rest are in the project's gallery.</Text>}
+          </View>
+        )}
+
+        {/* 2026-10-07 - the work packages, one line each. */}
+        {on("workPackages") && !!packages?.items.length && (
+          <View>
+            <SectionHeading title="Work Packages" />
+            <View style={s.tHead} wrap={false} minPresenceAhead={24}>
+              <Text style={[s.th, { width: 30 }]}>#</Text>
+              <Text style={[s.th, { flex: 2.4 }]}>WORK PACKAGE</Text>
+              <Text style={[s.th, { flex: 1.8 }]}>RESPONSIBLE</Text>
+              <Text style={[s.th, { flex: 1.1 }]}>STATUS</Text>
+              <Text style={[s.th, { width: 48, textAlign: "right" }]}>DONE</Text>
+              {packages.money && <Text style={[s.th, { flex: 1.1, textAlign: "right" }]}>VALUE</Text>}
+              {packages.money && <Text style={[s.th, { flex: 1.1, textAlign: "right" }]}>PAID</Text>}
+            </View>
+            {packages.items.map((p, i) => (
+              <View key={i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
+                <Text style={[s.td, { width: 30 }]}>{p.no}.0</Text>
+                <Text style={[s.td, { flex: 2.4, fontWeight: 700 }]}>{p.name}</Text>
+                <Text style={[s.td, { flex: 1.8 }]}>{p.who || "-"}</Text>
+                <Text style={[s.td, { flex: 1.1 }]}>{p.status}</Text>
+                <Text style={[s.td, { width: 48, textAlign: "right" }]}>{p.progress}%</Text>
+                {packages.money && <Text style={[s.td, { flex: 1.1, textAlign: "right" }]}>{p.current ? money(p.current) : "-"}</Text>}
+                {packages.money && <Text style={[s.td, { flex: 1.1, textAlign: "right" }]}>{p.paid ? money(p.paid) : "-"}</Text>}
+              </View>
+            ))}
+            {packages.money && (() => {
+              const cur = packages.items.reduce((a, p) => a + (p.current || 0), 0), paid = packages.items.reduce((a, p) => a + (p.paid || 0), 0);
+              return (
+                <View style={[s.tRow, { backgroundColor: BRAND.mist }]} wrap={false}>
+                  <Text style={[s.td, { width: 30 }]} />
+                  <Text style={[s.td, { flex: 2.4 + 1.8 + 1.1, fontWeight: 700 }]}>Totals</Text>
+                  <Text style={[s.td, { width: 48 }]} />
+                  <Text style={[s.td, { flex: 1.1, textAlign: "right", fontWeight: 700 }]}>{money(cur)}</Text>
+                  <Text style={[s.td, { flex: 1.1, textAlign: "right", fontWeight: 700 }]}>{money(paid)}</Text>
+                </View>
+              );
+            })()}
+          </View>
+        )}
+
         {/* Assigned team */}
         {on("team") && assigned.length > 0 && (
           <View wrap={false}>
             <SectionHeading title="Assigned Team" />
-            <Text style={s.body}>{assigned.join("   ·   ")}</Text>
+            <Text style={s.body}>{(team?.length ? team : assigned).join("   ·   ")}</Text>
           </View>
         )}
 

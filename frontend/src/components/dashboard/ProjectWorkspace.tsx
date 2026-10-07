@@ -32,8 +32,8 @@ import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import { BondingCard } from "./BondingEditor";
 import WipFields from "./WipFields";
 import { withWip, type ProjectWip } from "../../lib/wip";
-import { logoAsPng } from "../../lib/logoImage";
-import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
+import { logoAsPng, photoAsJpeg } from "../../lib/logoImage";
+import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportPackage, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
 import SaveStatus, { useSaveStatus } from "./SaveStatus";
@@ -57,7 +57,7 @@ import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import SectionGroupTemplates from "./SectionGroupTemplates";
 import { makeZip } from "../../lib/zip";
-import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool } from "../../lib/pastPerformance";
+import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
@@ -71,7 +71,7 @@ import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import ProposalClosingBuilder from "./ProposalClosingBuilder";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
-import { fetchProposalDocs, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
+import { fetchProposalDocs, fetchWorkPackages, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
 import AvailableAttachments from "./AvailableAttachments";
 import MinutesPanel from "./MinutesPanel";
@@ -92,7 +92,7 @@ import ClientPicker from "./ClientPicker";
 import DocTabs from "./DocTabs";
 import ExpenseLog from "./ExpenseLog";
 import ProcurementInvoices from "./ProcurementInvoices";
-import { effectiveEndDate } from "../../lib/projectSchedule";
+import { effectiveEndDate, phasePercent, UNCATEGORISED } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
@@ -351,6 +351,10 @@ export default function ProjectWorkspace() {
   });
   const [reportClient, setReportClient] = useState<ReportClient | undefined>();
   const [reportVendors, setReportVendors] = useState<ReportVendor[]>([]);
+  // 2026-10-07 - the report's first-page picture, its gallery and the work packages.
+  const [reportPhoto, setReportPhoto] = useState<string | undefined>();
+  const [reportGallery, setReportGallery] = useState<{ items: Array<{ src: string; caption?: string }>; total: number }>({ items: [], total: 0 });
+  const [reportPackages, setReportPackages] = useState<{ money: boolean; items: ReportPackage[] } | undefined>();
   const [reportBusy, setReportBusy] = useState(false);
   const presentUsers = usePresence(id ? `project:${id}` : null);   // CR-B-16 — who else is in this project
   const proposalPresent = useBuilderPresence(id ? `proposal:${id}` : null, "the Proposal builder"); // CR-B-01
@@ -2067,6 +2071,41 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           setReportVendors(v.map((x) => ({ name: x.name, contactName: x.contactName, email: x.email, phone: x.phone, city: x.city, country: x.country })));
         } catch { setReportVendors([]); }
       } else setReportVendors([]);
+      // 2026-10-07 - the pictures are read here, as JPEGs, so the PDF never waits on a file; one that
+      // cannot be read is left out.
+      const photos = projectPhotos(project);
+      let cover: string | undefined;
+      if (reportInclude.photo !== false && photos[0]) { try { cover = await photoAsJpeg(withFileToken(photos[0]), 900); } catch { /* no picture */ } }
+      setReportPhoto(cover);
+      const shots = (project.gallery || []).filter((g) => g.type === "image" && !!g.url);
+      const pics: Array<{ src: string; caption?: string }> = [];
+      if (reportInclude.gallery !== false) {
+        for (const g of shots.slice(0, 12)) { try { pics.push({ src: await photoAsJpeg(withFileToken(g.url), 700), caption: g.caption }); } catch { /* skipped */ } }
+      }
+      setReportGallery({ items: pics, total: shots.length });
+      let wp: { money: boolean; items: ReportPackage[] } | undefined;
+      if (reportInclude.workPackages !== false && id) {
+        try {
+          const r = await fetchWorkPackages(id);
+          const ms = project.schedule?.milestones || [];
+          const label: Record<string, string> = { not_started: "Not started", in_progress: "In progress", complete: "Complete", on_hold: "On hold", cancelled: "Cancelled" };
+          // As the Work Packages table shows it: a package tied to the schedule reads its progress there.
+          const progressOf = (p: (typeof r.packages)[number]) => {
+            if (p.progressMode !== "schedule" || !p.scheduleRef?.id) return p.progress;
+            if (p.scheduleRef.kind === "task") { const m = ms.find((x) => x.id === p.scheduleRef.id); return m ? phasePercent(m) : p.progress; }
+            const items = ms.filter((m) => ((m.category || "").trim() || UNCATEGORISED) === p.scheduleRef.id);
+            return items.length ? Math.round(items.reduce((a, m) => a + phasePercent(m), 0) / items.length) : p.progress;
+          };
+          wp = {
+            money: r.canSeeFigures,
+            items: r.packages.filter((p) => !p.archived).map((p, i) => ({
+              no: i + 1, name: p.name, who: p.winner?.name || p.responsible?.name || "", status: label[p.status] || p.status, progress: progressOf(p),
+              ...(r.canSeeFigures && p.money ? { current: p.money.current, paid: p.money.paid } : {}),
+            })),
+          };
+        } catch { /* no packages in the report */ }
+      }
+      setReportPackages(wp);
       try { localStorage.setItem("gt-report-sections", JSON.stringify(reportInclude)); } catch { /* ignore */ }
       setReportPick(false);
       setShowReport(true);
@@ -8513,7 +8552,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
           fileName={fileName([project.name, "Report"], "pdf")}
-          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} />).toBlob()}
+          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photo={reportPhoto} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} />).toBlob()}
           onClose={() => setShowReport(false)}
         />
       )}
