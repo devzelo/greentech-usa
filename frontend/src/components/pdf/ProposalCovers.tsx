@@ -40,9 +40,9 @@ function Logo({ h }: { h: number }) {
 }
 
 /** The GreenTech lockup always sits on dark; on a light cover it gets a slate chip. */
-function LogoChip({ h = 22 }: { h?: number }) {
+function LogoChip({ h = 22, padX }: { h?: number; padX?: number }) {
   return (
-    <View style={{ backgroundColor: BRAND.slate, borderRadius: 8, paddingVertical: h * 0.5, paddingHorizontal: h * 0.7, alignSelf: "flex-start" }}>
+    <View style={{ backgroundColor: BRAND.slate, borderRadius: 8, paddingVertical: h * 0.5, paddingHorizontal: padX ?? h * 0.7, alignSelf: "flex-start" }}>
       <Logo h={h} />
     </View>
   );
@@ -250,7 +250,8 @@ function Panel({ d }: { d: CoverData }) {
         </Svg>
         <View style={{ flex: 1, padding: 32, justifyContent: "space-between" }}>
           <View>
-            <LogoChip h={18} />
+            {/* 2026-10-08 - our logo 1.5 times bigger (18 to 27), the chip a little narrower so it fits the panel. */}
+            <LogoChip h={27} padX={10} />
             {!!d.partnerLogo && <View style={{ marginTop: 8, alignSelf: "flex-start" }}><PartnerMark src={d.partnerLogo} h={22} /></View>}
           </View>
           <View>
@@ -265,7 +266,8 @@ function Panel({ d }: { d: CoverData }) {
 
       <View style={{ flex: 1, padding: 36, justifyContent: "space-between" }}>
         <View>
-          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 10 }}><ClientMark src={d.clientLogo} h={26} /></View>}
+          {/* 2026-10-08 - the client's seal 4 times bigger (26 to 104). */}
+          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 12 }}><ClientMark src={d.clientLogo} h={104} /></View>}
           <View style={{ height: 140, borderRadius: 10, overflow: "hidden", border: `1 solid ${BRAND.border}` }}>
             {!!d.images[0] && <Image src={d.images[0]} style={{ width: "100%", height: 140, objectFit: "cover" }} />}
           </View>
