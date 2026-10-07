@@ -27,16 +27,18 @@ export function detailsOf(c: ApiCompany, contactName = ""): DirectoryDetailsValu
 
 const LABEL: Record<DirectoryField, string> = { contact: "Contact person", email: "Email", phone: "Phone", address: "Address", country: "Country", website: "Website" };
 
-export default function DirectoryDetails({ companyId, name, value, onChange, fields = ["contact", "email", "phone", "address"], className = "" }: {
+export default function DirectoryDetails({ companyId, name, value, onChange, fields = ["contact", "email", "phone", "address"], className = "", disabled = false }: {
   /** The Directory company ("" when the name was typed and not picked). */
   companyId: string;
   /** The company's name as the form holds it (for the "not in the Directory" note). */
   name: string;
   value: Partial<DirectoryDetailsValue>;
-  /** New details from the record (opened, or another contact chosen). */
-  onChange: (v: DirectoryDetailsValue) => void;
+  /** New details from the record: read again when opened (`byUser` false), or another contact chosen (true). */
+  onChange: (v: DirectoryDetailsValue, byUser: boolean) => void;
   fields?: DirectoryField[];
   className?: string;
+  /** Read only: the contact shows as text, not a choice. */
+  disabled?: boolean;
 }) {
   const [company, setCompany] = useState<ApiCompany | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,7 +51,7 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
         if (!alive) return;
         setCompany(c);
         const next = detailsOf(c, value.contactName || "");
-        if (fields.some((f) => (f === "contact" ? next.contactName : next[f]) !== ((f === "contact" ? value.contactName : value[f]) || ""))) onChange(next);
+        if (fields.some((f) => (f === "contact" ? next.contactName : next[f]) !== ((f === "contact" ? value.contactName : value[f]) || ""))) onChange(next, false);
       })
       .catch(() => { if (alive) setCompany(null); })
       .finally(() => { if (alive) setLoading(false); });
@@ -59,6 +61,7 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
   }, [companyId]);
 
   if (!companyId) {
+    if (disabled) return null;
     return name.trim()
       ? <p className={`flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 ${className}`}><AlertTriangle size={12} className="mt-0.5 shrink-0" /> "{name.trim()}" is not picked from the Directory. Choose it from the list, or add it there, so its details come from its record.</p>
       : <p className={`text-[11px] text-slate-400 ${className}`}>Pick the company from the Directory: its contact details are read from there.</p>;
@@ -71,8 +74,8 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
         {fields.map((f) => (
           <div key={f} className={`min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 ${f === "address" ? "sm:col-span-2" : ""}`}>
             <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{LABEL[f]}</p>
-            {f === "contact" && people.length > 1 ? (
-              <select value={value.contactName || ""} onChange={(e) => company && onChange(detailsOf(company, e.target.value))} aria-label="Contact person"
+            {f === "contact" && people.length > 1 && !disabled ? (
+              <select value={value.contactName || ""} onChange={(e) => company && onChange(detailsOf(company, e.target.value), true)} aria-label="Contact person"
                 className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs font-semibold text-slate-800">
                 {people.map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? ` (${p.role})` : ""}</option>)}
               </select>
@@ -82,11 +85,11 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
           </div>
         ))}
       </div>
-      <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
+      {!disabled && <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
         {loading && <Loader2 size={11} className="animate-spin" />}
         Read from the company's Directory record. To change these details,{" "}
         <button type="button" onClick={() => window.open(`/dashboard/directory?open=${encodeURIComponent(companyId)}`, "_blank", "noopener")} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">edit it in the Directory <ExternalLink size={10} /></button>.
-      </p>
+      </p>}
     </div>
   );
 }

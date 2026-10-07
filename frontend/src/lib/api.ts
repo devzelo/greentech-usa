@@ -224,7 +224,7 @@ export interface ApiProject {
   /** Set by the server: may the requester see this project's financial figures? */
   canSeeFigures?: boolean;
   assignedEmployees: string[];
-  subcontractors: Array<{ name: string; scope: string; subId: string; contact?: string; email?: string; phone?: string; notes?: string; invoiceAmount?: string; userId?: string; acceptedOfferId?: string; customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }> }>;
+  subcontractors: Array<{ name: string; scope: string; subId: string; companyId?: string; contact?: string; email?: string; phone?: string; notes?: string; invoiceAmount?: string; userId?: string; acceptedOfferId?: string; customTabs?: Array<{ tabId: string; label: string; parentId: string; notes: string }> }>;
   customTabs: Array<{
     tabId: string;
     label: string;

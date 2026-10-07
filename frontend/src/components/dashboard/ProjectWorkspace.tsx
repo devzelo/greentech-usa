@@ -70,6 +70,7 @@ import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import ProposalClosingBuilder from "./ProposalClosingBuilder";
+import DirectoryDetails, { detailsOf } from "./DirectoryDetails";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, fetchWorkPackages, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
@@ -510,11 +511,8 @@ export default function ProjectWorkspace() {
                   onSelectCompany={(c) => {
                     updateJv("partnerName", c.name);
                     updateJv("companyId", c._id);   // CR-P (31)
-                    const cp = c.contactPersons?.[0];
-                    if (c.email || cp?.email) updateJv("email", c.email || cp?.email || "");
-                    if (c.phone || cp?.phone) updateJv("phone", c.phone || cp?.phone || "");
-                    if (cp?.name) updateJv("contactName", cp.name);
-                    if (c.address) updateJv("partnerAddress", c.address);
+                    const d = detailsOf(c);
+                    updateJv("email", d.email); updateJv("phone", d.phone); updateJv("contactName", d.contactName); updateJv("partnerAddress", d.address);
                     // CR-P (31) — the partner's Directory logo becomes this project's JV
                     // letterhead, so every agreement and document inside the project uses it
                     // without anyone uploading a logo per project.
@@ -524,17 +522,11 @@ export default function ProjectWorkspace() {
                 />
               )}
             </div>
-            {([
-              { field: "contactName", label: "Person in Charge", placeholder: "Full name" },
-              { field: "email", label: "Partner Email", placeholder: "contact@partner.com" },
-              { field: "phone", label: "Partner Phone", placeholder: "+1 (555) 000-0000" },
-            ] as const).map((f) => (
-              <div key={f.field} className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</label>
-                <input value={jvInfo[f.field]} onChange={(e) => updateJv(f.field, e.target.value)} disabled={disabled} placeholder={f.placeholder}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all disabled:opacity-60" />
-              </div>
-            ))}
+            {/* 2026-10-07 - the person in charge, email, phone and address: from the partner's Directory
+                record (read again when opened; that copy is saved with the project's next save). */}
+            <DirectoryDetails className="md:col-span-2" companyId={jvInfo.companyId || ""} name={jvInfo.partnerName} disabled={disabled} fields={["contact", "email", "phone", "address"]}
+              value={{ contactName: jvInfo.contactName, email: jvInfo.email, phone: jvInfo.phone, address: jvInfo.partnerAddress }}
+              onChange={(d, byUser) => { setJvInfo((prev) => ({ ...prev, contactName: d.contactName, email: d.email, phone: d.phone, partnerAddress: d.address })); if (byUser) setDirty(true); }} />
             {/* Partner logo — CR-P (31): filled in automatically from the Directory partner, so
                 the JV letterhead for this project exists the moment the partner is chosen.
                 Uploading here overrides it for this project only. */}
@@ -565,11 +557,6 @@ export default function ProjectWorkspace() {
                 {jvInfo.partnerName.trim() && <option value={jvInfo.partnerName.trim()}>{jvInfo.partnerName.trim()}</option>}
               </select>
             </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Address</label>
-            <textarea rows={4} value={jvInfo.partnerAddress} onChange={(e) => updateJv("partnerAddress", e.target.value)} disabled={disabled} placeholder="Paste the full address exactly as written"
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none disabled:opacity-60" />
           </div>
           {/* Step 8 (items 114-118) - the JV as its own registered entity. Expressions of Interest
               and proposal covers print these, so a JV letter never falls back to GreenTech's details. */}
@@ -2163,6 +2150,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   const handleSaveSub = () => {
     if (!subForm.name.trim()) return;
+    const before = editingSubIdx !== null ? subcontractors[editingSubIdx] : undefined;
+    if (!subForm.companyId && (!before || before.name.trim() !== subForm.name.trim())) { toast("Pick the subcontractor from the Directory, or add it there from the list.", "error"); return; }
     if (editingSubIdx !== null) {
       setSubcontractors((prev) => prev.map((s, i) => (i === editingSubIdx ? { ...subForm } : s)));
     } else {
@@ -5962,7 +5951,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   canSign={isGuest && !!jvInfo.email && (getAuthUser()?.email || "").toLowerCase() === jvInfo.email.trim().toLowerCase()}
                                   defaults={{
                                     projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
-                                    party2: { name: jvInfo.partnerName, contactName: jvInfo.contactName, address: jvInfo.partnerAddress, email: jvInfo.email, phone: jvInfo.phone, logoUrl: jvInfo.logo },
+                                    party2: { name: jvInfo.partnerName, contactName: jvInfo.contactName, address: jvInfo.partnerAddress, email: jvInfo.email, phone: jvInfo.phone, logoUrl: jvInfo.logo, companyId: jvInfo.companyId || "" },
                                     jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                                     contextLines: [
                                       { label: "Project", value: project?.name || "" },
@@ -6189,7 +6178,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             canSign={false}
                             defaults={{
                               projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
-                              party2: { name: v.name, contactName: v.contactName, address: [v.city, v.country].filter(Boolean).join(", "), email: v.email, phone: v.phone, logoUrl: "" },
+                              party2: { name: v.name, contactName: v.contactName, address: [v.city, v.country].filter(Boolean).join(", "), email: v.email, phone: v.phone, logoUrl: "", companyId: v.companyId || "" },
                               jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                               contextLines: [
                                 { label: "Project", value: project?.name || "" },
@@ -6387,7 +6376,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               canSign={isGuest && linkedUserId === getAuthUser()?.id}
                               defaults={{
                                 projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
-                                party2: { name: sub.name, contactName: sub.contact || "", address: "", email: sub.email || "", phone: sub.phone || "", logoUrl: "" },
+                                party2: { name: sub.name, contactName: sub.contact || "", address: "", email: sub.email || "", phone: sub.phone || "", logoUrl: "", companyId: sub.companyId || "" },
                                 jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
                                 contextLines: [
                                   { label: "Project", value: project?.name || "" },
@@ -7737,7 +7726,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     value={subForm.name}
                     category="subcontractor"
                     onNameChange={(v) => setSubForm((f) => ({ ...f, name: v, companyId: f.name === v ? f.companyId : undefined }))}
-                    onSelectCompany={(c) => setSubForm((f) => ({ ...f, companyId: c._id, name: c.name, contact: c.contactPersons?.[0]?.name || f.contact, email: c.email || c.contactPersons?.[0]?.email || f.email, phone: c.phone || c.contactPersons?.[0]?.phone || f.phone }))}
+                    onSelectCompany={(c) => { const d = detailsOf(c); setSubForm((f) => ({ ...f, companyId: c._id, name: c.name, contact: d.contactName, email: d.email, phone: d.phone })); }}
                     placeholder="Search or add a subcontractor from the Directory…"
                   />
                 </div>
@@ -7761,36 +7750,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:ring-4 focus:ring-primary/5"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Primary Contact</label>
-                  <input
-                    type="text"
-                    value={subForm.contact}
-                    onChange={(e) => setSubForm({ ...subForm, contact: e.target.value })}
-                    placeholder="Full name"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:ring-4 focus:ring-primary/5"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</label>
-                  <input
-                    type="email"
-                    value={subForm.email}
-                    onChange={(e) => setSubForm({ ...subForm, email: e.target.value })}
-                    placeholder="contact@vendor.com"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:ring-4 focus:ring-primary/5"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</label>
-                  <input
-                    type="tel"
-                    value={subForm.phone}
-                    onChange={(e) => setSubForm({ ...subForm, phone: e.target.value })}
-                    placeholder="+1 (000) 000-0000"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:ring-4 focus:ring-primary/5"
-                  />
-                </div>
+                {/* 2026-10-07 - the contact, email and phone: from the subcontractor's Directory record. */}
+                <DirectoryDetails className="md:col-span-2" companyId={subForm.companyId || ""} name={subForm.name} fields={["contact", "email", "phone"]}
+                  value={{ contactName: subForm.contact, email: subForm.email, phone: subForm.phone }}
+                  onChange={(d) => setSubForm((f) => ({ ...f, contact: d.contactName, email: d.email, phone: d.phone }))} />
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>
                   <textarea
