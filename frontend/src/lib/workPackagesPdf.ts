@@ -1,6 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import type { ApiWorkPackage, WorkPackageStatus } from "./api";
-import { C, GUTTER, LETTER, brandPage, drawTable, flowText, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Flow, type TableCol, type TableRow } from "./pdfBrand";
+import { C, GUTTER, LETTER, brandPage, drawTable, flowText, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Brand, type Flow, type TableCol, type TableRow } from "./pdfBrand";
 import { fmtDay } from "./projectSchedule";
 
 /**
@@ -13,6 +13,7 @@ import { fmtDay } from "./projectSchedule";
  */
 
 const STATUS: Record<WorkPackageStatus, string> = { not_started: "Not started", in_progress: "In progress", complete: "Complete", on_hold: "On hold", cancelled: "Cancelled" };
+const STATUSES_ORDER = Object.keys(STATUS) as WorkPackageStatus[];
 const STATUS_INK: Record<WorkPackageStatus, ReturnType<typeof rgb>> = {
   not_started: rgb(0.39, 0.45, 0.55), in_progress: rgb(0.15, 0.39, 0.92), complete: rgb(0.02, 0.59, 0.41), on_hold: rgb(0.85, 0.47, 0.02), cancelled: rgb(0.58, 0.64, 0.72),
 };
@@ -121,33 +122,84 @@ export async function buildWorkPackagesPdf(o: WorkPackagesPdfInput): Promise<Blo
   return new Blob([await doc.save()], { type: "application/pdf" });
 }
 
-/** One package on one sheet: what it is, its commercial trail, its subtasks and its money. */
-export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packages" | "note"> & { item: { p: ApiWorkPackage; no: number; progress: number } }): Promise<Blob> {
-  const doc = await PDFDocument.create();
-  const b = await loadBrand(doc);
-  const { p, no, progress } = o.item;
+/**
+ * 2026-10-07 - "Create Report": what goes in a report. A package's own report, or one for all of
+ * them (the summary, then a part for each package).
+ */
+export interface WpReportSections {
+  /** All packages: the totals, then one line per package. */
+  summary: boolean;
+  /** The description, and who does it under which RFQ, PO or agreement. */
+  details: boolean;
+  /** Each RFQ's offers: vendor, total, lead time, result. */
+  quotes: boolean;
+  subtasks: boolean;
+  /** The contract value, change orders, paid and remaining (only for someone who may see the figures). */
+  money: boolean;
+  remarks: boolean;
+}
+/** A package's RFQ and the offers on it, for the report. */
+export interface WpReportRfq {
+  no: string; title: string; date?: string; status: string; currency: string;
+  quotes: Array<{ vendor: string; total: number; lead: string; status: "Awarded" | "NotSelected" | "Received" }>;
+}
+type WpItem = { p: ApiWorkPackage; no: number; progress: number; rfqs?: WpReportRfq[] };
+type WpParts = Omit<WpReportSections, "summary">;
+
+/** One package from a fresh page: its title, then the parts asked for. */
+function drawPackage(b: Brand, first: Flow, newPage: () => Flow, o: Pick<WorkPackagesPdfInput, "money" | "masked" | "projectName">, item: WpItem, s: WpParts): Flow {
+  const { p, no, progress } = item;
   const X = GUTTER, W = LETTER.w - GUTTER * 2;
-  const newPage = (): Flow => brandPage(doc, b, LETTER, `Work package ${no}.0  ·  ${o.projectName}`);
-  let f = newPage();
+  let f = first;
   f.y = titleBlock(f.page, b, {
     x: X, y: f.y, w: W, eyebrow: `Work package ${no}.0 · ${o.projectName}`, title: p.name,
     meta: [["Status", STATUS[p.status]], ["Progress", `${progress}%`], ["As of", fmtDay(new Date())]],
   });
-  if (p.description) f = flowText(f, p.description, { x: X, w: W, font: b.regular, size: 9.5, lineHeight: 13, color: C.slate, newPage });
-  f.y -= 8;
+  if (s.details) {
+    if (p.description) f = flowText(f, p.description, { x: X, w: W, font: b.regular, size: 9.5, lineHeight: 13, color: C.slate, newPage });
+    f.y -= 8;
+    f.y = sectionHeading(f.page, b, "Who does it and under what", X, f.y, W);
+    const trail: TableRow[] = [
+      { cells: ["Responsible", p.winner ? `${p.winner.name}${p.winner.internal ? " (done in-house)" : p.winner.place ? `, ${p.winner.place}` : ""}` : "Not chosen yet"] },
+      { cells: ["RFQ", p.rfq ? `RFQ ${p.rfq.no}${p.rfq.title ? `, ${p.rfq.title}` : ""}${p.rfq.date ? `, ${fmtDay(p.rfq.date)}` : ""}, ${p.rfq.status}${p.rfq.vendors ? `, sent to ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}` : "-"] },
+      { cells: ["Quotes", p.quotes.count ? `${p.quotes.count}: ${p.quotes.names.join(", ")}` : "-"] },
+      { cells: ["Purchase order", p.po ? `${p.po.no}, ${p.po.signed ? "signed" : p.po.status}${p.po.date ? `, ${fmtDay(p.po.date)}` : ""}` : "-"] },
+      { cells: ["Agreement", p.agreement ? `${p.agreement.no}${p.agreement.title ? `, ${p.agreement.title}` : ""}, ${p.agreement.status}${p.agreement.date ? `, ${fmtDay(p.agreement.date)}` : ""}` : "-"] },
+    ];
+    f = drawTable(b, f, X, [{ label: "Item", w: 110 }, { label: "Details", w: W - 110, wrap: true }], trail, { newPage, size: 8.5, maxLines: 4 });
+    f.y -= 24;
+  }
 
-  f.y = sectionHeading(f.page, b, "Who does it and under what", X, f.y, W);
-  const trail: TableRow[] = [
-    { cells: ["Responsible", p.winner ? `${p.winner.name}${p.winner.internal ? " (done in-house)" : p.winner.place ? `, ${p.winner.place}` : ""}` : "Not chosen yet"] },
-    { cells: ["RFQ", p.rfq ? `RFQ ${p.rfq.no}${p.rfq.title ? `, ${p.rfq.title}` : ""}${p.rfq.date ? `, ${fmtDay(p.rfq.date)}` : ""}, ${p.rfq.status}${p.rfq.vendors ? `, sent to ${p.rfq.vendors} vendor${p.rfq.vendors === 1 ? "" : "s"}` : ""}` : "-"] },
-    { cells: ["Quotes", p.quotes.count ? `${p.quotes.count}: ${p.quotes.names.join(", ")}` : "-"] },
-    { cells: ["Purchase order", p.po ? `${p.po.no}, ${p.po.signed ? "signed" : p.po.status}${p.po.date ? `, ${fmtDay(p.po.date)}` : ""}` : "-"] },
-    { cells: ["Agreement", p.agreement ? `${p.agreement.no}${p.agreement.title ? `, ${p.agreement.title}` : ""}, ${p.agreement.status}${p.agreement.date ? `, ${fmtDay(p.agreement.date)}` : ""}` : "-"] },
-  ];
-  f = drawTable(b, f, X, [{ label: "Item", w: 110 }, { label: "Details", w: W - 110, wrap: true }], trail, { newPage, size: 8.5, maxLines: 4 });
-  f.y -= 24;
+  if (s.quotes && item.rfqs?.length) {
+    for (const r of item.rfqs) {
+      if (f.y < 170) f = newPage();
+      f.y = sectionHeading(f.page, b, `Quotes on RFQ ${r.no}${r.title ? ` · ${r.title}` : ""}`, X, f.y, W);
+      const money = (v: number) => {
+        if (o.masked) return MASK;
+        try { return v.toLocaleString("en-US", { style: "currency", currency: r.currency || "USD", maximumFractionDigits: 2 }); } catch { return usd(v); }
+      };
+      const priced = r.quotes.filter((q) => q.total > 0);
+      const lowest = priced.length ? Math.min(...priced.map((q) => q.total)) : 0;
+      const cols: TableCol[] = [{ label: "Vendor", w: 0, wrap: true }, ...(o.money ? [{ label: "Total", w: 90, align: "right" as const }] : []), { label: "Lead time", w: 70 }, { label: "Result", w: 100, wrap: true }];
+      cols[0].w = W - cols.reduce((a, c) => a + c.w, 0);
+      const rows: TableRow[] = r.quotes.map((q) => {
+        const won = q.status === "Awarded";
+        const cc: TableRow["cellColors"] = [];
+        if (won) cc[cols.length - 1] = EMERALD;
+        return {
+          bold: won, fill: won ? rgb(0.93, 0.99, 0.96) : undefined, cellColors: cc,
+          cells: [q.vendor, ...(o.money ? [q.total ? money(q.total) : "-"] : []), q.lead ? `${q.lead} days` : "-",
+            won ? "Winner" : q.status === "NotSelected" ? "Not selected" : !q.total ? "Waiting for prices" : q.total === lowest && o.money ? "Lowest offer" : "Received"],
+        };
+      });
+      f = drawTable(b, f, X, cols, rows.length ? rows : [{ cells: ["No vendors on this RFQ yet."] }], { newPage, size: 8, maxLines: 3 });
+      f.page.drawText(`RFQ ${r.no}${r.date ? `, ${fmtDay(r.date)}` : ""}, ${r.status}. ${r.quotes.length} vendor${r.quotes.length === 1 ? "" : "s"}.`, { x: X, y: f.y - 12, size: 7.5, font: b.regular, color: C.s500 });
+      f.y -= 38;
+    }
+  }
 
-  if (p.subtasks.length) {
+  if (s.subtasks && p.subtasks.length) {
+    if (f.y < 140) f = newPage();
     f.y = sectionHeading(f.page, b, "Subtasks and deliverables", X, f.y, W);
     const rows: TableRow[] = p.subtasks.map((t, i) => {
       const cc: TableRow["cellColors"] = []; cc[2] = STATUS_INK[t.status];
@@ -157,13 +209,13 @@ export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packa
     f.y -= 24;
   }
 
-  if (o.money && p.money) {
+  if (s.money && o.money && p.money) {
     const m = p.money;
     if (f.y < 200) f = newPage();
     f.y = sectionHeading(f.page, b, "Money", X, f.y, W);
     const cw = (W - 4 * 8) / 5;
     const cards: Array<[string, string]> = [
-      [m.source === "po" ? "Original (PO)" : m.source === "agreement" ? "Original (agreement)" : "Original value", fig(o, m.original)],
+      [m.source === "po" ? "PO value" : m.source === "agreement" ? "Contract value" : "Original value", fig(o, m.original)],
       ["Change orders", m.changeCount ? `${m.changes >= 0 ? "+" : "-"}${fig(o, Math.abs(m.changes))}` : "-"],
       ["Current value", fig(o, m.current)],
       ["Paid", fig(o, m.paid)],
@@ -179,11 +231,86 @@ export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packa
     if (m.source === "budget") { f.page.drawText("The original value was typed on the package (no PO carries it).", { x: X, y: f.y + 10, size: 7.5, font: b.regular, color: C.s500 }); f.y -= 10; }
   }
 
-  if (p.remarks) {
-    if (f.y < 120) f = newPage();
+  if (s.remarks && p.remarks) {
+    if (f.y < 100) f = newPage();
     f.y = sectionHeading(f.page, b, "Remarks", X, f.y, W);
     f = flowText(f, p.remarks, { x: X, w: W, font: b.regular, size: 9.5, lineHeight: 13, color: C.slate, newPage });
   }
+  return f;
+}
+
+/** One package on one sheet: what it is, its commercial trail, its subtasks and its money. */
+export async function buildWorkPackageSheet(o: Omit<WorkPackagesPdfInput, "packages" | "note"> & { item: { p: ApiWorkPackage; no: number; progress: number } }): Promise<Blob> {
+  const doc = await PDFDocument.create();
+  const b = await loadBrand(doc);
+  const newPage = (): Flow => brandPage(doc, b, LETTER, `Work package ${o.item.no}.0  ·  ${o.projectName}`);
+  drawPackage(b, newPage(), newPage, o, o.item, { details: true, quotes: false, subtasks: true, money: true, remarks: true });
+  stampPageNumbers(doc, b);
+  return new Blob([await doc.save()], { type: "application/pdf" });
+}
+
+/**
+ * 2026-10-07 - "each work package should have its own Create Report. Also another Create Report
+ * on the main tab, from all the work packages." One package: its part only. All of them: the
+ * summary (totals and a line per package), then a part for each package, each from a new page.
+ */
+export async function buildWorkPackagesReport(o: Omit<WorkPackagesPdfInput, "packages"> & { items: WpItem[]; sections: WpReportSections }): Promise<Blob> {
+  const doc = await PDFDocument.create();
+  const b = await loadBrand(doc);
+  const X = GUTTER, W = LETTER.w - GUTTER * 2;
+  const single = o.items.length === 1 && !o.sections.summary;
+  const footer = single ? `Work package ${o.items[0].no}.0 report  ·  ${o.projectName}` : `Work packages report  ·  ${o.projectName}`;
+  const newPage = (): Flow => brandPage(doc, b, LETTER, footer);
+  const parts: WpParts = { details: o.sections.details, quotes: o.sections.quotes, subtasks: o.sections.subtasks, money: o.sections.money, remarks: o.sections.remarks };
+  const anyPart = Object.values(parts).some(Boolean);
+
+  if (o.sections.summary || !anyPart) {
+    let f = newPage();
+    const n = o.items.length;
+    f.y = titleBlock(f.page, b, {
+      x: X, y: f.y, w: W, eyebrow: "Project management · work packages report", title: o.projectName,
+      meta: [["Project no.", o.projectNo || ""], ["Client", o.clientName || ""], ["Packages", String(n)], ["As of", fmtDay(new Date())]],
+    });
+    if (o.note) { f.page.drawText(o.note, { x: X, y: f.y + 4, size: 8, font: b.regular, color: C.s500 }); f.y -= 12; }
+    const count = (st: WorkPackageStatus) => o.items.filter((x) => x.p.status === st).length;
+    const avg = n ? Math.round(o.items.reduce((a, x) => a + x.progress, 0) / n) : 0;
+    const cw4 = (W - 3 * 8) / 4;
+    ([["Work packages", String(n)], ["Complete", `${count("complete")} of ${n}`], ["In progress", String(count("in_progress"))], ["Average progress", `${avg}%`]] as Array<[string, string]>)
+      .forEach(([k, v], i) => kpiCard(f.page, b, X + i * (cw4 + 8), f.y, cw4, 44, k, v));
+    f.y -= 58;
+    const totals = o.items.reduce((a, { p }) => (p.money ? { original: a.original + p.money.original, changes: a.changes + p.money.changes, current: a.current + p.money.current, paid: a.paid + p.money.paid, remaining: a.remaining + p.money.remaining } : a), { original: 0, changes: 0, current: 0, paid: 0, remaining: 0 });
+    if (o.money) {
+      const cw5 = (W - 4 * 8) / 5;
+      ([["Original", fig(o, totals.original)], ["Change orders", totals.changes ? `${totals.changes >= 0 ? "+" : "-"}${fig(o, Math.abs(totals.changes))}` : "-"], ["Current value", fig(o, totals.current)], ["Paid", fig(o, totals.paid)], ["Remaining", fig(o, totals.remaining)]] as Array<[string, string]>)
+        .forEach(([k, v], i) => kpiCard(f.page, b, X + i * (cw5 + 8), f.y, cw5, 44, k, v, k === "Change orders" && totals.changes > 0 ? RED : C.slate));
+      f.y -= 58;
+    }
+    const others = STATUSES_ORDER.filter((st) => st !== "complete" && st !== "in_progress" && count(st) > 0);
+    if (others.length) { f.page.drawText(others.map((st) => `${STATUS[st]}: ${count(st)}`).join("   ·   "), { x: X, y: f.y - 2, size: 8, font: b.regular, color: C.s500 }); f.y -= 20; }
+
+    f.y = sectionHeading(f.page, b, "Packages", X, f.y, W);
+    const cols: TableCol[] = [
+      { label: "#", w: 30 }, { label: "Work package", w: 0, wrap: true }, { label: "Responsible", w: o.money ? 80 : 120, wrap: true },
+      { label: "Status", w: 58, wrap: true }, { label: "Done", w: 40 },
+      ...(o.money ? [{ label: "Current", w: 60, align: "right" as const }, { label: "Paid", w: 56, align: "right" as const }, { label: "Left", w: 56, align: "right" as const }] : []),
+    ];
+    // Letter portrait leaves 468 pt: the package's name takes what the rest leave (88 pt with money).
+    cols[1].w = Math.max(80, W - cols.reduce((a, c) => a + c.w, 0));
+    const rows: TableRow[] = o.items.map(({ p, no, progress }) => {
+      const cc: TableRow["cellColors"] = []; cc[3] = STATUS_INK[p.status];
+      const m = p.money;
+      return {
+        cells: [`${no}.0`, p.name, p.winner ? p.winner.name : "-", STATUS[p.status], `${progress}%`,
+          ...(o.money ? (m ? [m.current || m.source ? fig(o, m.current) : "-", m.paid || m.source ? fig(o, m.paid) : "-", m.current || m.source ? fig(o, m.remaining) : "-"] : ["-", "-", "-"]) : [])],
+        cellColors: cc, fill: p.changeOrders.length ? rgb(1, 0.98, 0.92) : undefined,
+        bar: { col: 4, pct: progress, color: progress >= 100 ? EMERALD : BLUE },
+      };
+    });
+    if (o.money && rows.length) rows.push({ bold: true, fill: C.mist, cells: ["", "Totals", "", "", "", fig(o, totals.current), fig(o, totals.paid), fig(o, totals.remaining)] });
+    drawTable(b, f, X, cols, rows.length ? rows : [{ cells: ["", "No work packages."] }], { newPage, size: 7.5, maxLines: 4 });
+  }
+
+  if (anyPart) for (const item of o.items) drawPackage(b, newPage(), newPage, o, item, parts);
   stampPageNumbers(doc, b);
   return new Blob([await doc.save()], { type: "application/pdf" });
 }

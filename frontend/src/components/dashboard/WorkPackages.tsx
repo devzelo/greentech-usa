@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   createWorkPackage, deleteWorkPackage, fetchProjectAgreements, fetchRfqs, fetchWorkPackages, importWorkPackages, reorderWorkPackages, updateWorkPackage, withFileToken,
-  createAgreement, fetchAgreements, fetchCompany, uploadDocument, documentUrl, attachmentUrl,
+  createAgreement, fetchAgreements, fetchCompany, uploadDocument, documentUrl, attachmentUrl, fetchVendors,
   type ApiAgreement, type ApiChangeOrder, type ApiProject, type ApiRfq, type ApiWorkPackage, type ApiWorkSubtask, type WorkPackageInput, type WorkPackageStatus, type WorkPackageType,
 } from "../../lib/api";
 import { toast } from "../../lib/toast";
@@ -22,9 +22,10 @@ import { Fig } from "./FiguresPrivacy";
 import CompanyPicker from "./CompanyPicker";
 import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { GREENTECH } from "../../lib/poPdf";
-import PdfPreviewModal from "./PdfPreviewModal";
+import PdfPreviewModal, { type PreviewAction } from "./PdfPreviewModal";
 import ShareMenu from "./ShareMenu";
 import type { PackageBar } from "../../lib/packageBar";
+import type { WpReportRfq, WpReportSections } from "../../lib/workPackagesPdf";
 
 /**
  * CR 328 (2026-09-28): Work Packages. The project manager's master list of everything the project
@@ -129,7 +130,9 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
   // A link from elsewhere (a company's profile) can point at one package: ?hl=wp-<id>.
   const flash = useHighlight(list !== null);
   // CR 328 (GT Comments 3, page 1: "view, print, share ...") - the list and each package as a PDF.
-  const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
+  const [preview, setPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob>; actions?: PreviewAction[] } | null>(null);
+  // 2026-10-07 - Create Report: one package's, or all of them (null: all).
+  const [reportFor, setReportFor] = useState<{ one: ApiWorkPackage | null } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState("");
@@ -231,6 +234,40 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
   const sheetPdf = async (p: ApiWorkPackage) => {
     const { buildWorkPackageSheet } = await import("../../lib/workPackagesPdf");
     return buildWorkPackageSheet({ ...pdfBase(), item: { p, no: numberOf.get(p._id) || 0, progress: progressOf(p) } });
+  };
+  // 2026-10-07 - Create Report: a package's own, or one from all the work packages.
+  const reportFile = (one: ApiWorkPackage | null) => one ? `${safeName(project.name)} - Work package ${numberOf.get(one._id) || ""} ${safeName(one.name)} - Report.pdf` : `${safeName(project.name)} - Work packages report.pdf`;
+  const openReport = (one: ApiWorkPackage | null, sections: WpReportSections, onlyShown: boolean) => {
+    const pkgs = one ? [one] : (onlyShown ? rows : live).filter((p) => !p.archived);
+    const fileName = reportFile(one);
+    let made: Blob | null = null;
+    const build = async () => {
+      const { buildWorkPackagesReport } = await import("../../lib/workPackagesPdf");
+      const [rfqs, vendors] = sections.quotes
+        ? await Promise.all([fetchRfqs(projectId, false, { all: true }).catch(() => [] as ApiRfq[]), fetchVendors(projectId).catch(() => [])])
+        : [[] as ApiRfq[], []];
+      const vendorName = (id: string) => vendors.find((v) => v._id === id)?.name || "Vendor";
+      const rfqsOf = (p: ApiWorkPackage): WpReportRfq[] => rfqs.filter((r) => r.ownerPackageId === p._id || r._id === p.rfqId).map((r) => ({
+        no: r.rfqNo, title: r.title || "", date: r.date, currency: r.currency || "USD",
+        status: r.quotes.some((q) => q.status === "Awarded") ? "Awarded" : r.status || "Draft",
+        quotes: r.quotes.map((q) => ({ vendor: vendorName(q.vendorId), total: quoteTotal(r, q), lead: q.leadTimeDays || "", status: q.status })),
+      }));
+      made = await buildWorkPackagesReport({
+        ...pdfBase(), sections: { ...sections, money: sections.money && canMoney, summary: !one && sections.summary },
+        items: pkgs.map((p) => ({ p, no: numberOf.get(p._id) || 0, progress: progressOf(p), rfqs: rfqsOf(p) })),
+        note: !one && onlyShown && filtering ? `Filtered: ${pkgs.length} of ${live.filter((p) => !p.archived).length} work packages.` : "",
+      });
+      return made;
+    };
+    setPreview({
+      title: one ? `Report · Work package ${numberOf.get(one._id) || ""}.0 ${one.name}` : `Work packages report · ${project.name}`,
+      fileName, build,
+      actions: canEdit ? [{ label: "Save to documents", onClick: async () => {
+        try { await uploadDocument(projectId, new File([made || (await build())], fileName, { type: "application/pdf" }), "pm-work-packages", true, "Reports"); toast("Saved to the project's documents (Project Management, Reports).", "success"); }
+        catch (e) { toast(e instanceof Error ? e.message : "Could not save it.", "error"); return false; }
+        return false;
+      } }] : undefined,
+    });
   };
   const download = async (blob: Blob, name: string) => {
     const a = document.createElement("a");
@@ -396,6 +433,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
               <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={view.compact} onChange={(e) => setView({ ...view, compact: e.target.checked })} className="accent-blue-600" /> Compact rows</label>
             </div>
           </ToolMenu>
+          <button type="button" onClick={() => setReportFor({ one: null })} disabled={!all.some((p) => !p.archived)} title="A report from all the work packages: the totals, then each package" className={btn}><FileText size={13} /> Create Report</button>
           {canEdit && <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700"><Plus size={13} /> Add Work Package</button>}
         </div>
       </div>
@@ -460,6 +498,7 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
                       <ToolMenu label={`Actions for ${p.name}`} icon={<MoreVertical size={14} />} tone="ghost">
                         <button type="button" onClick={() => open(p)} className={MENU_ITEM}><Pencil size={13} /> Open</button>
                         <button type="button" onClick={() => setPreview({ title: `Work package ${n || ""}.0 · ${p.name}`, fileName: sheetFile(p), build: () => sheetPdf(p) })} className={MENU_ITEM}><Printer size={13} /> Print package sheet</button>
+                        <button type="button" onClick={() => setReportFor({ one: p })} className={MENU_ITEM}><FileText size={13} /> Create report</button>
                         <ShareMenu variant="button" fileName={sheetFile(p)} fileUrl="" projectName={project.name} prepareFile={async () => shareFile(await sheetPdf(p), sheetFile(p))} className={MENU_ITEM} />
                         {canEdit && (
                           <>
@@ -544,11 +583,20 @@ export default function WorkPackages({ project, canEdit, projectInfo }: { projec
             pkg={p} no={`${numberOf.get(p._id) || p.order}.0`} project={project} projectInfo={projectInfo}
             canEdit={canEdit} canUnlink={canUnlink} canMoney={canMoney} confirm={confirm} tab={win.tab}
             sheet={{ fileName: sheetFile(p), build: () => sheetPdf(p), share: async () => shareFile(await sheetPdf(p), sheetFile(p)) }}
+            onReport={() => setReportFor({ one: p })}
             onSaved={replace} onChanged={() => void load()} onClose={() => { setWin(null); void load(); }}
           /></Fragment>
         );
       })()}
-      {preview && <PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} onClose={() => setPreview(null)} />}
+      {/* At the page's root: a report made from inside a package's window shows above it. */}
+      {preview && createPortal(<PdfPreviewModal title={preview.title} fileName={preview.fileName} build={preview.build} actions={preview.actions} onClose={() => setPreview(null)} />, document.body)}
+      {reportFor && (
+        <ReportPicker
+          one={reportFor.one} canMoney={canMoney} shown={rows.filter((p) => !p.archived).length} total={live.filter((p) => !p.archived).length} filtering={filtering}
+          onClose={() => setReportFor(null)}
+          onBuild={(sections, onlyShown) => { const one = reportFor.one; setReportFor(null); openReport(one, sections, onlyShown); }}
+        />
+      )}
       {dialogs}
     </div>
   );
@@ -594,6 +642,70 @@ function AddPackage({ onAdd, onClose }: { onAdd: (name: string, description: str
   );
 }
 
+// ── Create Report (2026-10-07): what goes in it ──
+const REPORT_PARTS: Array<{ key: keyof WpReportSections; label: string; hint: string; allOnly?: boolean; money?: boolean }> = [
+  { key: "summary", label: "Summary of all packages", hint: "The totals, then one line per package with its company, status and progress.", allOnly: true },
+  { key: "details", label: "Description and who does it", hint: "What the package covers, the company doing it, and its RFQ, PO or agreement." },
+  { key: "quotes", label: "RFQ and quotes", hint: "Each vendor's offer on the package's RFQ: lead time, and which one won." },
+  { key: "subtasks", label: "Subtasks and deliverables", hint: "Each subtask with its status, progress, due date and person." },
+  { key: "money", label: "Money and change orders", hint: "Contract value, change orders, paid and remaining.", money: true },
+  { key: "remarks", label: "Remarks", hint: "The notes on each package." },
+];
+
+function ReportPicker({ one, canMoney, shown, total, filtering, onBuild, onClose }: {
+  one: ApiWorkPackage | null; canMoney: boolean; shown: number; total: number; filtering: boolean;
+  onBuild: (sections: WpReportSections, onlyShown: boolean) => void; onClose: () => void;
+}) {
+  const parts = REPORT_PARTS.filter((x) => (!x.allOnly || !one) && (!x.money || canMoney));
+  const [pick, setPick] = useState<WpReportSections>({ summary: true, details: true, quotes: true, subtasks: true, money: canMoney, remarks: true });
+  const [onlyShown, setOnlyShown] = useState(filtering);
+  const none = !parts.some((x) => pick[x.key]);
+  return createPortal(
+    <div className="fixed inset-0 z-[150] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-label="What goes in the report?" className="my-16 w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FileText size={15} className="text-primary" /> What goes in the report?</p>
+            <p className="truncate text-[11px] text-slate-400">{one ? `Work package: ${one.name}` : "All the work packages"}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+        </div>
+        <div className="max-h-[60vh] space-y-1 overflow-y-auto p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[11px] text-slate-500">Everything is included unless you take it out.</p>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => setPick((p) => ({ ...p, ...Object.fromEntries(parts.map((x) => [x.key, true])) }))} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">All</button>
+              <button type="button" onClick={() => setPick((p) => ({ ...p, ...Object.fromEntries(parts.map((x) => [x.key, false])) }))} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">None</button>
+            </div>
+          </div>
+          {parts.map((x) => (
+            <label key={x.key} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-transparent p-2 hover:border-slate-100 hover:bg-slate-50">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500" checked={pick[x.key]} onChange={(e) => setPick((p) => ({ ...p, [x.key]: e.target.checked }))} />
+              <span className="min-w-0">
+                <span className="block text-xs font-bold text-slate-800">{x.label}</span>
+                <span className="block text-[11px] text-slate-400">{x.key === "quotes" && canMoney ? "Each vendor's offer on the package's RFQ: total, lead time, and which one won." : x.hint}</span>
+              </span>
+            </label>
+          ))}
+          {!one && filtering && (
+            <div className="mt-2 space-y-1 rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Which packages</p>
+              <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={onlyShown} onChange={() => setOnlyShown(true)} className="accent-emerald-500" /> The {shown} shown (search and filters apply)</label>
+              <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={!onlyShown} onChange={() => setOnlyShown(false)} className="accent-emerald-500" /> All {total} work packages</label>
+            </div>
+          )}
+          {!one && !filtering && <p className="pt-1 text-[11px] text-slate-400">Covers all {total} work packages (archived ones are left out); each package starts on its own page after the summary.</p>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={() => onBuild(pick, !one && onlyShown)} disabled={none} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50"><FileText size={13} /> Create the report</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // ── The package's window (CR 380): everything about one package, step by step, in tabs ──
 export type WinTab = "details" | "rfq" | "quotes" | "agreement" | "money" | "po";
 
@@ -602,7 +714,9 @@ const inputOf = (p: ApiWorkPackage): WorkPackageInput => ({
   progressMode: p.progressMode, progress: p.progress, scheduleRef: p.scheduleRef, subtasks: p.subtasks, budget: p.budget || 0, changeOrders: p.changeOrders, remarks: p.remarks,
 });
 
-function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canMoney, confirm, tab: initialTab, sheet, onSaved, onChanged, onClose }: {
+function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canMoney, confirm, tab: initialTab, sheet, onReport, onSaved, onChanged, onClose }: {
+  /** 2026-10-07 - this package's own report. */
+  onReport: () => void;
   pkg: ApiWorkPackage; no: string; project: ApiProject; projectInfo?: ProjectPdfInfo; canEdit: boolean; canMoney: boolean;
   /** The package's sheet as a PDF: its file name, made on demand, and filed for sharing (its link). */
   sheet: { fileName: string; build: () => Promise<Blob>; share: () => Promise<string> };
@@ -733,7 +847,10 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                 {canMoney && m && (m.current || m.source) ? <span className="text-slate-500">Current value <b className="tabular-nums text-slate-700"><Fig>{usd(m.current)}</Fig></b></span> : null}
               </div>
             </div>
-            <button type="button" onClick={() => void close()} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={onReport} title="This package's report: details, quotes, subtasks, money" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary"><FileText size={13} /> Create Report</button>
+              <button type="button" onClick={() => void close()} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
+            </div>
           </div>
           <div className="mt-3 flex gap-1 overflow-x-auto">
             {TABS.filter((t) => t.show !== false).map((t) => (
