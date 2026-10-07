@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import DirectoryNameField from "./DirectoryNameField";
 import {
   Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye, FolderOpen, RotateCcw, Pencil,
 } from "lucide-react";
@@ -283,9 +284,15 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
               {m.attendees.map((a, i) => (
                 <li key={a.userId || `row-${i}`} className="flex items-center gap-3 px-4 py-2">
                   <input type="checkbox" checked={a.present !== false} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, present: e.target.checked } : x)) })} className="accent-emerald-600" />
-                  <input value={a.name} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-800 outline-none" aria-label="Name" />
-                  <input value={a.role || ""} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, role: e.target.value } : x)) })} placeholder="Role" className="w-32 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Role" />
-                  <input value={a.company || ""} disabled={!editable} onChange={(e) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, company: e.target.value } : x)) })} placeholder="Company" className="w-36 bg-transparent text-[11px] text-slate-500 outline-none" aria-label="Company" />
+                  {/* 2026-10-07 - as added (the team, staff or the Directory's people); a company other
+                      than ours is picked from the Directory, also for a visitor added by name. */}
+                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800" title={a.name}>{a.name}</span>
+                  <span className="w-32 truncate text-[11px] text-slate-500" title={a.role}>{a.role || ""}</span>
+                  {/^green ?tech/i.test(a.company || "") || a.userId
+                    ? <span className="w-36 truncate text-[11px] text-slate-500" title={a.company}>{a.company || ""}</span>
+                    : <DirectoryNameField className="w-40" value={a.company || ""} disabled={!editable} categories={[]} title={`${a.name}'s company`} placeholder="Pick the company"
+                        onPick={(c) => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, company: c.name } : x)) })}
+                        onClear={() => patch({ attendees: m.attendees.map((x, k) => (k === i ? { ...x, company: "" } : x)) })} />}
                   {editable && <button onClick={() => patch({ attendees: m.attendees.filter((_, k) => k !== i) })} title="Remove" className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>}
                 </li>
               ))}

@@ -14,7 +14,7 @@ const catLabel = (c: string) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label
 
 export function DirectoryPickDialog({ title, categories, onPick, onClose, initialSearch = "" }: {
   title: string;
-  /** The categories listed; the first is where a company added here is filed. */
+  /** The categories listed (none: every company); the first is where a company added here is filed. */
   categories: CompanyCategory[];
   onPick: (c: ApiCompany) => void;
   onClose: () => void;
@@ -25,7 +25,8 @@ export function DirectoryPickDialog({ title, categories, onPick, onClose, initia
   const [adding, setAdding] = useState(false);
   useEffect(() => {
     let alive = true;
-    Promise.all(categories.map((c) => fetchCompanies(c).catch(() => [] as ApiCompany[]))).then((lists) => {
+    const wanted: Array<CompanyCategory | undefined> = categories.length ? categories : [undefined];
+    Promise.all(wanted.map((c) => fetchCompanies(c).catch(() => [] as ApiCompany[]))).then((lists) => {
       if (!alive) return;
       const seen = new Set<string>();
       const all: ApiCompany[] = [];
@@ -43,8 +44,9 @@ export function DirectoryPickDialog({ title, categories, onPick, onClose, initia
     if (!name) return;
     setAdding(true);
     try {
-      const c = await createCompany({ name, category: categories[0] });
-      toast(`"${name}" added to the Directory (${catLabel(categories[0])}).`, "success");
+      const cat = categories[0] || "other";
+      const c = await createCompany({ name, category: cat });
+      toast(`"${name}" added to the Directory (${catLabel(cat)}).`, "success");
       onPick(c);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not add it to the Directory.", "error"); }
     finally { setAdding(false); }
@@ -55,7 +57,7 @@ export function DirectoryPickDialog({ title, categories, onPick, onClose, initia
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900">{title}</p>
-            <p className="text-[11px] text-slate-400">From the Directory: {categories.map(catLabel).join(", ")}</p>
+            <p className="text-[11px] text-slate-400">From the Directory{categories.length ? `: ${categories.map(catLabel).join(", ")}` : ""}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
@@ -82,7 +84,7 @@ export function DirectoryPickDialog({ title, categories, onPick, onClose, initia
         </div>
         {q.trim() && !exact && (
           <button type="button" onClick={() => void add()} disabled={adding} className="flex items-center gap-2 border-t border-slate-100 px-5 py-3 text-left text-xs font-bold text-primary hover:bg-primary/5 disabled:opacity-50">
-            {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add "{q.trim()}" to the Directory as a {catLabel(categories[0]).toLowerCase()}
+            {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add "{q.trim()}" to the Directory as {categories.length ? `a ${catLabel(categories[0]).toLowerCase()}` : "a company (Other)"}
           </button>
         )}
       </div>
