@@ -3663,6 +3663,15 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
   // CR 203 - a volume marked Final is locked: its status shows everywhere and editing needs a new revision.
   const finalOf = (v: "technical" | "financial") => (v === "financial" ? financial.finalized : technical.finalized);
+  // 2026-10-07 - the revision the builder is on: the final one when locked, otherwise the one
+  // this draft is filed as when it is saved (Rev 0 first), shown as "RV04" next to the title.
+  const currentRevOf = (v: "technical" | "financial") => finalOf(v)?.revision ?? Math.max(0, nextFinalVer[v] - 1);
+  const RevPill = ({ which }: { which: "technical" | "financial" }) => (
+    <span title={finalOf(which) ? `Final revision ${currentRevOf(which)}` : `This draft is revision ${currentRevOf(which)}`}
+      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] font-bold tracking-wider text-slate-700">
+      RV{String(currentRevOf(which)).padStart(2, "0")}
+    </span>
+  );
   const openVolFinal = proposalSub === "technical" || proposalSub === "financial" ? finalOf(proposalSub) : undefined;
   // Unlock a volume for more work: the filed Final revision stays in the table as the record.
   const startNewRevision = async (which: "technical" | "financial") => {
@@ -5247,9 +5256,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <div className="flex items-center justify-between gap-4 flex-wrap">
                     <h3 className="flex items-center gap-2 text-xl font-display font-bold text-slate-900">
                       Technical Proposal
+                      <RevPill which="technical" />
                       {/* CR 203 - the volume's own status. */}
                       {finalOf("technical")
-                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final · Rev {finalOf("technical")!.revision}</span>
+                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final</span>
                         : <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">In progress</span>}
                     </h3>
                     <ActionButtons which="technical" />
@@ -5526,9 +5536,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <div className="flex items-center justify-between gap-4 flex-wrap">
                     <h3 className="flex items-center gap-2 text-xl font-display font-bold text-slate-900">
                       Financial Proposal
+                      <RevPill which="financial" />
                       {/* CR 203 - the volume's own status. */}
                       {finalOf("financial")
-                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final · Rev {finalOf("financial")!.revision}</span>
+                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-white"><CheckCircle2 size={12} /> Final</span>
                         : <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">In progress</span>}
                     </h3>
                     <ActionButtons which="financial" />
