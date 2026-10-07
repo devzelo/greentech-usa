@@ -2657,7 +2657,8 @@ export async function fetchCompanyTasks(companyId: string): Promise<ProfileTask[
 
 // ── Project requests (Contract Admin / Client Communications) ────────────────
 export type RequestCategory = "contract-admin" | "client-comms";
-export type ProjectRequestStatus = "Draft" | "Sent" | "Responded" | "Closed" | "Cancelled";
+// 2026-10-08 - the client's statuses; Sent / Responded / Cancelled only on requests saved before.
+export type ProjectRequestStatus = "Draft" | "Submitted" | "Approved" | "ApprovedWithComments" | "Rejected" | "ReviseResubmit" | "Closed" | "Sent" | "Responded" | "Cancelled";
 export interface ApiRequestFile { _id: string; name: string; filePath: string; fileType: string; size: string }
 export interface ApiRequestResponse { _id: string; note: string; respondedAt: string; files: ApiRequestFile[]; addedByName: string }
 export interface ApiProjectRequest {
@@ -2709,7 +2710,7 @@ export async function fetchProjectRequests(projectId: string, category?: Request
   if (archived) parts.push("archived=true");
   return request(`${reqBase(projectId)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
-export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo; attachmentCovers?: boolean }): Promise<ApiProjectRequest> {
+export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo; attachmentCovers?: boolean; status?: ProjectRequestStatus }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
 export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to" | "partnerSignerName" | "partnerSignerTitle" | "partnerSignatureUrl" | "partnerStampUrl" | "attachmentCovers">>): Promise<ApiProjectRequest> {

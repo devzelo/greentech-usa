@@ -5,7 +5,10 @@ import mongoose, { Schema, Document } from "mongoose";
 // The client's replies are kept under the request as versioned responses, so the whole back-and-
 // forth lives in one record. Used by the Contract Administration tab and by Client Communications.
 export type RequestCategory = "contract-admin" | "client-comms";
-export type RequestStatus = "Draft" | "Sent" | "Responded" | "Closed" | "Cancelled";
+// 2026-10-08 - the client's statuses. Sent / Responded / Cancelled are from before; they stay valid on
+// stored requests (and read as Submitted / Closed in the app).
+export const REQUEST_STATUSES = ["Draft", "Submitted", "Approved", "ApprovedWithComments", "Rejected", "ReviseResubmit", "Closed"] as const;
+export type RequestStatus = (typeof REQUEST_STATUSES)[number] | "Sent" | "Responded" | "Cancelled";
 
 export interface IRequestFile { name: string; filePath: string; fileType: string; size: string }
 export interface IRequestResponse {
@@ -73,7 +76,7 @@ const ProjectRequestSchema = new Schema<IProjectRequest>(
     title: { type: String, default: "" },
     date: { type: String, default: "" },
     description: { type: String, default: "" },
-    status: { type: String, enum: ["Draft", "Sent", "Responded", "Closed", "Cancelled"], default: "Draft" },
+    status: { type: String, enum: [...REQUEST_STATUSES, "Sent", "Responded", "Cancelled"], default: "Draft" },
     signerName: { type: String, default: "" },
     signerTitle: { type: String, default: "" },
     signatureUrl: { type: String, default: "" },

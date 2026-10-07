@@ -69,6 +69,7 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { downloadBlob } from "../../lib/proposalExport";
 import { toast } from "../../lib/toast";
 import StampPicker from "./StampPicker";
+import RequestStatusSelect, { RequestStatusPill, normRequestStatus } from "./RequestStatusSelect";
 import { useDialogs } from "../../lib/useDialogs";
 import ShareMenu from "./ShareMenu";
 import FileActions from "./FileActions";
@@ -84,11 +85,6 @@ import { useTableSort, SortTh } from "../../lib/useTableSort";
 // catalogue) and Client Communications (letters/RFIs). Each request auto-numbers per type
 // (RFI-001 …); the client's responses are kept under it as versioned entries.
 
-const STATUS_CLS: Record<string, string> = {
-  Draft: "bg-slate-100 text-slate-500", Sent: "bg-indigo-50 text-indigo-600",
-  Responded: "bg-amber-50 text-amber-600", Closed: "bg-emerald-50 text-emerald-600", Cancelled: "bg-slate-100 text-slate-400",
-};
-const STATUSES: ProjectRequestStatus[] = ["Draft", "Sent", "Responded", "Closed", "Cancelled"];
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10";
 
 export default function RequestBuilder({ projectId, category, canEdit, projectInfo, clientName }: {
@@ -98,7 +94,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string; files?: File[] }>; files?: File[]; covers?: boolean }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) });
+  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string; files?: File[] }>; files?: File[]; covers?: boolean; status?: ProjectRequestStatus }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) });
   const blankTo = (): ApiRequestTo => ({ name: clientName || "", companyId: "", contactName: "", email: "", address: "" });
   const [draftTo, setDraftTo] = useState<ApiRequestTo>(blankTo);
   const [saving, setSaving] = useState(false);
@@ -136,7 +132,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     subject: (r) => r.title,
     date: (r) => r.date,
     responses: (r) => r.responses.length,
-    status: (r) => r.status,
+    status: (r) => normRequestStatus(r.status),
   });
 
   const create = async (send = false) => {
@@ -152,14 +148,13 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     setSaving(true);
     try {
       const keptSecs = draft.sections.filter((s) => s.title || s.body || s.files?.length);
-      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: keptSecs.map(({ title, body }) => ({ title, body })), to: draftTo, attachmentCovers: !!draft.covers });
+      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: keptSecs.map(({ title, body }) => ({ title, body })), to: draftTo, attachmentCovers: !!draft.covers, status: send ? "Submitted" : (draft.status || "Draft") });
       // 2026-10-08 - the files attached in the form go up now that the request exists.
       const failed: string[] = [];
       for (const f of draft.files || []) { try { r = await uploadRequestFile(projectId, r._id, f); } catch { failed.push(f.name); } }
       for (const [i, sec] of keptSecs.entries()) for (const f of sec.files || []) { try { r = await uploadRequestSectionFile(projectId, r._id, i, f); } catch { failed.push(f.name); } }
       if (failed.length) toast(`Not uploaded: ${failed.join(", ")}. Attach them again from the request.`, "error");
-      // "Save & send" marks it Sent; "Save as draft" leaves it as a Draft.
-      if (send) r = await updateProjectRequest(projectId, r._id, { status: "Sent" });
+      // "Save & send" saves it as Submitted; otherwise it takes the status chosen in the form (Draft by default).
       setRows((p) => [r, ...p]); setCreating(false); setOpenId(r._id);
       setDraft(blankDraft); setDraftTo(blankTo());
       // CR 210 - show where it landed in the table, so nobody wonders whether it saved.
@@ -346,11 +341,9 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                       <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{r.date || "—"}</td>
                       <td className="px-3 py-2.5 text-slate-500">{r.responses.length || "—"}</td>
                       <td className="px-3 py-2.5">
-                        {canEdit ? (
-                          <select value={r.status} onChange={(e) => setStatus(r, e.target.value as ProjectRequestStatus)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border-0 cursor-pointer ${STATUS_CLS[r.status]}`}>
-                            {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        ) : <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_CLS[r.status]}`}>{r.status}</span>}
+                        {canEdit
+                          ? <RequestStatusSelect compact value={r.status} onChange={(st) => setStatus(r, st)} />
+                          : <RequestStatusPill status={r.status} />}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-end gap-1">
@@ -384,7 +377,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                               {/* CR 210 - what kind of request this is, and which list it belongs to. */}
                               <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{category === "client-comms" ? "Client communications" : "Contract administration"}</span>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_CLS[r.status]}`}>{r.status}</span>
+                                <RequestStatusPill status={r.status} />
                                 <span>Changes save as you type.</span>
                               </p>
                             </div>
@@ -689,6 +682,11 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                 </label>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date
                   <input type="date" className={`${inp} mt-1`} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
+              </div>
+              {/* 2026-10-08 - the status, from the client's list (Draft until changed). */}
+              <div className="space-y-1">
+                <label htmlFor="request-status" className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>
+                <RequestStatusSelect id="request-status" value={draft.status || "Draft"} onChange={(st) => setDraft({ ...draft, status: st })} />
               </div>
               <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / request <span className="normal-case font-medium text-slate-400">— add tables, pictures, lines and custom sections</span>
                 <div className="mt-1"><RichTextEditor value={draft.description} onChange={(html) => setDraft({ ...draft, description: html })} minHeight={160} placeholder="Describe the information / clarification / change you are requesting…" onImageUpload={imageUpload} /></div>

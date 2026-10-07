@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import ProjectRequest, { REQUEST_TYPES, RequestStatus } from "../models/ProjectRequest";
+import ProjectRequest, { REQUEST_TYPES, REQUEST_STATUSES, RequestStatus } from "../models/ProjectRequest";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
@@ -88,7 +88,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       title: String(b.title || "").slice(0, 200),
       date: String(b.date || new Date().toISOString().slice(0, 10)),
       description: String(b.description || "").slice(0, 20000),
-      status: "Draft",
+      status: (REQUEST_STATUSES as readonly string[]).includes(b.status) ? b.status : "Draft",
       signerName: String(b.signerName || "").slice(0, 120),
       signerTitle: String(b.signerTitle || "").slice(0, 120),
       signatureUrl: String(b.signatureUrl || ""),
@@ -117,7 +117,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (Array.isArray(b.sections)) doc.sections = cleanSections(b.sections);
     if (typeof b.archived === "boolean") doc.archived = b.archived;
     if (typeof b.attachmentCovers === "boolean") doc.attachmentCovers = b.attachmentCovers;
-    if (b.status && ["Draft", "Sent", "Responded", "Closed", "Cancelled"].includes(b.status)) doc.status = b.status as RequestStatus;
+    if (b.status && (REQUEST_STATUSES as readonly string[]).includes(b.status)) doc.status = b.status as RequestStatus;
     await doc.save();
     res.json(doc);
   } catch (err) { next(err); }
@@ -154,7 +154,8 @@ router.post("/:rid/responses", async (req: AuthedRequest, res: Response, next: N
       respondedAt: String(req.body?.respondedAt || new Date().toISOString().slice(0, 10)),
       files: [], addedByName: req.user!.name || "",
     });
-    if (doc.status === "Sent" || doc.status === "Draft") doc.status = "Responded";
+    // A reply came back: the request is under review until its outcome is set.
+    if (["Draft", "Sent", "Responded"].includes(doc.status)) doc.status = "Submitted";
     await doc.save();
     res.status(201).json(doc);
   } catch (err) { next(err); }
