@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock, Settings2 } from "lucide-react";
-import { getAuthUser } from "../../lib/api";
+import { getAuthUser, fetchCompany } from "../../lib/api";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
@@ -226,6 +226,12 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     saveStatus.track(updateProjectRequest(projectId, r._id, body).then(patch)).catch(() => {});
   };
   const partner = projectInfo?.partner;
+  // 2026-10-07 - the JV partner signs through one of its people in the Directory, not a typed name.
+  const [partnerCo, setPartnerCo] = useState<ApiCompany | null>(null);
+  useEffect(() => {
+    if (!partner?.companyId) { setPartnerCo(null); return; }
+    fetchCompany(partner.companyId).then(setPartnerCo).catch(() => setPartnerCo(null));
+  }, [partner?.companyId]);
   // CR-B-18 — per-section file attachments.
   const secUploadFile = async (r: ApiProjectRequest, i: number, file: File) => {
     try { patch(await uploadRequestSectionFile(projectId, r._id, i, file)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); }
@@ -511,8 +517,20 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         {canEdit && partner?.name && (
                           <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{partner.name} (JV partner) signature
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                              <input className={inp} placeholder="Signer name" defaultValue={r.partnerSignerName || ""} onBlur={(e) => e.target.value !== (r.partnerSignerName || "") && saveFields(r, { partnerSignerName: e.target.value })} />
-                              <input className={inp} placeholder="Signer title" defaultValue={r.partnerSignerTitle || ""} onBlur={(e) => e.target.value !== (r.partnerSignerTitle || "") && saveFields(r, { partnerSignerTitle: e.target.value })} />
+                              {(() => {
+                                const people = partnerCo?.contactPersons || [];
+                                const legacy = !!r.partnerSignerName && !people.some((p) => p.name === r.partnerSignerName);
+                                return people.length ? (
+                                  <select className={`${inp} font-bold sm:col-span-2`} value={r.partnerSignerName || ""} aria-label="Partner signer"
+                                    onChange={(e) => { const p = people.find((x) => x.name === e.target.value); saveFields(r, { partnerSignerName: p?.name || "", partnerSignerTitle: p?.role || "" }); }}>
+                                    <option value="">— Choose the signer (the partner's people in the Directory) —</option>
+                                    {legacy && <option value={r.partnerSignerName}>{r.partnerSignerName}{r.partnerSignerTitle ? `, ${r.partnerSignerTitle}` : ""} (typed before; not in the Directory)</option>}
+                                    {people.map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? `, ${p.role}` : ""}</option>)}
+                                  </select>
+                                ) : (
+                                  <p className="sm:col-span-2 normal-case tracking-normal font-medium text-slate-400">{partner?.companyId ? "The partner's Directory record has no people yet: add them in the Directory to choose the signer." : "Link the JV partner to the Directory (Project Identity) to choose its signer."}{r.partnerSignerName ? ` Now: ${r.partnerSignerName}.` : ""}</p>
+                                );
+                              })()}
                               <select className={`${inp} font-bold`} value={r.partnerSignatureUrl || ""} onChange={(e) => saveFields(r, { partnerSignatureUrl: e.target.value })}>
                                 <option value="">— No signature —</option>
                                 {(partner.signatures || []).map((s, i) => <option key={i} value={s.url}>{s.name || `Signature ${i + 1}`}</option>)}
