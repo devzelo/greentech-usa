@@ -5,7 +5,7 @@ import {
   fetchInvoices, addInvoice, updateInvoice, deleteInvoice,
   addInvoicePayment, deleteInvoicePayment, uploadPaymentReceipt, uploadInvoiceFile, deleteInvoiceFile,
   invoiceFromPO, fetchProcurementPOs, fetchVendors, attachmentUrl,
-  invoicePaid, invoiceRemaining, fetchCompanies, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
+  invoicePaid, invoiceRemaining, fetchCompanies, fetchCompany, createCompany, COMPANY_CATEGORIES, fetchSignatories, fetchRfqs, emailFileAttachment,
   fetchCompanyBanks, createCompanyBank, updateCompanyBank, deleteCompanyBank, getAuthUser, fetchProjectAgreements,
   fetchTermsFiles, fetchNdaFiles, type CompanyFile,
   type ApiAgreement,
@@ -222,7 +222,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // CR-I-01 — Send: save + mark Sent, then email the invoice PDF to a recipient.
   const sendInvoiceEmail = async () => {
     if (!builderId || !bDraft) return;
-    const to = await prompt({ title: "Send invoice", label: "Recipient email", placeholder: "name@company.com", confirmLabel: "Send" });
+    // 2026-10-07 - the email the company has in the Directory comes first; it can still be changed.
+    const co = bDraft.companyId ? await fetchCompany(bDraft.companyId).catch(() => null) : null;
+    const known = co ? co.email || co.contactPersons?.find((p) => p.email)?.email || "" : "";
+    const to = await prompt({ title: "Send invoice", label: "Recipient email", placeholder: "name@company.com", confirmLabel: "Send", initialValue: known });
     if (to === null) return;
     const addr = to.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { toast("Enter a valid email address.", "error"); return; }
@@ -263,7 +266,12 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // Pick a receiver from the Companies Directory → fills the party + kind.
   const pickReceiver = (c: ApiCompany) => {
     const kindMap: Record<string, string> = { client: "Client", subcontractor: "Subcontractor", vendor: "Vendor", consultant: "Consultant", contractor: "Contractor" };
-    setB({ party: c.name, companyId: c._id, receiverKind: kindMap[c.category] || "Other" });
+    // 2026-10-07 - a bill received is paid into the sender's account: its bank comes from its Directory record.
+    const bk = c.banking;
+    const theirBank = !isSent && bk && (bk.bankName || bk.accountNumber || bk.iban)
+      ? { bank: { name: bk.bankName || "", accountName: bk.accountName || "", accountNumber: bk.accountNumber || "", iban: bk.iban || "", swift: bk.swift || "", routing: bk.routing || "" } }
+      : {};
+    setB({ party: c.name, companyId: c._id, receiverKind: kindMap[c.category] || "Other", ...theirBank });
     setReceiverPickerOpen(false);
   };
 
@@ -497,7 +505,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                   <tr className="hover:bg-slate-50/40 align-top">
                     <td className="px-1 py-1"><input className={inp} value={row.number} disabled={!canEdit} onChange={(e) => edit(row._id, "number", e.target.value)} onBlur={(e) => save(row._id, "number", e.target.value)} /></td>
                     <td className="px-1 py-1">
-                      <input className={inp} value={row.party} disabled={!canEdit} onChange={(e) => edit(row._id, "party", e.target.value)} onBlur={(e) => save(row._id, "party", e.target.value)} />
+                      {/* 2026-10-07 - picked in the invoice, from the Directory; not typed here. */}
+                      <span className="block px-2 py-1 text-xs font-semibold text-slate-800" title={row.party}>{row.party || <span className="text-slate-300">-</span>}</span>
+                      {row.party && !row.companyId && <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700" title="Typed before; open the invoice and pick it from the Directory">Not in the Directory</span>}
                       {po && <button onClick={() => viewPO(po)} title={`Open the PO ${po.poNo} document`} className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/5 border border-primary/15 text-[9px] font-bold text-primary hover:bg-primary hover:text-white transition-colors"><Eye size={9} /> PO {po.poNo}</button>}
                     </td>
                     <td className="px-1 py-1"><input className={inp} value={row.description} disabled={!canEdit} onChange={(e) => edit(row._id, "description", e.target.value)} onBlur={(e) => save(row._id, "description", e.target.value)} placeholder="—" /></td>
@@ -703,9 +713,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                     </select></label>
                   <label className="sm:col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{isSent ? "Receiver" : "Sender"} name
                     <div className="flex items-center gap-1.5 mt-1">
-                      <input className={finp} value={bDraft.party} onChange={(e) => setB({ party: e.target.value })} placeholder="Company / person to bill" />
+                      <span className={`${finp} block min-h-[2.1rem] truncate normal-case tracking-normal font-semibold ${bDraft.party ? "text-slate-800" : "text-slate-400"}`} title={bDraft.party}>{bDraft.party || "Pick the company from the Directory"}</span>
                       <button onClick={() => { setReceiverPickerOpen(true); setRecvSearch(""); }} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-bold hover:bg-primary"><FileText size={11} /> Directory</button>
-                    </div></label>
+                    </div>
+                    {bDraft.party && !bDraft.companyId && <p className="mt-1 normal-case tracking-normal text-[11px] font-semibold text-amber-700">"{bDraft.party}" was typed before and is not linked to the Directory: pick it from the Directory.</p>}
+                  </label>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date<input type="date" className={`${finp} mt-1`} value={bDraft.date} onChange={(e) => setB({ date: e.target.value })} /></label>
