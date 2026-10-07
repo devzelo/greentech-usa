@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import DirectoryNameField from "./DirectoryNameField";
 import * as XLSX from "xlsx";
 import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText, X } from "lucide-react";
 import {
@@ -756,7 +757,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                             </button>
                           ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
                           <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[24rem] w-full align-top ${strike}`} /></td>
-                          {c("manufacturer", "w-28")}
+                          {/* 2026-10-07 - the brand is a manufacturer in the Directory, picked not typed. */}
+                          <td className="px-1 py-1 align-top"><DirectoryNameField className={`w-36 ${strike}`} value={it.manufacturer || ""} disabled={!rowEdit} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
+                            onPick={(co) => editCell(it._id, "manufacturer", co.name)} onClear={() => editCell(it._id, "manufacturer", "")} /></td>
                           {c("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap" title="Accepted vendor — set automatically when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>
                           {c("qty", "w-14")}
@@ -862,7 +865,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                           <td className="px-3 py-2 align-top w-12"><span className="text-[9px] font-bold text-primary uppercase tracking-widest">New</span></td>
                           <td className="px-2 py-2 align-top"><span className="text-[10px] text-slate-300 px-1.5">—</span></td>
                           <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[24rem] w-full align-top`} /></td>
-                          {dc("manufacturer", "w-28")}
+                          <td className="px-1 py-1 align-top"><DirectoryNameField className="w-36" value={d.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
+                            onPick={(co) => editDraft(d.tempId, "manufacturer", co.name)} onClear={() => editDraft(d.tempId, "manufacturer", "")} /></td>
                           {dc("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>
                           {dc("qty", "w-14")}
@@ -982,8 +986,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
             <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="sm:col-span-2 text-[11px] font-bold text-slate-500">Description *
                 <input autoFocus className={`${cell} mt-1 w-full`} value={addForm.description} onChange={(e) => setAddField("description", e.target.value)} placeholder="e.g. PVC pipe 4in Schedule 40" /></label>
-              <label className="text-[11px] font-bold text-slate-500">Brand
-                <input className={`${cell} mt-1 w-full`} value={addForm.manufacturer} onChange={(e) => setAddField("manufacturer", e.target.value)} placeholder="Manufacturer / brand" /></label>
+              <div className="text-[11px] font-bold text-slate-500">Brand
+                <DirectoryNameField className="mt-1" value={addForm.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick from the Directory"
+                  onPick={(co) => setAddField("manufacturer", co.name)} onClear={() => setAddField("manufacturer", "")} /></div>
               <label className="text-[11px] font-bold text-slate-500">Model / Part #
                 <input className={`${cell} mt-1 w-full`} value={addForm.modelNo} onChange={(e) => setAddField("modelNo", e.target.value)} /></label>
               <label className="text-[11px] font-bold text-slate-500">Quantity
@@ -1054,7 +1059,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {mField("Description", "description")}
-                  {mField("Brand", "manufacturer")}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Brand</label>
+                    <DirectoryNameField value={(mDraft.manufacturer as string) ?? ""} disabled={!canEdit} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick from the Directory"
+                      onPick={(co) => setMDraft((p) => ({ ...p, manufacturer: co.name }))} onClear={() => setMDraft((p) => ({ ...p, manufacturer: "" }))} />
+                  </div>
                   {mField("Model", "modelNo")}
                   {mField("Quantity", "qty")}
                   {mField("Unit", "unit")}

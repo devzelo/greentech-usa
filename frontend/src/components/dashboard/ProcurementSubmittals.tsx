@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useState } from "react";
+import DirectoryNameField from "./DirectoryNameField";
 import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Check, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
 import FileActions from "./FileActions";
 import {
   fetchSubmittals, createSubmittal, updateSubmittal, deleteSubmittal, setSubmittalArchived,
   addSubmittalRevision, updateSubmittalRevision, uploadSubmittalAttachment, deleteSubmittalAttachment,
-  addSubmittalAttachmentFromDocument, attachmentUrl, fetchProcurementItems, fetchProcurementSections, fetchDocuments, getAuthUser, uploadDocument,
-  type ApiSubmittal, type ApiSubmittalRevision, type SubmittalDisposition, type SubmittalComponent, type ApiProcurementItem, type ApiProcurementSection, type ApiDocument,
+  addSubmittalAttachmentFromDocument, attachmentUrl, fetchProcurementItems, fetchProcurementSections, fetchDocuments, getAuthUser, uploadDocument, fetchCompanies,
+  type ApiCompany, type ApiSubmittal, type ApiSubmittalRevision, type SubmittalDisposition, type SubmittalComponent, type ApiProcurementItem, type ApiProcurementSection, type ApiDocument,
 } from "../../lib/api";
 import { sectionToPath } from "../../lib/docTree";
 import { Folder } from "lucide-react";
@@ -21,7 +22,6 @@ import { useBuilderPresence } from "../../lib/usePresence";
 import { useDialogs } from "../../lib/useDialogs";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useTableSort, SortTh } from "../../lib/useTableSort";
-import CompanyPicker from "./CompanyPicker";
 
 const DISPO: { k: SubmittalDisposition; label: string; cls: string }[] = [
   { k: "Pending", label: "Pending", cls: "bg-amber-50 text-amber-600" },
@@ -54,6 +54,10 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   const [creating, setCreating] = useState(false);
   const [chooseNew, setChooseNew] = useState(false); // CR-P-17 — "New submittal" choice popup
   const [draft, setDraft] = useState({ title: "", productName: "", manufacturer: "", modelNo: "", specSection: "", itemId: "" });
+  // 2026-10-07 - the Directory's clients: a revision's "received by" is one of its client's people.
+  const [clientCos, setClientCos] = useState<ApiCompany[]>([]);
+  useEffect(() => { fetchCompanies("client").then(setClientCos).catch(() => setClientCos([])); }, []);
+  const clientCompanyOf = (name: string) => clientCos.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase());
   const [items, setItems] = useState<ApiProcurementItem[]>([]);
   const [sections, setSections] = useState<ApiProcurementSection[]>([]);
   const [building, setBuilding] = useState<string | null>(null);
@@ -326,7 +330,10 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <input className={inp} value={sub.title} disabled={!canEdit} onChange={(e) => patchSub(sub._id, { title: e.target.value })} onBlur={(e) => saveSubField(sub._id, "title", e.target.value)} placeholder="Package title" />
         <input className={inp} value={sub.productName} disabled={!canEdit} onChange={(e) => patchSub(sub._id, { productName: e.target.value })} onBlur={(e) => saveSubField(sub._id, "productName", e.target.value)} placeholder="Product" />
-        <input className={inp} value={sub.manufacturer} disabled={!canEdit} onChange={(e) => patchSub(sub._id, { manufacturer: e.target.value })} onBlur={(e) => saveSubField(sub._id, "manufacturer", e.target.value)} placeholder="Manufacturer" />
+        {/* 2026-10-07 - the manufacturer is a company in the Directory, picked not typed. */}
+        <DirectoryNameField value={sub.manufacturer || ""} disabled={!canEdit} categories={["manufacturer", "supplier", "vendor"]} title="Manufacturer" placeholder="Pick the manufacturer"
+          onPick={(co) => { patchSub(sub._id, { manufacturer: co.name }); saveSubField(sub._id, "manufacturer", co.name); }}
+          onClear={() => { patchSub(sub._id, { manufacturer: "" }); saveSubField(sub._id, "manufacturer", ""); }} />
         <input className={inp} value={sub.modelNo || ""} disabled={!canEdit} onChange={(e) => patchSub(sub._id, { modelNo: e.target.value })} onBlur={(e) => saveSubField(sub._id, "modelNo", e.target.value)} placeholder="Model / Part No." />
         <input className={inp} value={sub.specSection} disabled={!canEdit} onChange={(e) => patchSub(sub._id, { specSection: e.target.value })} onBlur={(e) => saveSubField(sub._id, "specSection", e.target.value)} placeholder="Spec Section" />
       </div>
@@ -515,9 +522,22 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                       </div>
                       <div className={`grid grid-cols-1 md:grid-cols-3 gap-2 ${roCls}`}>
                         {/* CR 371 - the client from the Directory. */}
-                        <div className="text-[11px] text-slate-500">Client name<div className="mt-1"><CompanyPicker size="sm" value={rev.clientName || ""} category="client" onNameChange={(v) => saveRevField(sub._id, rev._id, "clientName", v)} onSelectCompany={(c) => saveRevField(sub._id, rev._id, "clientName", c.name)} placeholder={clientName || "Search the Directory"} /></div></div>
+                        <div className="text-[11px] text-slate-500">Client name<div className="mt-1"><DirectoryNameField value={rev.clientName || ""} categories={["client"]} title="Client" placeholder={clientName || "Pick from the Directory"} onPick={(c) => saveRevField(sub._id, rev._id, "clientName", c.name)} onClear={() => saveRevField(sub._id, rev._id, "clientName", "")} /></div></div>
                         <label className="text-[11px] text-slate-500">Submitted by (GT)<input value={rev.submittedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "submittedBy", e.target.value)} placeholder="Who submitted it" className={`${inp} mt-1`} /></label>
-                        <label className="text-[11px] text-slate-500">Received by (client side)<input value={rev.receivedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "receivedBy", e.target.value)} placeholder="Who received / returned it" className={`${inp} mt-1`} /></label>
+                        <label className="text-[11px] text-slate-500">Received by (client side)
+                          {(() => {
+                            const co = clientCompanyOf(rev.clientName || clientName || "");
+                            const people = co?.contactPersons || [];
+                            const legacy = !!rev.receivedBy && !people.some((p) => p.name === rev.receivedBy);
+                            return people.length ? (
+                              <select value={rev.receivedBy || ""} onChange={(e) => saveRevField(sub._id, rev._id, "receivedBy", e.target.value)} className={`${inp} mt-1`}>
+                                <option value="">Who received / returned it (the client's people)</option>
+                                {legacy && <option value={rev.receivedBy}>{rev.receivedBy} (typed before; not in the Directory)</option>}
+                                {people.map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? ` (${p.role})` : ""}</option>)}
+                              </select>
+                            ) : <p className={`${inp} mt-1 text-slate-400`}>{rev.receivedBy || (co ? "The client's Directory record has no people yet" : "Pick the client first")}</p>;
+                          })()}
+                        </label>
                       </div>
                       {missingLetter && (
                         <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
@@ -736,7 +756,8 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
           </div>
           <input className={inp} placeholder="Package title (e.g. Kitchen Cabinet — United)" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
           <input className={inp} placeholder="Product" value={draft.productName} onChange={(e) => setDraft({ ...draft, productName: e.target.value })} />
-          <input className={inp} placeholder="Manufacturer / Brand" value={draft.manufacturer} onChange={(e) => setDraft({ ...draft, manufacturer: e.target.value })} />
+          <DirectoryNameField value={draft.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Manufacturer / brand" placeholder="Manufacturer / brand (from the Directory)"
+            onPick={(co) => setDraft({ ...draft, manufacturer: co.name })} onClear={() => setDraft({ ...draft, manufacturer: "" })} />
           <input className={inp} placeholder="Model / Part No." value={draft.modelNo} onChange={(e) => setDraft({ ...draft, modelNo: e.target.value })} />
           <input className={inp} placeholder="Spec Section" value={draft.specSection} onChange={(e) => setDraft({ ...draft, specSection: e.target.value })} />
           <div className="md:col-span-2 flex gap-2 justify-end">
