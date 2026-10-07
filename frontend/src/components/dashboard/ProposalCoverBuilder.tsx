@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
 import { Plus, Upload, Image as ImageIcon, X, Loader2, Eye, Save, RotateCcw, CheckCircle2, Wand2 } from "lucide-react";
 import PdfFrame from "./PdfFrame";
 import { fetchCompany, uploadProposalAsset, withFileToken, type ApiProject, type ProposalCover, type RfpDetails } from "../../lib/api";
@@ -138,6 +139,10 @@ export default function ProposalCoverBuilder({
   const clientLogoInput = useRef<HTMLInputElement>(null);
 
   const setCover = <K extends keyof ProposalCover>(k: K, v: ProposalCover[K]) => onCoverChange({ ...cover, [k]: v });
+  // 2026-10-07 - the cover's client in the Directory (the project's client when the cover names none).
+  const clientCo = useDirectoryCompany(
+    cover.clientCompanyId || (!cover.clientName?.trim() ? project.clientInfo?.companyId : "") || "",
+    cover.clientName?.trim() || project.clientInfo?.name || "", "client");
   const galleryImages = (project.gallery || []).filter((g) => g.type === "image");
 
   const doUpload = async (file: File, slot: string): Promise<string | null> => {
@@ -259,10 +264,27 @@ export default function ProposalCoverBuilder({
                     <span className={lbl}>{f.label} (from the Directory)</span>
                     {canEdit ? (
                       <CompanyPicker size="sm" value={cover.clientName || ""} category="client"
-                        onNameChange={(v) => setCover("clientName", v)}
-                        onSelectCompany={(c) => onCoverChange({ ...cover, clientName: c.name, ...(c.logoUrl ? { clientLogoUrl: c.logoUrl } : {}) })}
+                        onNameChange={(v) => onCoverChange({ ...cover, clientName: v, clientCompanyId: v === cover.clientName ? cover.clientCompanyId : "" })}
+                        onSelectCompany={(c) => onCoverChange({ ...cover, clientName: c.name, clientCompanyId: c._id, ...(c.logoUrl ? { clientLogoUrl: c.logoUrl } : {}) })}
                         placeholder={placeholder || "Search the Directory"} />
                     ) : <input id={id} value={cover.clientName || ""} disabled placeholder={placeholder} className={inp} />}
+                  </div>
+                );
+                // 2026-10-07 - the Attention is one of the client's people in the Directory; the role
+                // and email come with the person chosen.
+                if (f.key === "attentionTo") return (
+                  <div key={f.key} className="space-y-1.5">
+                    <span className={lbl}>{f.label} (the client's people)</span>
+                    {canEdit
+                      ? <DirectoryPersonSelect company={clientCo} value={cover.attentionTo || ""} placeholder="Choose the client's contact"
+                          onPick={(p) => onCoverChange({ ...cover, attentionTo: p?.name || "", attentionRole: p?.role || "", attentionEmail: p?.email || "" })} />
+                      : <input id={id} value={cover.attentionTo || ""} disabled className={inp} />}
+                  </div>
+                );
+                if (f.key === "attentionRole" || f.key === "attentionEmail") return (
+                  <div key={f.key} className="space-y-1.5">
+                    <label htmlFor={id} className={lbl}>{f.label}</label>
+                    <input id={id} value={(cover[f.key] as string | undefined) || ""} readOnly disabled title="From the person chosen in the Directory" className={inp} />
                   </div>
                 );
                 return (

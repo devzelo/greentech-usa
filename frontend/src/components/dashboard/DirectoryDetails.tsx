@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, ExternalLink, Loader2 } from "lucide-react";
-import { fetchCompany, type ApiCompany } from "../../lib/api";
+import { fetchCompanies, fetchCompany, type ApiCompany, type CompanyCategory } from "../../lib/api";
 
 /**
  * 2026-10-07 - "whenever you see third party information, make sure it comes from the Directory":
@@ -91,5 +91,51 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
         <button type="button" onClick={() => window.open(`/dashboard/directory?open=${encodeURIComponent(companyId)}`, "_blank", "noopener")} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">edit it in the Directory <ExternalLink size={10} /></button>.
       </p>}
     </div>
+  );
+}
+
+/**
+ * 2026-10-07 - a company from the Directory: by its id, else by its exact name (older records keep
+ * only the name). null while loading or when it is not in the Directory.
+ */
+export function useDirectoryCompany(companyId?: string, name?: string, category?: CompanyCategory): ApiCompany | null {
+  const [company, setCompany] = useState<ApiCompany | null>(null);
+  const key = companyId ? `id:${companyId}` : name?.trim() ? `name:${category || ""}:${name.trim().toLowerCase()}` : "";
+  useEffect(() => {
+    if (!key) { setCompany(null); return; }
+    let alive = true;
+    const find = companyId
+      ? fetchCompany(companyId)
+      : fetchCompanies(category).then((list) => list.find((c) => c.name.trim().toLowerCase() === (name || "").trim().toLowerCase()) || null);
+    find.then((c) => { if (alive) setCompany(c); }).catch(() => { if (alive) setCompany(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return company;
+}
+
+export type DirectoryPerson = ApiCompany["contactPersons"][number];
+
+/** One of a company's people in the Directory (a name typed before stays, marked). */
+export function DirectoryPersonSelect({ company, value, onPick, disabled, placeholder = "Choose a person (the company's people in the Directory)", className = "" }: {
+  company: ApiCompany | null;
+  value: string;
+  onPick: (p: DirectoryPerson | null) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  className?: string;
+}) {
+  const people = company?.contactPersons || [];
+  if (!people.length) {
+    return <p className={`text-[11px] text-slate-400 ${className}`}>{company ? `${company.name}'s Directory record has no people yet: add them in the Directory.` : "Pick the company from the Directory first."}{value ? ` Now: ${value}.` : ""}</p>;
+  }
+  const legacy = !!value && !people.some((p) => p.name === value);
+  return (
+    <select value={value} disabled={disabled} onChange={(e) => onPick(people.find((p) => p.name === e.target.value) || null)} aria-label="Person"
+      className={`w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 disabled:opacity-60 ${className}`}>
+      <option value="">{placeholder}</option>
+      {legacy && <option value={value}>{value} (typed before; not in the Directory)</option>}
+      {people.map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? ` (${p.role})` : ""}</option>)}
+    </select>
   );
 }

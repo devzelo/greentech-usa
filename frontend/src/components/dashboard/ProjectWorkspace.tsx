@@ -72,6 +72,7 @@ import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import ProposalClosingBuilder from "./ProposalClosingBuilder";
 import DirectoryDetails, { detailsOf } from "./DirectoryDetails";
 import VendorFromDirectory from "./VendorFromDirectory";
+import DirectoryNameField from "./DirectoryNameField";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, fetchWorkPackages, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
@@ -5170,7 +5171,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1.2fr_1fr_auto] gap-2 items-center">
                           <input value={e.name} onChange={(ev) => updateEmployeeRow(e.id, "name", ev.target.value)} disabled={!canEdit} placeholder="Name" className={inp} />
                           <input value={e.role} onChange={(ev) => updateEmployeeRow(e.id, "role", ev.target.value)} disabled={!canEdit} placeholder={res?.title ? `Position (résumé: ${res.title})` : "Position on this project"} className={inp} />
-                          <input value={e.firm || ""} onChange={(ev) => updateEmployeeRow(e.id, "firm", ev.target.value)} disabled={!canEdit} placeholder={tr?.firm || "GreenTech USA LLC"} title="Contractor / Subcontractor" className={inp} />
+                          {/* 2026-10-07 - empty is us (GreenTech); another firm is a company from the Directory. */}
+                          <DirectoryNameField value={e.firm || ""} disabled={!canEdit} categories={["subcontractor", "partner", "consultant", "vendor"]} title="Contractor / subcontractor" placeholder={tr?.firm || "GreenTech USA LLC"}
+                            onPick={(c) => updateEmployeeRow(e.id, "firm", c.name)} onClear={() => updateEmployeeRow(e.id, "firm", "")} />
                           {canEdit && <button onClick={() => removeEmployeeRow(e.id)} className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-[1fr_0.8fr_auto_1fr] gap-2 items-center">

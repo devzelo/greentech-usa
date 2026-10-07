@@ -2,6 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, X, Check, ChevronUp, ChevronDown, FolderSearch, Link2, Search, Loader2, ImageOff, ExternalLink } from "lucide-react";
 import { withFileToken, CONTRACT_TYPES, type ApiProject, type ProposalSimilarProject } from "../../lib/api";
 import { entryFromProject, blankEntry, projectTags, projectPhotos, periodOf, linkedProjectPool } from "../../lib/pastPerformance";
+import DirectoryNameField from "./DirectoryNameField";
+import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
+
+/** 2026-10-07 - a typed-in project's client is a Directory company; its contact is one of its people. */
+function TypedClient({ e, canEdit, set }: { e: ProposalSimilarProject; canEdit: boolean; set: (p: Partial<ProposalSimilarProject>) => void }) {
+  const co = useDirectoryCompany(e.clientCompanyId || "", e.client, "client");
+  return (
+    <>
+      <div className="space-y-0.5"><span className={lbl}>Client / agency</span>
+        <DirectoryNameField value={e.client} disabled={!canEdit} categories={["client"]} title="Client" placeholder="Pick from the Directory"
+          onPick={(c) => set({ client: c.name, clientCompanyId: c._id, poc: "", pocEmail: "", pocPhone: "" })} onClear={() => set({ client: "", clientCompanyId: "", poc: "", pocEmail: "", pocPhone: "" })} />
+      </div>
+      <div className="space-y-0.5 md:col-span-2"><span className={lbl}>Client point of contact</span>
+        <DirectoryPersonSelect company={co} value={e.poc || ""} disabled={!canEdit} placeholder="Choose the client's contact"
+          onPick={(p) => set({ poc: p?.name || "", pocEmail: p?.email || co?.email || "", pocPhone: p?.phone || co?.phone || "" })} />
+        {(e.pocEmail || e.pocPhone) && <p className="text-[10px] text-slate-400">{[e.pocEmail, e.pocPhone].filter(Boolean).join(" · ")}</p>}
+      </div>
+    </>
+  );
+}
 
 const inp = "w-full bg-white border border-slate-100 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
 const lbl = "text-[9px] font-bold text-slate-400 uppercase tracking-widest";
@@ -160,7 +180,6 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <label className="space-y-0.5"><span className={lbl}>Client / agency</span><input value={e.client} onChange={(ev) => set(i, { client: ev.target.value })} disabled={!canEdit} className={inp} /></label>
                   <label className="space-y-0.5"><span className={lbl}>Location</span><input value={e.location || ""} onChange={(ev) => set(i, { location: ev.target.value })} disabled={!canEdit} className={inp} /></label>
                   <label className="space-y-0.5"><span className={lbl}>Contract no.</span><input value={e.contractNo || ""} onChange={(ev) => set(i, { contractNo: ev.target.value })} disabled={!canEdit} className={inp} /></label>
                   <label className="space-y-0.5"><span className={lbl}>Start</span><input value={e.start || ""} onChange={(ev) => set(i, { start: ev.target.value })} disabled={!canEdit} placeholder="yyyy-mm" className={inp} /></label>
@@ -186,9 +205,8 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                  <label className="space-y-0.5"><span className={lbl}>Client point of contact</span><input value={e.poc || ""} onChange={(ev) => set(i, { poc: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-                  <label className="space-y-0.5"><span className={lbl}>POC email</span><input value={e.pocEmail || ""} onChange={(ev) => set(i, { pocEmail: ev.target.value })} disabled={!canEdit} className={inp} /></label>
-                  <label className="space-y-0.5"><span className={lbl}>POC phone</span><input value={e.pocPhone || ""} onChange={(ev) => set(i, { pocPhone: ev.target.value })} disabled={!canEdit} className={inp} /></label>
+                  {/* 2026-10-07 - the client and its contact come from the Directory. */}
+                  <TypedClient e={e} canEdit={canEdit} set={(p) => set(i, p)} />
                   <label className="space-y-0.5"><span className={lbl}>CPARS / evaluation</span>
                     <select value={e.cpars || ""} onChange={(ev) => set(i, { cpars: ev.target.value })} disabled={!canEdit} className={inp}>
                       <option value="">Not stated</option>

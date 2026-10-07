@@ -10,6 +10,7 @@ import { letterDefaults } from "../../lib/proposalLetter";
 import RichTextEditor from "./RichTextEditor";
 import { COMPANY } from "../pdf/brand";
 import { OpeningPagesDocument, defaultSubmitter } from "./ProposalPDF";
+import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
 
 // CR-P (93) - the cover letter (CR 358, was "transmittal letter"), laid out as on the client's samples: Date, To, Subject,
 // Dear ..., the paragraphs, Sincerely, then the signature with the company seal and the signer's
@@ -71,6 +72,10 @@ export default function ProposalLetterBuilder({
   }, []);
 
   const d = letterDefaults(cover, project);
+  // 2026-10-07 - the letter goes to one of the client's people in the Directory (the cover's client).
+  const clientCo = useDirectoryCompany(
+    cover.clientCompanyId || (!cover.clientName?.trim() ? project.clientInfo?.companyId : "") || "",
+    cover.clientName?.trim() || project.clientInfo?.name || "", "client");
   const set = <K extends keyof ProposalCoverLetter>(k: K, v: ProposalCoverLetter[K]) => onChange({ ...letter, [k]: v });
 
   // Seals: the company's (Company Documents, Stamps tab) and, on a JV, the partner's.
@@ -183,6 +188,21 @@ export default function ProposalLetterBuilder({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {HEADER_FIELDS.map((f) => {
                 const id = `letter-${f.key}`;
+                // 2026-10-07 - who it goes to is one of the client's people; their title, the agency
+                // (the client) and its address come from the Directory, not typed.
+                if (f.key === "toName") return (
+                  <div key={f.key} className={`space-y-0.5 ${f.span || ""}`}>
+                    <span className={lbl}>{f.label}</span>
+                    <DirectoryPersonSelect company={clientCo} value={letter.toName || ""} placeholder={d.toName ? `As on the cover: ${d.toName}` : "The client's contact"}
+                      onPick={(p) => onChange({ ...letter, toName: p?.name || "", toTitle: p?.role || "", ...(p && clientCo?.address ? { toAddress: clientCo.address } : {}) })} />
+                  </div>
+                );
+                if (f.key === "toTitle" || f.key === "toAgency" || f.key === "toAddress") return (
+                  <div key={f.key} className={`space-y-0.5 ${f.span || ""}`}>
+                    <label htmlFor={id} className={lbl}>{f.label}</label>
+                    <input id={id} value={(f.key === "toAgency" ? d.toAgency : letter[f.key] || d[f.key]) || ""} readOnly disabled title="From the Directory (the client and the person chosen)" className={inp} />
+                  </div>
+                );
                 return (
                   <div key={f.key} className={`space-y-0.5 ${f.span || ""}`}>
                     <label htmlFor={id} className={lbl}>{f.label}</label>

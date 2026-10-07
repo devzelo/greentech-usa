@@ -7,6 +7,7 @@ import { fetchSigners, fetchStamps, withFileToken, type ApiProject, type ApiSign
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
 import { COMPANY } from "../../lib/brandTokens";
 import EoiPDF from "../pdf/EoiPDF";
+import { DirectoryPersonSelect, useDirectoryCompany } from "./DirectoryDetails";
 
 // 2026-10-06 - compact: smaller boxes, four to a row, less padding.
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
@@ -74,6 +75,10 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
 
   const set = <K extends keyof EoiContent>(k: K, v: EoiContent[K]) => onChange({ ...value, [k]: v, updatedAt: new Date().toISOString() });
   const d = eoiDefaults(project, cover, value.firm, value.signatory);
+  // 2026-10-07 - the recipient is one of the client's people in the Directory (the cover's client).
+  const clientCo = useDirectoryCompany(
+    cover?.clientCompanyId || (!cover?.clientName?.trim() ? project.clientInfo?.companyId : "") || "",
+    cover?.clientName?.trim() || project.clientInfo?.name || "", "client");
   const r = resolveEoi(value, project, cover);
   const std = eoiStandardText(r);
   const jvOn = !!project.jointVenture?.enabled && !!project.jointVenture.partnerName;
@@ -199,8 +204,16 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
           {field("location", "Location")}
           {field("country", "Country (for the local permits sentence)")}
           {field("agency", "Announced by (office / agency)")}
-          {field("recipientName", "Recipient")}
-          {field("recipientTitle", "Recipient's title")}
+          {/* 2026-10-07 - the recipient: one of the client's people; the title comes with them. */}
+          <div className="space-y-0.5">
+            <span className={lbl}>Recipient</span>
+            <DirectoryPersonSelect company={clientCo} value={value.recipientName || ""} disabled={!canEdit} placeholder={d.recipientName ? `As on the cover: ${d.recipientName}` : "The client's contact"}
+              onPick={(p) => onChange({ ...value, recipientName: p?.name || "", recipientTitle: p?.role || "" })} />
+          </div>
+          <div className="space-y-0.5">
+            <label htmlFor="eoi-recipientTitle" className={lbl}>Recipient's title</label>
+            <input id="eoi-recipientTitle" value={value.recipientTitle || d.recipientTitle || ""} readOnly disabled title="From the person chosen in the Directory" className={inp} />
+          </div>
           <div className="space-y-0.5">
             <label htmlFor="eoi-firm" className={lbl}>Submitted by</label>
             <select id="eoi-firm" value={value.firm || (d.jv ? "jv" : "gt")} onChange={(e) => set("firm", e.target.value as "gt" | "jv")} disabled={!canEdit} className={inp}>

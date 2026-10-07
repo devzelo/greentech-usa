@@ -268,6 +268,7 @@ export interface ProposalSimilarProject {
   contractType?: string;
   workType?: string;                     // the project's categories and nature types
   poc?: string; pocEmail?: string; pocPhone?: string;   // client point of contact
+  clientCompanyId?: string;              // 2026-10-07 - a typed-in entry's client, from the Directory
   cpars?: string;                        // "Yes" | "No" | "Pending" | ""
   photo?: string;
   scope?: string[];                      // 2026-10-06 - key scope of work, from the project's About This Project
@@ -419,6 +420,8 @@ export interface ProposalCover {
   attentionRole?: string;       // "Contracting Specialist"
   attentionEmail?: string;
   clientLogoUrl?: string;       // the client's seal or logo
+  /** 2026-10-07 - the client's Directory company (its people are the Attention choices). */
+  clientCompanyId?: string;
   restrictionNotice?: boolean;  // the data-restriction legend on the cover; on unless set false
   status?: "draft" | "complete"; // item 91 - the cover's own draft / complete status
 }
