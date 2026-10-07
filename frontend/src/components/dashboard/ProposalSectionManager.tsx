@@ -14,8 +14,11 @@ const LEVEL_NAMES: LevelName[] = ["Section", "Tab", "Factor", "Volume", "Part"];
 export default function ProposalSectionManager({
   layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onMention, onGoTo, userName,
   numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
-  appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical", extraActions,
+  appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical", extraActions, removed, onRestore,
 }: {
+  /** 2026-10-08 - built-in sections deleted from this document, offered to add back. */
+  removed?: Array<{ kind: string; title: string }>;
+  onRestore?: (kind: string) => void;
   /** 2026-10-07 - more buttons beside Add section (the standard appendices). */
   extraActions?: ReactNode;
   appendixNumbering?: "numbers" | "letters";            // item 108 - Appendix 1, 2, 3 or A, B, C
@@ -254,9 +257,9 @@ export default function ProposalSectionManager({
                 )}
                 <button onClick={() => patch(i, { hidden: !m.hidden })} title={m.hidden ? "Show" : "Hide"} className="p-1.5 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100">{m.hidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                 {m.kind === "custom" && <button onClick={() => onDuplicate(m)} title="Duplicate" className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-slate-100"><Copy size={13} /></button>}
-                {m.kind === "custom" || m.kind === "blank"
-                  ? <button onClick={() => onRemove(m)} disabled={locked} title="Delete" className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30"><Trash2 size={13} /></button>
-                  : null}
+                {/* 2026-10-08 - every section can be deleted, the built-in ones too (Key Personnel,
+                    Similar Projects, Project Timeline...): they can be added back below the list. */}
+                <button onClick={() => onRemove(m)} disabled={locked} title="Delete" aria-label={`Delete ${m.title}`} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30"><Trash2 size={13} /></button>
               </div>
             )}
           </div>
@@ -294,6 +297,16 @@ export default function ProposalSectionManager({
           );
         })}
       </div>
+      )}
+      {canEdit && removed && removed.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-slate-200 px-3 py-2 text-[11px] text-slate-500">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Deleted</span>
+          {removed.map((r) => (
+            <button key={r.kind} type="button" onClick={() => onRestore?.(r.kind)} title={`Add "${r.title}" back (at the end of the list)`}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 font-bold text-slate-600 hover:border-primary hover:text-primary"><Plus size={11} /> {r.title}</button>
+          ))}
+          <span className="text-slate-400">Click one to add it back, with what it held.</span>
+        </div>
       )}
     </div>
   );

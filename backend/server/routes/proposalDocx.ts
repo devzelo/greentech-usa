@@ -33,7 +33,7 @@ interface SecMeta { id: string; kind: string; refId?: string; title: string; hid
 interface Emp { id?: string; name?: string; role?: string; firm?: string; nationality?: string; years?: string; keyStaff?: boolean; userId?: string; empId?: string; subResumeId?: string }
 interface Tech {
   description?: string; employees?: Emp[]; similarProjects?: PP[]; timeline?: Array<{ phase?: string; start?: string; end?: string }>;
-  sections?: Sec[]; layout?: SecMeta[]; numbering?: string; appendixNumbering?: string;
+  sections?: Sec[]; layout?: SecMeta[]; numbering?: string; appendixNumbering?: string; removedBuiltins?: string[];
 }
 interface FinCol { id: string; label: string; kind: string }
 interface FinRow { id: string; cells: Record<string, string>; type?: string; label?: string }
@@ -42,7 +42,7 @@ interface FinTable { id: string; title: string; columns: FinCol[]; rows: FinRow[
 interface Fin {
   currency?: string; notes?: string; tables?: FinTable[];
   lineItems?: Array<{ itemNo?: string; description?: string; qty?: string; unit?: string; rate?: string; amount?: string }>;
-  sections?: Sec[]; layout?: SecMeta[]; numbering?: string; appendixNumbering?: string;
+  sections?: Sec[]; layout?: SecMeta[]; numbering?: string; appendixNumbering?: string; removedBuiltins?: string[];
 }
 interface Req { id: string; label?: string; rfpRef?: string; volume?: string; sectionId?: string; status?: string; done?: boolean }
 interface Cover { proposalTitle?: string; projectName?: string; solicitationNo?: string; taskOrderNo?: string; contractNo?: string; clientName?: string; dueDate?: string; submissionDate?: string; submittedTo?: string; attentionTo?: string; submittedBy?: string }
@@ -67,16 +67,18 @@ const TECH_BUILTINS: Array<[string, string]> = [
 const FIN_BUILTINS: Array<[string, string]> = [["pricing", "Price Schedule"]];
 
 /** The section order, as the PDF resolves it (adds missing built-ins, drops orphans). */
-function resolveLayout(sections: Sec[], layout: SecMeta[] | undefined, builtins: Array<[string, string]>): SecMeta[] {
+function resolveLayout(sections: Sec[], layout: SecMeta[] | undefined, builtins: Array<[string, string]>, removedBuiltins: string[] = []): SecMeta[] {
   const out: SecMeta[] = [];
+  // 2026-10-08 - built-in sections deleted from the proposal stay out, as in the PDF.
+  const removed = new Set(removedBuiltins);
   const seenB = new Set<string>(), seenC = new Set<string>();
   for (const m of layout || []) {
     if (m.kind === "custom") {
       if (m.refId && sections.some((s) => s.id === m.refId) && !seenC.has(m.refId)) { seenC.add(m.refId); out.push(m); }
     } else if (m.kind === "blank") { /* blank pages have no place in Word */ }
-    else if (builtins.some(([k]) => k === m.kind) && !seenB.has(m.kind)) { seenB.add(m.kind); out.push(m); }
+    else if (builtins.some(([k]) => k === m.kind) && !removed.has(m.kind) && !seenB.has(m.kind)) { seenB.add(m.kind); out.push(m); }
   }
-  for (const [kind, title] of builtins) if (!seenB.has(kind)) out.push({ id: `b-${kind}`, kind, title, hidden: false });
+  for (const [kind, title] of builtins) if (!seenB.has(kind) && !removed.has(kind)) out.push({ id: `b-${kind}`, kind, title, hidden: false });
   for (const s of sections) if (!seenC.has(s.id)) out.push({ id: `m-${s.id}`, kind: "custom", refId: s.id, title: s.heading || "Section", hidden: false });
   return out;
 }
@@ -326,8 +328,8 @@ export async function buildProposalDocx(project: { name: string }, pc: PContent,
     const t = pc.technical || {};
     const f = pc.financial || {};
     const sections = (fin ? f.sections : t.sections) || [];
-    const layout = resolveLayout(sections, fin ? f.layout : t.layout, fin ? FIN_BUILTINS : TECH_BUILTINS);
-    const otherLayout = resolveLayout((fin ? t.sections : f.sections) || [], fin ? t.layout : f.layout, fin ? TECH_BUILTINS : FIN_BUILTINS);
+    const layout = resolveLayout(sections, fin ? f.layout : t.layout, fin ? FIN_BUILTINS : TECH_BUILTINS, (fin ? f.removedBuiltins : t.removedBuiltins) || []);
+    const otherLayout = resolveLayout((fin ? t.sections : f.sections) || [], fin ? t.layout : f.layout, fin ? TECH_BUILTINS : FIN_BUILTINS, (fin ? t.removedBuiltins : f.removedBuiltins) || []);
     const numbering = (fin ? f.numbering || "letters" : t.numbering || "numbers");
     const appxNumbering = (fin ? f.appendixNumbering || "letters" : t.appendixNumbering || "numbers");
     const requirements = pc.requirements || [];

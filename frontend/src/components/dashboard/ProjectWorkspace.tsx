@@ -1270,7 +1270,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const layoutOfVol = (vol: Vol) => (vol === "financial" ? resolveFinancialLayout(financial) : resolveProposalLayout(technical));
   const editVol = (vol: Vol, fn: (b: SecBox) => Partial<SecBox> | null) =>
     vol === "financial"
-      ? setFinancial((p) => { const r = fn({ sections: p.sections || [], layout: resolveProposalLayout({ sections: p.sections || [], layout: p.layout }, FINANCIAL_BUILTINS) }); return r ? { ...p, ...r } : p; })
+      ? setFinancial((p) => { const r = fn({ sections: p.sections || [], layout: resolveProposalLayout({ sections: p.sections || [], layout: p.layout, removedBuiltins: p.removedBuiltins }, FINANCIAL_BUILTINS) }); return r ? { ...p, ...r } : p; })
       : setTechnical((p) => { const r = fn({ sections: p.sections, layout: resolveProposalLayout(p) }); return r ? { ...p, ...r } : p; });
   const setLayout = (next: ProposalSectionMeta[], vol: Vol = "technical") => editVol(vol, () => ({ layout: next }));
   // CR-B-19a — colleagues that can be tagged on a proposal section (notified via a reminder).
@@ -1371,7 +1371,30 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       return { sections: [...b.sections, section], layout: [...b.layout.slice(0, at + 1), newMeta, ...b.layout.slice(at + 1)] };
     });
   // CR 204 - deleting a section or an appendix asks first, and says what goes with it.
+  // 2026-10-08 - a built-in section (Technical Description, Key Personnel, Similar Projects, Project
+  // Timeline, Price Schedule) leaves this document but keeps what it holds, to be added back.
+  const removeBuiltin = async (meta: ProposalSectionMeta, vol: Vol) => {
+    if (!(await brandedConfirm({
+      title: `Delete "${meta.title}"?`,
+      message: "It is taken out of this document. What it holds is kept: it can be added back from \"Deleted\" under the section list.",
+      confirmLabel: "Delete section",
+      danger: true,
+    }))) return;
+    const drop = <T extends { layout?: ProposalSectionMeta[]; removedBuiltins?: ProposalSectionMeta["kind"][] }>(p: T): T =>
+      ({ ...p, removedBuiltins: [...new Set([...(p.removedBuiltins || []), meta.kind])], layout: (p.layout || []).filter((m) => m.kind !== meta.kind) });
+    if (vol === "financial") setFinancial(drop); else setTechnical(drop);
+    setDirty(true);
+    toast(`"${meta.title}" deleted. Add it back from "Deleted" under the section list.`, "success");
+  };
+  const restoreBuiltin = (kind: string, vol: Vol) => {
+    const keep = <T extends { removedBuiltins?: ProposalSectionMeta["kind"][] }>(p: T): T => ({ ...p, removedBuiltins: (p.removedBuiltins || []).filter((k) => k !== kind) });
+    if (vol === "financial") setFinancial(keep); else setTechnical(keep);
+    setDirty(true);
+  };
+  const removedOf = (vol: Vol) => ((vol === "financial" ? financial.removedBuiltins : technical.removedBuiltins) || [])
+    .map((k) => ({ kind: k as string, title: (vol === "financial" ? FINANCIAL_BUILTINS : PROPOSAL_BUILTINS).find((b) => b.kind === k)?.title || String(k) }));
   const removeLayoutSection = async (meta: ProposalSectionMeta, vol: Vol = "technical") => {
+    if (meta.kind !== "custom" && meta.kind !== "blank") return removeBuiltin(meta, vol);
     const sec = sectionsOfVol(vol).find((s) => s.id === meta.refId);
     const words = String(sec?.body || "").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
     const holds = [
@@ -5312,6 +5335,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     appendixNumbering={technical.appendixNumbering || "numbers"}
                     onAppendixNumberingChange={(n) => setTech("appendixNumbering", n)}
                     extraActions={canEdit ? <StandardAppendices volume="technical" onAdd={(items) => addStandardAppendices("technical", items)} /> : undefined}
+                    removed={removedOf("technical")} onRestore={(k) => restoreBuiltin(k, "technical")}
                   />
                   <SectionGroupTemplates layout={techLayout} templates={groupTemplates} canEdit={canEdit}
                     onSave={(name, ids) => saveGroupTemplate("technical", name, ids)} onInsert={(t) => insertGroupTemplate("technical", t)} onDelete={deleteGroupTemplate} />
@@ -5591,6 +5615,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     appendixNumbering={financial.appendixNumbering || "letters"}
                     onAppendixNumberingChange={(n) => setFin("appendixNumbering", n)}
                     extraActions={canEdit ? <StandardAppendices volume="financial" onAdd={(items) => addStandardAppendices("financial", items)} /> : undefined}
+                    removed={removedOf("financial")} onRestore={(k) => restoreBuiltin(k, "financial")}
                   />
                   <SectionGroupTemplates layout={finLayout} templates={groupTemplates} canEdit={canEdit}
                     onSave={(name, ids) => saveGroupTemplate("financial", name, ids)} onInsert={(t) => insertGroupTemplate("financial", t)} onDelete={deleteGroupTemplate} />

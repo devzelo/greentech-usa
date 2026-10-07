@@ -381,6 +381,8 @@ export interface TechnicalProposalContent {
   timeline: ProposalTimelinePhase[];
   sections: ProposalSection[];
   layout?: ProposalSectionMeta[]; // section order / visibility / titles
+  /** 2026-10-08 - built-in sections taken out of this proposal (their data is kept, to add back). */
+  removedBuiltins?: ProposalSectionKind[];
   numbering?: "numbers" | "letters" | "none"; // CR-P (95) - 1, 2, 3 / A, B, C (client samples) / off (spec 1)
   levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part"; // what a top-level section is called ("Tab A", "Factor 2")
   appendixNumbering?: "numbers" | "letters"; // Appendix 1, 2, 3 (default) or A, B, C
@@ -414,6 +416,8 @@ export interface FinancialProposalContent {
   // price form uploaded as a Government form, our own price table (optional), appendices A, B, C, D.
   sections?: ProposalSection[];
   layout?: ProposalSectionMeta[];
+  /** 2026-10-08 - built-in sections taken out of this volume (kept, to add back). */
+  removedBuiltins?: ProposalSectionKind[];
   numbering?: "numbers" | "letters" | "none";           // default letters, as in the samples
   levelName?: "Section" | "Tab" | "Factor" | "Volume" | "Part";
   appendixNumbering?: "numbers" | "letters";            // default letters (item 108: "Appendices A, B, C, D")
@@ -807,11 +811,13 @@ export const FINANCIAL_BUILTINS: { kind: ProposalSectionKind; title: string }[] 
 
 /** The financial volume's section order (item 107). */
 export const resolveFinancialLayout = (f: FinancialProposalContent) =>
-  resolveProposalLayout({ sections: f.sections || [], layout: f.layout }, FINANCIAL_BUILTINS);
+  resolveProposalLayout({ sections: f.sections || [], layout: f.layout, removedBuiltins: f.removedBuiltins }, FINANCIAL_BUILTINS);
 
 /** Reconcile a stored layout with the current section data (adds missing, drops orphans). */
-export function resolveProposalLayout(t: { sections: ProposalSection[]; layout?: ProposalSectionMeta[] }, builtins = PROPOSAL_BUILTINS): ProposalSectionMeta[] {
+export function resolveProposalLayout(t: { sections: ProposalSection[]; layout?: ProposalSectionMeta[]; removedBuiltins?: string[] }, builtins = PROPOSAL_BUILTINS): ProposalSectionMeta[] {
   const existing = t.layout || [];
+  // 2026-10-08 - a built-in section deleted from this proposal stays out (it is not added back).
+  const removed = new Set(t.removedBuiltins || []);
   const out: ProposalSectionMeta[] = [];
   const seenBuiltins = new Set<string>();
   const seenCustom = new Set<string>();
@@ -823,13 +829,13 @@ export function resolveProposalLayout(t: { sections: ProposalSection[]; layout?:
       }
     } else if (m.kind === "blank") {
       out.push(m); // blank pages are standalone — keep every one, allow duplicates
-    } else if (builtins.some((b) => b.kind === m.kind) && !seenBuiltins.has(m.kind)) {
+    } else if (builtins.some((b) => b.kind === m.kind) && !removed.has(m.kind) && !seenBuiltins.has(m.kind)) {
       seenBuiltins.add(m.kind);
       out.push(m);
     }
   }
   for (const b of builtins) {
-    if (!seenBuiltins.has(b.kind)) out.push({ id: `b-${b.kind}`, kind: b.kind, title: b.title, hidden: false });
+    if (!seenBuiltins.has(b.kind) && !removed.has(b.kind)) out.push({ id: `b-${b.kind}`, kind: b.kind, title: b.title, hidden: false });
   }
   for (const s of t.sections) {
     if (!seenCustom.has(s.id)) out.push({ id: `m-${s.id}`, kind: "custom", refId: s.id, title: s.heading || "Section", hidden: false });
