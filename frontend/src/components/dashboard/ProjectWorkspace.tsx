@@ -2924,66 +2924,83 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       .finally(() => setDocsLoading(false));
   };
 
-  const persistGallery = async (next: GalleryItem[]) => {
-    if (!id) return;
-    try {
-      const updated = await updateProject(id, { gallery: next } as Partial<ApiProject>);
-      setProject(updated);
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not save gallery.", "error");
-    }
-  };
+  // 2026-10-07 - the showcase opens read-only. Edit makes a draft (the gallery, the client-name
+  // switch, which documents are public); Save writes it all, Cancel drops it.
+  type ShowcaseDraft = { gallery: GalleryItem[]; showClientName: boolean; docPublic: Record<string, boolean> };
+  const [scDraft, setScDraft] = useState<ShowcaseDraft | null>(null);
+  const [scSaving, setScSaving] = useState(false);
+  const startShowcaseEdit = () => setScDraft({
+    gallery: [...((project?.gallery as GalleryItem[]) || [])],
+    showClientName: project?.showClientName !== false,
+    docPublic: Object.fromEntries(showcaseDocs.map((d) => [d._id, !!d.public])),
+  });
+  const setScGallery = (fn: (g: GalleryItem[]) => GalleryItem[]) => setScDraft((d) => (d ? { ...d, gallery: fn(d.gallery) } : d));
+  const docPublicOf = (d: ApiDocument) => (scDraft ? scDraft.docPublic[d._id] ?? !!d.public : !!d.public);
+  const scDirty = !!scDraft && (
+    JSON.stringify(scDraft.gallery) !== JSON.stringify((project?.gallery as GalleryItem[]) || [])
+    || scDraft.showClientName !== (project?.showClientName !== false)
+    || showcaseDocs.some((d) => docPublicOf(d) !== !!d.public));
 
   const handleGalleryUpload = async (file: File) => {
     if (!id) return;
     setGalleryUploading(true);
     try {
       const { url, type } = await uploadGalleryFile(id, file);
-      await persistGallery([...((project?.gallery as GalleryItem[]) || []), { type, source: "upload", url, caption: "" }]);
-      toast("Added to gallery.", "success");
+      setScGallery((g) => [...g, { type, source: "upload", url, caption: "" }]);
+      toast("Added to the gallery. Save to keep it.", "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Upload failed.", "error");
     } finally {
       setGalleryUploading(false);
     }
   };
-
-  const handleAddGalleryLink = async () => {
+  const handleAddGalleryLink = () => {
     const url = galleryLink.trim();
     if (!url) return;
-    await persistGallery([...((project?.gallery as GalleryItem[]) || []), { type: "video", source: "link", url, caption: "" }]);
+    setScGallery((g) => [...g, { type: "video", source: "link", url, caption: "" }]);
     setGalleryLink("");
-    toast("Video link added.", "success");
   };
-
-  const removeGalleryItem = (i: number) => persistGallery(((project?.gallery as GalleryItem[]) || []).filter((_, idx) => idx !== i));
-  const moveGalleryItem = (i: number, dir: -1 | 1) => {
-    const arr = [...((project?.gallery as GalleryItem[]) || [])];
+  const removeGalleryItem = (i: number) => setScGallery((g) => g.filter((_, idx) => idx !== i));
+  const moveGalleryItem = (i: number, dir: -1 | 1) => setScGallery((g) => {
     const j = i + dir;
-    if (j < 0 || j >= arr.length) return;
+    if (j < 0 || j >= g.length) return g;
+    const arr = [...g];
     [arr[i], arr[j]] = [arr[j], arr[i]];
-    persistGallery(arr);
-  };
-  const setGalleryCaption = (i: number, caption: string) =>
-    persistGallery(((project?.gallery as GalleryItem[]) || []).map((g, idx) => (idx === i ? { ...g, caption } : g)));
+    return arr;
+  });
+  const setGalleryCaption = (i: number, caption: string) => setScGallery((g) => g.map((x, idx) => (idx === i ? { ...x, caption } : x)));
+  const toggleShowClientName = () => setScDraft((d) => (d ? { ...d, showClientName: !d.showClientName } : d));
+  const toggleDocPublic = (d: ApiDocument) => setScDraft((sc) => (sc ? { ...sc, docPublic: { ...sc.docPublic, [d._id]: !(sc.docPublic[d._id] ?? !!d.public) } } : sc));
 
-  const toggleShowClientName = async () => {
-    if (!id) return;
+  /** False when the user keeps editing. */
+  const cancelShowcaseEdit = async (): Promise<boolean> => {
+    if (scDirty && !(await brandedConfirm({ title: "Discard the changes?", message: "The showcase stays as it was last saved.", confirmLabel: "Discard changes" }))) return false;
+    setScDraft(null);
+    setGalleryLink("");
+    return true;
+  };
+  const closeShowcase = async (): Promise<boolean> => {
+    if (scDraft && !(await cancelShowcaseEdit())) return false;
+    setShowShowcaseModal(false);
+    return true;
+  };
+  const saveShowcase = async () => {
+    if (!id || !scDraft) return;
+    setScSaving(true);
     try {
-      const updated = await updateProject(id, { showClientName: project?.showClientName === false } as Partial<ApiProject>);
+      const updated = await updateProject(id, { gallery: scDraft.gallery, showClientName: scDraft.showClientName } as Partial<ApiProject>);
       setProject(updated);
+      for (const d of showcaseDocs.filter((x) => docPublicOf(x) !== !!x.public)) {
+        const u = await setDocumentPublic(id, d._id, docPublicOf(d));
+        setShowcaseDocs((prev) => prev.map((x) => (x._id === d._id ? { ...x, public: u.public } : x)));
+      }
+      setScDraft(null);
+      setGalleryLink("");
+      toast("Showcase saved.", "success");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not update.", "error");
-    }
-  };
-
-  const toggleDocPublic = async (d: ApiDocument) => {
-    if (!id) return;
-    try {
-      const updated = await setDocumentPublic(id, d._id, !d.public);
-      setShowcaseDocs((prev) => prev.map((x) => (x._id === d._id ? { ...x, public: updated.public } : x)));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not update.", "error");
+      toast(err instanceof Error ? err.message : "Could not save the showcase.", "error");
+    } finally {
+      setScSaving(false);
     }
   };
 
@@ -7997,10 +8014,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {isPublished && (
+                  {isPublished && !scDraft && (
                     <a href={`/projects?showcase=${id}`} target="_blank" rel="noopener noreferrer" className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 rounded-xl px-3 py-2"><ExternalLink size={14} /> Preview</a>
                   )}
-                  <button onClick={() => setShowShowcaseModal(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+                  {!scDraft
+                    ? <button onClick={startShowcaseEdit} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-primary"><Edit2 size={13} /> Edit</button>
+                    : <>
+                        <button onClick={() => void cancelShowcaseEdit()} disabled={scSaving} className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><X size={13} /> Cancel</button>
+                        <button onClick={() => void saveShowcase()} disabled={scSaving || !scDirty || galleryUploading} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{scSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save</button>
+                      </>}
+                  <button onClick={() => void closeShowcase()} aria-label="Close" className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
                 </div>
               </div>
 
@@ -8018,7 +8041,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="bg-white p-6 rounded-2xl border border-slate-100">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">What the public sees</h3>
-                    <button onClick={() => { setShowShowcaseModal(false); openEditIdentity(); }} className="text-xs font-bold text-primary hover:underline flex items-center gap-1.5"><Edit2 size={13} /> Edit in Identity</button>
+                    <button onClick={() => void (async () => { if (await closeShowcase()) openEditIdentity(); })()} className="text-xs font-bold text-primary hover:underline flex items-center gap-1.5"><Edit2 size={13} /> Edit in Identity</button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                     {([
@@ -8027,7 +8050,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       ["Category", projectCategories(project).join(", ")],
                       ["Location", project.location],
                       ["Timeline", `${project.startDate || "—"} → ${project.endDate || "—"}`],
-                      ["Client", project.showClientName === false ? "Hidden" : (project.clientInfo?.name || "—")],
+                      ["Client", (scDraft ? !scDraft.showClientName : project.showClientName === false) ? "Hidden" : (project.clientInfo?.name || "—")],
                     ] as const).map(([label, val]) => (
                       <div key={label}>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
@@ -8047,13 +8070,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="bg-white p-6 rounded-2xl border border-slate-100 space-y-4">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-1">Gallery</h3>
-                    <p className="text-xs text-slate-400">Images &amp; videos for the carousel. The first image is the project's card cover.</p>
+                    <p className="text-xs text-slate-400">Images &amp; videos for the carousel. The first image is the project's card cover.{scDraft ? "" : " Click Edit to add, reorder or caption them."}</p>
                   </div>
-                  {((project.gallery as GalleryItem[]) || []).length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No media yet. Upload images/videos or add a video link below.</p>
+                  {(() => { const gal = scDraft ? scDraft.gallery : ((project.gallery as GalleryItem[]) || []); return gal.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">{scDraft ? "No media yet. Upload images/videos or add a video link below." : "No media yet."}</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {(project.gallery as GalleryItem[]).map((g, i) => (
+                      {gal.map((g, i) => (
                         <div key={`${g.url}-${i}`} className="flex gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                           <div className="w-20 h-16 rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center flex-shrink-0">
                             {g.type === "image" ? <img src={assetSrc(g.url)} alt="" className="w-full h-full object-cover" /> : <Globe size={20} className="text-slate-400" />}
@@ -8063,18 +8086,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               <span className="text-[9px] font-bold uppercase tracking-widest text-primary">{g.type}{g.source === "link" ? " · link" : ""}</span>
                               {i === 0 && g.type === "image" && <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">· cover</span>}
                             </div>
-                            <input defaultValue={g.caption || ""} onBlur={(e) => setGalleryCaption(i, e.target.value)} placeholder="Caption (optional)" className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-primary/10 mt-auto" />
+                            {scDraft
+                              ? <input value={g.caption || ""} onChange={(e) => setGalleryCaption(i, e.target.value)} placeholder="Caption (optional)" aria-label="Caption" className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-primary/10 mt-auto" />
+                              : <p className={`mt-auto truncate text-xs ${g.caption ? "font-semibold text-slate-700" : "italic text-slate-400"}`} title={g.caption || ""}>{g.caption || "No caption"}</p>}
                           </div>
-                          <div className="flex flex-col items-center gap-0.5">
-                            <button onClick={() => moveGalleryItem(i, -1)} disabled={i === 0} className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↑</button>
-                            <button onClick={() => moveGalleryItem(i, 1)} disabled={i === (project.gallery || []).length - 1} className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↓</button>
-                            <button onClick={() => removeGalleryItem(i)} className="p-1 rounded text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
-                          </div>
+                          {scDraft && (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <button onClick={() => moveGalleryItem(i, -1)} disabled={i === 0} aria-label="Move up" className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↑</button>
+                              <button onClick={() => moveGalleryItem(i, 1)} disabled={i === gal.length - 1} aria-label="Move down" className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↓</button>
+                              <button onClick={() => removeGalleryItem(i)} aria-label="Remove" className="p-1 rounded text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  )}
-                  <div className="flex flex-wrap gap-3 pt-1">
+                  ); })()}
+                  {scDraft && <div className="flex flex-wrap gap-3 pt-1">
                     <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
                       {galleryUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload image / video
                       <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleGalleryUpload(f); e.target.value = ""; }} disabled={galleryUploading} />
@@ -8083,7 +8110,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       <input value={galleryLink} onChange={(e) => setGalleryLink(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddGalleryLink()} placeholder="Paste a YouTube / Vimeo link…" className="flex-grow bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-primary/10" />
                       <button onClick={handleAddGalleryLink} className="px-4 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200">Add link</button>
                     </div>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Client name visibility */}
@@ -8092,16 +8119,18 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <h3 className="text-sm font-bold text-slate-900">Show client name publicly</h3>
                     <p className="text-xs text-slate-400 mt-0.5">When off, the client name is hidden in the public modal.</p>
                   </div>
-                  <button onClick={toggleShowClientName} className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${project.showClientName !== false ? "bg-indigo-500" : "bg-slate-200"}`}>
-                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-all ${project.showClientName !== false ? "left-5" : "left-0.5"}`} />
-                  </button>
+                  {scDraft
+                    ? <button onClick={toggleShowClientName} role="switch" aria-checked={scDraft.showClientName} aria-label="Show client name publicly" className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${scDraft.showClientName ? "bg-indigo-500" : "bg-slate-200"}`}>
+                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-all ${scDraft.showClientName ? "left-5" : "left-0.5"}`} />
+                      </button>
+                    : <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${project.showClientName !== false ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-500"}`}>{project.showClientName !== false ? "Shown" : "Hidden"}</span>}
                 </div>
 
                 {/* Documents table */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-100">
                   <div className="mb-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-1">Documents</h3>
-                    <p className="text-xs text-slate-400">All files in this project. Toggle which ones appear on the public page (off by default).</p>
+                    <p className="text-xs text-slate-400">All files in this project{scDraft ? ". Toggle which ones appear on the public page (off by default)." : ", and which appear on the public page. Click Edit to change it."}</p>
                   </div>
                   {docsLoading ? (
                     <div className="flex items-center gap-2 text-slate-300 text-xs py-4"><Loader2 size={14} className="animate-spin" /> Loading documents…</div>
@@ -8121,9 +8150,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             <span className="flex-grow min-w-0 text-xs font-bold text-slate-900 truncate" title={d.name}>{d.name}</span>
                             <span className="hidden sm:block w-28 text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{docSectionLabel(d.section)}</span>
                             <div className="w-20 flex justify-end">
-                              <button onClick={() => toggleDocPublic(d)} className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${d.public ? "bg-emerald-500" : "bg-slate-200"}`} title={d.public ? "Visible on public page" : "Hidden"}>
-                                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow ${d.public ? "left-[18px]" : "left-0.5"}`} />
-                              </button>
+                              {scDraft
+                                ? <button onClick={() => toggleDocPublic(d)} role="switch" aria-checked={docPublicOf(d)} aria-label={`${d.name} on the public page`} className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${docPublicOf(d) ? "bg-emerald-500" : "bg-slate-200"}`} title={docPublicOf(d) ? "Visible on public page" : "Hidden"}>
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow ${docPublicOf(d) ? "left-[18px]" : "left-0.5"}`} />
+                                  </button>
+                                : <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${d.public ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>{d.public ? "Public" : "Hidden"}</span>}
                             </div>
                           </div>
                         ))}
