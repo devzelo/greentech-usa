@@ -48,24 +48,48 @@ setUploadsUrl((url) => withFileToken(url));
  * 2026-10-08 - pictures inside rich text (requests, agreements, proposals) point at /uploads, which
  * needs the file token, and an <img> cannot send it as a header: without it the picture never shows.
  * The token is added for display and taken out again before the text is saved, so a stored text
- * never carries one (it would expire). Only our own uploads get it, never another site's.
+ * never carries one (it would expire). Only real <img> elements are touched, and only when the
+ * picture is one of our own uploads (this app's or the API's origin, path /uploads/): the token is
+ * never added to text, other attributes or another site's address.
  */
-const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const uploadSrc = () => new RegExp(`(src=")((?:${escRe(API_BASE)})?/uploads/[^"?#]*)(\\?[^"#]*)?(")`, "g");
-/** A link's other query parameters, without the token. */
-const restOf = (q?: string) => (q || "").replace(/^\?/, "").split(/&amp;|&/).filter((p) => p && !p.startsWith("token=")).join("&amp;");
+const ownUpload = (src: string): boolean => {
+  try {
+    const u = new URL(src, window.location.origin);
+    const api = new URL(API_BASE || window.location.origin, window.location.origin).origin;
+    return u.pathname.startsWith("/uploads/") && (u.origin === api || u.origin === window.location.origin);
+  } catch { return false; }
+};
+/** The src with the file token set (or removed), its other parameters and spelling kept. */
+const setTokenParam = (src: string, token: string | null): string => {
+  const hash = src.indexOf("#") >= 0 ? src.slice(src.indexOf("#")) : "";
+  const [base, query = ""] = src.slice(0, src.length - hash.length).split("?");
+  const rest = query.split("&").filter((p) => p && !p.startsWith("token="));
+  if (token) rest.push(`token=${encodeURIComponent(token)}`);
+  return `${base}${rest.length ? `?${rest.join("&")}` : ""}${hash}`;
+};
+/** One picture address as shown on screen (with the file token, when it is our upload). */
+export function fileTokenSrc(src: string): string {
+  const token = getFileToken();
+  return token && ownUpload(src) ? setTokenParam(src, token) : src;
+}
+const rewriteImgs = (html: string, token: string | null): string => {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  let changed = false;
+  doc.querySelectorAll("img[src]").forEach((img) => {
+    const src = img.getAttribute("src") || "";
+    if (!ownUpload(src)) return;
+    const next = setTokenParam(src, token);
+    if (next !== src) { img.setAttribute("src", next); changed = true; }
+  });
+  return changed ? doc.body.innerHTML : html;
+};
 export function withFileTokensInHtml(html: string): string {
   if (!html || !html.includes("/uploads/")) return html;
   const token = getFileToken();
-  if (!token) return html;
-  return html.replace(uploadSrc(), (_m, a: string, path: string, q: string | undefined, z: string) => { const rest = restOf(q); return `${a}${path}?${rest ? `${rest}&amp;` : ""}token=${encodeURIComponent(token)}${z}`; });
+  return token ? rewriteImgs(html, token) : html;
 }
 export function stripFileTokensInHtml(html: string): string {
-  if (!html || !html.includes("token=")) return html;
-  return html.replace(uploadSrc(), (_m, a: string, path: string, q: string | undefined, z: string) => {
-    const rest = restOf(q);
-    return `${a}${path}${rest ? `?${rest}` : ""}${z}`;
-  });
+  return html && html.includes("token=") ? rewriteImgs(html, null) : html;
 }
 
 export function withFileToken(url: string): string {

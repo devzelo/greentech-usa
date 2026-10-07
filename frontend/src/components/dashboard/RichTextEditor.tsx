@@ -6,7 +6,7 @@ import {
   Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2, RemoveFormatting,
 } from "lucide-react";
 import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS, DOC_COLORS } from "../../lib/docStyle";
-import { stripFileTokensInHtml, withFileTokensInHtml } from "../../lib/api";
+import { fileTokenSrc, stripFileTokensInHtml, withFileTokensInHtml } from "../../lib/api";
 
 /**
  * Rich-text editor backed by a contentEditable surface. Emits HTML via onChange
@@ -432,7 +432,7 @@ export default function RichTextEditor({
           ? await onImageUpload(p.file)
           : await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(p.file); });
         // Shown with the file token straight away (emit takes it out of the saved text).
-        const shown = withFileTokensInHtml(`src="${url}"`).slice('src="'.length, -1);
+        const shown = fileTokenSrc(url);
         html += `<img src="${shown}" width="460" style="width:100%;max-width:460px;margin:8px 0 2px;border-radius:4px;" />`;
         html += p.caption.trim()
           ? `<p data-img-caption="1" style="margin:0 0 10px;font-size:11px;color:#64748b;">${escapeHtmlText(p.caption.trim())}</p>`
