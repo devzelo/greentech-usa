@@ -2783,7 +2783,7 @@ export type AgreementEntityType = "partner" | "subcontractor" | "vendor";
 export interface ApiAgreementParty { name: string; contactName: string; address: string; email: string; phone: string; logoUrl: string;
   /** CR-PR-09 — the Directory company this party is. Empty for employees and legacy rows. */
   companyId?: string }
-export interface ApiAgreementFile { _id: string; name: string; filePath: string; fileType: string; size: string; kind: string; print?: boolean; placement?: "after" | "end" }
+export interface ApiAgreementFile { _id: string; name: string; filePath: string; fileType: string; size: string; kind: string; print?: boolean; placement?: "after" | "end"; /** an appendix's cover page (default on) */ cover?: boolean }
 export interface ApiAgreementSections { scope: string; terms: string; paymentConditions: string; deliveryConditions: string;
   ndaEnabled: boolean; ndaMode?: "text" | "file"; ndaText: string; ndaFile?: { name: string; url: string } | null;
   /** CR-P (45) - standard terms & conditions, stapled after the signatures like the NDA. */
@@ -2812,7 +2812,7 @@ export interface ApiAgreement {
   documentMode?: "built" | "uploaded";
   uploadedDocument?: { name: string; filePath: string; fileType: string; size: string } | null;
   archived?: boolean;
-  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end"; cover?: boolean }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   // CR-P (19) — extraParties holds party 3 and party 4 (max 2); party1/party2 stay as they were.
   partySnapshot: { party1: ApiAgreementParty; party2: ApiAgreementParty; extraParties?: ApiAgreementParty[]; contextLines: Array<{ label: string; value: string }> };
@@ -2895,7 +2895,7 @@ export interface AgreementInput {
   documentMode?: "built" | "uploaded";
   partySnapshot?: Partial<ApiAgreement["partySnapshot"]>;
   sections?: Partial<ApiAgreementSections>;
-  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end" }> ; history?: Array<{ at: string; by: string; text: string }> }>;
+  extraSections?: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string; print?: boolean; placement?: "after" | "end"; cover?: boolean }> ; history?: Array<{ at: string; by: string; text: string }> }>;
   sectionAssignees?: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
   companySignature?: Partial<ApiAgreement["signatures"]["company"]>;
   status?: "PendingSignature";

@@ -17,7 +17,7 @@ export interface IAgreementParty {
   // CR-PR-09 — the Directory company this party is. Empty for employees and legacy rows.
   companyId?: string;
 }
-export interface IAgreementFile { name: string; filePath: string; fileType: string; size: string; kind: string; print?: boolean; placement?: string }
+export interface IAgreementFile { name: string; filePath: string; fileType: string; size: string; kind: string; print?: boolean; placement?: string; cover?: boolean }
 
 export interface IAgreement extends Document {
   ownerContextType: AgreementContext;
@@ -102,7 +102,7 @@ export interface IAgreement extends Document {
   // CR-P (42)/(44) — a section attachment prints by default, right after its own section, and
   // can instead be pushed to the back as an appendix or held back from the document entirely.
   // CR-P (36) — `id` is a stable section id, so live changes merge section by section.
-  extraSections: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string; print?: boolean; placement?: string }>; history?: Array<{ at: string; by: string; text: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
+  extraSections: Array<{ id?: string; title: string; body: string; status?: string; locked?: boolean; hidden?: boolean; notes?: string; assignedTo?: string; attachments?: Array<{ name: string; filePath: string; fileType: string; size: string; kind?: string; print?: boolean; placement?: string; cover?: boolean }>; history?: Array<{ at: string; by: string; text: string }> }>;  // custom named rich-text sections (HTML) + per-section state (CR-B-15/17/18/19a)
   // CR-P-49 — colleague tagged to review each fixed section (parallels extraSections.assignedTo).
   sectionAssignees: { scope: string; terms: string; paymentConditions: string; deliveryConditions: string };
 
@@ -146,6 +146,8 @@ const FileSchema = new Schema<IAgreementFile>(
     print: { type: Boolean, default: true },
     // CR-P (42) — "after" prints it straight after its section; "end" holds it back as an appendix.
     placement: { type: String, enum: ["after", "end"], default: "after" },
+    // 2026-10-07 - an appendix at the end may go without its cover page (on by default).
+    cover: { type: Boolean, default: true },
   },
   { _id: true }
 );

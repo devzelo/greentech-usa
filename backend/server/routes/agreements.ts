@@ -111,6 +111,8 @@ const cleanExtraSections = (v: unknown): Array<{ id: string; title: string; body
                 // Absent means "print, after its section": that is what every existing file did.
                 print: a?.print === undefined ? true : !!a.print,
                 placement: a?.placement === "end" ? "end" : "after",
+                // 2026-10-07 - an appendix's cover page; absent means on, as before.
+                cover: a?.cover === undefined ? true : !!a.cover,
               }))
             : [],
           // CR-B-17 — carry the per-section change history (View History).

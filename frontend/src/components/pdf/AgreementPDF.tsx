@@ -21,7 +21,7 @@ registerBrandFonts();
 
 type Party = { name?: string; contactName?: string; address?: string; email?: string; phone?: string };
 type Sig = { signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; signedAt?: string };
-type Attachment = { name: string; filePath: string; print?: boolean; placement?: string };
+type Attachment = { name: string; filePath: string; print?: boolean; placement?: string; cover?: boolean };
 
 const s = StyleSheet.create({
   // No lineHeight on the page; the page number is stamped by the assembler.
@@ -254,9 +254,12 @@ function Divider({ heading, file, shown }: { heading: string; file: string; show
   );
 }
 
-function fileParts(ag: ApiAgreement, heading: string, a: Attachment, url = a.filePath): ProposalPart[] {
+// 2026-10-07 - a file printed after its section goes in without a cover page; an appendix keeps
+// its cover unless it is turned off. A file that cannot be shown inside the PDF still gets the page
+// that says so, as otherwise it would vanish without a word.
+function fileParts(ag: ApiAgreement, heading: string, a: Attachment, url = a.filePath, cover = true): ProposalPart[] {
   const shown = embeddable(a.name);
-  const parts: ProposalPart[] = [{ type: "doc", element: one(ag, <Divider heading={heading} file={a.name} shown={shown} />) }];
+  const parts: ProposalPart[] = cover || !shown ? [{ type: "doc", element: one(ag, <Divider heading={heading} file={a.name} shown={shown} />) }] : [];
   if (shown) parts.push({ type: "files", files: [{ name: a.name, url }] });
   return parts;
 }
@@ -287,7 +290,7 @@ export async function buildBrandAgreementPdf(ag: ApiAgreement): Promise<Blob> {
     if (inline.length) {
       parts.push({ type: "doc", element: one(ag, chunk) });
       chunk = [];
-      for (const a of inline) parts.push(...fileParts(ag, sec.title, a));
+      for (const a of inline) parts.push(...fileParts(ag, sec.title, a, a.filePath, false));
     }
   });
   chunk.push(<RefLine key="ref" ag={ag} />, <Signatures key="sigs" ag={ag} />);
@@ -295,7 +298,7 @@ export async function buildBrandAgreementPdf(ag: ApiAgreement): Promise<Blob> {
 
   // Files held back to the end as appendices.
   for (const sec of sections) {
-    for (const a of sec.attachments) if (a.print !== false && a.placement === "end") parts.push(...fileParts(ag, sec.title || "Appendix", a));
+    for (const a of sec.attachments) if (a.print !== false && a.placement === "end") parts.push(...fileParts(ag, sec.title || "Appendix", a, a.filePath, a.cover !== false));
   }
   // CR-P (45) — the NDA, then the standard terms: at the very end.
   const endDocument = (title: string, mode?: string, file?: { name: string; url: string } | null, text?: string) => {

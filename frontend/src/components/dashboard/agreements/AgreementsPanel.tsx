@@ -2059,6 +2059,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                                   <option value="after">after this section</option>
                                   <option value="end">at the end (appendix)</option>
                                 </select>
+                                {/* 2026-10-07 - an appendix's cover page, on unless turned off; a file after its section has none. */}
+                                {willPrint && atEnd && (
+                                  <label className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 cursor-pointer" title="Print a cover page (the section and the file's name) in front of this appendix">
+                                    <input type="checkbox" checked={a.cover !== false} onChange={(e) => setA({ cover: e.target.checked })} className="w-3 h-3 accent-primary" />
+                                    Cover page
+                                  </label>
+                                )}
                                 <FileActions name={a.name} url={attachmentUrl(a.filePath)} size={11} onDelete={() => removeFile(a._id)} />
                               </div>
                             );
