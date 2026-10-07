@@ -12,6 +12,7 @@ import PartnerProfileSection from "./PartnerProfileSection";
 import MyProfileOverview from "./MyProfileOverview";
 import SignatureManager from "./SignatureManager";
 import ProfileGallery from "./ProfileGallery";
+import ImageCropDialog from "./ImageCropDialog";
 import ResumeFileCard from "./ResumeFileCard";
 
 // Card shells. The side column is narrow on large screens, so its cards keep a lighter padding.
@@ -145,23 +146,33 @@ export default function Profile() {
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 
-  const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  // 2026-10-08 - a chosen photo is cropped / zoomed into the frame first; only that part is saved.
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Avatar must be under 5 MB.");
+    if (!file.type.startsWith("image/")) { setError("Choose a picture (JPEG, PNG, WebP or GIF)."); return; }
+    if (file.size > 25 * 1024 * 1024) {
+      setError("The photo must be under 25 MB.");
       return;
     }
+    setError(null);
+    setCropFile(file);
+  };
+  const uploadCropped = async (blob: Blob, type: string) => {
+    const file = new File([blob], type === "image/png" ? "avatar.png" : "avatar.jpg", { type });
     setUploading(true);
     setError(null);
     try {
       const updated = await uploadAvatar(file);
+      setCropFile(null);
       setMe(updated);
       const stored = getAuthUser();
       if (stored) setAuthUser({ ...stored, avatarUrl: updated.avatarUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
+      toast(err instanceof Error ? err.message : "Could not save the photo.", "error");
     } finally {
       setUploading(false);
     }
@@ -275,6 +286,7 @@ export default function Profile() {
                       {uploading ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
                     </button>
                     <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                    {cropFile && <ImageCropDialog file={cropFile} title="Crop your profile photo" busy={uploading} onCancel={() => setCropFile(null)} onDone={(b, t) => void uploadCropped(b, t)} />}
                   </>
                 )}
               </div>
