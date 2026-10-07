@@ -23,6 +23,7 @@ export interface IShipment extends Document {
   // Live-tracking header (client CR-PR-08). Updated manually (or pasted from the carrier site).
   trackingNo: string;     // tracking / container #
   carrier: string;        // carrier / line (e.g. Maersk)
+  carrierCompanyId: string; // 2026-10-07 - the carrier's Directory company
   currentLocation: string; // last known location (e.g. Istanbul Port)
   etaDate: string;        // current anticipated date of arrival (date string) — countdown derives from this
   trackingUrl: string;    // link to the carrier's tracking page
@@ -98,6 +99,7 @@ const ShipmentSchema = new Schema<IShipment>(
     deadline: { type: String, default: "" },
     trackingNo: { type: String, default: "" },
     carrier: { type: String, default: "" },
+    carrierCompanyId: { type: String, default: "" },
     currentLocation: { type: String, default: "" },
     etaDate: { type: String, default: "" },
     trackingUrl: { type: String, default: "" },

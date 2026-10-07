@@ -2468,6 +2468,8 @@ export interface ApiShipment {
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
   /** 2026-10-07 - the agency's Directory company; its details are read from there. */
   agencyCompanyId?: string;
+  /** 2026-10-07 - the carrier's (shipping line's) Directory company. */
+  carrierCompanyId?: string;
   /** CR 220 - shown prominently on the shipment card. */
   agencyWebsite?: string; agencyCountry?: string;
   /** CR 219 - the tracking trail: pulled from the carrier daily, or logged by hand. Newest first. */
@@ -2479,7 +2481,7 @@ export interface ApiTrackingEvent { date: string; location: string; description:
 export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
-  "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
+  "trackingNo" | "carrier" | "carrierCompanyId" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
   "cargo" | "transportMode" | "transportModeOther" | "goods" | "agencyName" | "agencyCompanyId" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }

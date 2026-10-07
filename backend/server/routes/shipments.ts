@@ -243,7 +243,7 @@ const actorOf = (req: AuthedRequest) => ({ id: req.user!.userId, name: req.user!
 const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadline",
   "costFreight", "costCustoms", "costDemurrage", "costOther",
   // Tracking header + container details + agency (CR-PR-08/09).
-  "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
+  "trackingNo", "carrier", "carrierCompanyId", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
   // CR 282 - the mode of transport, with the typed name when it is "custom".
   "transportMode", "transportModeOther",
   "agencyName", "agencyCompanyId", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;

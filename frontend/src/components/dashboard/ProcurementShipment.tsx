@@ -132,7 +132,7 @@ type ShipDraft = {
   name: string; fromLocation: string; toLocation: string; description: string;
   status: ShipmentStatus; deadline: string; poIds: string[];
   costFreight: string; costCustoms: string; costDemurrage: string; costOther: string;
-  trackingNo: string; carrier: string; currentLocation: string; etaDate: string; trackingUrl: string;
+  trackingNo: string; carrier: string; carrierCompanyId: string; currentLocation: string; etaDate: string; trackingUrl: string;
   cargo: CargoItem[];
   transportMode: string; transportModeOther: string;
   goods: Array<{ description: string; qty: string; unit: string }>;
@@ -141,7 +141,7 @@ type ShipDraft = {
 const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
-  trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
+  trackingNo: "", carrier: "", carrierCompanyId: "", currentLocation: "", etaDate: "", trackingUrl: "",
   cargo: [], transportMode: "", transportModeOther: "",
   goods: [], agencyName: "", agencyCompanyId: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
@@ -206,6 +206,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   // The agency's Directory record (its people, for the contact) and the name it had when opened.
   const [agencyCo, setAgencyCo] = useState<ApiCompany | null>(null);
   const agencyAtOpen = useRef("");
+  const carrierAtOpen = useRef("");
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   // CR 219 - automatic tracking when the server has a carrier aggregator key; the manual log always.
   const [trackCfg, setTrackCfg] = useState<{ enabled: boolean; provider: string }>({ enabled: false, provider: "" });
@@ -308,13 +309,13 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const orderedRows = (s: ApiShipment) => [...s.rows.filter((r) => isDemurrage(r.docType)), ...s.rows.filter((r) => !isDemurrage(r.docType))];
 
   // A new shipment opens with one cargo row ready to fill in - most have at least one thing in them.
-  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}`, cargo: [blankCargo()] }); setAgencyCo(null); agencyAtOpen.current = ""; setPopup({ mode: "create" }); };
+  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}`, cargo: [blankCargo()] }); setAgencyCo(null); agencyAtOpen.current = ""; carrierAtOpen.current = ""; setPopup({ mode: "create" }); };
   const openEdit = (s: ApiShipment) => {
     setDraft({
       name: s.name, fromLocation: s.fromLocation || "", toLocation: s.toLocation || "", description: s.description || "",
       status: s.status || "Preparing", deadline: s.deadline || "", poIds: s.poIds || [],
       costFreight: s.costFreight || "", costCustoms: s.costCustoms || "", costDemurrage: s.costDemurrage || "", costOther: s.costOther || "",
-      trackingNo: s.trackingNo || "", carrier: s.carrier || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
+      trackingNo: s.trackingNo || "", carrier: s.carrier || "", carrierCompanyId: s.carrierCompanyId || "", currentLocation: s.currentLocation || "", etaDate: s.etaDate || "", trackingUrl: s.trackingUrl || "",
       // An old shipment carried the flag beside the type; it becomes the type itself (CR 278).
       // An old shipment still on containerType / containerSize is read as one cargo row.
       cargo: (s.cargo || []).length ? s.cargo!.map((c) => ({ ...blankCargo(), ...c })) : cargoFromLegacy(s.containerType || (s.openBed ? "Flat rack / open bed" : ""), s.containerSize, s.trackingNo),
@@ -322,6 +323,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyCompanyId: s.agencyCompanyId || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
     agencyAtOpen.current = s.agencyName || "";
+    carrierAtOpen.current = s.carrier || "";
     setAgencyCo(null);
     if (s.agencyCompanyId) {
       void fetchCompany(s.agencyCompanyId).then((c) => {
@@ -338,12 +340,15 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
     if (draft.agencyName.trim() && !draft.agencyCompanyId && draft.agencyName.trim() !== agencyAtOpen.current.trim()) {
       toast("Pick the shipping agency from the Directory, or add it there from the list.", "error"); return;
     }
+    if (draft.carrier.trim() && !draft.carrierCompanyId && draft.carrier.trim() !== carrierAtOpen.current.trim()) {
+      toast("Pick the carrier from the Directory, or add it there from the list.", "error"); return;
+    }
     setSaving(true);
     const body: ShipmentInput = {
       name: draft.name.trim(), fromLocation: draft.fromLocation, toLocation: draft.toLocation,
       description: draft.description, status: draft.status, deadline: draft.deadline, poIds: draft.poIds,
       costFreight: draft.costFreight, costCustoms: draft.costCustoms, costDemurrage: draft.costDemurrage, costOther: draft.costOther,
-      trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
+      trackingNo: draft.trackingNo, carrier: draft.carrier.trim(), carrierCompanyId: draft.carrier.trim() ? draft.carrierCompanyId : "", currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
       cargo: draft.cargo, openBed: false,
       transportMode: draft.transportMode, transportModeOther: draft.transportModeOther,
       goods: draft.goods, agencyName: draft.agencyName.trim(), agencyCompanyId: draft.agencyName.trim() ? draft.agencyCompanyId : "",
@@ -913,8 +918,14 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   )}
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tracking / Container #
                     <input className={`${inp} mt-1`} value={draft.trackingNo} onChange={(e) => setDraft({ ...draft, trackingNo: e.target.value })} placeholder="e.g. MRKU1234567" /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Carrier
-                    <input className={`${inp} mt-1`} value={draft.carrier} onChange={(e) => setDraft({ ...draft, carrier: e.target.value })} placeholder="e.g. Maersk" /></label>
+                  {/* 2026-10-07 - the carrier (shipping line) is a company in the Directory. */}
+                  <div>
+                    <CompanyPicker size="sm" label="Carrier (from the Directory)" value={draft.carrier} category="logistics" categories={["logistics", "vendor", "other"]}
+                      onNameChange={(v) => setDraft((d) => ({ ...d, carrier: v, ...(v !== d.carrier ? { carrierCompanyId: "" } : {}) }))}
+                      onSelectCompany={(c) => setDraft((d) => ({ ...d, carrier: c.name, carrierCompanyId: c._id }))}
+                      placeholder="e.g. Maersk" />
+                    {draft.carrier.trim() && !draft.carrierCompanyId && <p className="mt-1 text-[10px] font-semibold text-amber-700">Not picked from the Directory: choose it from the list, or add it there.</p>}
+                  </div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current location
                     <input className={`${inp} mt-1`} value={draft.currentLocation} onChange={(e) => setDraft({ ...draft, currentLocation: e.target.value })} placeholder="e.g. Istanbul Port" /></label>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Anticipated arrival
