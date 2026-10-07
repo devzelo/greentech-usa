@@ -35,7 +35,7 @@ export default function ProfileGallery() {
   const close = async () => { if (draft && !(await stopEdit())) return; setOpen(false); };
 
   const addFiles = (files: FileList | null) => {
-    const picked = Array.from<File>(files || []).filter((f) => f.type.startsWith("image/"));
+    const picked = Array.from<File>(files || []).filter((f) => ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(f.type));
     if (!picked.length || !draft) return;
     const room = MAX - draft.length;
     if (picked.length > room) toast(`A gallery keeps up to ${MAX} pictures: ${room > 0 ? `only the first ${room} were added` : "remove some first"}.`, "error");
@@ -122,7 +122,7 @@ export default function ProfileGallery() {
                 <div className="space-y-4">
                   <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 py-5 text-sm font-bold text-slate-500 hover:border-primary hover:text-primary ${draft.length >= MAX ? "pointer-events-none opacity-50" : ""}`}>
                     <Plus size={16} /> Add pictures <span className="font-medium text-slate-400">(several at once; {draft.length} of {MAX})</span>
-                    <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
                   </label>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {draft.map((d, i) => (

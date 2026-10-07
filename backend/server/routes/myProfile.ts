@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import User from "../models/User";
 import UserFile from "../models/UserFile";
 import Company from "../models/Company";
@@ -316,6 +317,23 @@ router.delete("/resume-file", async (req: AuthedRequest, res: Response, next: Ne
 // They will be used for Employee or Contractor ID cards, profile reports and company profiles."
 // Kept under uploads/profile-gallery/<user>, read with the file token like every private upload.
 const MAX_PICTURES = 60;
+// Raster pictures only, checked three ways: the declared type, the file name's extension, and the
+// file's first bytes. The stored name takes its extension from the checked type, never from the
+// uploaded name, so nothing but a picture can be served back from this folder.
+const GALLERY_TYPES: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" };
+const GALLERY_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+const isPicture = (file: string): boolean => {
+  try {
+    const fd = fs.openSync(file, "r");
+    const b = Buffer.alloc(12);
+    fs.readSync(fd, b, 0, 12, 0);
+    fs.closeSync(fd);
+    return (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff)                                   // JPEG
+      || b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) // PNG
+      || b.subarray(0, 4).toString("latin1") === "GIF8"                                          // GIF
+      || (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP");
+  } catch { return false; }
+};
 const galleryStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const uid = String((req as AuthedRequest).user!.userId).replace(/[^\w-]/g, "");
@@ -323,17 +341,14 @@ const galleryStorage = multer.diskStorage({
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
-  filename: (_req, file, cb) => {
-    const ext = (path.extname(file.originalname).toLowerCase().match(/^\.[a-z0-9]{1,5}$/) || [".jpg"])[0];
-    cb(null, `pic-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
-  },
+  filename: (_req, file, cb) => cb(null, `pic-${crypto.randomBytes(12).toString("hex")}${GALLERY_TYPES[file.mimetype] || ".jpg"}`),
 });
 const galleryUpload = multer({
   storage: galleryStorage,
   limits: { fileSize: 15 * 1024 * 1024, files: 20 },
   fileFilter: (_req, file, cb) => {
-    if (/^image\//.test(file.mimetype)) cb(null, true);
-    else cb(Object.assign(new Error("Only pictures can be added to the gallery."), { statusCode: 400 }));
+    if (GALLERY_TYPES[file.mimetype] && GALLERY_EXTS.includes(path.extname(file.originalname).toLowerCase())) cb(null, true);
+    else cb(Object.assign(new Error("Only JPEG, PNG, WebP or GIF pictures can be added to the gallery."), { statusCode: 400 }));
   },
 });
 type GalleryPic = { _id: unknown; url: string; title?: string; description?: string; uploadedAt?: Date };
@@ -361,6 +376,8 @@ router.post("/gallery", galleryUpload.array("files", 20), async (req: AuthedRequ
   const drop = () => files.forEach((f) => fs.unlink(f.path, () => undefined));
   try {
     if (!files.length) return res.status(400).json({ error: "No picture uploaded." });
+    const fake = files.find((f) => !isPicture(f.path));
+    if (fake) { drop(); return res.status(400).json({ error: `"${fake.originalname}" is not a JPEG, PNG, WebP or GIF picture.` }); }
     const user = await User.findById(req.user!.userId).select("gallery");
     if (!user) { drop(); return res.status(404).json({ error: "User not found." }); }
     const list = (user.get("gallery") || []) as GalleryPic[];
