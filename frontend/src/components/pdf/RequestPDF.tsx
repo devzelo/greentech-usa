@@ -192,7 +192,10 @@ function Divider({ heading, file, shown }: { heading: string; file: string; show
 
 function fileParts(r: ApiProjectRequest, heading: string, f: File): ProposalPart[] {
   const shown = embeddable(f.name);
-  const parts: ProposalPart[] = [{ type: "doc", element: one(r, <Divider heading={heading} file={f.name} shown={shown} />) }];
+  // 2026-10-08 - "it creates a separate cover sheet for each picture; it should not unless we choose
+  // to": a cover only with the request's "cover page before each attachment", or to say a file
+  // cannot be shown inside the PDF.
+  const parts: ProposalPart[] = r.attachmentCovers || !shown ? [{ type: "doc", element: one(r, <Divider heading={heading} file={f.name} shown={shown} />) }] : [];
   if (shown) parts.push({ type: "files", files: [{ name: f.name, url: f.filePath }] });
   return parts;
 }

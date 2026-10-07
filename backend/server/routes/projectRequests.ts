@@ -96,6 +96,7 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       contextLines: cleanLines(b.contextLines),
       to: cleanTo(b.to),
       sections: cleanSections(b.sections),
+      attachmentCovers: b.attachmentCovers === true,
       addedById: req.user!.userId,
       addedByName: req.user!.name || "",
     });
@@ -115,6 +116,7 @@ router.patch("/:rid", async (req: AuthedRequest, res: Response, next: NextFuncti
     if (b.to && typeof b.to === "object") doc.to = cleanTo(b.to);
     if (Array.isArray(b.sections)) doc.sections = cleanSections(b.sections);
     if (typeof b.archived === "boolean") doc.archived = b.archived;
+    if (typeof b.attachmentCovers === "boolean") doc.attachmentCovers = b.attachmentCovers;
     if (b.status && ["Draft", "Sent", "Responded", "Closed", "Cancelled"].includes(b.status)) doc.status = b.status as RequestStatus;
     await doc.save();
     res.json(doc);

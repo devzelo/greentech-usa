@@ -44,6 +44,30 @@ export async function refreshFileToken(): Promise<void> {
 /** Append the current file token to an /uploads URL so the browser can open it directly. */
 // CR 368 - PDFs fetch protected uploads (logos, signatures, stamps) with the file token.
 setUploadsUrl((url) => withFileToken(url));
+/**
+ * 2026-10-08 - pictures inside rich text (requests, agreements, proposals) point at /uploads, which
+ * needs the file token, and an <img> cannot send it as a header: without it the picture never shows.
+ * The token is added for display and taken out again before the text is saved, so a stored text
+ * never carries one (it would expire). Only our own uploads get it, never another site's.
+ */
+const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const uploadSrc = () => new RegExp(`(src=")((?:${escRe(API_BASE)})?/uploads/[^"?#]*)(\\?[^"#]*)?(")`, "g");
+/** A link's other query parameters, without the token. */
+const restOf = (q?: string) => (q || "").replace(/^\?/, "").split(/&amp;|&/).filter((p) => p && !p.startsWith("token=")).join("&amp;");
+export function withFileTokensInHtml(html: string): string {
+  if (!html || !html.includes("/uploads/")) return html;
+  const token = getFileToken();
+  if (!token) return html;
+  return html.replace(uploadSrc(), (_m, a: string, path: string, q: string | undefined, z: string) => { const rest = restOf(q); return `${a}${path}?${rest ? `${rest}&amp;` : ""}token=${encodeURIComponent(token)}${z}`; });
+}
+export function stripFileTokensInHtml(html: string): string {
+  if (!html || !html.includes("token=")) return html;
+  return html.replace(uploadSrc(), (_m, a: string, path: string, q: string | undefined, z: string) => {
+    const rest = restOf(q);
+    return `${a}${path}${rest ? `?${rest}` : ""}${z}`;
+  });
+}
+
 export function withFileToken(url: string): string {
   if (!url.startsWith('/uploads')) return url;
   const token = getFileToken();
@@ -2620,6 +2644,8 @@ export interface ApiProjectRequest {
   contextLines?: Array<{ label: string; value: string }>;
   sections?: RequestSection[];
   archived?: boolean;
+  /** 2026-10-08 - a cover page before each attached file (off: the files follow straight on). */
+  attachmentCovers?: boolean;
   /** CR-P (147) - who receives the request (client, partner, subcontractor), from the Directory. */
   to?: ApiRequestTo;
   /** CR-P (146) - the JV partner's signer on a joint-venture project. */
@@ -2659,10 +2685,10 @@ export async function fetchProjectRequests(projectId: string, category?: Request
   if (archived) parts.push("archived=true");
   return request(`${reqBase(projectId)}${parts.length ? `?${parts.join("&")}` : ""}`);
 }
-export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo }): Promise<ApiProjectRequest> {
+export async function createProjectRequest(projectId: string, body: { category: RequestCategory; type: string; customTitle?: string; title: string; date?: string; description?: string; signerName?: string; signerTitle?: string; signatureUrl?: string; stampUrl?: string; contextLines?: Array<{ label: string; value: string }>; sections?: RequestSection[]; to?: ApiRequestTo; attachmentCovers?: boolean }): Promise<ApiProjectRequest> {
   return request(reqBase(projectId), { method: "POST", body: JSON.stringify(body) });
 }
-export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to" | "partnerSignerName" | "partnerSignerTitle" | "partnerSignatureUrl" | "partnerStampUrl">>): Promise<ApiProjectRequest> {
+export async function updateProjectRequest(projectId: string, rid: string, body: Partial<Pick<ApiProjectRequest, "title" | "date" | "description" | "customTitle" | "status" | "signerName" | "signerTitle" | "signatureUrl" | "stampUrl" | "contextLines" | "sections" | "archived" | "to" | "partnerSignerName" | "partnerSignerTitle" | "partnerSignatureUrl" | "partnerStampUrl" | "attachmentCovers">>): Promise<ApiProjectRequest> {
   return request(`${reqBase(projectId)}/${rid}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 export async function deleteProjectRequest(projectId: string, rid: string): Promise<void> { await request(`${reqBase(projectId)}/${rid}`, { method: "DELETE" }); }

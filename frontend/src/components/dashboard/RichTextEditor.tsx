@@ -6,6 +6,7 @@ import {
   Type, ChevronDown, Superscript, Trash2, Rows3, Columns3, X, Maximize2, Minimize2, RemoveFormatting,
 } from "lucide-react";
 import { TABLE_CELL_CSS, TABLE_HEAD_CSS, TABLE_CAPTION_CSS, DOC_COLORS } from "../../lib/docStyle";
+import { stripFileTokensInHtml, withFileTokensInHtml } from "../../lib/api";
 
 /**
  * Rich-text editor backed by a contentEditable surface. Emits HTML via onChange
@@ -149,7 +150,8 @@ export default function RichTextEditor({
   // (inline ⇄ portal), so we must re-apply the current value or the content would appear to vanish.
   useEffect(() => {
     const el = ref.current;
-    if (el && el.innerHTML !== value) el.innerHTML = value || "";
+    // 2026-10-08 - our pictures need the file token to show; it is never part of the saved text.
+    if (el && stripFileTokensInHtml(el.innerHTML) !== (value || "")) el.innerHTML = withFileTokensInHtml(value || "");
     // Once the server value matches the saved draft, the local copy is no longer needed.
     if (draftKey && value) { try { if (localStorage.getItem(`rte:${draftKey}`) === value) localStorage.removeItem(`rte:${draftKey}`); } catch { /* ignore */ } }
   }, [value, draftKey, fullscreen]);
@@ -163,8 +165,9 @@ export default function RichTextEditor({
 
   const emit = () => {
     if (!ref.current) return;
-    if (draftKey) { try { localStorage.setItem(`rte:${draftKey}`, ref.current.innerHTML); } catch { /* quota/full — ignore */ } }
-    onChange(ref.current.innerHTML);
+    const html = stripFileTokensInHtml(ref.current.innerHTML);
+    if (draftKey) { try { localStorage.setItem(`rte:${draftKey}`, html); } catch { /* quota/full — ignore */ } }
+    onChange(html);
   };
 
   // Remember the caret/selection so toolbar popovers (which can steal focus) can
@@ -408,16 +411,37 @@ export default function RichTextEditor({
 
   // ── Images ────────────────────────────────────────────────────────────────
   const pickImage = () => { if (!disabled) fileRef.current?.click(); };
-  const onImagePicked = async (file: File | undefined) => {
-    if (!file) return;
+  // 2026-10-08 - pick one or several pictures; each can get a description (title), optional,
+  // printed small under it. Nothing is uploaded until Insert.
+  const [pendingPics, setPendingPics] = useState<Array<{ file: File; preview: string; caption: string }> | null>(null);
+  const onImagesPicked = (files: FileList | null) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (fileRef.current) fileRef.current.value = "";
+    if (!list.length) return;
+    setPendingPics(list.map((file) => ({ file, preview: URL.createObjectURL(file), caption: "" })));
+  };
+  const closePics = () => { pendingPics?.forEach((p) => URL.revokeObjectURL(p.preview)); setPendingPics(null); };
+  const insertPics = async () => {
+    if (!pendingPics) return;
+    const pics = pendingPics;
     setUploading(true);
     try {
-      let url: string;
-      if (onImageUpload) url = await onImageUpload(file);
-      else url = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(file); });
-      insertHtml(`<img src="${url}" width="460" style="width:100%;max-width:460px;margin:8px 0;border-radius:4px;" /><p><br/></p>`);
+      let html = "";
+      for (const p of pics) {
+        const url = onImageUpload
+          ? await onImageUpload(p.file)
+          : await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(p.file); });
+        // Shown with the file token straight away (emit takes it out of the saved text).
+        const shown = withFileTokensInHtml(`src="${url}"`).slice('src="'.length, -1);
+        html += `<img src="${shown}" width="460" style="width:100%;max-width:460px;margin:8px 0 2px;border-radius:4px;" />`;
+        html += p.caption.trim()
+          ? `<p data-img-caption="1" style="margin:0 0 10px;font-size:11px;color:#64748b;">${escapeHtmlText(p.caption.trim())}</p>`
+          : "<p><br/></p>";
+      }
+      closePics();
+      insertHtml(html + "<p><br/></p>");
     } catch (e) { alert(e instanceof Error ? e.message : "Image upload failed."); }
-    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+    finally { setUploading(false); }
   };
 
   // Resize / position for the currently-selected image (CR-B-13).
@@ -635,7 +659,41 @@ export default function RichTextEditor({
           </button>
           {btn("fullscreen", fullscreen ? "Exit full screen" : "Full screen (bigger editing area)", fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />, () => setFullscreen((v) => !v))}
 
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onImagePicked(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => onImagesPicked(e.target.files)} />
+          {pendingPics && createPortal(
+            <div className="fixed inset-0 z-[320] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4">
+              <div role="dialog" aria-label="Insert pictures" className="my-12 w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Insert {pendingPics.length === 1 ? "picture" : `${pendingPics.length} pictures`}</p>
+                    <p className="text-[11px] text-slate-400">A description or title is optional; it shows (and prints) under the picture.</p>
+                  </div>
+                  <button type="button" onClick={closePics} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+                </div>
+                <div className="max-h-[60vh] space-y-3 overflow-y-auto p-5">
+                  {pendingPics.map((p, i) => (
+                    <div key={p.preview} className="flex items-center gap-3">
+                      <img src={p.preview} alt="" className="h-16 w-20 shrink-0 rounded-lg border border-slate-100 object-cover" />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="truncate text-[10px] font-bold text-slate-400" title={p.file.name}>{p.file.name}</p>
+                        <input autoFocus={i === 0} value={p.caption} onChange={(e) => setPendingPics((list) => list && list.map((x, j) => (j === i ? { ...x, caption: e.target.value } : x)))}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void insertPics(); } }}
+                          placeholder="Description / title (optional)" aria-label={`Description for ${p.file.name}`}
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-primary/15" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                  <button type="button" onClick={closePics} disabled={uploading} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+                  <button type="button" onClick={() => void insertPics()} disabled={uploading} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-60">
+                    {uploading && <Loader2 size={13} className="animate-spin" />} Insert
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )}
         </div>
       )}
 
@@ -644,7 +702,7 @@ export default function RichTextEditor({
         <div className="flex items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-3 py-1.5 text-[11px]">
           <span className="font-bold text-amber-700">Unsaved draft recovered from this device.</span>
           <span className="flex items-center gap-1.5">
-            <button type="button" onMouseDown={(e) => { e.preventDefault(); if (ref.current) { ref.current.innerHTML = localDraft; } emit(); setLocalDraft(null); }} className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-bold hover:bg-amber-600">Restore</button>
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); if (ref.current) { ref.current.innerHTML = withFileTokensInHtml(localDraft); } emit(); setLocalDraft(null); }} className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-bold hover:bg-amber-600">Restore</button>
             <button type="button" onMouseDown={(e) => { e.preventDefault(); if (draftKey) { try { localStorage.removeItem(`rte:${draftKey}`); } catch { /* ignore */ } } setLocalDraft(null); }} className="px-2 py-0.5 rounded-lg border border-amber-200 text-amber-700 font-bold hover:bg-amber-100">Dismiss</button>
           </span>
         </div>

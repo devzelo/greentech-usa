@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock, Settings2 } from "lucide-react";
-import { getAuthUser, fetchCompany } from "../../lib/api";
+import { getAuthUser, fetchCompany, withFileTokensInHtml } from "../../lib/api";
 import {
   fetchProjectRequests, createProjectRequest, updateProjectRequest, deleteProjectRequest,
   addRequestResponse, deleteRequestResponse, uploadRequestFile, deleteRequestFile, uploadResponseFile,
@@ -33,6 +33,25 @@ const keepQuestionsLast = <T extends { title: string }>(secs: T[]): T[] => {
   const q = secs.filter(isQuestions);
   return q.length ? [...secs.filter((s) => !isQuestions(s)), ...q] : secs;
 };
+
+// 2026-10-08 - "attach files is missing": files picked in the new-request form (several at once)
+// wait here and are uploaded as soon as the request is saved.
+function AttachFiles({ files, onChange, label = "Attach files" }: { files: File[]; onChange: (files: File[]) => void; label?: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary">
+        <Paperclip size={13} /> {label}
+        <input type="file" multiple className="hidden" onChange={(e) => { const picked = Array.from<File>(e.target.files || []); e.target.value = ""; if (picked.length) onChange([...files, ...picked]); }} />
+      </label>
+      {files.map((f, i) => (
+        <span key={`${f.name}-${i}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600">
+          <Paperclip size={10} /><span className="max-w-[10rem] truncate" title={f.name}>{f.name}</span>
+          <button type="button" onClick={() => onChange(files.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 // Per-section status options (client CR-B-15). Locked/Unlocked is a separate toggle.
 const SECTION_STATUS_OPTS: { v: RequestSectionStatus; label: string; cls: string }[] = [
@@ -79,7 +98,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string }> }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) });
+  const [draft, setDraft] = useState<{ type: string; customTitle: string; title: string; date: string; description: string; signerName: string; signerTitle: string; signatureUrl: string; stampUrl: string; contextLines: Array<{ label: string; value: string }>; sections: Array<{ title: string; body: string; files?: File[] }>; files?: File[]; covers?: boolean }>({ type: REQUEST_TYPES[0], customTitle: "", title: "", date: new Date().toISOString().slice(0, 10), description: "", signerName: "", signerTitle: "", signatureUrl: "", stampUrl: "", contextLines: [], sections: withQuestions(REQUEST_TYPES[0], [] as Array<{ title: string; body: string }>) });
   const blankTo = (): ApiRequestTo => ({ name: clientName || "", companyId: "", contactName: "", email: "", address: "" });
   const [draftTo, setDraftTo] = useState<ApiRequestTo>(blankTo);
   const [saving, setSaving] = useState(false);
@@ -132,7 +151,13 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
     setTitleError(false);
     setSaving(true);
     try {
-      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: draft.sections.filter((s) => s.title || s.body), to: draftTo });
+      const keptSecs = draft.sections.filter((s) => s.title || s.body || s.files?.length);
+      let r = await createProjectRequest(projectId, { category, type: draft.type, customTitle: draft.customTitle, title: draft.title, date: draft.date, description: draft.description, signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl, stampUrl: draft.stampUrl, contextLines: draft.contextLines.filter((l) => l.label || l.value), sections: keptSecs.map(({ title, body }) => ({ title, body })), to: draftTo, attachmentCovers: !!draft.covers });
+      // 2026-10-08 - the files attached in the form go up now that the request exists.
+      const failed: string[] = [];
+      for (const f of draft.files || []) { try { r = await uploadRequestFile(projectId, r._id, f); } catch { failed.push(f.name); } }
+      for (const [i, sec] of keptSecs.entries()) for (const f of sec.files || []) { try { r = await uploadRequestSectionFile(projectId, r._id, i, f); } catch { failed.push(f.name); } }
+      if (failed.length) toast(`Not uploaded: ${failed.join(", ")}. Attach them again from the request.`, "error");
       // "Save & send" marks it Sent; "Save as draft" leaves it as a Draft.
       if (send) r = await updateProjectRequest(projectId, r._id, { status: "Sent" });
       setRows((p) => [r, ...p]); setCreating(false); setOpenId(r._id);
@@ -261,7 +286,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
       _id: "draft", projectId, category, type: draft.type, typeCode: code, customTitle: draft.customTitle,
       number: `${code}-draft`, seq: 0, title: draft.title, date: draft.date, description: draft.description,
       status: "Draft", signerName: draft.signerName, signerTitle: draft.signerTitle, signatureUrl: draft.signatureUrl,
-      stampUrl: draft.stampUrl, contextLines: draft.contextLines, sections: draft.sections, to: draftTo,
+      stampUrl: draft.stampUrl, contextLines: draft.contextLines, sections: draft.sections.map(({ title, body }) => ({ title, body })), to: draftTo, attachmentCovers: !!draft.covers,
       responses: [], files: [], archived: false, addedByName: "", createdAt: "", updatedAt: "",
     } as unknown as ApiProjectRequest;
     setPreview({ title: `Preview · ${draft.title || draft.type}`, fileName: `${code}-draft.pdf`, build: () => buildRequestPdf(asRequest, projectInfo, clientName) });
@@ -396,7 +421,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description / request
                           {canEdit ? (
                             <div className="mt-1" onFocusCapture={() => setActiveSection(null)}><RichTextEditor value={r.description} onChange={(html) => onDescChange(r._id, html)} minHeight={140} placeholder="Describe the request… (tables, pictures, lines supported)" onImageUpload={imageUpload} draftKey={`req-desc-${r._id}`} /></div>
-                          ) : <div className="mt-1 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: r.description || "<span class='text-slate-400'>—</span>" }} />}
+                          ) : <div className="mt-1 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: withFileTokensInHtml(r.description || "") || "<span class='text-slate-400'>—</span>" }} />}
                         </div>
 
                         {/* Custom named sections — per-section status, lock, reorder, duplicate,
@@ -445,7 +470,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                 <>
                                   {secEditable
                                     ? <RichTextEditor value={s.body} onChange={(html) => secUpdate(r, i, { body: html }, false)} minHeight={110} placeholder="Section content…" onImageUpload={imageUpload} />
-                                    : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: s.body || "<span class='text-slate-300'>Empty</span>" }} />}
+                                    : <div className="text-xs text-slate-600 bg-white border border-slate-100 rounded-lg p-2" dangerouslySetInnerHTML={{ __html: withFileTokensInHtml(s.body || "") || "<span class='text-slate-300'>Empty</span>" }} />}
                                   {canEdit && !locked && (
                                     <input className={`${inp} text-[11px]`} placeholder="+ Internal notes for this section (not printed)" defaultValue={s.notes || ""} onBlur={(e) => secUpdate(r, i, { notes: e.target.value }, true)} />
                                   )}
@@ -465,7 +490,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                                       {(s.attachments || []).map((a) => (
                                         <span key={a._id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600"><Paperclip size={10} /><span className="max-w-[10rem] truncate" title={a.name}>{a.name}</span><FileActions name={a.name} url={attachmentUrl(a.filePath)} projectName={clientName} size={11} onDelete={() => secDeleteFile(r, i, a._id)} /></span>
                                       ))}
-                                      <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 cursor-pointer"><Upload size={11} /> Upload<input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) secUploadFile(r, i, f); e.target.value = ""; }} /></label>
+                                      <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 cursor-pointer"><Paperclip size={11} /> Attach files<input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from<File>(e.target.files || []); e.target.value = ""; void (async () => { for (const f of fs) await secUploadFile(r, i, f); })(); }} /></label>
                                     </div>
                                   )}
                                   {!canEdit && s.assignedTo && <p className="text-[10px] text-slate-400">Assigned to {s.assignedTo}</p>}
@@ -557,7 +582,9 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                             </span>
                           ))}
                           {r.attachments.length === 0 && <span className="text-[11px] text-slate-400 italic">none</span>}
-                          {canEdit && <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200"><Upload size={10} /> Upload<input type="file" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { try { patch(await uploadRequestFile(projectId, r._id, f)); } catch (err) { toast(err instanceof Error ? err.message : "Upload failed.", "error"); } } e.target.value = ""; }} /></label>}
+                          {canEdit && <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-200"><Paperclip size={10} /> Attach files<input type="file" multiple className="hidden" onChange={async (e) => { const fs = Array.from<File>(e.target.files || []); e.target.value = ""; for (const f of fs) { try { patch(await uploadRequestFile(projectId, r._id, f)); } catch (err) { toast(err instanceof Error ? err.message : `Could not upload ${f.name}.`, "error"); } } }} /></label>}
+                          {/* 2026-10-08 - no cover sheet before each file unless asked for. */}
+                          {canEdit && <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none"><input type="checkbox" checked={!!r.attachmentCovers} onChange={(e) => saveFields(r, { attachmentCovers: e.target.checked })} className="accent-emerald-600" /> Cover page before each attached file</label>}
                         </div>
 
                         {/* Client responses (versioned) */}
@@ -675,9 +702,19 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                     <button onClick={() => removeDraftSection(i)} className="text-slate-300 hover:text-red-500 shrink-0" title="Remove section"><X size={16} /></button>
                   </div>
                   <RichTextEditor value={s.body} onChange={(html) => setDraft({ ...draft, sections: draft.sections.map((x, j) => (j === i ? { ...x, body: html } : x)) })} minHeight={120} placeholder="Section content — tables, pictures, lists…" onImageUpload={imageUpload} />
+                  <AttachFiles files={s.files || []} onChange={(files) => setDraft({ ...draft, sections: draft.sections.map((x, j) => (j === i ? { ...x, files } : x)) })} label="Attach files to this section" />
                 </div>
               ))}
-              <button onClick={() => setDraft({ ...draft, sections: insertSection(draft.sections, { title: "", body: "" }) })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Plus size={13} /> Add section</button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => setDraft({ ...draft, sections: insertSection(draft.sections, { title: "", body: "" }) })} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold hover:bg-slate-200"><Plus size={13} /> Add section</button>
+                <AttachFiles files={draft.files || []} onChange={(files) => setDraft({ ...draft, files })} />
+              </div>
+              {((draft.files || []).length > 0 || draft.sections.some((x) => (x.files || []).length > 0)) && (
+                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!draft.covers} onChange={(e) => setDraft({ ...draft, covers: e.target.checked })} className="accent-emerald-600" />
+                  A cover page before each attached file <span className="font-medium text-slate-400">(off: the files follow straight on)</span>
+                </label>
+              )}
 
               {/* Custom info lines — a label/value block printed on the request document. */}
               <div className="bg-slate-50 rounded-2xl p-3 space-y-2">

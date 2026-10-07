@@ -1,6 +1,6 @@
 import { Text, View, Image } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
-import { withFileToken } from "../../lib/api";
+import { API_BASE, withFileToken } from "../../lib/api";
 import { PAGE, BRAND, GUTTER, abs } from "./brand";
 
 /**
@@ -35,6 +35,8 @@ function cssColor(raw?: string | null): string | undefined {
 export function pdfAssetUrl(u?: string): string {
   const s = (u || "").replace(/\\/g, "/");
   if (!s) return "";
+  // An upload saved with the API's own address (production) still needs the file token.
+  if (API_BASE && s.startsWith(`${API_BASE}/uploads/`)) return abs(withFileToken(s.slice(API_BASE.length).split("?")[0]));
   if (/^(data:|blob:|https?:)/.test(s)) return s;
   if (/^\/?uploads\//.test(s)) return abs(withFileToken(`/${s.replace(/^\/+/, "")}`));
   return abs(s);
@@ -190,6 +192,13 @@ export default function RichText({ html, size = 9.5 }: { html: string; size?: nu
         const r: Run[] = [];
         el.childNodes.forEach((c) => collect(c, { bold: true }, r));
         para(r, hStyle(tag));
+        continue;
+      }
+      // 2026-10-08 - a picture's description (title), set when it was inserted: small, under it.
+      if (tag === "P" && el.hasAttribute("data-img-caption")) {
+        flush();
+        const t = (el.textContent || "").trim();
+        if (t) out.push(<Text key={k++} style={{ fontSize: size - 1.5, lineHeight: 1.35, color: BRAND.s500, marginTop: -2, marginBottom: 8 }}>{t}</Text>);
         continue;
       }
       if (/^(P|DIV|BLOCKQUOTE|SECTION|ARTICLE)$/.test(tag)) {
