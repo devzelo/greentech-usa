@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { createProject, fetchNextProjectNumber, updateProject, uploadProjectImage, uploadProjectContract, uploadProposalAsset, withFileToken, type ApiProject, type ApiCompany } from "../../lib/api";
 import ClientPicker from "./ClientPicker";
 import CompanyPicker from "./CompanyPicker";
+import DirectoryDetails, { detailsOf } from "./DirectoryDetails";
 import YesNo from "./YesNo";
 import { useMeta } from "../../hooks/useMeta";
 import { toast } from "../../lib/toast";
@@ -235,14 +236,11 @@ export default function NewProjectForm() {
     companyId: "", logoUrl: "",
   });
   const pickJvPartner = (c: ApiCompany) => {
-    const cp = c.contactPersons?.[0];
+    const d = detailsOf(c);
     setJv((prev) => ({
       ...prev,
       partnerName: c.name, companyId: c._id,
-      email: c.email || cp?.email || prev.email,
-      phone: c.phone || cp?.phone || prev.phone,
-      contactName: cp?.name || prev.contactName,
-      partnerAddress: c.address || prev.partnerAddress,
+      email: d.email, phone: d.phone, contactName: d.contactName, partnerAddress: d.address,
       logoUrl: c.logoUrl || "",
     }));
   };
@@ -275,6 +273,8 @@ export default function NewProjectForm() {
 
   // Client Info
   const [clientName, setClientName] = useState("");
+  // 2026-10-07 - the client's Directory company: kept on the project, and its details read from it.
+  const [clientCompanyId, setClientCompanyId] = useState("");
   const [clientRef, setClientRef] = useState("");
   const [clientContact, setClientContact] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -290,15 +290,16 @@ export default function NewProjectForm() {
     return () => { alive = false; };
   }, []);
 
+  const applyClientDetails = (d: { contactName: string; email: string; phone: string; address: string; country: string }) => {
+    setClientContact(d.contactName); setClientEmail(d.email); setClientPhone(d.phone); setClientAddress(d.address); setClientCountry(d.country);
+  };
   const applyClientCompany = (c: ApiCompany) => {
     setClientName(c.name || "");
-    const contact = c.contactPersons?.[0];
-    if (contact?.name) setClientContact(contact.name);
-    if (c.email || contact?.email) setClientEmail(c.email || contact?.email || "");
-    if (c.phone || contact?.phone) setClientPhone(c.phone || contact?.phone || "");
-    if (c.address) setClientAddress(c.address);
+    setClientCompanyId(c._id);
+    applyClientDetails(detailsOf(c));
     if (c.notes) setClientNotes(c.notes);
   };
+  const typeClientName = (v: string) => { if (v !== clientName) setClientCompanyId(""); setClientName(v); };
 
   // Timeline (inside PM tab)
   const [startDate, setStartDate] = useState("");
@@ -360,6 +361,8 @@ export default function NewProjectForm() {
   // asDraft — the "Save as draft" action files the project under Drafts regardless of the
   // status picked in the form, so half-finished projects never look live.
   const handleCreate = async (asDraft = false) => {
+    if (clientName.trim() && !clientCompanyId) { toast("Pick the client from the Directory, or add it there from the list.", "error"); return; }
+    if (jv.enabled && jv.partnerName.trim() && !jv.companyId) { toast("Pick the JV partner from the Directory, or add it there from the list.", "error"); return; }
     setCreating(true);
     try {
       const project = await createProject({
@@ -387,7 +390,7 @@ export default function NewProjectForm() {
         clientInfo: {
           name: clientName, reference: clientRef, contactName: clientContact,
           email: clientEmail, phone: clientPhone, country: clientCountry,
-          address: clientAddress, notes: clientNotes,
+          address: clientAddress, notes: clientNotes, companyId: clientCompanyId,
         },
         timeline: { phases },
         assignedEmployees,
@@ -526,7 +529,7 @@ export default function NewProjectForm() {
             <ClientPicker
               label="Client Name"
               value={clientName}
-              onNameChange={setClientName}
+              onNameChange={typeClientName}
               onSelectCompany={applyClientCompany}
               placeholder="e.g. USAID Ghana"
               hint="Pick a client from the Directory, or type a new name and add it. Also fills the Client Information tab."
@@ -768,21 +771,10 @@ export default function NewProjectForm() {
                     placeholder="Search or add a partner from the Directory…"
                   />
                 </div>
-                {([
-                  { field: "contactName", label: "Person in Charge", placeholder: "Full name" },
-                  { field: "email", label: "Partner Email", placeholder: "contact@partner.com" },
-                  { field: "phone", label: "Partner Phone", placeholder: "+1 (555) 000-0000" },
-                ] as const).map((f) => (
-                  <div key={f.field} className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</label>
-                    <input
-                      value={jv[f.field]}
-                      onChange={(e) => updateJv(f.field, e.target.value)}
-                      placeholder={f.placeholder}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-                    />
-                  </div>
-                ))}
+                {/* 2026-10-07 - the person in charge, email, phone and address: from the partner's Directory record. */}
+                <DirectoryDetails className="md:col-span-2" companyId={jv.companyId} name={jv.partnerName} fields={["contact", "email", "phone", "address"]}
+                  value={{ contactName: jv.contactName, email: jv.email, phone: jv.phone, address: jv.partnerAddress }}
+                  onChange={(d) => setJv((prev) => ({ ...prev, contactName: d.contactName, email: d.email, phone: d.phone, partnerAddress: d.address }))} />
                 {/* Partner logo */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo <span className="font-medium normal-case text-slate-400">(from the Directory partner; this project's JV letterhead)</span></label>
@@ -812,16 +804,6 @@ export default function NewProjectForm() {
                     {jv.partnerName.trim() && <option value={jv.partnerName.trim()}>{jv.partnerName.trim()}</option>}
                   </select>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Address</label>
-                <textarea
-                  rows={4}
-                  value={jv.partnerAddress}
-                  onChange={(e) => updateJv("partnerAddress", e.target.value)}
-                  placeholder="Paste the full address exactly as written"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y"
-                />
               </div>
               {/* Partner stamps & signatures */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -913,21 +895,17 @@ export default function NewProjectForm() {
                 <ClientPicker
                   label="Client / Organization Name"
                   value={clientName}
-                  onNameChange={setClientName}
+                  onNameChange={typeClientName}
                   onSelectCompany={applyClientCompany}
                   placeholder="e.g. USAID Ghana"
                   hint="Pick from the Directory (Clients) or add a new one."
                 />
                 <InputField label="Client Reference Number" placeholder="e.g. USAID-GH-2026-012" value={clientRef} onChange={setClientRef} />
-                <InputField label="Primary Contact Name" placeholder="Full name" value={clientContact} onChange={setClientContact} />
-                <InputField label="Contact Email" placeholder="contact@client.org" type="email" value={clientEmail} onChange={setClientEmail} />
-                <InputField label="Contact Phone" placeholder="+1 (555) 000-0000" type="tel" value={clientPhone} onChange={setClientPhone} />
-                <InputField label="Country / Region" placeholder="e.g. Accra, Ghana" value={clientCountry} onChange={setClientCountry} />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Address</label>
-                <textarea rows={5} value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Paste the full address exactly as written" className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-y" />
-              </div>
+              {/* 2026-10-07 - the client's contact, email, phone, country and address: from its Directory record. */}
+              <DirectoryDetails companyId={clientCompanyId} name={clientName} fields={["contact", "email", "phone", "country", "address"]}
+                value={{ contactName: clientContact, email: clientEmail, phone: clientPhone, country: clientCountry, address: clientAddress }}
+                onChange={applyClientDetails} />
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>
                 <textarea rows={3} value={clientNotes} onChange={(e) => setClientNotes(e.target.value)} placeholder="Any relevant notes about the client relationship..." className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-medium focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all resize-none" />
