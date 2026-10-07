@@ -4,9 +4,9 @@ import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin
 import {
   fetchShipments, createShipment, updateShipment, deleteShipment,
   addShipmentRow, renameShipmentRow, updateShipmentRow, deleteShipmentRow, uploadShipmentFile, deleteShipmentFile,
-  fetchProcurementPOs, fetchVendors, attachmentUrl,
+  fetchProcurementPOs, fetchVendors, attachmentUrl, fetchCompany,
   fetchTrackingConfig, refreshShipmentTracking, logShipmentTracking, deleteShipmentTracking,
-  type ApiShipment, type ApiProcurementPO, type ApiVendor, type ShipmentStatus, type ShipmentInput,
+  type ApiShipment, type ApiProcurementPO, type ApiVendor, type ShipmentStatus, type ShipmentInput, type ApiCompany,
 } from "../../lib/api";
 import { buildPoPackage } from "../../lib/poPdf";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -16,6 +16,7 @@ import { useDialogs } from "../../lib/useDialogs";
 import FormSection from "./FormSection";
 import { TRANSPORT_MODES, transportLabel } from "../../lib/shipmentModes";
 import CargoEditor, { blankCargo, cargoFromLegacy, cargoLine, cargoSizeLabel, cargoTypeLabel, cargoWeightLabel, type CargoItem } from "./ShipmentCargo";
+import CompanyPicker from "./CompanyPicker";
 
 // The demurrage row is special: pinned to the top of the list and rendered dulled/grey. The
 // shipping contract row is mandatory too (kept just under it) but renders normally.
@@ -135,15 +136,31 @@ type ShipDraft = {
   cargo: CargoItem[];
   transportMode: string; transportModeOther: string;
   goods: Array<{ description: string; qty: string; unit: string }>;
-  agencyName: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
+  agencyName: string; agencyCompanyId: string; agencyContact: string; agencyPhone: string; agencyEmail: string; agencyWebsite: string; agencyCountry: string;
 };
 const BLANK_DRAFT: ShipDraft = {
   name: "", fromLocation: "", toLocation: "", description: "", status: "Preparing", deadline: "", poIds: [],
   costFreight: "", costCustoms: "", costDemurrage: "", costOther: "",
   trackingNo: "", carrier: "", currentLocation: "", etaDate: "", trackingUrl: "",
   cargo: [], transportMode: "", transportModeOther: "",
-  goods: [], agencyName: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
+  goods: [], agencyName: "", agencyCompanyId: "", agencyContact: "", agencyPhone: "", agencyEmail: "", agencyWebsite: "", agencyCountry: "",
 };
+
+/**
+ * 2026-10-07 - "shipping agency info should come from the directory": the agency is picked from the
+ * Directory and its details are read from its record: the contact chosen among its people (their
+ * phone and email, else the company's), its website, and its country (the end of its address).
+ */
+const countryOf = (address: string) => (address || "").split(",").map((x) => x.trim()).filter(Boolean).pop() || "";
+function agencyFrom(c: ApiCompany, contact = ""): Partial<ShipDraft> {
+  const people = c.contactPersons || [];
+  const cp = people.find((p) => p.name && p.name === contact) || people[0];
+  return {
+    agencyCompanyId: c._id, agencyName: c.name, agencyContact: cp?.name || "",
+    agencyPhone: cp?.phone || c.phone || "", agencyEmail: cp?.email || c.email || "",
+    agencyWebsite: c.website || "", agencyCountry: countryOf(c.address),
+  };
+}
 
 // CR 219 - a live shipment whose location has not moved in a week needs a look. The server sends
 // the project owner the same nudge on Monday mornings.
@@ -186,6 +203,9 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   // Creation / edit popup — everything about the shipment is editable here (CRUD).
   const [popup, setPopup] = useState<{ mode: "create" | "edit"; sid?: string } | null>(null);
   const [draft, setDraft] = useState<ShipDraft>(BLANK_DRAFT);
+  // The agency's Directory record (its people, for the contact) and the name it had when opened.
+  const [agencyCo, setAgencyCo] = useState<ApiCompany | null>(null);
+  const agencyAtOpen = useRef("");
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   // CR 219 - automatic tracking when the server has a carrier aggregator key; the manual log always.
   const [trackCfg, setTrackCfg] = useState<{ enabled: boolean; provider: string }>({ enabled: false, provider: "" });
@@ -288,7 +308,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
   const orderedRows = (s: ApiShipment) => [...s.rows.filter((r) => isDemurrage(r.docType)), ...s.rows.filter((r) => !isDemurrage(r.docType))];
 
   // A new shipment opens with one cargo row ready to fill in - most have at least one thing in them.
-  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}`, cargo: [blankCargo()] }); setPopup({ mode: "create" }); };
+  const openCreate = () => { setDraft({ ...BLANK_DRAFT, name: `Shipment ${shipments.length + 1}`, cargo: [blankCargo()] }); setAgencyCo(null); agencyAtOpen.current = ""; setPopup({ mode: "create" }); };
   const openEdit = (s: ApiShipment) => {
     setDraft({
       name: s.name, fromLocation: s.fromLocation || "", toLocation: s.toLocation || "", description: s.description || "",
@@ -299,13 +319,25 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       // An old shipment still on containerType / containerSize is read as one cargo row.
       cargo: (s.cargo || []).length ? s.cargo!.map((c) => ({ ...blankCargo(), ...c })) : cargoFromLegacy(s.containerType || (s.openBed ? "Flat rack / open bed" : ""), s.containerSize, s.trackingNo),
       transportMode: s.transportMode || "", transportModeOther: s.transportModeOther || "",
-      goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
+      goods: s.goods ? s.goods.map((g) => ({ ...g })) : [], agencyName: s.agencyName || "", agencyCompanyId: s.agencyCompanyId || "", agencyContact: s.agencyContact || "", agencyPhone: s.agencyPhone || "", agencyEmail: s.agencyEmail || "", agencyWebsite: s.agencyWebsite || "", agencyCountry: s.agencyCountry || "",
     });
+    agencyAtOpen.current = s.agencyName || "";
+    setAgencyCo(null);
+    if (s.agencyCompanyId) {
+      void fetchCompany(s.agencyCompanyId).then((c) => {
+        setAgencyCo(c);
+        setDraft((d) => (d.agencyCompanyId === c._id ? { ...d, ...agencyFrom(c, d.agencyContact) } : d));
+      }).catch(() => { /* the saved details stand */ });
+    }
     setPopup({ mode: "edit", sid: s._id });
   };
   const savePopup = async () => {
     if (!popup) return;
     if (!draft.name.trim()) { toast("Give the shipment a name.", "error"); return; }
+    // A newly typed agency must come from the Directory; an older unlinked one may stay as it was.
+    if (draft.agencyName.trim() && !draft.agencyCompanyId && draft.agencyName.trim() !== agencyAtOpen.current.trim()) {
+      toast("Pick the shipping agency from the Directory, or add it there from the list.", "error"); return;
+    }
     setSaving(true);
     const body: ShipmentInput = {
       name: draft.name.trim(), fromLocation: draft.fromLocation, toLocation: draft.toLocation,
@@ -314,8 +346,9 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       trackingNo: draft.trackingNo, carrier: draft.carrier, currentLocation: draft.currentLocation, etaDate: draft.etaDate, trackingUrl: draft.trackingUrl,
       cargo: draft.cargo, openBed: false,
       transportMode: draft.transportMode, transportModeOther: draft.transportModeOther,
-      goods: draft.goods, agencyName: draft.agencyName, agencyContact: draft.agencyContact, agencyPhone: draft.agencyPhone, agencyEmail: draft.agencyEmail,
-      agencyWebsite: draft.agencyWebsite, agencyCountry: draft.agencyCountry,
+      goods: draft.goods, agencyName: draft.agencyName.trim(), agencyCompanyId: draft.agencyName.trim() ? draft.agencyCompanyId : "",
+      agencyContact: draft.agencyName.trim() ? draft.agencyContact : "", agencyPhone: draft.agencyName.trim() ? draft.agencyPhone : "", agencyEmail: draft.agencyName.trim() ? draft.agencyEmail : "",
+      agencyWebsite: draft.agencyName.trim() ? draft.agencyWebsite : "", agencyCountry: draft.agencyName.trim() ? draft.agencyCountry : "",
     };
     try {
       if (popup.mode === "create") {
@@ -929,20 +962,33 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
               {/* CR-PR-09 — the shipping agency / forwarder, its own section with the titles above
                   the fields (a placeholder title disappeared as soon as something was typed). */}
               <FormSection tone="amber" icon={<Building2 size={11} />} title="Shipping agency">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agency name
-                    <input className={`${inp} mt-1`} placeholder="e.g. DHL Global Forwarding" value={draft.agencyName} onChange={(e) => setDraft({ ...draft, agencyName: e.target.value })} /></label>
+                {/* 2026-10-07 - from the Directory: pick the agency, and its details are read from its record. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompanyPicker size="sm" label="Agency (from the Directory)" value={draft.agencyName} category="logistics" categories={["logistics", "vendor", "supplier", "other"]}
+                    onNameChange={(v) => setDraft((d) => ({ ...d, agencyName: v, ...(v !== d.agencyName ? { agencyCompanyId: "" } : {}) }))}
+                    onSelectCompany={(c) => { setAgencyCo(c); setDraft((d) => ({ ...d, ...agencyFrom(c) })); }}
+                    placeholder="Search the Directory, e.g. DHL Global Forwarding" />
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact person
-                    <input className={`${inp} mt-1`} placeholder="e.g. John Mensah" value={draft.agencyContact} onChange={(e) => setDraft({ ...draft, agencyContact: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone
-                    <input type="tel" className={`${inp} mt-1`} placeholder="e.g. +233 20 000 0000" value={draft.agencyPhone} onChange={(e) => setDraft({ ...draft, agencyPhone: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
-                    <input type="email" className={`${inp} mt-1`} placeholder="e.g. ops@agency.com" value={draft.agencyEmail} onChange={(e) => setDraft({ ...draft, agencyEmail: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Website
-                    <input className={`${inp} mt-1`} placeholder="e.g. dhl.com" value={draft.agencyWebsite} onChange={(e) => setDraft({ ...draft, agencyWebsite: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Country
-                    <input className={`${inp} mt-1`} placeholder="e.g. Ghana" value={draft.agencyCountry} onChange={(e) => setDraft({ ...draft, agencyCountry: e.target.value })} /></label>
+                    {agencyCo && (agencyCo.contactPersons || []).length > 1 ? (
+                      <select className={`${inp} mt-1 normal-case tracking-normal`} value={draft.agencyContact} onChange={(e) => setDraft((d) => ({ ...d, ...agencyFrom(agencyCo, e.target.value) }))}>
+                        {(agencyCo.contactPersons || []).map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? ` (${p.role})` : ""}</option>)}
+                      </select>
+                    ) : <p className={`${inp} mt-1 normal-case tracking-normal text-slate-700`}>{draft.agencyContact || <span className="text-slate-400">-</span>}</p>}
+                  </label>
                 </div>
+                <div className="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                  {([["Phone", draft.agencyPhone], ["Email", draft.agencyEmail], ["Website", draft.agencyWebsite], ["Country", draft.agencyCountry]] as const).map(([l, v]) => (
+                    <div key={l} className="min-w-0 rounded-lg bg-white/70 px-2.5 py-1.5">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{l}</p>
+                      <p className="truncate font-semibold text-slate-700" title={v}>{v || "-"}</p>
+                    </div>
+                  ))}
+                </div>
+                {draft.agencyName.trim() && !draft.agencyCompanyId ? (
+                  <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-100/70 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800"><AlertTriangle size={12} className="mt-0.5 shrink-0" /> "{draft.agencyName.trim()}" is not picked from the Directory. Choose it from the list, or add it there, so its details come from its record.</p>
+                ) : draft.agencyCompanyId ? (
+                  <p className="mt-2 text-[11px] text-slate-500">Read from the agency's Directory record. To change these details, <button type="button" onClick={() => window.open(`/dashboard/directory?open=${encodeURIComponent(draft.agencyCompanyId)}`, "_blank", "noopener")} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">edit it in the Directory <ExternalLink size={10} /></button>.</p>
+                ) : null}
               </FormSection>
 
               {/* Shipment costs — summed into the total shown on the shipment tab. */}

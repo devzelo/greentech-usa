@@ -246,7 +246,7 @@ const META_FIELDS = ["name", "description", "fromLocation", "toLocation", "deadl
   "trackingNo", "carrier", "currentLocation", "etaDate", "trackingUrl", "containerType", "containerSize",
   // CR 282 - the mode of transport, with the typed name when it is "custom".
   "transportMode", "transportModeOther",
-  "agencyName", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;
+  "agencyName", "agencyCompanyId", "agencyContact", "agencyPhone", "agencyEmail", "agencyWebsite", "agencyCountry"] as const;
 
 // CR 281 - the cargo rows. Everything is kept as text (like the rest of the shipment) so a
 // quantity of "2" and a weight of "12.5" travel the same way; the UI does the arithmetic.

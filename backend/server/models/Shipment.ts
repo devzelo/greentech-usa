@@ -44,6 +44,8 @@ export interface IShipment extends Document {
   // Goods in the shipment + the forwarder/agency contact (client CR-PR-09).
   goods: Array<{ description: string; qty: string; unit: string }>;
   agencyName: string;
+  /** 2026-10-07 - the agency's Directory company (its details are read from there). */
+  agencyCompanyId: string;
   agencyContact: string;
   agencyPhone: string;
   agencyEmail: string;
@@ -121,6 +123,7 @@ const ShipmentSchema = new Schema<IShipment>(
     cargo: { type: [CargoSchema], default: [] },
     goods: { type: [{ description: { type: String, default: "" }, qty: { type: String, default: "" }, unit: { type: String, default: "" } }], default: [] },
     agencyName: { type: String, default: "" },
+    agencyCompanyId: { type: String, default: "" },
     agencyContact: { type: String, default: "" },
     agencyPhone: { type: String, default: "" },
     agencyEmail: { type: String, default: "" },

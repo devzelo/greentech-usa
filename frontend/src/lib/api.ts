@@ -2466,6 +2466,8 @@ export interface ApiShipment {
   transportMode?: string; transportModeOther?: string;
   goods?: Array<{ description: string; qty: string; unit: string }>;
   agencyName?: string; agencyContact?: string; agencyPhone?: string; agencyEmail?: string;
+  /** 2026-10-07 - the agency's Directory company; its details are read from there. */
+  agencyCompanyId?: string;
   /** CR 220 - shown prominently on the shipment card. */
   agencyWebsite?: string; agencyCountry?: string;
   /** CR 219 - the tracking trail: pulled from the carrier daily, or logged by hand. Newest first. */
@@ -2478,7 +2480,7 @@ export type ShipmentInput = Partial<Pick<ApiShipment,
   "name" | "description" | "fromLocation" | "toLocation" | "status" | "deadline" | "poIds" |
   "costFreight" | "costCustoms" | "costDemurrage" | "costOther" |
   "trackingNo" | "carrier" | "currentLocation" | "etaDate" | "trackingUrl" | "containerType" | "containerSize" | "openBed" |
-  "cargo" | "transportMode" | "transportModeOther" | "goods" | "agencyName" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
+  "cargo" | "transportMode" | "transportModeOther" | "goods" | "agencyName" | "agencyCompanyId" | "agencyContact" | "agencyPhone" | "agencyEmail" | "agencyWebsite" | "agencyCountry">>;
 const shipBase = (projectId: string) => `/projects/${projectId}/shipments`;
 export async function fetchShipments(projectId: string): Promise<ApiShipment[]> { return request(shipBase(projectId)); }
 export async function createShipment(projectId: string, body: ShipmentInput = {}): Promise<ApiShipment> { return request(shipBase(projectId), { method: 'POST', body: JSON.stringify(body) }); }
@@ -3097,11 +3099,11 @@ export interface ApiAnnouncement {
   kind: "holiday" | "news" | "event"; active: boolean; addedByName: string; createdAt?: string;
 }
 // ── Companies / Contact Directory (client CR-P-06) ──────────────────────────
-export type CompanyCategory = "vendor" | "subcontractor" | "client" | "manufacturer" | "consultant" | "partner" | "supplier" | "other";
+export type CompanyCategory = "vendor" | "subcontractor" | "client" | "manufacturer" | "consultant" | "partner" | "supplier" | "logistics" | "other";
 export const COMPANY_CATEGORIES: { v: CompanyCategory; label: string }[] = [
   { v: "vendor", label: "Vendor" }, { v: "subcontractor", label: "Subcontractor" }, { v: "client", label: "Client" },
   { v: "manufacturer", label: "Manufacturer" }, { v: "consultant", label: "Consultant" }, { v: "partner", label: "Partner" },
-  { v: "supplier", label: "Supplier" }, { v: "other", label: "Other" },
+  { v: "supplier", label: "Supplier" }, { v: "logistics", label: "Shipping / Logistics" }, { v: "other", label: "Other" },
 ];
 export interface ApiCompany {
   _id: string;

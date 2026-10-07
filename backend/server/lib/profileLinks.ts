@@ -83,7 +83,7 @@ export async function buildCompanyLinks(companyId: string, name: string, email =
     // POs store the vendor NAME — match the company's name to surface them under the profile.
     nameRx ? ProcurementPO.find({ vendorName: nameRx }).select("poNo vendorName total status projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     // CR-P-06b — shipping/delivery records: shipments whose logistics agency is this company.
-    nameRx ? Shipment.find({ agencyName: nameRx }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
+    Shipment.find(nameRx ? { $or: [{ agencyCompanyId: companyId }, { agencyName: nameRx }] } : { agencyCompanyId: companyId }).select("name status etaDate agencyName projectId").sort({ createdAt: -1 }).limit(200).lean(),
     vendorIds.length ? VendorQuote.find({ vendorId: { $in: vendorIds } }).select("rfqId total status accepted projectId").sort({ createdAt: -1 }).limit(200).lean() : [],
     // CR-P-06b — agreements/contracts with this company. The sharing fields ride along so the
     // company's own login only gets what was shared with it (CR-P (62)).
