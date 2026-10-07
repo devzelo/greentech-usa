@@ -59,6 +59,8 @@ import SectionGroupTemplates from "./SectionGroupTemplates";
 import { makeZip } from "../../lib/zip";
 import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
+import StandardAppendices from "./StandardAppendices";
+import type { StandardAppendixItem } from "../../lib/api";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
 /** Step 7 - which proposal volume a section handler works on (both have sections). */
@@ -1514,17 +1516,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
   // Item 105 - the standard attachments list: the appendices a GT proposal carries (as in the
   // client's samples), each filled from Company Documents where a document of that type exists.
-  const STANDARD_APPENDICES: Record<Vol, string[]> = {
-    technical: ["appx-sam", "appx-company-registration", "appx-business-licenses", "appx-insurance", "appx-dba", "appx-reference-letters"],
-    financial: ["appx-sam", "appx-bonding", "appx-insurance", "appx-dba"],
-  };
-  const addStandardAppendices = (vol: Vol) => {
-    const have = new Set(layoutOfVol(vol).map((m) => m.libraryKey).filter(Boolean));
-    const add = STANDARD_APPENDICES[vol]
-      .map((k) => APPENDIX_LIBRARY.find((a) => a.key === k))
-      .filter((a): a is NonNullable<typeof a> => !!a && !have.has(a.key));
+  // 2026-10-07 - the list itself is edited from its pencil (StandardAppendices), company-wide; an
+  // item is a library appendix or one of our own (a plain appendix with that title).
+  const addStandardAppendices = (vol: Vol, items: StandardAppendixItem[]) => {
+    if (!items.length) { toast("The standard list is empty. Edit it with the pencil next to the button.", "info"); return; }
+    const layout = layoutOfVol(vol);
+    const haveKeys = new Set(layout.map((m) => m.libraryKey).filter(Boolean));
+    const haveTitles = new Set(layout.map((m) => m.title.trim().toLowerCase()));
+    const add = items.filter((it) => (it.key ? !haveKeys.has(it.key) : !haveTitles.has(it.title.trim().toLowerCase())));
     if (!add.length) { toast("The standard appendices are already in this volume.", "info"); return; }
-    for (const a of add) addLayoutSection(a.title, "", { libraryKey: a.key, guide: a.hint, appendix: true, pageType: a.pageType || "external", divider: true }, vol);
+    for (const it of add) {
+      const a = it.key ? APPENDIX_LIBRARY.find((x) => x.key === it.key) : undefined;
+      addLayoutSection(a?.title || it.title, "", { libraryKey: a?.key, guide: a?.hint, appendix: true, pageType: a?.pageType || "external", divider: true }, vol);
+    }
     toast(`Added ${add.length} standard appendix section${add.length === 1 ? "" : "s"}.`, "success");
   };
   const insertResource = (b: ApiResourceBlock) => {
@@ -5278,8 +5282,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   )}
                   <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3 text-[11px] text-slate-600 flex items-center justify-between gap-3 flex-wrap">
                     <span>Edit this document's cover page in the <strong>Cover Page</strong> sub-tab above. Reorder sections with the <strong>↑ ↓</strong> arrows on each box below; that is the order they print in.</span>
-                    {/* Item 105 - the standard attachments list, in one click. */}
-                    {canEdit && <button onClick={() => addStandardAppendices("technical")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary shrink-0"><Plus size={12} /> Add the standard appendices</button>}
                   </div>
 
                   {/* Section manager — Add section lives here; the reorder list is collapsed by default */}
@@ -5303,6 +5305,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onLevelNameChange={(n) => setTech("levelName", n)}
                     appendixNumbering={technical.appendixNumbering || "numbers"}
                     onAppendixNumberingChange={(n) => setTech("appendixNumbering", n)}
+                    extraActions={canEdit ? <StandardAppendices volume="technical" onAdd={(items) => addStandardAppendices("technical", items)} /> : undefined}
                   />
                   <SectionGroupTemplates layout={techLayout} templates={groupTemplates} canEdit={canEdit}
                     onSave={(name, ids) => saveGroupTemplate("technical", name, ids)} onInsert={(t) => insertGroupTemplate("technical", t)} onDelete={deleteGroupTemplate} />
@@ -5554,12 +5557,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         <Upload size={12} /> Add the client's price form
                       </button>
                     )}
-                    {/* Item 105 - the standard attachments list (SAM, bonding, insurance, DBA). */}
-                    {canEdit && (
-                      <button onClick={() => addStandardAppendices("financial")} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:border-primary hover:text-primary ml-2">
-                        <Plus size={12} /> Add the standard appendices
-                      </button>
-                    )}
                   </div>
 
                   <ProposalSectionManager
@@ -5583,6 +5580,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onLevelNameChange={(n) => setFin("levelName", n)}
                     appendixNumbering={financial.appendixNumbering || "letters"}
                     onAppendixNumberingChange={(n) => setFin("appendixNumbering", n)}
+                    extraActions={canEdit ? <StandardAppendices volume="financial" onAdd={(items) => addStandardAppendices("financial", items)} /> : undefined}
                   />
                   <SectionGroupTemplates layout={finLayout} templates={groupTemplates} canEdit={canEdit}
                     onSave={(name, ids) => saveGroupTemplate("financial", name, ids)} onInsert={(t) => insertGroupTemplate("financial", t)} onDelete={deleteGroupTemplate} />

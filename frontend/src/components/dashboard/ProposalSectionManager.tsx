@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import HelpTip, { HelpPanel, HelpRow } from "./HelpTip";
 import { ArrowUp, ArrowDown, AtSign, Eye, EyeOff, Copy, Trash2, Plus, GripVertical, Lock, Unlock, SeparatorHorizontal, ChevronDown, ChevronRight, CornerDownRight, History } from "lucide-react";
 import type { ProposalPageType, ProposalSectionMeta, TechnicalProposalContent } from "../../lib/api";
@@ -14,8 +14,10 @@ const LEVEL_NAMES: LevelName[] = ["Section", "Tab", "Factor", "Volume", "Part"];
 export default function ProposalSectionManager({
   layout, onLayoutChange, onAdd, onAddBlank, onDuplicate, onRemove, canEdit, collapsed, onToggleCollapsed, users, onMention, onGoTo, userName,
   numbering = "numbers", onNumberingChange, levelName = "Section", onLevelNameChange,
-  appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical",
+  appendixNumbering = "numbers", onAppendixNumberingChange, volume = "technical", extraActions,
 }: {
+  /** 2026-10-07 - more buttons beside Add section (the standard appendices). */
+  extraActions?: ReactNode;
   appendixNumbering?: "numbers" | "letters";            // item 108 - Appendix 1, 2, 3 or A, B, C
   onAppendixNumberingChange?: (n: "numbers" | "letters") => void;
   volume?: "technical" | "financial";                   // step 7 - which section library Add opens
@@ -116,8 +118,11 @@ export default function ProposalSectionManager({
             )}
           </div>
         )}
-        {canEdit && (
-          <button onClick={() => setMenuOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800"><Plus size={12} /> Add section</button>
+        {(extraActions || canEdit) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {extraActions}
+            {canEdit && <button onClick={() => setMenuOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800"><Plus size={12} /> Add section</button>}
+          </div>
         )}
         {/* Spec 5 - Add Section opens the Section Library (and the Appendix Library). */}
         {menuOpen && (

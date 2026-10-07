@@ -1,5 +1,6 @@
 import { Router, Response, NextFunction } from "express";
 import ProposalTemplate from "../models/ProposalTemplate";
+import AppSetting from "../models/AppSetting";
 import User from "../models/User";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
 import { recycleAndDelete } from "../lib/recycleBin";
@@ -14,6 +15,48 @@ router.get("/", async (_req: AuthedRequest, res: Response, next: NextFunction) =
   try {
     const templates = await ProposalTemplate.find().sort({ builtin: -1, name: 1 }).lean();
     res.json(templates);
+  } catch (err) { next(err); }
+});
+
+// 2026-10-07 - the standard appendices list, editable and company-wide: what "Add standard
+// appendices" puts in a technical / financial proposal, in order. An item is an Appendix Library
+// entry (key) or an appendix of our own (title only). Null until someone edits it (the app's
+// default list applies).
+const STD_KEY = "standard-appendices";
+type StdItem = { key?: string; title: string };
+const cleanList = (v: unknown): StdItem[] | null => {
+  if (!Array.isArray(v) || v.length > 60) return null;
+  const out: StdItem[] = [];
+  for (const raw of v) {
+    const r = (raw || {}) as { key?: unknown; title?: unknown };
+    const title = typeof r.title === "string" ? r.title.trim().slice(0, 200) : "";
+    const key = typeof r.key === "string" ? r.key.trim().slice(0, 80) : "";
+    if (!title) return null;
+    out.push(key ? { key, title } : { title });
+  }
+  return out;
+};
+const stdView = (doc: { value?: Record<string, unknown>; updatedByName?: string; updatedAt?: Date } | null) =>
+  doc ? { ...(doc.value || {}), updatedByName: doc.updatedByName || "", updatedAt: doc.updatedAt } : null;
+
+router.get("/standard-appendices", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(stdView(await AppSetting.findOne({ key: STD_KEY }).lean()));
+  } catch (err) { next(err); }
+});
+
+router.put("/standard-appendices", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const technical = cleanList(req.body?.technical);
+    const financial = cleanList(req.body?.financial);
+    if (!technical || !financial) return res.status(400).json({ error: "Send both lists, each item with a title (60 at most)." });
+    const me = await User.findById(req.user!.userId).select("name").lean();
+    const doc = await AppSetting.findOneAndUpdate(
+      { key: STD_KEY },
+      { value: { technical, financial }, updatedByName: (me as { name?: string } | null)?.name || "" },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    res.json(stdView(doc));
   } catch (err) { next(err); }
 });
 

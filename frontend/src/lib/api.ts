@@ -618,6 +618,21 @@ export async function saveProposalTemplate(body: { name: string; description?: s
 export async function deleteProposalTemplate(id: string): Promise<{ message: string }> {
   return request(`/proposal-templates/${id}`, { method: 'DELETE' });
 }
+// 2026-10-07 - the company's standard appendices list (null until someone edits it). An item is an
+// Appendix Library entry (key) or an appendix of our own (title only).
+export interface StandardAppendixItem { key?: string; title: string }
+export interface StandardAppendixLists {
+  technical: StandardAppendixItem[];
+  financial: StandardAppendixItem[];
+  updatedByName?: string;
+  updatedAt?: string;
+}
+export async function fetchStandardAppendices(): Promise<StandardAppendixLists | null> {
+  return request('/proposal-templates/standard-appendices');
+}
+export async function saveStandardAppendices(body: { technical: StandardAppendixItem[]; financial: StandardAppendixItem[] }): Promise<StandardAppendixLists> {
+  return request('/proposal-templates/standard-appendices', { method: 'PUT', body: JSON.stringify(body) });
+}
 
 // ── Meeting minutes and progress reports written in the platform (CR 208 / 209) ──────────────
 export interface MinuteAction { id: string; text: string; ownerUserId?: string; ownerName?: string; due?: string; done?: boolean }
