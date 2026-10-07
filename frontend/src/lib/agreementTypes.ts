@@ -15,7 +15,7 @@ export const AGREEMENT_TYPE_GROUPS: { group: string; types: string[] }[] = [
     group: "Procurement / Vendors",
     types: [
       "Vendor Agreement", "Supplier Agreement", "Purchase Agreement", "Equipment Supply Agreement",
-      "Supply & Installation Agreement", "Procurement Agreement",
+      "Supply & Installation Agreement", "Procurement Agreement", "Shipping / Delivery Agreement",
     ],
   },
   {
