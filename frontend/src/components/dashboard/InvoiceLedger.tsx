@@ -69,8 +69,11 @@ type BuilderDraft = {
   amount: string;   // the total when the invoice is uploaded rather than built from lines (CR-P 169)
 };
 
-export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId, projectValue, onRowsChange }: {
+export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, onExpensesChanged, clientName, clientCompanyId, projectValue, onRowsChange, contract }: {
   projectId: string; kind: "sent" | "received"; canEdit: boolean;
+  /** 2026-10-07 - one contract only (a work package's agreement or PO): its invoices are listed,
+   *  and a new one is logged against it, from its company. */
+  contract?: { agreementId?: string; poId?: string; label: string; party?: string; companyId?: string; total?: number };
   projectInfo?: ProjectPdfInfo;
   /** CR-P (168) — the project's contract value, used when an invoice bills the project's contract. */
   projectValue?: string;
@@ -243,6 +246,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
   // CR-B-14b — silent autosave of the invoice builder every 45s while it's open, with a status badge.
   const invSave = useSaveStatus();
   const autoSaveInvRef = useRef<() => void>(() => {});
+  const manageHost = useRef<HTMLDivElement>(null);
   autoSaveInvRef.current = () => {
     if (!builderId || !bDraft || saving) return;
     void invSave.track(updateInvoice(projectId, builderId, invoiceBody(bDraft))).then((srv) => patch(srv)).catch(() => {});
@@ -299,10 +303,11 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         fetchProcurementPOs(projectId, false, { all: true }).catch(() => [] as ApiProcurementPO[]),   // CR 345 - work package POs too
         fetchVendors(projectId).catch(() => [] as ApiVendor[]),
       ]);
-      setRows(inv); setPOs(p); setVendors(v);
+      const onContract = (i: ApiInvoice) => !!contract && ((!!contract.agreementId && i.contractRef?.agreementId === contract.agreementId) || (!!contract.poId && i.poId === contract.poId));
+      setRows(contract ? inv.filter(onContract) : inv); setPOs(p); setVendors(v);
     } catch { /* keep */ } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, kind]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [projectId, kind, contract?.agreementId, contract?.poId]);
 
   const patch = (inv: ApiInvoice) => setRows((p) => p.map((x) => (x._id === inv._id ? inv : x)));
   // A payment, a status change or a new invoice here changes the project's five numbers at once.
@@ -344,14 +349,30 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         ...(isSent && clientName ? { party: clientName, receiverKind: "Client", companyId: clientCompanyId || "" } : {}),
         // CR-P (162) — our default bank account goes on every new invoice sent.
         ...(isSent && defaultBank ? { bank: bankOf(defaultBank) } : {}),
+        ...(contract ? contractFields() : {}),
       });
       setRows((p) => [...p, row]); setNewOpen(false); openBuilder(row, true);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not start the invoice.", "error"); }
     finally { setSaving(false); }
   };
+  // 2026-10-07 - an invoice logged on a work package's contract: from its company (and that
+  // company's bank, from the Directory), billing that agreement or PO.
+  const contractFields = (): InvoiceInput => {
+    if (!contract) return {};
+    const co = contract.companyId ? companies.find((c) => c._id === contract.companyId) : undefined;
+    const kindMap: Record<string, string> = { subcontractor: "Subcontractor", vendor: "Vendor", consultant: "Consultant", contractor: "Contractor", supplier: "Vendor", manufacturer: "Vendor" };
+    const bk = co?.banking;
+    return {
+      party: contract.party || co?.name || "", companyId: contract.companyId || "",
+      receiverKind: (co && kindMap[co.category]) || "Vendor",
+      ...(contract.agreementId ? { contractRef: { source: "agreement", agreementId: contract.agreementId, label: contract.label }, contractTotal: contract.total ? String(contract.total) : "" } : {}),
+      ...(contract.poId ? { poId: contract.poId } : {}),
+      ...(!isSent && bk && (bk.bankName || bk.accountNumber || bk.iban) ? { bank: { name: bk.bankName || "", accountName: bk.accountName || "", accountNumber: bk.accountNumber || "", iban: bk.iban || "", swift: bk.swift || "", routing: bk.routing || "" } } : {}),
+    };
+  };
   const openNew = () => {
     setDraft({ number: "", party: "", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
-    if (templates.length) setNewOpen(true); else void createBlank();
+    if (templates.length && !contract) setNewOpen(true); else void createBlank();
   };
   // A brand-new invoice closed with nothing in it is removed again, so no empty rows pile up.
   const closeBuilder = async () => {
@@ -439,8 +460,9 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
     <div className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h3 className="text-xl font-display font-bold text-slate-900">{heading}</h3>
+          <h3 className="text-xl font-display font-bold text-slate-900">{contract ? "Invoices on this contract" : heading}</h3>
           <p className="text-xs font-medium text-slate-400 mt-1">
+            {contract && <><b className="text-slate-600">{contract.label}</b>{contract.party ? ` with ${contract.party}` : ""}. </>}
             {rows.length} invoice{rows.length === 1 ? "" : "s"}. Record payments against each one — what's paid and what's left is worked out for you.
             {!isSent && " Every payment is also logged in Expenses with its receipt."}
           </p>
@@ -449,10 +471,10 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
           {rows.length > 0 && (
             <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50" title="Export the ledger to CSV (opens in Excel)"><Download size={13} /> Export Excel</button>
           )}
-          {canEdit && !isSent && (
+          {canEdit && !isSent && !contract && (
             <button onClick={() => setPoPicker(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"><Link2 size={13} /> From a purchase order</button>
           )}
-          {canEdit && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary"><Plus size={13} /> {isSent ? "New invoice" : "Log invoice"}</button>}
+          {canEdit && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary"><Plus size={13} /> {contract ? "Add / log invoice" : isSent ? "New invoice" : "Log invoice"}</button>}
         </div>
       </div>
 
@@ -623,7 +645,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                         </div>
                       </div>
                     </div>,
-                    document.body,
+                    // Inside a work package's window it opens within that window (so it shows above it).
+                    (contract && manageHost.current) || document.body,
                   )}
                 </Fragment>
               );
@@ -643,6 +666,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
         </table>
       </div>
 
+      <div ref={manageHost} />
       {dialogs}
       {/* CR 215 - choose the terms from the company's standard documents (terms and NDA library). */}
       {termsPicker && createPortal(

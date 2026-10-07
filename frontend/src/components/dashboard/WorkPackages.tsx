@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import ProcurementRFQ, { quoteTotal } from "./ProcurementRFQ";
 import ProcurementPO from "./ProcurementPO";
 import AgreementsPanel from "./agreements/AgreementsPanel";
+import InvoiceLedger from "./InvoiceLedger";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import {
   Archive, ArchiveRestore, ArrowDown, ArrowUp, Boxes, BadgeCheck, Building2, ChevronDown, ChevronRight, ClipboardCheck, Cog, Download, Eye, EyeOff, FileSpreadsheet, FileText,
@@ -823,9 +824,22 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
     { k: "rfq", n: 1, label: "RFQ", done: hasRfq },
     { k: "quotes", n: 2, label: "Quotes & winner", done: !!won },
     { k: "agreement", n: 3, label: "Agreement", done: !!pkg.agreement },
-    { k: "money", label: "Money", show: canMoney },
+    // 2026-10-07 - "Invoice" (was Money): the contract's invoices, then its value and change orders.
+    { k: "money", label: "Invoice", show: canMoney },
     { k: "po", label: "Purchase order", show: !!pkg.po },
   ];
+  // The contract the package's invoices bill: its agreement, or an older package's PO.
+  const agrDoc = agr && agr !== "loading" ? agr : null;
+  const party2 = agrDoc?.partySnapshot?.party2;
+  const invParty = pkg.winner && !pkg.winner.internal ? { name: pkg.winner.name, companyId: pkg.winner.companyId } : { name: party2?.name || "", companyId: party2?.companyId || "" };
+  const contract = pkg.agreementId && pkg.agreement
+    ? { agreementId: pkg.agreementId, label: [pkg.agreement.no, pkg.agreement.title].filter(Boolean).join(" · ") || "The agreement", party: invParty.name, companyId: invParty.companyId, total: m?.current || undefined }
+    : pkg.poId && pkg.po
+      ? { poId: pkg.poId, label: `Purchase order ${pkg.po.no}`, party: invParty.name, companyId: invParty.companyId }
+      : null;
+  // An invoice or payment logged here changes the package's Paid: the table reloads (not on the first load).
+  const invSeen = useRef(false);
+  const invoicesChanged = () => { if (invSeen.current) onChanged(); invSeen.current = true; };
   const card = "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm";
   const docTab = tab === "rfq" || tab === "quotes" || tab === "agreement" || tab === "po";
   const barBtn = "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-50";
@@ -993,6 +1007,18 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
             )
           )}
           {tab === "money" && canMoney && (
+            <div className="space-y-4">
+            {contract
+              ? <InvoiceLedger projectId={project.id} kind="received" canEdit={canEdit} projectInfo={projectInfo} contract={contract} onRowsChange={invoicesChanged} />
+              : (
+                <section className={`${card} flex flex-wrap items-center justify-between gap-3`}>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-slate-800">Invoices on this contract</h4>
+                    <p className={hint}>Invoices are logged against the package's contract. Make the agreement with the winner first (step 3), then add and log its invoices here.</p>
+                  </div>
+                  <button type="button" onClick={() => setTab("agreement")} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-primary">Go to the agreement</button>
+                </section>
+              )}
             <fieldset disabled={!canEdit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <section className={`${card} space-y-3`}>
                 <h4 className="text-sm font-bold text-slate-800">Contract value</h4>
@@ -1005,7 +1031,7 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                     <span>Remaining</span><b className={`text-right tabular-nums ${m.remaining < 0 ? "text-red-600" : "text-slate-800"}`}><Fig>{usd(m.remaining)}</Fig></b>
                   </div>
                 )}
-                <p className={hint}>{m?.source === "agreement" ? "The original contract is the agreement's contract value; change it on the agreement." : m?.source === "po" ? "The original contract is the purchase order's total." : pkg.agreement ? "The agreement has no contract value yet: enter it on the agreement (Contract value) and it is used here." : "The original contract comes from the package's agreement. For work done in-house, type a budget instead."} Paid is read from Finances (payments on the vendor's invoices, and approved expenses tagged to this package).</p>
+                <p className={hint}>{m?.source === "agreement" ? "The original contract is the agreement's contract value; change it on the agreement." : m?.source === "po" ? "The original contract is the purchase order's total." : pkg.agreement ? "The agreement has no contract value yet: enter it on the agreement (Contract value) and it is used here." : "The original contract comes from the package's agreement. For work done in-house, type a budget instead."} Paid is the payments on the invoices above (they are in Finances too), plus approved expenses tagged to this package.</p>
                 {!f.poId && !(m?.source === "agreement") && (
                   <label className="block"><span className={lbl}>Budget (in-house work, or until the agreement has a value)</span><input type="number" min={0} step="any" value={f.budget || ""} onChange={(e) => set({ budget: Math.max(0, Number(e.target.value) || 0) })} placeholder="0" className={inp} /></label>
                 )}
@@ -1042,6 +1068,7 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
                 {cos.length > 0 && <p className={hint}>Approved change orders: <b className="text-slate-700"><Fig>{approved >= 0 ? "+" : "-"}{usd(Math.abs(approved))}</Fig></b>. Only approved ones count towards the current value (after saving).</p>}
               </section>
             </fieldset>
+            </div>
           )}
           {/* A purchase order from before packages contracted by agreement: kept, shown here. */}
           {tab === "po" && pkg.po && (
