@@ -5,11 +5,12 @@ import mongoose, { Schema, Document } from "mongoose";
 // invoices, submittals etc. link to this by _id so a company's full history lives in one place.
 export type CompanyCategory =
   | "vendor" | "subcontractor" | "client" | "manufacturer"
-  | "consultant" | "partner" | "supplier" | "logistics" | "other";
+  | "consultant" | "partner" | "supplier" | "logistics" | "financial" | "other";
 
 export const COMPANY_CATEGORIES: CompanyCategory[] = [
   // 2026-10-07 - "logistics": shipping agencies and freight forwarders (a shipment's agency).
-  "vendor", "subcontractor", "client", "manufacturer", "consultant", "partner", "supplier", "logistics", "other",
+  // "financial": banks, sureties and insurers (a project's bond and letter of credit).
+  "vendor", "subcontractor", "client", "manufacturer", "consultant", "partner", "supplier", "logistics", "financial", "other",
 ];
 
 export interface ICompany extends Document {

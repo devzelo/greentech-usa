@@ -3104,11 +3104,11 @@ export interface ApiAnnouncement {
   kind: "holiday" | "news" | "event"; active: boolean; addedByName: string; createdAt?: string;
 }
 // ── Companies / Contact Directory (client CR-P-06) ──────────────────────────
-export type CompanyCategory = "vendor" | "subcontractor" | "client" | "manufacturer" | "consultant" | "partner" | "supplier" | "logistics" | "other";
+export type CompanyCategory = "vendor" | "subcontractor" | "client" | "manufacturer" | "consultant" | "partner" | "supplier" | "logistics" | "financial" | "other";
 export const COMPANY_CATEGORIES: { v: CompanyCategory; label: string }[] = [
   { v: "vendor", label: "Vendor" }, { v: "subcontractor", label: "Subcontractor" }, { v: "client", label: "Client" },
   { v: "manufacturer", label: "Manufacturer" }, { v: "consultant", label: "Consultant" }, { v: "partner", label: "Partner" },
-  { v: "supplier", label: "Supplier" }, { v: "logistics", label: "Shipping / Logistics" }, { v: "other", label: "Other" },
+  { v: "supplier", label: "Supplier" }, { v: "logistics", label: "Shipping / Logistics" }, { v: "financial", label: "Bank / Surety / Insurance" }, { v: "other", label: "Other" },
 ];
 export interface ApiCompany {
   _id: string;

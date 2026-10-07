@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DirectoryNameField from "./DirectoryNameField";
 import { ShieldCheck, Landmark, Pencil, Loader2 } from "lucide-react";
 import {
   bondingLines, feeAmount, fromAmount, fromPercent, moneyNum, withBonding, type BondLine, type ProjectBonding,
@@ -91,8 +92,10 @@ export default function BondingEditor({ value, onChange, contractValue }: {
           </tbody>
         </table>
         <div className="grid grid-cols-1 gap-2 border-t border-slate-100 px-3 py-2 sm:grid-cols-[2fr_1fr_1fr]">
-          <label className="space-y-0.5"><span className={lbl}>Bonding company / bank</span>
-            <input className={inp} disabled={!bonded} value={value.bank} onChange={(e) => onChange({ ...value, bank: e.target.value })} placeholder="e.g. Chase Bank" /></label>
+          {/* 2026-10-07 - the surety or bank is a company in the Directory, picked not typed. */}
+          <div className="space-y-0.5"><span className={lbl}>Bonding company / bank</span>
+            <DirectoryNameField value={value.bank} disabled={!bonded} categories={["financial", "other"]} title="Bonding company / bank" placeholder="Pick from the Directory"
+              onPick={(c) => onChange({ ...value, bank: c.name })} onClear={() => onChange({ ...value, bank: "" })} /></div>
           <label className="space-y-0.5"><span className={lbl}>Fee % {bonded && feeAmount(value.feePercent, contract) && <span className="normal-case tracking-normal text-slate-500">= {feeAmount(value.feePercent, contract)}</span>}</span>
             <input className={inp} disabled={!bonded} inputMode="decimal" value={value.feePercent} onChange={(e) => onChange({ ...value, feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" /></label>
           <label className="space-y-0.5"><span className={lbl}>Interest rate %</span>
@@ -113,8 +116,9 @@ export default function BondingEditor({ value, onChange, contractValue }: {
               <input className={inp} inputMode="decimal" value={value.iloc.percent} onChange={(e) => setIloc(fromPercent(e.target.value.replace(/[^0-9.]/g, ""), contract))} placeholder="40" /></label>
             <label className="space-y-0.5"><span className={lbl}>Amount</span>
               <input className={inp} inputMode="decimal" value={value.iloc.amount} onChange={(e) => setIloc(fromAmount(e.target.value.replace(/[^0-9.,$]/g, ""), contract))} placeholder="$" /></label>
-            <label className="col-span-2 space-y-0.5 sm:col-span-1"><span className={lbl}>Bank / institution</span>
-              <input className={inp} value={value.iloc.bank} onChange={(e) => setIloc({ bank: e.target.value })} placeholder="e.g. M&T Bank" /></label>
+            <div className="col-span-2 space-y-0.5 sm:col-span-1"><span className={lbl}>Bank / institution</span>
+              <DirectoryNameField value={value.iloc.bank} categories={["financial", "other"]} title="Bank / institution" placeholder="Pick from the Directory"
+                onPick={(c) => setIloc({ bank: c.name })} onClear={() => setIloc({ bank: "" })} /></div>
             <label className="space-y-0.5"><span className={lbl}>Fee % {feeAmount(value.iloc.feePercent, contract) && <span className="normal-case tracking-normal text-slate-500">= {feeAmount(value.iloc.feePercent, contract)}</span>}</span>
               <input className={inp} inputMode="decimal" value={value.iloc.feePercent} onChange={(e) => setIloc({ feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" /></label>
             <label className="space-y-0.5"><span className={lbl}>Interest %</span>
