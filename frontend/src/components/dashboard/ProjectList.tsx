@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchProjects, fetchProjectFinancials, getAuthUser, withFileToken, projectCategories, ApiProject, ProjectFinancials } from "../../lib/api";
+import { fetchProjects, fetchProjectFinancials, fetchCompanies, getAuthUser, withFileToken, projectCategories, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
 import { effectiveEndDate } from "../../lib/projectSchedule";
@@ -27,6 +27,21 @@ import { fiveFromFinancials, sumFive } from "../../lib/projectFinance";
 // status. Legacy values saved before the palette existed fold into their modern equivalent so
 // old projects still appear under the right chip.
 
+/**
+ * 2026-10-07 - the client's logo beside the project, in both views. It comes from the client's
+ * Directory company; with no logo there, the client's initials hold its place.
+ */
+function ClientMark({ name, logo, size = 36, className = "" }: { name: string; logo?: string; size?: number; className?: string }) {
+  const initials = name.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, "").charAt(0).toUpperCase()).join("") || "?";
+  return logo ? (
+    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-white p-1 ${className}`} style={{ width: size, height: size }}>
+      <img src={withFileToken(logo)} alt={`${name} logo`} className="h-full w-full object-contain" loading="lazy" />
+    </span>
+  ) : (
+    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-100 font-bold text-slate-500 ${className}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.32) }}>{initials}</span>
+  );
+}
+
 export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" }) {
   useMeta({
     title: mode === "my" ? "My Projects" : mode === "drafts" ? "Drafts" : "All Projects",
@@ -43,6 +58,15 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   // "All" + every colour-coded status; guests never see drafts.
   const statusOptions = ["All", ...PROJECT_STATUSES.filter((s) => !isGuest || s !== "Draft")];
   const [view, setView] = useState<"grid" | "list">("list");
+  const [logos, setLogos] = useState<{ byId: Map<string, string>; byName: Map<string, string> }>({ byId: new Map(), byName: new Map() });
+  useEffect(() => {
+    // An outside login cannot read the Directory: the initials stand in.
+    fetchCompanies().then((list) => {
+      const withLogo = list.filter((c) => !!c.logoUrl);
+      setLogos({ byId: new Map(withLogo.map((c) => [c._id, c.logoUrl!])), byName: new Map(withLogo.map((c) => [c.name.trim().toLowerCase(), c.logoUrl!])) });
+    }).catch(() => {});
+  }, []);
+  const clientLogo = (p: ApiProject) => (p.clientInfo?.companyId && logos.byId.get(p.clientInfo.companyId)) || logos.byName.get((p.clientInfo?.name || "").trim().toLowerCase()) || "";
   const [wsTab, setWsTab] = useState<"projects" | "board">("projects");   // CR-P — My Workspace tabs
   const [search, setSearch] = useState("");
   // Deep-link: /dashboard/all-projects?status=Active pre-selects a status chip (Overview cards).
@@ -355,7 +379,11 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                         </div>
                       </td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-600">{projectCategories(p).join(", ") || "—"}</td>
-                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-medium text-slate-600">{p.clientInfo?.name || "—"}</td>
+                      <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-medium text-slate-600">
+                        {p.clientInfo?.name
+                          ? <span className="flex items-center gap-2.5"><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} /><span className="min-w-0">{p.clientInfo.name}</span></span>
+                          : "—"}
+                      </td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold whitespace-nowrap">
                         {p.endDate
@@ -404,16 +432,17 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                       sits on the CARD (not inside the image) so its dropdown isn't clipped. */}
                   {p.image ? (
                     <>
-                      <div className="-mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
+                      <div className="relative -mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
                         <img src={withFileToken(p.image)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                        {p.clientInfo?.name && <span className="absolute bottom-3 left-6 rounded-2xl bg-white p-1 shadow-lg" title={`Client: ${p.clientInfo.name}`}><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={48} className="!border-0" /></span>}
                       </div>
                       <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} variant="overlay" />
                     </>
                   ) : (
                     <div className="flex justify-between items-start mb-6">
-                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
-                        <Clock size={28} />
-                      </div>
+                      {p.clientInfo?.name
+                        ? <span title={`Client: ${p.clientInfo.name}`}><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={56} className="rounded-2xl" /></span>
+                        : <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300"><Clock size={28} /></div>}
                       <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} />
                     </div>
                   )}
