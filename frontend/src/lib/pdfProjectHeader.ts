@@ -8,6 +8,8 @@ import { composeSiteAddress } from "./address";
 // EXCLUDES the client name — vendor-facing docs (RFQ/PO) must not reveal the client (H2).
 export interface PoPartner {
   name: string; address: string; email: string; phone: string; logoUrl: string;
+  /** 2026-10-07 - the partner's Directory company (its people sign for it). */
+  companyId?: string;
   // Stamp & signature images saved on the partner profile (JV settings) — the PO picks from these.
   stamps?: Array<{ name: string; url: string }>;
   signatures?: Array<{ name: string; url: string }>;
@@ -33,7 +35,7 @@ export function projectPdfInfo(p?: Pick<ApiProject, "id" | "name" | "location" |
     siteAddress: composeSiteAddress(p?.siteAddress) || p?.location || "",
     category: projectCategories(p).join(", "),
     date: new Date().toLocaleDateString(),
-    partner: jv?.enabled ? { name: jv.partnerName || "", address: jv.partnerAddress || "", email: jv.email || "", phone: jv.phone || "", logoUrl: jv.logo || "", stamps: jv.stamps || [], signatures: jv.signatures || [] } : undefined,
+    partner: jv?.enabled ? { name: jv.partnerName || "", address: jv.partnerAddress || "", email: jv.email || "", phone: jv.phone || "", logoUrl: jv.logo || "", companyId: jv.companyId || "", stamps: jv.stamps || [], signatures: jv.signatures || [] } : undefined,
   };
 }
 

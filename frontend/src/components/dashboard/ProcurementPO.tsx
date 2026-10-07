@@ -3,7 +3,7 @@ import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileTe
 import {
   fetchProcurementPOs, createProcurementPO, createManualPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
   uploadPOAttachment, deletePOAttachment, fetchRfqs, fetchVendors, attachmentUrl,
-  fetchProcurementItems, fetchProcurementSections, uploadDocument, documentUrl,
+  fetchProcurementItems, fetchProcurementSections, uploadDocument, documentUrl, addVendor, updateVendor, fetchCompany,
   fetchSignatories, fetchStamps, uploadPOPartyImage, attachPOFile, fetchSubmittals, invoiceFromPO, fetchInvoices,
   fetchCompanies, withFileToken, COMPANY_CATEGORIES,
   type ApiProcurementPO, type ApiRfq, type ApiVendor, type ApiProcurementItem, type ApiProcurementSection,
@@ -80,11 +80,39 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     setCompaniesLoading(true);
     fetchCompanies().then(setCompanies).catch(() => setCompanies([])).finally(() => setCompaniesLoading(false));
   }, [dirPickerPo, companies.length]);
+  // 2026-10-07 - the PO's company comes from the Directory, and is linked through its vendor record
+  // (made for it when there is none), so the PO prints the company's address and contact.
+  const vendorIdFor = async (c: ApiCompany): Promise<string> => {
+    const found = vendors.find((v) => v.companyId === c._id) || vendors.find((v) => !v.companyId && v.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+    if (found) {
+      if (!found.companyId) { updateVendor(projectId, found._id, { companyId: c._id }).catch(() => {}); setVendors((p) => p.map((v) => (v._id === found._id ? { ...v, companyId: c._id } : v))); }
+      return found._id;
+    }
+    const parts = (c.address || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const v = await addVendor(projectId, { name: c.name, companyId: c._id, email: c.email || c.contactPersons?.[0]?.email || "", phone: c.phone || c.contactPersons?.[0]?.phone || "", contactName: c.contactPersons?.[0]?.name || "", city: parts.length > 1 ? parts[parts.length - 2] : "", country: parts[parts.length - 1] || "" });
+    setVendors((p) => (p.some((x) => x._id === v._id) ? p : [...p, v]));
+    return v._id;
+  };
   const selectCompanyForPo = (po: ApiProcurementPO, c: ApiCompany) => {
-    updateProcurementPO(projectId, po._id, { vendorName: c.name, vendorId: "" }).then((p) => patch(po._id, p)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
     setDirPickerPo(null); setCompanySearch("");
+    void vendorIdFor(c).catch(() => "")
+      .then((vendorId) => updateProcurementPO(projectId, po._id, { vendorName: c.name, vendorId }))
+      .then((p) => patch(po._id, p))
+      .catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
   };
   const catLabel = (c: string) => COMPANY_CATEGORIES.find((x) => x.v === c)?.label || c;
+  // 2026-10-07 - the JV partner signs through one of its people in the Directory, not a typed name.
+  const partnerCompanyId = projectInfo?.partner?.companyId || "";
+  const [partnerCo, setPartnerCo] = useState<ApiCompany | null>(null);
+  useEffect(() => {
+    if (!partnerCompanyId) { setPartnerCo(null); return; }
+    fetchCompany(partnerCompanyId).then(setPartnerCo).catch(() => setPartnerCo(null));
+  }, [partnerCompanyId]);
+  const pickPartnerSigner = (po: ApiProcurementPO, name: string) => {
+    const p = (partnerCo?.contactPersons || []).find((x) => x.name === name);
+    updateProcurementPO(projectId, po._id, { partnerSignerName: p?.name || "", partnerSignerEmail: p?.email || partnerCo?.email || "", partnerSignerPhone: p?.phone || partnerCo?.phone || "" })
+      .then((x) => patch(po._id, x)).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -399,10 +427,10 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <Search size={13} className="text-slate-400 shrink-0" />
             </button>
           </label>
+          {/* 2026-10-07 - third parties come from the Directory: the Title (the company's name, CR-P) is
+              read from the company picked in To, not typed. */}
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title
-            <input className={`${inp} mt-1`} placeholder="Title" value={po.vendorName || ""} disabled={!canEdit}
-              onChange={(e) => { patch(po._id, { vendorName: e.target.value }); setDirty(true); }}
-              onBlur={(e) => updateProcurementPO(projectId, po._id, { vendorName: e.target.value }).then((p) => { patch(po._id, p); setDirty(false); }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"))} />
+            <input className={`${inp} mt-1`} placeholder="Picked in To" value={po.vendorName || ""} readOnly disabled title="The company's name from the Directory: change it with To" />
           </label>
         </div>
 
@@ -563,11 +591,21 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
             {hasPartner && (
               <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-2">
                 <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{projectInfo?.partner?.name || "Partner"}</p>
-                <input className={inp} placeholder="Signer name" disabled={!canEdit} value={po.partnerSignerName || ""} onChange={(e) => patch(po._id, { partnerSignerName: e.target.value })} onBlur={(e) => save(po._id, "partnerSignerName", e.target.value)} />
-                <div className="grid grid-cols-2 gap-2">
-                  <input className={inp} placeholder="Email" disabled={!canEdit} value={po.partnerSignerEmail || ""} onChange={(e) => patch(po._id, { partnerSignerEmail: e.target.value })} onBlur={(e) => save(po._id, "partnerSignerEmail", e.target.value)} />
-                  <input className={inp} placeholder="Phone" disabled={!canEdit} value={po.partnerSignerPhone || ""} onChange={(e) => patch(po._id, { partnerSignerPhone: e.target.value })} onBlur={(e) => save(po._id, "partnerSignerPhone", e.target.value)} />
-                </div>
+                {/* 2026-10-07 - the signer is one of the partner's people in the Directory. */}
+                {(() => {
+                  const people = partnerCo?.contactPersons || [];
+                  const legacy = !!po.partnerSignerName && !people.some((p) => p.name === po.partnerSignerName);
+                  return people.length ? (
+                    <select className={inp} disabled={!canEdit} value={po.partnerSignerName || ""} onChange={(e) => pickPartnerSigner(po, e.target.value)} aria-label="Partner signer">
+                      <option value="">Choose the signer (the partner's people in the Directory)</option>
+                      {legacy && <option value={po.partnerSignerName}>{po.partnerSignerName} (typed before; not in the Directory)</option>}
+                      {people.map((p) => <option key={p.name} value={p.name}>{p.name}{p.role ? ` (${p.role})` : ""}</option>)}
+                    </select>
+                  ) : (
+                    <p className="text-[10px] text-slate-400">{partnerCompanyId ? "The partner's Directory record has no people yet: add them in the Directory to choose the signer." : "Link the JV partner to the Directory (Project Identity) to choose its signer."}{po.partnerSignerName ? ` Now: ${po.partnerSignerName}.` : ""}</p>
+                  );
+                })()}
+                {(po.partnerSignerEmail || po.partnerSignerPhone) && <p className="text-[11px] text-slate-500">{[po.partnerSignerEmail, po.partnerSignerPhone].filter(Boolean).join(" · ")}</p>}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-bold text-slate-400">Signature:</span>
                   {po.partnerSignatureUrl ? <img src={imgSrc(po.partnerSignatureUrl)} alt="partner signature" className="h-8 object-contain" /> : <span className="text-[11px] text-slate-400 italic">none</span>}
