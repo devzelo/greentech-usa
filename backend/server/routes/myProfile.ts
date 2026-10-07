@@ -311,4 +311,99 @@ router.delete("/resume-file", async (req: AuthedRequest, res: Response, next: Ne
   } catch (err) { next(err); }
 });
 
+// ── Picture gallery (2026-10-08) ───────────────────────────────────────────────────────────────
+// "Allow all users to add multiple pictures in their profile, with a title / description for each.
+// They will be used for Employee or Contractor ID cards, profile reports and company profiles."
+// Kept under uploads/profile-gallery/<user>, read with the file token like every private upload.
+const MAX_PICTURES = 60;
+const galleryStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const uid = String((req as AuthedRequest).user!.userId).replace(/[^\w-]/g, "");
+    const dir = path.join("uploads", "profile-gallery", uid || "misc");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = (path.extname(file.originalname).toLowerCase().match(/^\.[a-z0-9]{1,5}$/) || [".jpg"])[0];
+    cb(null, `pic-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+  },
+});
+const galleryUpload = multer({
+  storage: galleryStorage,
+  limits: { fileSize: 15 * 1024 * 1024, files: 20 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\//.test(file.mimetype)) cb(null, true);
+    else cb(Object.assign(new Error("Only pictures can be added to the gallery."), { statusCode: 400 }));
+  },
+});
+type GalleryPic = { _id: unknown; url: string; title?: string; description?: string; uploadedAt?: Date };
+const publicGallery = (list: GalleryPic[] = []) =>
+  list.map((g) => ({ id: String(g._id), url: g.url, title: g.title || "", description: g.description || "", uploadedAt: g.uploadedAt }));
+const textOf = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+/** Only a file inside this user's own gallery folder is ever removed. */
+const unlinkGalleryPic = (uid: string, url: string) => {
+  const rel = url.replace(/^\/+/, "");
+  if (rel.startsWith(`uploads/profile-gallery/${uid}/`) && !rel.includes("..")) fs.unlink(rel, () => undefined);
+};
+
+router.get("/gallery", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = await User.findById(req.user!.userId).select("gallery").lean() as { gallery?: GalleryPic[] } | null;
+    if (!user) return res.status(404).json({ error: "User not found." });
+    res.json(publicGallery(user.gallery));
+  } catch (err) { next(err); }
+});
+
+// POST /api/me/gallery - add pictures (several at once); `meta` is a JSON list of { title, description }
+// in the same order as the files. Answers with the whole gallery and the new pictures' ids.
+router.post("/gallery", galleryUpload.array("files", 20), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  const files = (req.files as Express.Multer.File[] | undefined) || [];
+  const drop = () => files.forEach((f) => fs.unlink(f.path, () => undefined));
+  try {
+    if (!files.length) return res.status(400).json({ error: "No picture uploaded." });
+    const user = await User.findById(req.user!.userId).select("gallery");
+    if (!user) { drop(); return res.status(404).json({ error: "User not found." }); }
+    const list = (user.get("gallery") || []) as GalleryPic[];
+    if (list.length + files.length > MAX_PICTURES) { drop(); return res.status(400).json({ error: `A gallery keeps up to ${MAX_PICTURES} pictures. Remove some first.` }); }
+    let meta: Array<{ title?: unknown; description?: unknown }> = [];
+    try { const m = JSON.parse(String(req.body.meta || "[]")); if (Array.isArray(m)) meta = m; } catch { /* no titles */ }
+    const start = list.length;
+    files.forEach((f, i) => {
+      list.push({ url: `/${f.path.replace(/\\/g, "/")}`, title: textOf(meta[i]?.title, 160), description: textOf(meta[i]?.description, 1000), uploadedAt: new Date() } as GalleryPic);
+    });
+    user.set("gallery", list);
+    await user.save();
+    const saved = (user.get("gallery") || []) as GalleryPic[];
+    res.status(201).json({ gallery: publicGallery(saved), created: saved.slice(start).map((g) => String(g._id)) });
+  } catch (err) { drop(); next(err); }
+});
+
+// PUT /api/me/gallery - the gallery as edited: its order, each picture's title and description.
+// A picture left out is removed (and its file deleted).
+router.put("/gallery", async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? (req.body.items as Array<{ id?: unknown; title?: unknown; description?: unknown }>) : null;
+    if (!items) return res.status(400).json({ error: "Send the gallery's pictures." });
+    const user = await User.findById(req.user!.userId).select("gallery");
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const uid = String(req.user!.userId).replace(/[^\w-]/g, "");
+    const current = (user.get("gallery") || []) as GalleryPic[];
+    const byId = new Map(current.map((g) => [String(g._id), g]));
+    const next_: GalleryPic[] = [];
+    const kept = new Set<string>();
+    for (const it of items) {
+      const g = byId.get(String(it.id));
+      if (!g || kept.has(String(it.id))) continue;
+      kept.add(String(it.id));
+      g.title = textOf(it.title, 160);
+      g.description = textOf(it.description, 1000);
+      next_.push(g);
+    }
+    for (const g of current) if (!kept.has(String(g._id))) unlinkGalleryPic(uid, g.url);
+    user.set("gallery", next_);
+    await user.save();
+    res.json(publicGallery((user.get("gallery") || []) as GalleryPic[]));
+  } catch (err) { next(err); }
+});
+
 export default router;

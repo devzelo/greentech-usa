@@ -1113,6 +1113,22 @@ export async function downloadProjectExport(projectId: string, suggestedName?: s
   URL.revokeObjectURL(url);
 }
 
+// 2026-10-08 - the profile's picture gallery: several pictures, each with a title and description.
+export interface ApiProfilePicture { id: string; url: string; title: string; description: string; uploadedAt?: string }
+export async function fetchMyGallery(): Promise<ApiProfilePicture[]> { return request('/me/gallery'); }
+export async function addMyGalleryPictures(files: File[], meta: Array<{ title: string; description: string }>): Promise<{ gallery: ApiProfilePicture[]; created: string[] }> {
+  const fd = new FormData();
+  files.forEach((f) => fd.append('files', f));
+  fd.append('meta', JSON.stringify(meta));
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api/me/gallery`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const err = await res.json().catch(() => ({ error: res.statusText })); throw new Error(err.error || res.statusText); }
+  return res.json();
+}
+export async function saveMyGallery(items: Array<{ id: string; title: string; description: string }>): Promise<ApiProfilePicture[]> {
+  return request('/me/gallery', { method: 'PUT', body: JSON.stringify({ items }) });
+}
+
 export async function uploadAvatar(file: File): Promise<ApiUser> {
   const fd = new FormData();
   fd.append('file', file);

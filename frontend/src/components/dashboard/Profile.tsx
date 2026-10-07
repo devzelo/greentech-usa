@@ -11,6 +11,7 @@ import AgreementsPanel from "./agreements/AgreementsPanel";
 import PartnerProfileSection from "./PartnerProfileSection";
 import MyProfileOverview from "./MyProfileOverview";
 import SignatureManager from "./SignatureManager";
+import ProfileGallery from "./ProfileGallery";
 import ResumeFileCard from "./ResumeFileCard";
 
 // Card shells. The side column is narrow on large screens, so its cards keep a lighter padding.
@@ -292,7 +293,11 @@ export default function Profile() {
             {/* Fields */}
             <div className="space-y-5">
               <div className="space-y-2">
-                <label className={fieldLabel}><User size={12} /> Name</label>
+                {/* 2026-10-08 - the picture gallery sits beside the name, for every role. */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className={fieldLabel}><User size={12} /> Name</label>
+                  <ProfileGallery />
+                </div>
                 {isEditing ? (
                   <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={`${fieldInput} font-bold text-slate-900`} />
                 ) : (
