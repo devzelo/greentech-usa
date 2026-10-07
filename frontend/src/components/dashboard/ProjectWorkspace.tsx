@@ -71,6 +71,7 @@ import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
 import ProposalClosingBuilder from "./ProposalClosingBuilder";
 import DirectoryDetails, { detailsOf } from "./DirectoryDetails";
+import VendorFromDirectory from "./VendorFromDirectory";
 import type { SectionAddOpts } from "./SectionLibraryPicker";
 import { fetchProposalDocs, fetchWorkPackages, type ProposalSubsection, type ProposalAttachment, type ProposalDoc, type ProposalSimilarProject, type ProposalSection } from "../../lib/api";
 import CompanyDocPicker from "./CompanyDocPicker";
@@ -1964,9 +1965,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR-P-43 — add a project vendor chosen from the Directory (prefills the shared vendor record).
   const addVendorFromCompany = async (c: ApiCompany) => {
     if (!id) return;
-    if (projVendors.some((v) => (v.name || "").trim().toLowerCase() === c.name.trim().toLowerCase())) { setNewVendorName(""); toast("That vendor is already on this project.", "error"); return; }
+    if (projVendors.some((v) => v.companyId === c._id || (v.name || "").trim().toLowerCase() === c.name.trim().toLowerCase())) { setNewVendorName(""); toast("That vendor is already on this project.", "error"); return; }
     try {
-      const v = await addVendor(id, { name: c.name, contactName: c.contactPersons?.[0]?.name || "", email: c.email || c.contactPersons?.[0]?.email || "", phone: c.phone || c.contactPersons?.[0]?.phone || "" });
+      // 2026-10-07 - linked to its Directory company (the vendor record follows it).
+      const v = await addVendor(id, { name: c.name, companyId: c._id, contactName: c.contactPersons?.[0]?.name || "", email: c.email || c.contactPersons?.[0]?.email || "", phone: c.phone || c.contactPersons?.[0]?.phone || "" });
       setProjVendors((p) => [...p, v]);
       setActiveVendorId(v._id);
       setNewVendorName("");
@@ -6155,15 +6157,10 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   <button onClick={() => setEditVendorOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
                                 </div>
                                 <div className="p-5 space-y-3">
-                                  <p className="text-[11px] text-slate-400">Changes save automatically to the <strong>shared</strong> vendor used in Procurement → RFQs.</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="sm:col-span-2">{vField("name", "Vendor name", { placeholder: "Vendor / supplier name" })}</div>
-                                    {vField("contactName", "Contact person", { placeholder: "Attn." })}
-                                    {vField("email", "Email", { type: "email", placeholder: "name@company.com" })}
-                                    {vField("phone", "Phone", { placeholder: "+1 …" })}
-                                    {vField("city", "City")}
-                                    {vField("country", "Country")}
-                                  </div>
+                                  {/* 2026-10-07 - the vendor's details come from its Directory company (the shared
+                                      vendor record used in Procurement > RFQs follows them). */}
+                                  <VendorFromDirectory vendor={v} canEdit={vEditable}
+                                    onUpdate={(patch) => { updateVendor(id, v._id, patch).then((nv) => setProjVendors((p) => p.map((x) => (x._id === nv._id ? nv : x)))).catch((e) => toast(e instanceof Error ? e.message : "Could not save the vendor.", "error")); }} />
                                 </div>
                                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/60">
                                   <button onClick={() => removeVendor(v).then(() => setEditVendorOpen(false))} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50 mr-auto"><Trash2 size={12} /> Delete vendor</button>

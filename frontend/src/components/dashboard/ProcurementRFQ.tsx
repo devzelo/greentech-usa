@@ -10,6 +10,7 @@ import {
 } from "../../lib/api";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import CompanyEditorModal from "./CompanyEditorModal";
+import VendorFromDirectory from "./VendorFromDirectory";
 import RfqForm, { type RfqFormResult } from "./RfqForm";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
@@ -1364,25 +1365,14 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                 <button onClick={() => setVendorEditId(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"><X size={18} /></button>
               </div>
               <div className="p-5 space-y-3">
-                <p className="text-[11px] text-slate-400">{canEdit ? "Edit the vendor's details and save, or delete the vendor." : "Vendor details."}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Name
-                    <input className={`${inp} mt-1`} value={vEdit.name} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, name: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Country
-                    <input className={`${inp} mt-1`} value={vEdit.country} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, country: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">City
-                    <input className={`${inp} mt-1`} value={vEdit.city} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, city: e.target.value })} /></label>
-                  <label className="col-span-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact / Attention
-                    <input className={`${inp} mt-1`} value={vEdit.contactName} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, contactName: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
-                    <input className={`${inp} mt-1`} value={vEdit.email} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, email: e.target.value })} /></label>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone
-                    <input className={`${inp} mt-1`} value={vEdit.phone} disabled={!canEdit} onChange={(e) => setVEdit({ ...vEdit, phone: e.target.value })} /></label>
-                </div>
+                {/* 2026-10-07 - the vendor's details come from its Directory company; the vendor record
+                    (printed on RFQs, quotes and POs) follows them. */}
+                <VendorFromDirectory vendor={v} canEdit={canEdit}
+                  onUpdate={(patch) => { updateVendor(projectId, v._id, patch).then((nv) => setVendors((p) => p.map((x) => (x._id === nv._id ? nv : x)))).catch((err) => toast(err instanceof Error ? err.message : "Could not update vendor.", "error")); }} />
                 {canEdit && (
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <button onClick={() => removeVendor(v._id)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 text-red-600 text-[11px] font-bold hover:bg-red-100"><Trash2 size={13} /> Delete vendor</button>
-                    <button onClick={saveVendorEdit} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Save changes</button>
+                    <button onClick={() => setVendorEditId(null)} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary">Done</button>
                   </div>
                 )}
               </div>
