@@ -214,8 +214,8 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
         meta: [["Scope", scope], ["Items", String(sorted.length)], ["Date", new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })]],
         projectInfo, note: ["Procurement status report", projectInfo?.name].filter(Boolean).join("  ·  "),
         cols: [
-          { label: "Category", w: 100, wrap: true }, { label: "#", w: 30 }, { label: "Rev", w: 36 }, { label: "Description", w: 210, wrap: true },
-          { label: "Brand", w: 95, wrap: true }, { label: "Vendor", w: 95, wrap: true }, { label: "Spec", w: 160, wrap: true }, { label: "Qty", w: 60 },
+          { label: "Category", w: 100, wrap: true }, { label: "#", w: 30 }, { label: "Rev", w: 36 }, { label: "Description", w: 300, wrap: true },
+          { label: "Brand", w: 95, wrap: true }, { label: "Vendor", w: 95, wrap: true }, { label: "Spec", w: 280, wrap: true }, { label: "Qty", w: 60 },
           { label: "Need on site", w: 70 }, { label: "Order by", w: 70 }, { label: "Submittal", w: 84, wrap: true }, { label: "Status", w: 70, wrap: true },
         ],
         rows: sorted.map((it) => ({
@@ -343,10 +343,11 @@ export default function ProcurementMasterLog({ projectId, canEdit, guestLogistic
                   <td className="px-3 py-2 text-slate-500">{sectionName(it.sectionId)}</td>
                   <td className="px-3 py-2 text-slate-400 font-bold">{boqNo[it._id] || "—"}</td>
                   <td className="px-3 py-2 text-slate-400 font-bold whitespace-nowrap">{`RV${it.revNo || 0}`}</td>
-                  <td className="px-3 py-2 font-bold text-slate-700">{it.description || "—"}</td>
+                  {/* 2026-10-08 - description and spec in full, their line breaks kept (they were cut short). */}
+                  <td className="px-3 py-2 font-bold text-slate-700 min-w-[16rem] max-w-[30rem] whitespace-pre-wrap break-words align-top">{it.description || "—"}</td>
                   <td className="px-3 py-2 text-slate-500">{it.manufacturer || "—"}</td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{it.vendorName || "—"}</td>
-                  <td className="px-3 py-2 text-slate-500 max-w-[10rem] truncate" title={it.spec || ""}>{it.spec || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500 min-w-[14rem] max-w-[26rem] whitespace-pre-wrap break-words align-top">{it.spec || "—"}</td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{[it.qty, it.unit].filter(Boolean).join(" ") || "—"}</td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{it.needOnSiteDate || "—"}</td>
                   <td className={`px-3 py-2 whitespace-nowrap ${risk ? "text-red-600 font-bold" : "text-slate-500"}`}>{orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}{risk && " ⚠"}</td>

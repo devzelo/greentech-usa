@@ -756,7 +756,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                               {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
                             </button>
                           ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[24rem] w-full align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[30rem] w-full align-top ${strike}`} /></td>
                           {/* 2026-10-07 - the brand is a manufacturer in the Directory, picked not typed. */}
                           <td className="px-1 py-1 align-top"><DirectoryNameField className={`w-36 ${strike}`} value={it.manufacturer || ""} disabled={!rowEdit} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
                             onPick={(co) => editCell(it._id, "manufacturer", co.name)} onClear={() => editCell(it._id, "manufacturer", "")} /></td>
@@ -764,7 +764,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap" title="Accepted vendor — set automatically when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>
                           {c("qty", "w-14")}
                           {c("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[20rem] w-80 align-top ${strike}`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[26rem] w-[26rem] align-top ${strike}`} /></td>
                           <td className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} className={`${cell} w-32`} /></td>
                           {c("leadTimeDays", "w-14")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}</td>
@@ -864,14 +864,14 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                           {selCol && <td className="px-3 py-2 align-top w-8" />}
                           <td className="px-3 py-2 align-top w-12"><span className="text-[9px] font-bold text-primary uppercase tracking-widest">New</span></td>
                           <td className="px-2 py-2 align-top"><span className="text-[10px] text-slate-300 px-1.5">—</span></td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[24rem] w-full align-top`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[30rem] w-full align-top`} /></td>
                           <td className="px-1 py-1 align-top"><DirectoryNameField className="w-36" value={d.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
                             onPick={(co) => editDraft(d.tempId, "manufacturer", co.name)} onClear={() => editDraft(d.tempId, "manufacturer", "")} /></td>
                           {dc("modelNo", "w-24")}
                           <td className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>
                           {dc("qty", "w-14")}
                           {dc("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} min-w-[20rem] w-80 align-top`} /></td>
+                          <td className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} min-w-[26rem] w-[26rem] align-top`} /></td>
                           <td className="px-1 py-1 align-top"><input type="date" value={d.needOnSiteDate} onChange={(e) => editDraft(d.tempId, "needOnSiteDate", e.target.value)} className={`${cell} w-32`} /></td>
                           {dc("leadTimeDays", "w-14")}
                           <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(d.needOnSiteDate, d.leadTimeDays) || "—"}</td>
@@ -910,6 +910,51 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
           </div>
         );
       })}
+
+      {/* 2026-10-08 - "when I delete something on the BOQ it stays in the Master Log": items whose
+          category no longer exists showed only there. They are listed here to move or delete. */}
+      {(() => {
+        const known = new Set(sections.map((s) => s._id));
+        const lost = items.filter((it) => !known.has(it.sectionId));
+        if (!lost.length) return null;
+        return (
+          <div className="border border-amber-200 rounded-2xl overflow-hidden">
+            <div className="flex flex-wrap items-center gap-2 bg-amber-50 px-4 py-2.5">
+              <span className="font-bold text-amber-800 text-sm">No category</span>
+              <span className="text-[11px] text-amber-700">{lost.length} item{lost.length === 1 ? "" : "s"} without a category: {lost.length === 1 ? "it shows" : "they show"} in the Master Log. Move each into a category, or delete it.</span>
+            </div>
+            <table className="w-full text-xs">
+              <tbody className="divide-y divide-slate-50">
+                {lost.map((it) => (
+                  <tr key={it._id}>
+                    <td className="px-3 py-2 font-bold text-slate-700 whitespace-pre-wrap break-words">{it.description || <span className="italic font-normal text-slate-400">No description</span>}</td>
+                    <td className="px-3 py-2 text-slate-500">{it.manufacturer || "—"}</td>
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{[it.qty, it.unit].filter(Boolean).join(" ") || "—"}</td>
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{it.status === "BOQ" ? "Not Started" : it.status}</td>
+                    {canEdit && (
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {sections.length > 0 && (
+                          <select value="" aria-label="Move to a category" className={`${cell} w-auto mr-2`}
+                            onChange={async (e) => {
+                              const sid = e.target.value;
+                              if (!sid) return;
+                              try { const up = await updateProcurementItem(projectId, it._id, { sectionId: sid }); setItems((p) => p.map((x) => (x._id === it._id ? { ...x, ...up } : x))); toast(`Moved to ${sections.find((s) => s._id === sid)?.name || "the category"}.`, "success"); }
+                              catch (err) { toast(err instanceof Error ? err.message : "Could not move it.", "error"); }
+                            }}>
+                            <option value="">Move to…</option>
+                            {sections.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                          </select>
+                        )}
+                        <button type="button" onClick={() => void hardDelete(it._id)} title="Delete it (also from the Master Log)" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50"><Trash2 size={12} /> Delete</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       {/* I3 — cancelled items now stay in place (red rows) inside their category, with Restore.
           A one-line note points there when any are collapsed out of view. */}

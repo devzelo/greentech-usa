@@ -34,9 +34,9 @@ export async function buildBoqPdf(sections: ApiProcurementSection[], items: ApiP
   } else {
     // The extra width of the 17" page goes mostly to Description and Spec (CR-P-15).
     const cols: TableCol[] = [
-      { label: "#", w: 30 }, { label: "Description", w: 250, wrap: true }, { label: "Brand", w: 110, wrap: true },
+      { label: "#", w: 30 }, { label: "Description", w: 380, wrap: true }, { label: "Brand", w: 110, wrap: true },
       { label: "Vendor", w: 110, wrap: true }, { label: "Qty", w: 50, align: "right" }, { label: "Unit", w: 50 },
-      { label: "Spec", w: W - 30 - 250 - 110 - 110 - 50 - 50 - 85 - 85 - 80, wrap: true },
+      { label: "Spec", w: W - 30 - 380 - 110 - 110 - 50 - 50 - 85 - 85 - 80, wrap: true },
       { label: "Need on site", w: 85 }, { label: "Order by", w: 85 }, { label: "Status", w: 80 },
     ];
     const rows: TableRow[] = [];
