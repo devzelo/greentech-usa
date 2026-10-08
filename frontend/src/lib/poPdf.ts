@@ -166,11 +166,17 @@ async function drawSignatureStamp(doc: PDFDocument, b: Brand, page: PDFPage, po:
     // belongs to this party's block, overlapping the signature area like a real stamped document.
     const sigTop = y;
     const sig = await embedImage(doc, party.signatureUrl);
-    if (sig) { drawFitted(page, sig, x, y, colW - 70, 40); y -= 44; }
-    else { page.drawLine({ start: { x, y: y - 30 }, end: { x: x + colW - 70, y: y - 30 }, thickness: 0.8, color: C.s400 }); y -= 42; }
+    // 2026-10-08 - the stamp is pressed over the end of the signature (as drawn), not at the column's
+    // far edge: "very close to the signature, not too far".
+    let sigEnd = x;
+    if (sig) {
+      const sc = Math.min((colW - 70) / sig.width, 40 / sig.height, 1);
+      drawFitted(page, sig, x, y, colW - 70, 40);
+      sigEnd = x + sig.width * sc;
+      y -= 44;
+    } else { page.drawLine({ start: { x, y: y - 30 }, end: { x: x + colW - 70, y: y - 30 }, thickness: 0.8, color: C.s400 }); y -= 42; }
     const stamp = await embedImage(doc, party.stampUrl);
-    if (stamp) drawFitted(page, stamp, x + colW - 62, sigTop + 4, 56, 56);
-    // Keep every detail line clear of the stamp box, which starts at x + colW - 62.
+    if (stamp) drawFitted(page, stamp, Math.min(sig ? sigEnd - 22 : x, x + colW - 52), sigTop + 10, 48, 48);
     const textW = colW - 70;
     page.drawText(fitOneLine(b.bold, party.name || "-", 10, textW), { x, y, size: 10, font: b.bold, color: C.slate }); y -= 12;
     for (const [v, muted] of [[party.title, true], [party.email, false], [party.phone, false], [party.address, true]] as Array<[string | undefined, boolean]>) {

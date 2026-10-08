@@ -5,6 +5,7 @@ import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import { assembleProposalParts, type ProposalPart } from "../../lib/proposalExport";
 import { BRAND, COMPANY, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading } from "./brand";
 import RichText, { pdfAssetUrl } from "./RichText";
+import SignatureStamp from "./SignatureStamp";
 
 registerBrandFonts();
 
@@ -46,7 +47,7 @@ const s = StyleSheet.create({
   sigRow: { flexDirection: "row", marginTop: 10 },
   sigBlock: { width: "48.5%" },
   sigFor: { fontSize: 7, fontWeight: 700, color: BRAND.emerald, letterSpacing: 1, lineHeight: 1.3 },
-  sigArea: { height: 46, justifyContent: "flex-end", marginTop: 4 },
+  sigArea: { minHeight: 46, justifyContent: "flex-end", marginTop: 4 },
   sigImg: { height: 40, maxWidth: 170, objectFit: "contain" },
   stampImg: { position: "absolute", right: 4, bottom: 0, width: 50, height: 50, objectFit: "contain" },
   sigLine: { height: 1, backgroundColor: BRAND.slate, marginTop: 2, marginBottom: 5, width: "88%" },
@@ -164,8 +165,8 @@ function Signatures({ r, clientName, info }: { r: ApiProjectRequest; clientName?
           <View key={i} style={[s.sigBlock, { width: w, marginRight: i < blocks.length - 1 ? "2.5%" : 0 }]}>
             <Text style={s.sigFor}>FOR {b.who.toUpperCase()}</Text>
             <View style={s.sigArea}>
-              {!!b.sig && <Image src={pdfAssetUrl(b.sig)} style={s.sigImg} />}
-              {!!b.stamp && <Image src={pdfAssetUrl(b.stamp)} style={s.stampImg} />}
+              {/* 2026-10-08 - the stamp over the end of the signature, not at the far side of the block. */}
+              <SignatureStamp sig={b.sig ? pdfAssetUrl(b.sig) : undefined} stamp={b.stamp ? pdfAssetUrl(b.stamp) : undefined} sigH={40} stampSize={50} />
             </View>
             <View style={s.sigLine} />
             <Text style={s.sigName}>{b.name || "Name: ____________________"}</Text>

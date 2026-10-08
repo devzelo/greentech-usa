@@ -15,6 +15,7 @@ import {
 import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
 import { resolveLetter } from "../../lib/proposalLetter";
 import { pdfAssetUrl } from "../pdf/RichText";
+import SignatureStamp from "../pdf/SignatureStamp";
 import type { ProposalPart, PageCtx } from "../../lib/proposalExport";
 
 // The proposal is set in the brand kit's type (Inter body, Outfit display) on the client-approved
@@ -389,9 +390,9 @@ function CoverLetterPage({ coverLetter, cover, project, lh, label, note }: { cov
         <View style={styles.sigRow}>
           {coverLetter.signatories.map((s, i) => (
             <View key={s.id || i} style={styles.sigBlock}>
-              <View style={{ flexDirection: "row", alignItems: "center", minHeight: 48, marginBottom: 4 }}>
-                {!!s.signatureUrl && <Image src={abs(s.signatureUrl)} style={styles.sigImg} />}
-                {i === 0 && !!seal && <Image src={pdfAssetUrl(seal)} style={[styles.sealImg, { marginLeft: 10 }]} />}
+              {/* 2026-10-08 - the company seal over the end of the first signer's signature. */}
+              <View style={{ minHeight: 48, marginBottom: 4, justifyContent: "center" }}>
+                <SignatureStamp sig={s.signatureUrl ? abs(s.signatureUrl) : undefined} stamp={i === 0 && seal ? pdfAssetUrl(seal) : undefined} sigH={40} sigMaxW={150} stampSize={54} />
               </View>
               <Text style={styles.sigName}>{s.name || "-"}</Text>
               {!!s.title && <Text style={styles.sigTitle}>{s.title}</Text>}

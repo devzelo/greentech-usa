@@ -2,6 +2,7 @@ import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/render
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, abs, COMPANY } from "./brand";
 import { withFileToken } from "../../lib/api";
 import { eoiText, type EoiResolved } from "../../lib/eoi";
+import SignatureStamp from "./SignatureStamp";
 
 registerBrandFonts();
 
@@ -92,9 +93,9 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
         <Text style={s.para}>{t.closingPara}</Text>
         <View wrap={false} style={{ marginTop: 4 }}>
           <Text style={s.para}>{t.closing}</Text>
+          {/* 2026-10-08 - one stamp, over the end of the signature. */}
           <View style={s.sigRow}>
-            {!!r.signatory?.signatureUrl && <Image src={img(r.signatory.signatureUrl)} style={s.sigImg} />}
-            {r.stampUrls.map((u) => <Image key={u} src={img(u)} style={s.seal} />)}
+            <SignatureStamp sig={r.signatory?.signatureUrl ? img(r.signatory.signatureUrl) : undefined} stamp={r.stampUrls[0] ? img(r.stampUrls[0]) : undefined} sigH={42} sigMaxW={150} stampSize={58} />
           </View>
           {/* CR 364 - the signature block: name, title, the firm, and how to reach the signer. */}
           <Text style={s.sigName}>{r.signatory?.name || r.pocName || ""}</Text>
