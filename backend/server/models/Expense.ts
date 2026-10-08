@@ -26,6 +26,7 @@ export interface IExpense extends Document {
   subId: string; // optional subcontractor this expense is attributed to
   workPackageId: string; // CR 328 - optional work package this expense is spent on
   invoiceId: string; // set when this expense is a received-invoice payment (excluded from P&L to avoid double-count)
+  source: string;    // 2026-10-08 - made by the app, e.g. "bonding:bond-fee" (kept in step with its figures)
   // Approval workflow: pending by default. Only employees/owners can change it.
   approval: "pending" | "approved" | "rejected";
   attachments: IExpenseAttachment[];
@@ -79,6 +80,7 @@ const ExpenseSchema = new Schema<IExpense>(
     subId: { type: String, default: "" },
     workPackageId: { type: String, default: "" },
     invoiceId: { type: String, default: "" },
+    source: { type: String, default: "", index: true },
     approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
     attachments: { type: [AttachmentSchema], default: [] },
     items: {

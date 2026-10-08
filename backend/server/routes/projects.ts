@@ -17,6 +17,7 @@ import { notifyByEmpId } from "../lib/notify";
 import { moveToTrash } from "../lib/recycleBin";
 import { duplicateProject } from "../lib/duplicateProject";
 import { cleanBonding, cleanWip } from "../lib/bonding";
+import { syncBondingExpenses } from "../lib/bondingExpenses";
 
 // Shared check: is the requester the JV partner of this project (or staff)?
 async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { email?: string }; ownerId?: unknown; assignedEmployees?: string[]; guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }> }): Promise<boolean> {
@@ -384,6 +385,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
       }
     }
     if (!project) return res.status(409).json({ error: "Could not allocate a project number — please try again." });
+    // 2026-10-08 - the bank fees and a year's interest become the project's expenses.
+    if (req.body.bonding !== undefined) await syncBondingExpenses(project.projectId, project.bonding, req.user || {}).catch(() => undefined);
     res.status(201).json(project);
   } catch (err) {
     next(err);
@@ -464,6 +467,8 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
       req.body,
       { new: true, runValidators: true }
     );
+    // 2026-10-08 - the bank fees and a year's interest follow the bonding figures as expenses.
+    if (project && req.body.bonding !== undefined) await syncBondingExpenses(project.projectId, project.bonding, req.user || {}).catch(() => undefined);
 
     // CR-P (81) — removing an employee from the project cuts ALL of their access to it. Tab access
     // set with "Manage access" is a separate grant in guests[], and getProjectAccess checks that

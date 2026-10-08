@@ -59,6 +59,15 @@ export const fromAmount = (amount: string, contract: number) => {
   return { amount, percent: contract && a ? pctText((a / contract) * 100) : "" };
 };
 
+/** 2026-10-08 - the bonds needed, added up: what the bank's fee and interest are a percent of. */
+export const bondsTotal = (b: ProjectBonding) =>
+  b.bonded === "yes" ? (["bid", "performance", "payment"] as const).filter((k) => b[k].required).reduce((s, k) => s + moneyNum(b[k].amount), 0) : 0;
+/** A percent of an amount, as money ("" when either is missing). */
+export const pctOf = (percent: string, base: number) => {
+  const p = parseFloat(percent);
+  return base && isFinite(p) && p ? money(Math.round(base * p) / 100) : "";
+};
+
 /** The fee a percent of the contract comes to. */
 export const feeAmount = (feePercent: string, contract: number) => {
   const p = parseFloat(feePercent);
