@@ -1,3 +1,4 @@
+import { API_BASE, withFileToken } from "./api";
 /**
  * CR 286 (2026-09-23): a logo on its way into a generated PDF.
  *
@@ -6,6 +7,18 @@
  * hands the document a plain PNG, whatever the Directory holds - SVG, WebP, anything the browser
  * can display - and keeps it small enough not to weigh the file down.
  */
+/**
+ * 2026-10-08 - a stored logo (a Directory company's, a JV partner's, a client's) ready for a PDF:
+ * the PDF engine only draws PNG and JPEG, so a WebP, SVG or GIF logo came out as an empty box.
+ * Fetched with the file token and painted to a PNG; on any failure the stored address is kept.
+ */
+export async function pdfLogo(url?: string): Promise<string | undefined> {
+  if (!url || /^data:image\/(png|jpe?g)[;,]/i.test(url)) return url;
+  const own = API_BASE && url.startsWith(`${API_BASE}/uploads/`) ? url.slice(API_BASE.length) : url;
+  const src = /^(https?:|data:)/.test(own) ? own : withFileToken(own.startsWith("/") ? own : `/${own}`);
+  try { return await logoAsPng(src); } catch { return url; }
+}
+
 export async function logoAsPng(url: string, maxWidth = 480): Promise<string> {
   const img = await new Promise<HTMLImageElement>((ok, fail) => {
     const el = new Image();

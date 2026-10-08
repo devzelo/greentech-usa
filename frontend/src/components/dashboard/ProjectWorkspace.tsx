@@ -32,7 +32,7 @@ import { PDFDownloadLink, BlobProvider, pdf } from "@react-pdf/renderer";
 import { BondingCard } from "./BondingEditor";
 import WipFields from "./WipFields";
 import { withWip, type ProjectWip } from "../../lib/wip";
-import { logoAsPng, photoAsJpeg } from "../../lib/logoImage";
+import { logoAsPng, pdfLogo, photoAsJpeg } from "../../lib/logoImage";
 import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportPackage, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
@@ -1772,7 +1772,16 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const tech = withLiveProjects(technical, pool), fin = withLiveProjects(financial, pool);
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
-    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project: pdfProject, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical: tech, financial: fin, logoUrl, resumes: teamResumes, requirements }, ctx);
+    // 2026-10-08 - the client's logo, the JV partner's logo and a custom letterhead logo as PNGs
+    // (a WebP, SVG or GIF logo printed as an empty box).
+    const baseCover = which === "financial" ? coverFinancial : cover;
+    const [clientPng, coverJvPng, jvPng, customPng] = await Promise.all([
+      pdfLogo(baseCover.clientLogoUrl), pdfLogo(baseCover.jvLogoUrl),
+      pdfLogo(pdfProject.jointVenture?.enabled ? pdfProject.jointVenture.logo : ""), pdfLogo(customLetterheadUrl),
+    ]);
+    const pdfCover = { ...baseCover, ...(clientPng ? { clientLogoUrl: clientPng } : {}), ...(coverJvPng ? { jvLogoUrl: coverJvPng } : {}) };
+    const pdfProj = jvPng && pdfProject.jointVenture ? { ...pdfProject, jointVenture: { ...pdfProject.jointVenture, logo: jvPng } } : pdfProject;
+    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project: pdfProj, cover: pdfCover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl: customPng || customLetterheadUrl, technical: tech, financial: fin, logoUrl, resumes: teamResumes, requirements }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     // Item 104 / spec 6 - warn when a company document in the proposal has expired.
     {

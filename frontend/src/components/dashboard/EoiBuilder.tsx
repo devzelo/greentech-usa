@@ -5,6 +5,7 @@ import PdfFrame from "./PdfFrame";
 import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine, Pencil, Undo2 } from "lucide-react";
 import { fetchSigners, withFileToken, type ApiProject, type ApiSigner, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
 import StampPicker, { stampSrc } from "./StampPicker";
+import { pdfLogo } from "../../lib/logoImage";
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
 import { COMPANY } from "../../lib/brandTokens";
 import EoiPDF from "../pdf/EoiPDF";
@@ -79,6 +80,9 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
     cover?.clientCompanyId || (!cover?.clientName?.trim() ? project.clientInfo?.companyId : "") || "",
     cover?.clientName?.trim() || project.clientInfo?.name || "", "client");
   const r = resolveEoi(value, project, cover);
+  // 2026-10-08 - the JV partner's logo as a PNG for the letterhead (WebP / SVG print empty).
+  const [partnerPng, setPartnerPng] = useState<string | undefined>(undefined);
+  useEffect(() => { let live = true; setPartnerPng(undefined); void pdfLogo(r.partnerLogo).then((p) => { if (live) setPartnerPng(p); }); return () => { live = false; }; }, [r.partnerLogo]);
   const std = eoiStandardText(r);
   const jvOn = !!project.jointVenture?.enabled && !!project.jointVenture.partnerName;
   const bullets = value.bullets ?? EOI_STANDARD_BULLETS;
@@ -119,7 +123,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const download = async () => {
     setBusy(true);
     try {
-      const blob = await pdf(<EoiPDF r={r} projectName={project.name} />).toBlob();
+      const blob = await pdf(<EoiPDF r={{ ...r, partnerLogo: (await pdfLogo(r.partnerLogo)) || r.partnerLogo }} projectName={project.name} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -340,7 +344,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
             <button onClick={() => setPreview(false)} aria-label="Close preview" className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
           </div>
           <div className="flex-1 bg-slate-200" onClick={(e) => e.stopPropagation()}>
-            <PdfFrame><EoiPDF r={r} projectName={project.name} /></PdfFrame>
+            <PdfFrame><EoiPDF r={{ ...r, partnerLogo: partnerPng || r.partnerLogo }} projectName={project.name} /></PdfFrame>
           </div>
         </div>
       )}

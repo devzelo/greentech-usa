@@ -1,4 +1,5 @@
 import type { ApiAgreement } from "./api";
+import { pdfLogo } from "./logoImage";
 
 // The shared agreement document — one layout for every context (employee, partner, subcontractor,
 // vendor, general). The document itself is drawn in the brand kit's design by
@@ -30,13 +31,17 @@ export function agreementHeading(ag: ApiAgreement): string {
 }
 
 /** The agreement as a PDF: the preview, the download, the share copy and the signed snapshot. */
+/** 2026-10-08 - the JV partner's logo as a PNG (the PDF engine draws only PNG and JPEG). */
+const withPdfLogos = async (ag: ApiAgreement): Promise<ApiAgreement> =>
+  (ag.letterhead === "jv" && ag.jvLogoUrl ? { ...ag, jvLogoUrl: (await pdfLogo(ag.jvLogoUrl)) || ag.jvLogoUrl } : ag);
+
 export async function buildAgreementPdf(ag: ApiAgreement): Promise<Blob> {
   const { buildBrandAgreementPdf } = await import("../components/pdf/AgreementPDF");
-  return buildBrandAgreementPdf(ag);
+  return buildBrandAgreementPdf(await withPdfLogos(ag));
 }
 
 /** An agreement uploaded as a file: our cover page, then the file itself. */
 export async function buildUploadedAgreementPdf(ag: ApiAgreement, bytes: Uint8Array, name: string): Promise<Blob> {
   const { buildBrandUploadedAgreementPdf } = await import("../components/pdf/AgreementPDF");
-  return buildBrandUploadedAgreementPdf(ag, bytes, name);
+  return buildBrandUploadedAgreementPdf(await withPdfLogos(ag), bytes, name);
 }
