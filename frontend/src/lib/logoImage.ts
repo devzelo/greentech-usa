@@ -15,7 +15,18 @@ import { API_BASE, withFileToken } from "./api";
 export async function pdfLogo(url?: string): Promise<string | undefined> {
   if (!url || /^data:image\/(png|jpe?g)[;,]/i.test(url)) return url;
   const own = API_BASE && url.startsWith(`${API_BASE}/uploads/`) ? url.slice(API_BASE.length) : url;
-  const src = /^(https?:|data:)/.test(own) ? own : withFileToken(own.startsWith("/") ? own : `/${own}`);
+  // Another site's logo, or a picture already in the page: read as it is, never with our token.
+  if (/^(https?:|data:image\/)/i.test(own)) {
+    try { return await logoAsPng(own); } catch { return url; }
+  }
+  // The file token goes only on one of our own upload paths, and only to our own server.
+  const path = own.startsWith("/") ? own : `/${own}`;
+  if (path.startsWith("//") || path.includes("\\") || !path.startsWith("/uploads/")) return url;
+  const src = withFileToken(path);
+  try {
+    const expected = new URL(API_BASE || window.location.origin, window.location.href).origin;
+    if (new URL(src, window.location.href).origin !== expected) return url;
+  } catch { return url; }
   try { return await logoAsPng(src); } catch { return url; }
 }
 
