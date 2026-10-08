@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "motion/react";
 import { setCurrentProject } from "../../lib/currentProject";
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -59,9 +59,10 @@ import SectionGroupTemplates from "./SectionGroupTemplates";
 import { makeZip } from "../../lib/zip";
 import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
-import StandardAppendices from "./StandardAppendices";
+import StandardAppendices, { loadStandardLists } from "./StandardAppendices";
+import AppendixListManager from "./AppendixListManager";
 import SharedMoneyInput from "./MoneyInput";
-import type { StandardAppendixItem } from "../../lib/api";
+import { saveStandardAppendices, type StandardAppendixItem } from "../../lib/api";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
 
 /** Step 7 - which proposal volume a section handler works on (both have sections). */
@@ -1537,12 +1538,87 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const haveTitles = new Set(layout.map((m) => m.title.trim().toLowerCase()));
     const add = items.filter((it) => (it.key ? !haveKeys.has(it.key) : !haveTitles.has(it.title.trim().toLowerCase())));
     if (!add.length) { toast("The standard appendices are already in this volume.", "info"); return; }
-    for (const it of add) {
-      const a = it.key ? APPENDIX_LIBRARY.find((x) => x.key === it.key) : undefined;
-      addLayoutSection(a?.title || it.title, "", { libraryKey: a?.key, guide: a?.hint, appendix: true, pageType: a?.pageType || "external", divider: true }, vol);
-    }
+    for (const it of add) addAppendix(vol, it);
+    setDirty(true);
     toast(`Added ${add.length} standard appendix section${add.length === 1 ? "" : "s"}.`, "success");
   };
+  // 2026-10-08 - one appendix (an attachment printed at the end): a library type fills from Company
+  // Documents unless it brings its own files (from the standard list); a separator page unless off.
+  const addAppendix = (vol: Vol, it: StandardAppendixItem) => {
+    const lib = it.key ? APPENDIX_LIBRARY.find((x) => x.key === it.key) : APPENDIX_LIBRARY.find((x) => x.title.toLowerCase() === it.title.trim().toLowerCase());
+    const own = (it.files || []).map((f) => ({ name: f.name, url: f.url, ...(f.companyFileId ? { companyFileId: f.companyFileId } : {}) }));
+    const auto = !own.length && lib ? bestDocFor(lib.key, companyDocs) : undefined;
+    const title = (lib?.title || it.title).trim() || "Attachment";
+    editVol(vol, (b) => {
+      const newId = uid();
+      const section = { id: newId, heading: title, body: "", attachments: own.length ? own : auto ? [docAttachment(auto)] : [] };
+      const meta: ProposalSectionMeta = { id: `m-${newId}`, kind: "custom", refId: newId, title, hidden: false, appendix: true, pageType: lib?.pageType || "external", divider: it.divider !== false, ...(lib ? { libraryKey: lib.key, guide: lib.hint } : {}) };
+      return { sections: [...b.sections, section], layout: [...b.layout, meta] };
+    });
+  };
+  const [stdRev, setStdRev] = useState(0);   // reloads the standard-list button after it is saved
+  const appendixRows = (vol: Vol) => {
+    const secs = sectionsOfVol(vol);
+    return layoutOfVol(vol).filter((m) => m.appendix && m.kind === "custom").map((m) => ({ meta: m, files: secs.find((s) => s.id === m.refId)?.attachments || [] }));
+  };
+  const appendixNo = (vol: Vol) => (i: number) => {
+    const letters = (vol === "financial" ? financial.appendixNumbering || "letters" : technical.appendixNumbering || "numbers") === "letters";
+    return `Appendix ${letters ? String.fromCharCode(65 + (i % 26)) + (i >= 26 ? String(Math.floor(i / 26)) : "") : i + 1}`;
+  };
+  const appendixFiles = (vol: Vol, sid: string, fn: (a: ProposalAttachment[]) => ProposalAttachment[]) => {
+    editVol(vol, (b) => ({ sections: b.sections.map((s) => (s.id === sid ? { ...s, attachments: fn(s.attachments || []) } : s)) }));
+    setDirty(true);
+  };
+  const appendixActions = (vol: Vol) => ({
+    onRename: (m: ProposalSectionMeta, title: string) => {
+      editVol(vol, (b) => ({ layout: b.layout.map((x) => (x.id === m.id ? { ...x, title } : x)), sections: b.sections.map((s) => (s.id === m.refId ? { ...s, heading: title } : s)) }));
+      setDirty(true);
+    },
+    onSeparator: (m: ProposalSectionMeta, on: boolean) => { editVol(vol, (b) => ({ layout: b.layout.map((x) => (x.id === m.id ? { ...x, divider: on } : x)) })); setDirty(true); },
+    onMove: (m: ProposalSectionMeta, dir: -1 | 1) => {
+      editVol(vol, (b) => {
+        const at = b.layout.map((x, i) => (x.appendix && x.kind === "custom" ? i : -1)).filter((i) => i >= 0);
+        const k = at.findIndex((i) => b.layout[i].id === m.id), j = k + dir;
+        if (k < 0 || j < 0 || j >= at.length) return null;
+        const layout = b.layout.slice();
+        [layout[at[k]], layout[at[j]]] = [layout[at[j]], layout[at[k]]];
+        return { layout };
+      });
+      setDirty(true);
+    },
+    onDelete: (m: ProposalSectionMeta) => void removeLayoutSection(m, vol),
+    onUpload: async (m: ProposalSectionMeta, files: File[]) => {
+      if (!id || !m.refId) return;
+      const done: ProposalAttachment[] = [];
+      for (const f of files) {
+        try { const { url } = await uploadProposalAsset(id, f); done.push({ name: f.name, url }); }
+        catch (e) { toast(e instanceof Error ? `${f.name}: ${e.message}` : `Could not upload ${f.name}.`, "error"); }
+      }
+      if (done.length) { appendixFiles(vol, m.refId, (a) => [...a, ...done]); toast(`${done.length} file${done.length === 1 ? "" : "s"} attached.`, "success"); }
+    },
+    onRemoveFile: (m: ProposalSectionMeta, index: number) => { if (m.refId) appendixFiles(vol, m.refId, (a) => a.filter((_, k) => k !== index)); },
+    onAddDocs: (m: ProposalSectionMeta, docs: ProposalDoc[]) => { if (m.refId) appendixFiles(vol, m.refId, (a) => [...a, ...docs.map(docAttachment)]); },
+    onAdd: (title: string) => { addAppendix(vol, { title }); setDirty(true); },
+    onSaveStandard: async () => {
+      const rows = appendixRows(vol);
+      if (!(await brandedConfirm({
+        title: "Save as the standard list?",
+        message: `The company's standard list for ${vol} proposals becomes these ${rows.length} attachments, in this order, with their files and separator pages. Every project can then load it with "Add standard appendices".`,
+        confirmLabel: "Save as the standard",
+      }))) return;
+      try {
+        const cur = await loadStandardLists();
+        const list: StandardAppendixItem[] = rows.map(({ meta, files }) => ({
+          ...(meta.libraryKey ? { key: meta.libraryKey } : {}), title: meta.title, divider: meta.divider !== false,
+          // A library type picks up the current company document in each project; other files come along.
+          files: files.filter((f) => !(meta.libraryKey && f.companyFileId)).map((f) => ({ name: f.name, url: f.url, ...(f.companyFileId ? { companyFileId: f.companyFileId } : {}) })),
+        }));
+        await saveStandardAppendices({ ...cur, [vol]: list });
+        setStdRev((n) => n + 1);
+        toast(`Saved as the standard list for ${vol} proposals.`, "success");
+      } catch (e) { toast(e instanceof Error ? e.message : "Could not save the standard list.", "error"); }
+    },
+  });
   const insertResource = (b: ApiResourceBlock) => {
     addLayoutSection(b.title, b.body);
     setLibraryOpen(false);
@@ -5118,6 +5194,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   used to sit under the overview table; they belong with the document they go into. */}
               {(proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "attachments" && (
                 <div className="space-y-6">
+                {/* 2026-10-08 - the document's attachment list (its appendices), editable and reusable. */}
+                <AppendixListManager
+                  title={`${proposalSub === "technical" ? "Technical" : "Financial"} Proposal - Attachment list`}
+                  numberOf={appendixNo(proposalSub)}
+                  rows={appendixRows(proposalSub)}
+                  canEdit={canEdit}
+                  companyDocs={companyDocs}
+                  fileHref={assetSrc}
+                  {...appendixActions(proposalSub)}
+                  standard={<Fragment key={`std-${proposalSub}-${stdRev}`}><StandardAppendices volume={proposalSub} onAdd={(items) => addStandardAppendices(proposalSub, items)} /></Fragment>}
+                />
                 {/* CR 206 - what the platform already holds for this proposal, pick what goes in. */}
                 <AvailableAttachments
                   volume={proposalSub}

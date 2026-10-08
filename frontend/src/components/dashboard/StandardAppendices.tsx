@@ -21,6 +21,13 @@ const DEFAULT_KEYS: Record<Vol, string[]> = {
 const fromKeys = (keys: string[]): StandardAppendixItem[] =>
   keys.map((k) => APPENDIX_LIBRARY.find((a) => a.key === k)).filter((a): a is NonNullable<typeof a> => !!a).map((a) => ({ key: a.key, title: a.title }));
 const defaultLists = (): Lists => ({ technical: fromKeys(DEFAULT_KEYS.technical), financial: fromKeys(DEFAULT_KEYS.financial) });
+/** The company's standard lists as saved, or the default ones. */
+export async function loadStandardLists(): Promise<Lists> {
+  try {
+    const s = await fetchStandardAppendices();
+    return s && Array.isArray(s.technical) && Array.isArray(s.financial) ? { technical: s.technical, financial: s.financial } : defaultLists();
+  } catch { return defaultLists(); }
+}
 /** A library entry shows its current library title (renames there follow). */
 const titleOf = (it: StandardAppendixItem) => (it.key && APPENDIX_LIBRARY.find((a) => a.key === it.key)?.title) || it.title;
 const sameItem = (a: StandardAppendixItem, b: StandardAppendixItem) =>
@@ -111,6 +118,8 @@ function EditDialog({ volume, lists, onClose, onSaved }: { volume: Vol; lists: L
                 <span className="w-5 shrink-0 text-center text-[11px] font-bold text-slate-400">{i + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800" title={titleOf(it)}>{titleOf(it)}</span>
                 {!it.key && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">Our own</span>}
+                {!!it.files?.length && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500" title={it.files.map((f) => f.name).join(", ")}>{it.files.length} file{it.files.length === 1 ? "" : "s"}</span>}
+                {it.divider === false && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500">No separator</span>}
                 <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${titleOf(it)} up`} className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-900 disabled:opacity-30"><ArrowUp size={13} /></button>
                 <button type="button" onClick={() => move(i, 1)} disabled={i === draft.length - 1} aria-label={`Move ${titleOf(it)} down`} className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-900 disabled:opacity-30"><ArrowDown size={13} /></button>
                 <button type="button" onClick={() => setDraft((d) => d.filter((_, k) => k !== i))} aria-label={`Remove ${titleOf(it)} from the list`} className="rounded p-1.5 text-slate-300 hover:bg-white hover:text-red-500"><Trash2 size={13} /></button>

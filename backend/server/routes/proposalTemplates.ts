@@ -23,16 +23,22 @@ router.get("/", async (_req: AuthedRequest, res: Response, next: NextFunction) =
 // entry (key) or an appendix of our own (title only). Null until someone edits it (the app's
 // default list applies).
 const STD_KEY = "standard-appendices";
-type StdItem = { key?: string; title: string };
+type StdItem = { key?: string; title: string; divider?: boolean; files?: Array<{ name: string; url: string; companyFileId?: string }> };
 const cleanList = (v: unknown): StdItem[] | null => {
   if (!Array.isArray(v) || v.length > 60) return null;
   const out: StdItem[] = [];
   for (const raw of v) {
-    const r = (raw || {}) as { key?: unknown; title?: unknown };
+    const r = (raw || {}) as { key?: unknown; title?: unknown; divider?: unknown; files?: unknown };
     const title = typeof r.title === "string" ? r.title.trim().slice(0, 200) : "";
     const key = typeof r.key === "string" ? r.key.trim().slice(0, 80) : "";
     if (!title) return null;
-    out.push(key ? { key, title } : { title });
+    // 2026-10-08 - its files (our uploads only) and its separator page come with it into every project.
+    const files = (Array.isArray(r.files) ? r.files : []).slice(0, 10).map((f) => {
+      const o = (f || {}) as { name?: unknown; url?: unknown; companyFileId?: unknown };
+      const url = typeof o.url === "string" ? o.url.trim().slice(0, 500) : "";
+      return { name: typeof o.name === "string" ? o.name.trim().slice(0, 200) : "File", url, ...(typeof o.companyFileId === "string" && o.companyFileId ? { companyFileId: o.companyFileId.slice(0, 40) } : {}) };
+    }).filter((f) => /^\/?uploads\//.test(f.url) || /^\/(downloads|client-logos)\//.test(f.url));
+    out.push({ ...(key ? { key } : {}), title, ...(r.divider === false ? { divider: false } : {}), ...(files.length ? { files } : {}) });
   }
   return out;
 };

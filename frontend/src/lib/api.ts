@@ -673,7 +673,12 @@ export async function deleteProposalTemplate(id: string): Promise<{ message: str
 }
 // 2026-10-07 - the company's standard appendices list (null until someone edits it). An item is an
 // Appendix Library entry (key) or an appendix of our own (title only).
-export interface StandardAppendixItem { key?: string; title: string }
+export interface StandardAppendixItem {
+  key?: string; title: string;
+  /** 2026-10-08 - a separator page before it (default on), and files that come with it into every project. */
+  divider?: boolean;
+  files?: Array<{ name: string; url: string; companyFileId?: string }>;
+}
 export interface StandardAppendixLists {
   technical: StandardAppendixItem[];
   financial: StandardAppendixItem[];
