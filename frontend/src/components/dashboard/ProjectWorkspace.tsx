@@ -702,6 +702,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   }, [financialLocked, project, proposalSub]);
   // 2026-10-08 - the builder is read-only until Edit, like the cover page: the volume being edited,
   // and its content when Edit was clicked (Cancel puts it back, even past an autosave).
+  // 2026-10-08 - every builder section folds (its editor hidden, its header kept); Collapse all / Expand all.
+  const [foldedSecs, setFoldedSecs] = useState<Set<string>>(new Set());
+  const toggleFold = (mid: string) => setFoldedSecs((p) => { const n = new Set(p); if (n.has(mid)) n.delete(mid); else n.add(mid); return n; });
   const [builderEdit, setBuilderEdit] = useState<{ vol: "technical" | "financial"; before: string } | null>(null);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "closing" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
@@ -1431,8 +1434,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const locked = !!m.locked;
     const patchMeta = (patch: Partial<ProposalSectionMeta>) => setLayout(layout.map((x) => (x.id === m.id ? { ...x, ...patch } : x)), vol);
     const toggleLock = () => patchMeta({ locked: !locked, history: [...(m.history || []), { at: new Date().toISOString(), by: getAuthUser()?.name || "Someone", text: locked ? "Unlocked" : "Locked" }] });
+    const folded = foldedSecs.has(m.id);
     return (
       <div className="flex items-center gap-2 mb-1 px-1">
+        <button type="button" onClick={() => toggleFold(m.id)} aria-expanded={!folded} aria-label={`${folded ? "Expand" : "Collapse"} ${m.title}`} title={folded ? "Expand" : "Collapse"}
+          className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900">
+          <ChevronDown size={14} className={`transition-transform ${folded ? "-rotate-90" : ""}`} />
+        </button>
         {canEdit && (
           <div className="flex items-center">
             <button disabled={locked || i === 0} onClick={() => moveProposalSection(i, -1, vol)} title={locked ? "Locked sections stay in place" : "Move up"} className="p-1 rounded text-slate-400 hover:text-slate-900 disabled:opacity-20"><ArrowUp size={14} /></button>
@@ -3636,6 +3644,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // The editor for a custom (library or free) section, in either proposal volume (step 7).
   // CR 199 - jump from the contents list to a section's editor and flash it, so it is obvious where it went.
   const goToSection = (m: ProposalSectionMeta) => {
+    if (foldedSecs.has(m.id)) toggleFold(m.id);
     const el = document.getElementById(`sec-${m.id}`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -5464,10 +5473,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     onSave={(name, ids) => saveGroupTemplate("technical", name, ids)} onInsert={(t) => insertGroupTemplate("technical", t)} onDelete={deleteGroupTemplate} />
 
                   {/* Section editors in document order, each with on-box reorder arrows */}
+                  {/* 2026-10-08 - fold or unfold every section at once. */}
+                  {techLayout.length > 0 && (
+                    <div className="flex items-center justify-end gap-1 text-[11px] font-bold">
+                      <button type="button" onClick={() => setFoldedSecs(new Set([...foldedSecs, ...techLayout.map((m) => m.id)]))} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><ChevronRight size={12} /> Collapse all</button>
+                      <button type="button" onClick={() => setFoldedSecs(new Set([...foldedSecs].filter((x) => !techLayout.some((m) => m.id === x))))} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><ChevronDown size={12} /> Expand all</button>
+                    </div>
+                  )}
                   {techLayout.map((m, i) => (
                     <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
                       {sectionHead(m, i, techLayout, "technical", canEdit)}
-                      <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{editorFor(m)}</div>
+                      {foldedSecs.has(m.id)
+                        ? <button type="button" onClick={() => toggleFold(m.id)} className="mb-2 w-full rounded-2xl border border-dashed border-slate-200 px-4 py-2 text-left text-[11px] text-slate-400 hover:border-slate-300 hover:text-slate-600">Collapsed. Click to expand.</button>
+                        : <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{editorFor(m)}</div>}
                     </div>
                   ))}
                 </div>
@@ -5743,10 +5761,19 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <SectionGroupTemplates layout={finLayout} templates={groupTemplates} canEdit={canEdit}
                     onSave={(name, ids) => saveGroupTemplate("financial", name, ids)} onInsert={(t) => insertGroupTemplate("financial", t)} onDelete={deleteGroupTemplate} />
 
+                  {/* 2026-10-08 - fold or unfold every section at once. */}
+                  {finLayout.length > 0 && (
+                    <div className="flex items-center justify-end gap-1 text-[11px] font-bold">
+                      <button type="button" onClick={() => setFoldedSecs(new Set([...foldedSecs, ...finLayout.map((m) => m.id)]))} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><ChevronRight size={12} /> Collapse all</button>
+                      <button type="button" onClick={() => setFoldedSecs(new Set([...foldedSecs].filter((x) => !finLayout.some((m) => m.id === x))))} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><ChevronDown size={12} /> Expand all</button>
+                    </div>
+                  )}
                   {finLayout.map((m, i) => (
                     <div key={m.id} id={`sec-${m.id}`} className={`scroll-mt-24 transition-shadow ${m.hidden ? "opacity-50" : ""}`}>
                       {sectionHead(m, i, finLayout, "financial", canEdit)}
-                      <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{finEditorFor(m)}</div>
+                      {foldedSecs.has(m.id)
+                        ? <button type="button" onClick={() => toggleFold(m.id)} className="mb-2 w-full rounded-2xl border border-dashed border-slate-200 px-4 py-2 text-left text-[11px] text-slate-400 hover:border-slate-300 hover:text-slate-600">Collapsed. Click to expand.</button>
+                        : <div inert={m.locked || undefined} className={m.locked ? "rounded-[2rem] ring-1 ring-amber-200" : undefined} title={m.locked ? "Locked: unlock it in the header to edit" : undefined}>{finEditorFor(m)}</div>}
                     </div>
                   ))}
                 </div>
