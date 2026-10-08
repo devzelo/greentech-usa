@@ -1,19 +1,25 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import DirectoryNameField from "./DirectoryNameField";
 import * as XLSX from "xlsx";
-import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText, X } from "lucide-react";
+import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText, X, AlertTriangle, CheckCircle2, Clock, History, Columns3, MoveHorizontal, ArrowLeftRight, LayoutList, Rows3, Printer } from "lucide-react";
 import {
   fetchProcurementSections, addProcurementSection, updateProcurementSection, deleteProcurementSection,
   fetchProcurementItems, addProcurementItem, updateProcurementItem, cancelProcurementItem, restoreProcurementItem,
-  deleteProcurementItem, bulkAddProcurementItems, fetchSubmittals, fetchProcurementItemRevisions,
+  deleteProcurementItem, bulkAddProcurementItems, fetchSubmittals, fetchProcurementItemRevisions, fetchProcurementEvents,
   createRfq, uploadDocument, uploadProcurementItemFile, deleteProcurementItemFile, attachmentUrl,
   type ApiProcurementSection, type ApiProcurementItem, type ProcurementItemInput, type ApiSubmittal, type ApiProcurementItemRevision,
+  type ApiProcurementEvent, type ProcurementStatus,
 } from "../../lib/api";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
-import { buildBoqPdf } from "../../lib/boqPdf";
+import { buildBoqPdf, type BoqPrintLayout } from "../../lib/boqPdf";
+import {
+  BOQ_COLUMNS, STATUS_META, STATUS_ORDER, DISPO_CLS, boqCellText, colById, isAtRisk, orderByDate, statusCls, statusText, submittalText,
+  type BoqColId, type BoqTextCtx, type LiveStatus,
+} from "../../lib/boqColumns";
+import { useBoqColumns } from "./useBoqColumns";
 import { buildSubmittalPackage } from "../../lib/submittalPackage";
 import type { ProjectPdfInfo } from "../../lib/pdfProjectHeader";
 import PdfPreviewModal from "./PdfPreviewModal";
@@ -25,9 +31,6 @@ import { useUnsavedGuard } from "../../lib/useUnsavedGuard";
 
 const DEFAULT_SECTIONS = ["Electrical", "Civil", "Mechanical"];
 
-// G1/G2 — "BOQ" reads as "Not Started" (light-yellow warning) without changing the stored value.
-const statusLabel = (s: string) => (s === "BOQ" ? "Not Started" : s);
-const statusCls = (s: string) => (s === "BOQ" ? "bg-yellow-50 text-yellow-700" : s === "Cancelled" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500");
 
 // C3 — auto-growing multi-line cell (Enter = new line, grows with content), same as the
 // Expenses/Invoices "Remarks" cell. Local copy to avoid touching ProjectWorkspace.
@@ -37,6 +40,15 @@ function AutoCell({ value, onChange, onBlur, className, disabled }: {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const resize = () => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; } };
   useEffect(() => { resize(); }, [value]);
+  // 2026-10-09 - a column made narrower or wider wraps the text again: grow or shrink to it.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; resize(); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <textarea
       ref={ref}
@@ -50,40 +62,16 @@ function AutoCell({ value, onChange, onBlur, className, disabled }: {
   );
 }
 
-// order-by date = need-on-site − lead-time(days)
-function orderByDate(needOnSite: string, leadDays: string): string {
-  if (!needOnSite) return "";
-  const days = parseInt(String(leadDays).replace(/[^0-9]/g, ""), 10);
-  if (!isFinite(days) || !days) return needOnSite;
-  const d = new Date(needOnSite);
-  if (isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
 const cell = "w-full px-2 py-1.5 rounded bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none text-xs font-medium";
 
 // A not-yet-saved new BOQ row. Edited locally, then created in one shot via the ✓ button.
 type DraftItem = { tempId: string; sectionId: string; description: string; manufacturer: string; modelNo: string; qty: string; unit: string; spec: string; needOnSiteDate: string; leadTimeDays: string; remarks: string };
 const BLANK_DRAFT = (sectionId: string): DraftItem => ({ tempId: `draft-${Date.now()}-${Math.round(Math.random() * 1e6)}`, sectionId, description: "", manufacturer: "", modelNo: "", qty: "", unit: "", spec: "", needOnSiteDate: "", leadTimeDays: "", remarks: "" });
 
-// Column sorting for each category table (like the Master Log).
+// Sorting: one sort across the BOQ (by category, each category sorts its own rows). Click cycles
+// asc -> desc -> off; blanks sort last either way.
 const num = (s: string) => parseFloat(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
-type BoqSortKey = "displayNo" | "revNo" | "description" | "manufacturer" | "modelNo" | "vendorName" | "qty" | "unit" | "spec" | "needOnSiteDate" | "leadTimeDays" | "orderBy" | "submittal" | "status";
-const STATUS_SORT = ["BOQ", "RFQ_Sent", "Quoted", "PO_Sent", "Invoiced", "Ordered", "Fabrication", "Transit", "OnSite", "Complete", "Cancelled"];
-const BOQ_COLS: Array<{ label: string; key: BoqSortKey | null }> = [
-  { label: "#", key: "displayNo" }, { label: "RV", key: "revNo" }, { label: "Description", key: "description" },
-  { label: "Brand", key: "manufacturer" }, { label: "Model", key: "modelNo" }, { label: "Vendor", key: "vendorName" }, { label: "Qty", key: "qty" },
-  { label: "Unit", key: "unit" }, { label: "Spec", key: "spec" }, { label: "Need on site", key: "needOnSiteDate" },
-  { label: "Lead (d)", key: "leadTimeDays" }, { label: "Order by", key: "orderBy" }, { label: "Submittal", key: "submittal" },
-  { label: "Status", key: "status" }, { label: "", key: null },
-];
-
-const DISPO_CLS: Record<string, string> = {
-  Pending: "bg-amber-50 text-amber-600", Approved: "bg-emerald-50 text-emerald-600", ApprovedAsNoted: "bg-emerald-50 text-emerald-600",
-  ReviseResubmit: "bg-orange-50 text-orange-600", Rejected: "bg-red-50 text-red-600",
-};
-const DISPO_LABEL: Record<string, string> = { Pending: "Pending", Approved: "Approved", ApprovedAsNoted: "Appr. as Noted", ReviseResubmit: "Revise", Rejected: "Rejected" };
+const STATUS_SORT: string[] = [...STATUS_ORDER, "Cancelled"];
 
 export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoToSubmittals, onGoToRFQ }: { projectId: string; canEdit: boolean; projectInfo?: ProjectPdfInfo; onGoToSubmittals?: (itemId?: string) => void; onGoToRFQ?: (rfqId?: string) => void; onGoToPO?: () => void }) {
   const present = useBuilderPresence(projectId ? `boq:${projectId}` : null, "the BOQ"); // CR-B-01
@@ -113,6 +101,15 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   const [subMenu, setSubMenu] = useState<string | null>(null); // itemId whose submittal-link menu is open (C1)
   const [subPreview, setSubPreview] = useState<{ title: string; fileName: string; build: () => Promise<Blob> } | null>(null);
   const [search, setSearch] = useState("");
+  // 2026-10-09 - the Master Log is folded in here: its filters, its activity timeline, and the
+  // columns each viewer shows and sizes (useBoqColumns).
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [riskOnly, setRiskOnly] = useState(false);
+  const [events, setEvents] = useState<ApiProcurementEvent[]>([]);
+  const [showActivity, setShowActivity] = useState(false);
+  const [colMenu, setColMenu] = useState(false);
+  const layout = useBoqColumns();
   // I1 — inline revision history: which rows are expanded + a per-item cache of revisions.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [revisions, setRevisions] = useState<Record<string, ApiProcurementItemRevision[]>>({});
@@ -137,20 +134,23 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     if (!revisions[iid]) loadRevisions(iid);
   };
 
-  // Search filter across items (by description, brand, model, spec, item #).
+  // The filters: status, at risk, and a search across the item's text and its category.
   const matchItem = (it: ApiProcurementItem) => {
+    if (statusFilter !== "all" && it.status !== statusFilter) return false;
+    if (riskOnly && !isAtRisk(it)) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    return [it.description, it.manufacturer, it.vendorName, it.modelNo, it.spec, it.itemNo, it.unit].some((v) => String(v || "").toLowerCase().includes(q));
+    return [it.description, it.manufacturer, it.vendorName, it.modelNo, it.spec, it.itemNo, it.unit, sectionName(it.sectionId)].some((v) => String(v || "").toLowerCase().includes(q));
   };
 
   const load = async () => {
     setLoading(true);
     try {
-      const [s, i, subs] = await Promise.all([fetchProcurementSections(projectId), fetchProcurementItems(projectId), fetchSubmittals(projectId).catch(() => [])]);
+      const [s, i, subs, ev] = await Promise.all([fetchProcurementSections(projectId), fetchProcurementItems(projectId), fetchSubmittals(projectId).catch(() => []), fetchProcurementEvents(projectId).catch(() => [])]);
       setSections(s);
       setItems(i);
       setSubmittals(subs);
+      setEvents(ev);
     } catch { /* keep empty */ }
     finally { setLoading(false); }
   };
@@ -172,36 +172,67 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   const displayNo: Record<string, number> = {};
   { let k = 0; for (const s of sections) for (const it of rowsIn(s._id)) if (it.status !== "Cancelled") displayNo[it._id] = ++k; }
 
-  // Column-header sorting for every category table. One sort applies across all categories (each
-  // sorts its own rows by the chosen column). Click cycles asc → desc → off.
-  const [sort, setSort] = useState<{ key: BoqSortKey; dir: 1 | -1 } | null>(null);
-  const toggleSort = (key: BoqSortKey) => setSort((s) => (!s || s.key !== key ? { key, dir: 1 } : s.dir === 1 ? { key, dir: -1 } : null));
-  const sortVal = (it: ApiProcurementItem, key: BoqSortKey): string | number => {
+  const sectionName = (sid: string) => sections.find((s) => s._id === sid)?.name || "No category";
+  // What each column says for an item: for sorting, the exports, the print and Auto-fit.
+  const textCtx: BoqTextCtx = { sectionName, numberOf: (iid) => displayNo[iid], submittalOf: (iid) => subByItem[iid] };
+
+  // Every column sorts. One sort applies across the BOQ (by category, each sorts its own rows).
+  const [sort, setSort] = useState<{ key: BoqColId; dir: 1 | -1 } | null>(null);
+  const toggleSort = (key: BoqColId) => setSort((s) => (!s || s.key !== key ? { key, dir: 1 } : s.dir === 1 ? { key, dir: -1 } : null));
+  const sortVal = (it: ApiProcurementItem, key: BoqColId): string | number => {
     switch (key) {
-      case "displayNo": return displayNo[it._id] ?? Number.MAX_SAFE_INTEGER;
-      case "revNo": return it.revNo || 0;
-      case "qty": return num(it.qty);
-      case "leadTimeDays": return num(it.leadTimeDays);
-      case "orderBy": return orderByDate(it.needOnSiteDate, it.leadTimeDays) || "";
-      case "needOnSiteDate": return it.needOnSiteDate || "";
-      case "submittal": return subByItem[it._id]?.rev ?? -1;
+      case "no": return displayNo[it._id] ?? Number.MAX_SAFE_INTEGER;
+      case "rev": return it.revNo || 0;
+      case "qty": return it.qty ? num(it.qty) : "";
+      case "lead": return it.leadTimeDays ? num(it.leadTimeDays) : "";
       case "status": { const i = STATUS_SORT.indexOf(it.status); return i === -1 ? 99 : i; }
-      case "description": return (it.description || "").toLowerCase();
-      case "manufacturer": return (it.manufacturer || "").toLowerCase();
-      case "modelNo": return (it.modelNo || "").toLowerCase();
-      case "vendorName": return (it.vendorName || "").toLowerCase();
-      case "unit": return (it.unit || "").toLowerCase();
-      case "spec": return (it.spec || "").toLowerCase();
+      default: return boqCellText(key, it, textCtx).toLowerCase();
     }
   };
   const sortItems = (arr: ApiProcurementItem[]): ApiProcurementItem[] => {
     if (!sort) return arr;
     return [...arr].sort((a, b) => {
       const av = sortVal(a, sort.key), bv = sortVal(b, sort.key);
-      const aNaN = typeof av === "number" && isNaN(av), bNaN = typeof bv === "number" && isNaN(bv);
-      if (aNaN && bNaN) return 0; if (aNaN) return 1; if (bNaN) return -1;
+      if (av === "" && bv !== "") return 1;
+      if (bv === "" && av !== "") return -1;
       if (av < bv) return -sort.dir; if (av > bv) return sort.dir; return 0;
     });
+  };
+
+  // What is shown: by category, or one list across them (the old Master Log view).
+  const known = new Set(sections.map((s) => s._id));
+  const lostItems = items.filter((it) => !known.has(it.sectionId));
+  const filtering = !!search.trim() || sectionFilter !== "all" || statusFilter !== "all" || riskOnly;
+  const sectionOn = (sid: string) => sectionFilter === "all" || sectionFilter === sid;
+  const shownIn = (sid: string) => sortItems(rowsIn(sid).filter(matchItem));
+  const flatRows = sortItems([...sections.flatMap((s) => (sectionOn(s._id) ? rowsIn(s._id) : [])), ...(sectionFilter === "all" ? lostItems : [])].filter(matchItem));
+  const shownRows = layout.flat ? flatRows : [...sections.flatMap((s) => (sectionOn(s._id) ? shownIn(s._id) : [])), ...(sectionFilter === "all" ? lostItems.filter(matchItem) : [])];
+  const stats = (() => {
+    let completed = 0, inProgress = 0, notStarted = 0, atRisk = 0;
+    for (const it of active) {
+      const g = STATUS_META[it.status as LiveStatus]?.group;
+      if (g === "completed") completed++; else if (g === "inProgress") inProgress++; else notStarted++;
+      if (isAtRisk(it)) atRisk++;
+    }
+    return { completed, inProgress, notStarted, atRisk };
+  })();
+  // The print follows the screen: its columns at their widths, the view, and the filters (named).
+  const scopeText = filtering
+    ? [sectionFilter !== "all" ? sectionName(sectionFilter) : "", statusFilter !== "all" ? statusText(statusFilter) : "", riskOnly ? "at risk" : "", search.trim() ? `"${search.trim()}"` : ""].filter(Boolean).join(", ")
+    : undefined;
+  const printLayout = (scope?: string): BoqPrintLayout => ({ cols: layout.visible.map((c) => ({ id: c.id, w: layout.widths[c.id] })), flat: layout.flat, ctx: textCtx, scope });
+
+  // 2026-10-09 - the status is set on the BOQ now (it was on the Master Log); saved at once.
+  const setStatus = async (iid: string, status: ProcurementStatus) => {
+    const was = items.find((x) => x._id === iid)?.status;
+    setItems((p) => p.map((it) => (it._id === iid ? { ...it, status } : it)));
+    try {
+      const row = await updateProcurementItem(projectId, iid, { status });
+      setItems((p) => p.map((it) => (it._id === iid ? { ...it, revNo: row.revNo ?? it.revNo } : it)));
+    } catch (err) {
+      if (was) setItems((p) => p.map((it) => (it._id === iid ? { ...it, status: was } : it)));
+      toast(err instanceof Error ? err.message : "Could not change the status.", "error");
+    }
   };
 
   // ── Sections ──────────────────────────────────────────────
@@ -535,23 +566,15 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     }
   };
 
-  // Rows grouped by category, numbered continuously (C5) — shared by CSV + Excel export.
-  const exportRows = (): string[][] => {
-    const out: string[][] = [];
-    for (const s of sections) {
-      const sec = s.name || "";
-      for (const it of rowsIn(s._id)) {
-        out.push([sec, it.status === "Cancelled" ? "" : String(displayNo[it._id] ?? ""), it.description, it.manufacturer, it.modelNo, it.vendorName || "", it.qty, it.unit, it.spec, it.needOnSiteDate, it.leadTimeDays, orderByDate(it.needOnSiteDate, it.leadTimeDays), statusLabel(it.status)]);
-      }
-    }
-    return out;
-  };
+  // The exports carry the shown columns, and always the category (an export has no headings).
+  const exportIds = (): BoqColId[] => ["category", ...layout.visible.map((c) => c.id).filter((id) => id !== "category")];
+  const exportHeader = () => exportIds().map((id) => colById(id).label);
+  const exportRows = (list: ApiProcurementItem[]): string[][] => { const ids = exportIds(); return list.map((it) => ids.map((id) => boqCellText(id, it, textCtx))); };
+  const allRows = () => [...sections.flatMap((s) => rowsIn(s._id)), ...lostItems];
 
-  // ── Export CSV ────────────────────────────────────────────
+  // ── Export CSV: what is shown, in its order ──
   const exportCsv = () => {
-    const header = ["Category", "Item #", "Description", "Brand", "Model", "Vendor", "Qty", "Unit", "Spec", "Need on site", "Lead (days)", "Order by", "Status"];
-    const rowsOut = exportRows();
-    const csv = [header, ...rowsOut].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = [exportHeader(), ...exportRows(shownRows)].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -560,11 +583,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     URL.revokeObjectURL(a.href);
   };
 
-  // Build an .xlsx workbook of the BOQ for saving as a frozen version.
+  // Build an .xlsx workbook of the whole BOQ for saving as a frozen version.
   const buildBoqExcelBlob = async (): Promise<Blob> => {
-    const header = ["Category", "Item #", "Description", "Brand", "Model", "Vendor", "Qty", "Unit", "Spec", "Need on site", "Lead (days)", "Order by", "Status"];
-    const rowsOut = exportRows();
-    const ws = XLSX.utils.aoa_to_sheet([header, ...rowsOut]);
+    const ws = XLSX.utils.aoa_to_sheet([exportHeader(), ...exportRows(allRows())]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "BOQ");
     const out = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
@@ -595,10 +616,279 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
     finally { setBulkBusy(false); }
   };
 
+  const selCol = canEdit; // show the checkbox column only to editors
+  // 2026-10-09 - the fixed columns (tick box, actions: they wrap to two lines); the others are
+  // sized by the viewer, or fitted to the screen until a column is sized by hand.
+  const SEL_W = 36;
+  const ACT_W = canEdit ? 152 : 76;
+  const fixedW = (selCol ? SEL_W : 0) + ACT_W;
+  const textsOf = (id: BoqColId) => [
+    ...shownRows.map((it) => boqCellText(id, it, textCtx)),
+    ...(id === "description" ? drafts.map((d) => d.description) : id === "spec" ? drafts.map((d) => d.spec) : []),
+  ];
+  const fitToScreen = () => {
+    const box = layout.boxRef.current;
+    if (box) layout.fitTo(box.clientWidth - fixedW - 4, textsOf);
+  };
+  // In "fit" mode the table follows the screen's width, the columns shown, the view and the items.
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = layout.boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  const visKey = layout.visible.map((c) => c.id).join(",");
+  useEffect(() => {
+    if (layout.fit && boxW > 0) fitToScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout.fit, boxW, visKey, layout.flat, items.length, sectionFilter, canEdit]);
+
   if (loading) return <div className="py-12 flex justify-center text-slate-300"><Loader2 size={22} className="animate-spin" /></div>;
 
-  const selCol = canEdit; // show the checkbox column only to editors
-  const colCount = BOQ_COLS.length + (selCol ? 1 : 0);
+  const colCount = layout.visible.length + 1 + (selCol ? 1 : 0);
+  const tableStyle = { width: layout.tableWidth(fixedW) };
+  const toolBtn = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:border-primary hover:text-primary transition-colors";
+
+  const colgroup = (
+    <colgroup>
+      {selCol && <col style={{ width: SEL_W }} />}
+      {layout.visible.map((c) => <col key={c.id} style={{ width: layout.colWidth(c.id) }} />)}
+      <col style={{ width: ACT_W }} />
+    </colgroup>
+  );
+  // Every heading sorts; its right edge drags to resize, and a double-click there fits the content.
+  const head = (rows: ApiProcurementItem[]) => (
+    <thead>
+      <tr className="border-b border-slate-100">
+        {selCol && (() => {
+          const sel = rows.filter((x) => x.status !== "Cancelled");
+          const allOn = sel.length > 0 && sel.every((x) => selected[x._id]);
+          return <th className="px-3 py-2"><input type="checkbox" checked={allOn} onChange={(e) => setSelected((p) => { const n = { ...p }; sel.forEach((x) => { n[x._id] = e.target.checked; }); return n; })} title="Select all shown" aria-label="Select all shown" /></th>;
+        })()}
+        {layout.visible.map((c) => (
+          <th key={c.id} className="relative overflow-hidden text-left px-2 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">
+            <button type="button" onClick={() => toggleSort(c.id)} className={`inline-flex max-w-full items-center gap-1 uppercase tracking-widest hover:text-slate-800 ${sort?.key === c.id ? "text-slate-800" : ""}`} title={`Sort by ${c.label}`}>
+              <span className="truncate">{c.label}</span>
+              {sort?.key === c.id ? (sort.dir === 1 ? <ArrowUp size={11} className="shrink-0" /> : <ArrowDown size={11} className="shrink-0" />) : <ChevronsUpDown size={11} className="shrink-0 text-slate-300" />}
+            </button>
+            <span role="separator" aria-orientation="vertical" tabIndex={0} aria-label={`Resize ${c.label}`}
+              title="Drag to resize. Double-click to fit the content."
+              onPointerDown={(e) => layout.startResize(c.id, e)} onKeyDown={(e) => layout.keyResize(c.id, e)} onDoubleClick={() => layout.autoFitOne(c.id, textsOf(c.id))}
+              className="group absolute right-0 top-0 h-full w-3 cursor-col-resize touch-none select-none outline-none">
+              <span className="absolute right-1 top-1/4 h-1/2 w-px bg-slate-200 transition-colors group-hover:bg-primary group-focus-visible:w-0.5 group-focus-visible:bg-primary" />
+            </span>
+          </th>
+        ))}
+        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">{canEdit ? "" : "Export"}</th>
+      </tr>
+    </thead>
+  );
+
+  const itemCell = (id: BoqColId, it: ApiProcurementItem, rowEdit: boolean, strike: string): ReactNode => {
+    const isCancelled = it.status === "Cancelled";
+    const input = (field: keyof ProcurementItemInput, extra = "") => (
+      <td key={id} className="px-1 py-1 align-top"><input value={(it[field] as string) || ""} onChange={(e) => editCell(it._id, field, e.target.value)} disabled={!rowEdit} title={(it[field] as string) || undefined} aria-label={colById(id).label} className={`${cell} ${extra} ${strike}`} /></td>
+    );
+    switch (id) {
+      case "category": return <td key={id} className={`px-3 py-2 align-top text-[11px] text-slate-500 break-words ${strike}`}>{sectionName(it.sectionId)}</td>;
+      case "no": return (
+        <td key={id} className="px-3 py-2 align-top font-bold text-slate-400">{isCancelled ? "—" : (displayNo[it._id] ?? "—")}
+          {it.draft && <span className="block mt-1 w-fit px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-bold uppercase tracking-wide" title="Draft: complete it in Manage">Draft</span>}</td>
+      );
+      case "rev": return (
+        <td key={id} className="px-2 py-2 align-top">{it.revNo > 0 ? (
+          <button onClick={() => toggleRevisions(it._id)} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary" title="Show change history">
+            {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
+          </button>
+        ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
+      );
+      case "description": return <td key={id} className="px-1 py-1 align-top"><AutoCell value={it.description || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} align-top ${strike}`} /></td>;
+      // 2026-10-07 - the brand is a manufacturer in the Directory, picked not typed.
+      case "brand": return (
+        <td key={id} className="px-1 py-1 align-top"><DirectoryNameField className={`w-full ${strike}`} value={it.manufacturer || ""} disabled={!rowEdit} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
+          onPick={(co) => editCell(it._id, "manufacturer", co.name)} onClear={() => editCell(it._id, "manufacturer", "")} /></td>
+      );
+      case "model": return input("modelNo");
+      case "vendor": return <td key={id} className="px-3 py-2 align-top text-[11px] text-slate-500 break-words" title="The accepted vendor: set when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>;
+      case "qty": return input("qty", "text-right");
+      case "unit": return input("unit");
+      case "spec": return <td key={id} className="px-1 py-1 align-top"><AutoCell value={it.spec || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} align-top ${strike}`} /></td>;
+      case "needOnSite": return <td key={id} className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} aria-label="Need on site" className={`${cell} ${strike}`} /></td>;
+      case "lead": return input("leadTimeDays", "text-right");
+      case "orderBy": {
+        const risk = isAtRisk(it);
+        return (
+          <td key={id} className={`px-3 py-2 align-top text-[11px] whitespace-nowrap overflow-hidden ${risk ? "text-red-600 font-bold" : "text-slate-500"}`} title={risk ? "The order-by date has passed and the item is not on site yet" : undefined}>
+            {orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}{risk && <AlertTriangle size={11} className="ml-1 inline -mt-0.5" />}
+          </td>
+        );
+      }
+      case "submittal": return (
+        <td key={id} className="px-3 py-2 align-top relative">{(() => {
+          const sub = submittals.find((s) => s.itemId === it._id);
+          if (!sub) {
+            // No package yet (C1): offer to go create one.
+            return onGoToSubmittals && canEdit
+              ? <button onClick={() => onGoToSubmittals(it._id)} className="text-slate-300 hover:text-primary text-[10px] font-bold" title="No submittal yet: create one in the Submittals tab">+ Submittal</button>
+              : <span className="text-slate-300 text-[10px]">—</span>;
+          }
+          const meta = subByItem[it._id];
+          return (
+            <>
+              <button onClick={() => setSubMenu(subMenu === it._id ? null : it._id)} className={`inline-block max-w-full truncate px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer hover:ring-2 hover:ring-primary/20 ${DISPO_CLS[meta.disposition] || "bg-slate-100 text-slate-500"}`} title="Open the submittal">{submittalText(meta)}</button>
+              {subMenu === it._id && (() => {
+                const rev = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1];
+                return (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setSubMenu(null)} />
+                    <div className="absolute z-20 mt-1 left-3 bg-white border border-slate-200 rounded-xl shadow-lg py-1 w-44 text-left">
+                      {rev && <button onClick={() => { setSubMenu(null); setSubPreview({ title: `${sub.title || sub.productName || "Submittal"}, Rev ${rev.revisionNo}`, fileName: `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`, build: async () => (await buildSubmittalPackage(sub, rev)).blob }); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Eye size={12} /> Preview PDF</button>}
+                      {onGoToSubmittals && <button onClick={() => { setSubMenu(null); onGoToSubmittals(it._id); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><ExternalLink size={12} /> Open in Submittals</button>}
+                    </div>
+                  </>
+                );
+              })()}
+            </>
+          );
+        })()}</td>
+      );
+      case "status": {
+        // 2026-10-09 - the status is set here now (it was on the Master Log), saved at once.
+        const canSet = canEdit && !isCancelled && !it.locked;
+        return (
+          <td key={id} className="px-2 py-1.5 align-top">
+            {canSet ? (
+              <select value={it.status} onChange={(e) => void setStatus(it._id, e.target.value as ProcurementStatus)} aria-label="Status" title="Set the status (saved at once)"
+                className={`max-w-full px-2 py-1 rounded-full text-[10px] font-bold outline-none cursor-pointer border-0 ${statusCls(it.status)}`}>
+                {STATUS_ORDER.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
+              </select>
+            ) : (
+              <span className={`inline-block max-w-full truncate px-2 py-0.5 rounded-full text-[10px] font-bold ${statusCls(it.status)}`} title={isCancelled && it.cancellationReason ? `Reason: ${it.cancellationReason}` : undefined}>{statusText(it.status)}</span>
+            )}
+          </td>
+        );
+      }
+    }
+  };
+
+  // I1 - a past revision under its line, cell for cell; the fields it changed in colour.
+  const revCell = (id: BoqColId, rev: ApiProcurementItemRevision): ReactNode => {
+    const td = (field: string, v: string) => <td key={id} className={`px-3 py-1.5 align-top text-[11px] whitespace-pre-wrap break-words ${rev.changedFields.includes(field) ? "text-primary font-bold" : "text-slate-400"}`}>{v || "—"}</td>;
+    switch (id) {
+      case "rev": return <td key={id} className="px-2 py-1.5 align-top text-[10px] font-bold text-slate-400">RV{rev.revNo}</td>;
+      case "description": return td("description", rev.description);
+      case "brand": return td("manufacturer", rev.manufacturer);
+      case "model": return td("modelNo", rev.modelNo);
+      case "qty": return td("qty", rev.qty);
+      case "unit": return td("unit", rev.unit);
+      case "spec": return td("spec", rev.spec);
+      case "needOnSite": return td("needOnSiteDate", rev.needOnSiteDate);
+      case "lead": return td("leadTimeDays", rev.leadTimeDays);
+      case "orderBy": return <td key={id} className="px-3 py-1.5 align-top text-[11px] text-slate-400 whitespace-nowrap">{orderByDate(rev.needOnSiteDate, rev.leadTimeDays) || "—"}</td>;
+      case "status": return (
+        <td key={id} className="px-3 py-1.5 align-top text-[10px] text-slate-400">
+          {statusText(rev.status)}
+          {rev.note && <div className={`mt-0.5 text-[9px] font-semibold italic leading-tight ${rev.note.startsWith("Cancelled") ? "text-red-500" : rev.note.startsWith("Restored") ? "text-emerald-600" : "text-amber-600"}`}>{rev.note}</div>}
+        </td>
+      );
+      default: return <td key={id} className="px-3 py-1.5" />;
+    }
+  };
+
+  // New-item DRAFT rows: fill in, then Save once (no revisions until later edits).
+  const draftCell = (id: BoqColId, d: DraftItem): ReactNode => {
+    const dc = (field: keyof DraftItem, extra = "") => <td key={id} className="px-1 py-1 align-top"><input value={d[field]} onChange={(e) => editDraft(d.tempId, field, e.target.value)} aria-label={colById(id).label} className={`${cell} ${extra}`} /></td>;
+    switch (id) {
+      case "category": return <td key={id} className="px-3 py-2 align-top text-[11px] text-slate-500 break-words">{sectionName(d.sectionId)}</td>;
+      case "no": return <td key={id} className="px-3 py-2 align-top"><span className="text-[9px] font-bold text-primary uppercase tracking-widest">New</span></td>;
+      case "description": return <td key={id} className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} align-top`} /></td>;
+      case "brand": return (
+        <td key={id} className="px-1 py-1 align-top"><DirectoryNameField className="w-full" value={d.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
+          onPick={(co) => editDraft(d.tempId, "manufacturer", co.name)} onClear={() => editDraft(d.tempId, "manufacturer", "")} /></td>
+      );
+      case "model": return dc("modelNo");
+      case "qty": return dc("qty", "text-right");
+      case "unit": return dc("unit");
+      case "spec": return <td key={id} className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} align-top`} /></td>;
+      case "needOnSite": return <td key={id} className="px-1 py-1 align-top"><input type="date" value={d.needOnSiteDate} onChange={(e) => editDraft(d.tempId, "needOnSiteDate", e.target.value)} aria-label="Need on site" className={cell} /></td>;
+      case "lead": return dc("leadTimeDays", "text-right");
+      case "orderBy": return <td key={id} className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap overflow-hidden">{orderByDate(d.needOnSiteDate, d.leadTimeDays) || "—"}</td>;
+      case "status": return <td key={id} className="px-2 py-2 align-top"><span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-50 text-yellow-700">Not saved</span></td>;
+      default: return <td key={id} className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>;
+    }
+  };
+
+  const renderItem = (it: ApiProcurementItem) => {
+    const isCancelled = it.status === "Cancelled";
+    const isLocked = !!it.locked;
+    const rowEdit = canEdit && !isCancelled && !isLocked;   // cancelled (I3) or locked (CR-P-13) rows are read-only
+    const strike = isCancelled ? "line-through text-red-400" : "";
+    const risk = isAtRisk(it);
+    return (
+      <Fragment key={it._id}>
+        <tr className={isCancelled ? "bg-red-50/50" : selected[it._id] ? "bg-primary/5" : risk ? "bg-red-50/30 hover:bg-red-50/50" : "hover:bg-slate-50/40"}>
+          {selCol && <td className="px-3 py-2 align-top">{!isCancelled && <input type="checkbox" checked={!!selected[it._id]} onChange={() => toggleSelect(it._id)} aria-label="Select this item" />}</td>}
+          {layout.visible.map((c) => itemCell(c.id, it, rowEdit, strike))}
+          <td className="px-2 py-1 align-top">
+            {isCancelled ? (canEdit ? (
+              <button onClick={() => restoreItem(it._id)} className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline whitespace-nowrap" title={it.cancellationReason ? `Reason: ${it.cancellationReason}` : "Restore this item"}><RotateCcw size={12} /> Restore</button>
+            ) : null) : (
+              <div className="flex flex-wrap items-center gap-1">
+                {/* CR-P-13 - unsaved inline edits: Save persists this row; Revert discards them. */}
+                {canEdit && dirtyRows[it._id] && (
+                  <>
+                    <button onClick={() => saveRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save changes to this line"><Check size={12} /> Save</button>
+                    <button onClick={() => revertRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-red-500" title="Discard unsaved changes"><RotateCcw size={12} /> Revert</button>
+                  </>
+                )}
+                {canEdit && <button onClick={() => setManageId(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage: edit, submittal, duplicate, cancel"><Settings2 size={12} /> Manage</button>}
+                <button onClick={() => openLineExport(it)} className="inline-flex items-center gap-1 p-1.5 rounded text-slate-400 hover:text-primary hover:bg-primary/5 text-[10px] font-bold" title="Export / share this line as a PDF"><Download size={13} />{!canEdit && " Line"}</button>
+                {canEdit && (
+                  <>
+                    <button onClick={() => toggleLock(it)} className={`p-1.5 rounded ${isLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600 hover:bg-slate-50"}`} title={isLocked ? "Locked: click to unlock" : "Lock this item (prevents accidental edits or deleting)"}>{isLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+                    <button onClick={() => duplicateItem(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Duplicate row"><Copy size={13} /></button>
+                    <button onClick={() => hardDelete(it._id)} disabled={isLocked} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:hover:text-slate-300 disabled:hover:bg-transparent" title={isLocked ? "Unlock first to delete" : "Delete"}><Trash2 size={13} /></button>
+                  </>
+                )}
+              </div>
+            )}
+          </td>
+        </tr>
+
+        {/* I1 - inline revision history (previous states copied down, newest first) */}
+        {expanded[it._id] && (revisions[it._id] === undefined ? (
+          <tr className="bg-slate-50/70"><td colSpan={colCount} className="px-6 py-2 text-[11px] text-slate-400 italic">Loading history…</td></tr>
+        ) : revisions[it._id].length === 0 ? (
+          <tr className="bg-slate-50/70"><td colSpan={colCount} className="px-6 py-2 text-[11px] text-slate-400 italic">No earlier revisions recorded.</td></tr>
+        ) : revisions[it._id].map((rev) => (
+          <tr key={rev._id} className="bg-slate-50/70 border-t border-slate-100/70">
+            {selCol && <td className="px-3 py-1.5" />}
+            {layout.visible.map((c) => revCell(c.id, rev))}
+            <td className="px-2 py-1.5 align-top text-[9px] text-slate-400 whitespace-nowrap leading-tight">{rev.actorName || "—"}<br />{new Date(rev.createdAt).toLocaleDateString()}</td>
+          </tr>
+        )))}
+      </Fragment>
+    );
+  };
+
+  const renderDraft = (d: DraftItem) => (
+    <tr key={d.tempId} className="bg-primary/5">
+      {selCol && <td className="px-3 py-2 align-top" />}
+      {layout.visible.map((c) => draftCell(c.id, d))}
+      <td className="px-2 py-1 align-top">
+        <div className="flex flex-wrap items-center gap-1">
+          <button onClick={() => saveDraft(d.tempId)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save this item"><Check size={13} /> Save</button>
+          {/* CR-P-12 - save then jump to Manage to attach pictures / catalogue / data sheet / drawing / submittal + remarks. */}
+          <button onClick={() => saveDraft(d.tempId, true)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500 text-emerald-600 text-[10px] font-bold hover:bg-emerald-50" title="Save this item and attach its documents (pictures, catalogue, data sheet, drawing, submittal)"><FileText size={13} /> Save &amp; docs</button>
+          <button onClick={() => removeDraft(d.tempId)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50" title="Discard"><Trash2 size={13} /></button>
+        </div>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-5">
@@ -607,13 +897,13 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-xl font-display font-bold text-slate-900">Bill of Quantity (BOQ)</h3>
-            {/* CR-B-01 — who else is in the BOQ right now. */}
+            {/* CR-B-01 - who else is in the BOQ right now. */}
             <PresenceBar users={present} />
           </div>
-          <p className="text-xs font-medium text-slate-400 mt-1">{active.length} active item{active.length === 1 ? "" : "s"} across {sections.length} categor{sections.length === 1 ? "y" : "ies"}. Cancelled items are kept for claims.</p>
+          <p className="text-xs font-medium text-slate-400 mt-1">{active.length} active item{active.length === 1 ? "" : "s"} across {sections.length} categor{sections.length === 1 ? "y" : "ies"}, {stats.notStarted} not started. Cancelled items are kept for claims.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowPreview(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"><Eye size={13} /> Preview</button>
+          <button onClick={() => setShowPreview(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold" title="Print or save the BOQ as shown: its columns, filters and order"><Printer size={13} /> Print / PDF</button>
           <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"><Download size={13} /> Export</button>
           {canEdit && (
             <button onClick={() => setImportModal({ mode: "new" })} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold" title="Import an Excel/CSV file as a new category.">
@@ -624,33 +914,98 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
         </div>
       </div>
 
-      {/* C6 — glanceable totals (update live as items are added/duplicated) */}
+      {/* C6 and the Master Log's cards: totals at a glance; At risk filters to what must be ordered now. */}
       {sections.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
             <span className="text-lg font-display font-bold text-primary leading-none">{active.length}</span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total items</span>
           </span>
-          <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-lg font-display font-bold text-slate-700 leading-none">{sections.length}</span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categories</span>
           </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
+            <CheckCircle2 size={13} className="text-emerald-600" />
+            <span className="text-lg font-display font-bold text-emerald-700 leading-none">{stats.completed}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Completed</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100">
+            <Clock size={13} className="text-amber-600" />
+            <span className="text-lg font-display font-bold text-amber-700 leading-none">{stats.inProgress}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">In progress</span>
+          </span>
+          <button type="button" onClick={() => setRiskOnly((v) => !v)} disabled={!stats.atRisk && !riskOnly} aria-pressed={riskOnly}
+            title={stats.atRisk > 0 ? "Order-by date passed and not on site yet: click to show only these" : "On track: no order-by dates have passed"}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors ${stats.atRisk ? "bg-red-50 border-red-100 hover:bg-red-100/60 cursor-pointer" : "bg-slate-50 border-slate-100 cursor-default"} ${riskOnly ? "ring-2 ring-red-400" : ""}`}>
+            <AlertTriangle size={13} className={stats.atRisk ? "text-red-600" : "text-slate-300"} />
+            <span className={`text-lg font-display font-bold leading-none ${stats.atRisk ? "text-red-600" : "text-slate-400"}`}>{stats.atRisk}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">At risk</span>
+          </button>
           {cancelled.length > 0 && (
-            <span className="inline-flex items-baseline gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100">
-              <span className="text-lg font-display font-bold text-amber-700 leading-none">{cancelled.length}</span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50/60 border border-red-100">
+              <span className="text-lg font-display font-bold text-red-600 leading-none">{cancelled.length}</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cancelled</span>
             </span>
           )}
         </div>
       )}
 
+      {/* Search and filters (from the Master Log), then the view and the columns. */}
       {sections.length > 0 && (
-        <div className="flex items-center gap-2">
-          <div className="relative flex-grow">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search items by description, brand, model, spec…" className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10" />
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-grow min-w-[12rem]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search items by description, brand, model, spec…" aria-label="Search items" className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10" />
+            </div>
+            <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} aria-label="Category" className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-xs font-bold outline-none">
+              <option value="all">All categories</option>
+              {sections.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-xs font-bold outline-none">
+              <option value="all">All statuses</option>
+              {STATUS_ORDER.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
+              <option value="Cancelled">Cancelled</option>
+            </select>
+            {filtering && <button onClick={() => { setSearch(""); setSectionFilter("all"); setStatusFilter("all"); setRiskOnly(false); }} className="text-[11px] font-bold text-slate-500 hover:text-slate-900 px-2">Clear</button>}
+            <span className="text-[10px] text-slate-400 ml-auto">{shownRows.length} of {items.length}</span>
           </div>
-          {search && <button onClick={() => setSearch("")} className="text-[11px] font-bold text-slate-500 hover:text-slate-900 px-2">Clear</button>}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white" role="group" aria-label="View">
+              <button type="button" onClick={() => layout.setFlat(false)} aria-pressed={!layout.flat} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold transition-colors ${!layout.flat ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}><Rows3 size={12} /> By category</button>
+              <button type="button" onClick={() => layout.setFlat(true)} aria-pressed={layout.flat} title="Every item in one list, as the Master Log showed them: sort across the categories" className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold transition-colors ${layout.flat ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}><LayoutList size={12} /> One list</button>
+            </span>
+            <div className="relative">
+              <button type="button" onClick={() => setColMenu((v) => !v)} aria-expanded={colMenu} aria-haspopup="true" className={toolBtn}><Columns3 size={12} /> Columns <span className="text-slate-400">{layout.visible.length}/{BOQ_COLUMNS.length}</span></button>
+              {colMenu && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setColMenu(false)} />
+                  <div className="absolute left-0 z-30 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                    <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Show columns</p>
+                    <div className="max-h-72 overflow-y-auto">
+                      {BOQ_COLUMNS.map((c) => {
+                        const last = layout.on[c.id] && layout.visible.length === 1;
+                        return (
+                          <label key={c.id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 ${last ? "opacity-50" : "cursor-pointer hover:bg-slate-50"}`}>
+                            <input type="checkbox" checked={layout.on[c.id]} disabled={last} onChange={(e) => layout.setOn(c.id, e.target.checked)} /> {c.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-1 flex gap-1 border-t border-slate-100 pt-2">
+                      <button type="button" onClick={layout.showAll} className="flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">Show all</button>
+                      <button type="button" onClick={layout.reset} title="The standard columns and widths" className="flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">Reset</button>
+                    </div>
+                    <p className="px-2 pt-1 text-[10px] leading-snug text-slate-400">The print and the export show the same columns.</p>
+                  </div>
+                </>
+              )}
+            </div>
+            <button type="button" onClick={() => layout.autoFit(textsOf)} title="Size every column to its content" className={toolBtn}><MoveHorizontal size={12} /> Auto-fit</button>
+            <button type="button" onClick={fitToScreen} aria-pressed={layout.fit} title={layout.fit ? "On: the columns keep fitting the screen. Drag a column's edge to size it yourself." : "Fit the shown columns across the screen, so the whole BOQ is in view"} className={`${toolBtn} ${layout.fit ? "!border-primary/40 !bg-primary/5 !text-primary" : ""}`}><ArrowLeftRight size={12} /> Fit to screen</button>
+            <span className="text-[10px] text-slate-400">Click a heading to sort. Drag its edge to resize; double-click the edge to fit.</span>
+          </div>
         </div>
       )}
 
@@ -668,7 +1023,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
         </div>
       )}
 
-      {/* §H — selection action bar */}
+      {/* §H - selection action bar */}
       {selCol && selectedItems.length > 0 && (
         <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 bg-slate-900 text-white rounded-2xl px-4 py-2.5 shadow-lg">
           <span className="text-xs font-bold">{selectedItems.length} item{selectedItems.length === 1 ? "" : "s"} selected</span>
@@ -681,22 +1036,48 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
         </div>
       )}
 
-      {sections.map((s, sIdx) => {
-        const its = sortItems(rowsIn(s._id).filter(matchItem)); // active + cancelled (in place unless sorted)
-        const activeCount = its.filter((it) => it.status !== "Cancelled").length;
-        // While searching, hide categories with no matches.
-        if (search.trim() && its.length === 0 && draftsIn(s._id).length === 0) return null;
+      {/* The tables read their column widths from this box, so every category lines up. */}
+      <div ref={layout.boxRef} style={layout.widthVars} className="space-y-5">
+      {layout.flat && (items.length > 0 || sections.length > 0) && (
+        <div className="border border-slate-100 rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-fixed text-xs" style={tableStyle}>
+              {colgroup}
+              {head(flatRows)}
+              <tbody className="divide-y divide-slate-50">
+                {flatRows.length === 0
+                  ? <tr><td colSpan={colCount} className="px-3 py-8 text-center text-[11px] text-slate-400 italic">{filtering ? "No items match." : "No items yet."}</td></tr>
+                  : flatRows.map(renderItem)}
+              </tbody>
+            </table>
+          </div>
+          {canEdit && (
+            <p className="border-t border-slate-50 px-3 py-2 text-[11px] text-slate-400">
+              Every category in one list. To add or import items{drafts.length ? `, or to review the ${drafts.length} unsaved draft row${drafts.length === 1 ? "" : "s"}` : ""}, switch to{" "}
+              <button type="button" onClick={() => layout.setFlat(false)} className="font-bold text-primary hover:underline">By category</button>.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!layout.flat && sections.map((s, sIdx) => {
+        if (!sectionOn(s._id)) return null;
+        const its = shownIn(s._id); // active + cancelled (in place unless sorted)
+        const total = itemsIn(s._id).length;
+        const shownActive = its.filter((it) => it.status !== "Cancelled").length;
+        // While filtering, hide categories with nothing to show.
+        if (filtering && its.length === 0 && draftsIn(s._id).length === 0) return null;
         const isCollapsed = collapsed[s._id];
         return (
           <div key={s._id} className="border border-slate-100 rounded-2xl overflow-hidden">
             <div className="flex items-center gap-2 bg-slate-50 px-4 py-2.5">
-              <button onClick={() => setCollapsed((c) => ({ ...c, [s._id]: !c[s._id] }))} className="text-slate-400 hover:text-slate-900">
+              <button onClick={() => setCollapsed((c) => ({ ...c, [s._id]: !c[s._id] }))} aria-label={isCollapsed ? "Expand" : "Collapse"} className="text-slate-400 hover:text-slate-900">
                 {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
               </button>
               {canEdit
-                ? <input value={s.name} onChange={(e) => renameSection(s._id, e.target.value)} onBlur={(e) => saveSection(s._id, e.target.value)} className="font-bold text-slate-800 text-sm bg-transparent outline-none border-b border-transparent focus:border-primary/30 py-0.5 flex-grow" />
+                ? <input value={s.name} onChange={(e) => renameSection(s._id, e.target.value)} onBlur={(e) => saveSection(s._id, e.target.value)} aria-label="Category name" className="font-bold text-slate-800 text-sm bg-transparent outline-none border-b border-transparent focus:border-primary/30 py-0.5 flex-grow" />
                 : <span className="font-bold text-slate-800 text-sm flex-grow">{s.name}</span>}
-              <span className="text-[10px] font-bold text-slate-400">{activeCount} item{activeCount === 1 ? "" : "s"}</span>
+              <span className="text-[10px] font-bold text-slate-400">{filtering && shownActive !== total ? `${shownActive} of ` : ""}{total} item{total === 1 ? "" : "s"}</span>
               {canEdit && (
                 <div className="flex items-center">
                   <button onClick={() => moveSection(s._id, -1)} disabled={sIdx === 0} className="p-1 rounded text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent" title="Move category up"><ArrowUp size={13} /></button>
@@ -704,195 +1085,32 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                 </div>
               )}
               {canEdit && (() => {
-                const active = items.filter((it) => it.sectionId === s._id && it.status !== "Cancelled");
-                const allLocked = active.length > 0 && active.every((it) => it.locked);
-                return <button onClick={() => lockSection(s._id, !allLocked)} disabled={!active.length} className={`p-1.5 rounded disabled:opacity-30 disabled:hover:bg-transparent ${allLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-700 hover:bg-white"}`} title={allLocked ? "Category locked — click to unlock all items" : "Lock all items in this category (prevents accidental changes)"}>{allLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>;
+                const act = items.filter((it) => it.sectionId === s._id && it.status !== "Cancelled");
+                const allLocked = act.length > 0 && act.every((it) => it.locked);
+                return <button onClick={() => lockSection(s._id, !allLocked)} disabled={!act.length} className={`p-1.5 rounded disabled:opacity-30 disabled:hover:bg-transparent ${allLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-700 hover:bg-white"}`} title={allLocked ? "Category locked: click to unlock all items" : "Lock all items in this category (prevents accidental changes)"}>{allLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>;
               })()}
-              {/* CR-B-19 — tag a colleague to edit/review/verify this category. */}
+              {/* CR-B-19 - tag a colleague to edit/review/verify this category. */}
               {canEdit && <AssignColleague value={s.assignedTo} onChange={(name) => assignSection(s._id, name)} notify={{ title: `Review BOQ category "${s.name || "Section"}"`, notes: "You were tagged to edit / review / verify this BOQ category.", projectId, projectName: projectInfo?.name }} />}
               {canEdit && <button onClick={() => removeSection(s._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete category"><Trash2 size={13} /></button>}
             </div>
 
             {!isCollapsed && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px] text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      {selCol && (() => {
-                        const sel = its.filter((x) => x.status !== "Cancelled");
-                        const allOn = sel.length > 0 && sel.every((x) => selected[x._id]);
-                        return <th className="px-3 py-2 w-8"><input type="checkbox" checked={allOn} onChange={(e) => setSelected((p) => { const n = { ...p }; sel.forEach((x) => { n[x._id] = e.target.checked; }); return n; })} title="Select all in this category" /></th>;
-                      })()}
-                      {BOQ_COLS.map((col, i) => (
-                        <th key={i} className="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-widest text-[10px] whitespace-nowrap">
-                          {col.key ? (
-                            <button type="button" onClick={() => toggleSort(col.key!)} className={`inline-flex items-center gap-1 uppercase tracking-widest hover:text-slate-800 ${sort?.key === col.key ? "text-slate-800" : ""}`} title="Sort by this column">
-                              {col.label}
-                              {sort?.key === col.key ? (sort.dir === 1 ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ChevronsUpDown size={11} className="text-slate-300" />}
-                            </button>
-                          ) : col.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {its.length === 0 && draftsIn(s._id).length === 0 ? (
-                      <tr><td colSpan={colCount} className="px-3 py-5 text-center text-[11px] text-slate-400 italic">No items.{canEdit ? " Add one below." : ""}</td></tr>
-                    ) : its.map((it) => {
-                      const isCancelled = it.status === "Cancelled";
-                      const isLocked = !!it.locked;
-                      const rowEdit = canEdit && !isCancelled && !isLocked;   // cancelled (I3) or locked (CR-P-13) rows are read-only
-                      const strike = isCancelled ? "line-through text-red-400" : "";
-                      const c = (field: keyof ProcurementItemInput, w = "") => (
-                        <td className="px-1 py-1 align-top"><input value={(it[field] as string) || ""} onChange={(e) => editCell(it._id, field, e.target.value)} disabled={!rowEdit} className={`${cell} ${w} ${strike}`} /></td>
-                      );
-                      return (
-                        <Fragment key={it._id}>
-                        <tr className={isCancelled ? "bg-red-50/50" : (selected[it._id] ? "bg-primary/5" : "hover:bg-slate-50/40")}>
-                          {selCol && <td className="px-3 py-2 align-top w-8">{!isCancelled && <input type="checkbox" checked={!!selected[it._id]} onChange={() => toggleSelect(it._id)} />}</td>}
-                          <td className="px-3 py-2 align-top w-12 font-bold text-slate-400 whitespace-nowrap">{isCancelled ? "—" : displayNo[it._id]}{it.draft && <span className="block mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-bold uppercase tracking-wide" title="Draft — complete it via Manage">Draft</span>}</td>
-                          <td className="px-2 py-2 align-top">{it.revNo > 0 ? (
-                            <button onClick={() => toggleRevisions(it._id)} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary" title="Show change history">
-                              {expanded[it._id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RV{it.revNo}
-                            </button>
-                          ) : <span className="text-[10px] text-slate-300 px-1.5" title="No changes yet">RV0</span>}</td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.description as string) || ""} onChange={(v) => editCell(it._id, "description", v)} disabled={!rowEdit} className={`${cell} min-w-[30rem] w-full align-top ${strike}`} /></td>
-                          {/* 2026-10-07 - the brand is a manufacturer in the Directory, picked not typed. */}
-                          <td className="px-1 py-1 align-top"><DirectoryNameField className={`w-36 ${strike}`} value={it.manufacturer || ""} disabled={!rowEdit} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
-                            onPick={(co) => editCell(it._id, "manufacturer", co.name)} onClear={() => editCell(it._id, "manufacturer", "")} /></td>
-                          {c("modelNo", "w-24")}
-                          <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap" title="Accepted vendor — set automatically when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>
-                          {c("qty", "w-14")}
-                          {c("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={(it.spec as string) || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} min-w-[26rem] w-[26rem] align-top ${strike}`} /></td>
-                          <td className="px-1 py-1 align-top"><input type="date" value={it.needOnSiteDate || ""} onChange={(e) => editCell(it._id, "needOnSiteDate", e.target.value)} disabled={!rowEdit} className={`${cell} w-32`} /></td>
-                          {c("leadTimeDays", "w-14")}
-                          <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(it.needOnSiteDate, it.leadTimeDays) || "—"}</td>
-                          <td className="px-3 py-2 align-top whitespace-nowrap relative">{(() => {
-                            const sub = submittals.find((s) => s.itemId === it._id);
-                            if (!sub) {
-                              // No package yet (C1): offer to go create one.
-                              return onGoToSubmittals
-                                ? <button onClick={() => onGoToSubmittals(it._id)} className="text-slate-300 hover:text-primary text-[10px] font-bold" title="No submittal yet — create one in the Submittals tab">+ Submittal</button>
-                                : <span className="text-slate-300 text-[10px]">—</span>;
-                            }
-                            const meta = subByItem[it._id];
-                            return (
-                              <>
-                                <button onClick={() => setSubMenu(subMenu === it._id ? null : it._id)} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer hover:ring-2 hover:ring-primary/20 ${DISPO_CLS[meta.disposition] || "bg-slate-100 text-slate-500"}`} title="Open the submittal">Rev {meta.rev} · {DISPO_LABEL[meta.disposition] || meta.disposition}</button>
-                                {subMenu === it._id && (() => {
-                                  const rev = sub.revisions.find((r) => r.isCurrent) || sub.revisions[sub.revisions.length - 1];
-                                  return (
-                                    <>
-                                      <div className="fixed inset-0 z-10" onClick={() => setSubMenu(null)} />
-                                      <div className="absolute z-20 mt-1 left-3 bg-white border border-slate-200 rounded-xl shadow-lg py-1 w-44 text-left">
-                                        {rev && <button onClick={() => { setSubMenu(null); setSubPreview({ title: `${sub.title || sub.productName || "Submittal"} — Rev ${rev.revisionNo}`, fileName: `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`, build: async () => (await buildSubmittalPackage(sub, rev)).blob }); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Eye size={12} /> Preview PDF</button>}
-                                        {onGoToSubmittals && <button onClick={() => { setSubMenu(null); onGoToSubmittals(it._id); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><ExternalLink size={12} /> Open in Submittals</button>}
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                              </>
-                            );
-                          })()}</td>
-                          <td className="px-3 py-2 align-top"><span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${statusCls(it.status)}`} title={isCancelled && it.cancellationReason ? `Reason: ${it.cancellationReason}` : undefined}>{statusLabel(it.status)}</span></td>
-                          <td className="px-2 py-1 align-top">
-                            {canEdit && (isCancelled ? (
-                              <button onClick={() => restoreItem(it._id)} className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline whitespace-nowrap" title={it.cancellationReason ? `Reason: ${it.cancellationReason}` : "Restore this item"}><RotateCcw size={12} /> Restore</button>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                {/* CR-P-13 — unsaved inline edits: Save persists this row; Revert discards them. */}
-                                {dirtyRows[it._id] && (
-                                  <>
-                                    <button onClick={() => saveRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save changes to this line"><Check size={12} /> Save</button>
-                                    <button onClick={() => revertRow(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-500 text-[10px] font-bold hover:text-red-500" title="Discard unsaved changes"><RotateCcw size={12} /> Revert</button>
-                                  </>
-                                )}
-                                <button onClick={() => setManageId(it._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — edit, submittal, duplicate, cancel"><Settings2 size={12} /> Manage</button>
-                                <button onClick={() => openLineExport(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Export / share this line as a PDF"><Download size={13} /></button>
-                                <button onClick={() => toggleLock(it)} className={`p-1.5 rounded ${isLocked ? "text-amber-600 bg-amber-50" : "text-slate-300 hover:text-slate-600 hover:bg-slate-50"}`} title={isLocked ? "Locked — click to unlock" : "Lock this item (prevents accidental edits/delete)"}>{isLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
-                                <button onClick={() => duplicateItem(it)} className="p-1.5 rounded text-slate-300 hover:text-primary hover:bg-primary/5" title="Duplicate row"><Copy size={13} /></button>
-                                <button onClick={() => hardDelete(it._id)} disabled={isLocked} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:hover:text-slate-300 disabled:hover:bg-transparent" title={isLocked ? "Unlock first to delete" : "Delete"}><Trash2 size={13} /></button>
-                              </div>
-                            ))}
-                          </td>
-                        </tr>
-
-                        {/* I1 — inline revision history (previous states copied down, newest first) */}
-                        {expanded[it._id] && (revisions[it._id] === undefined ? (
-                          <tr className="bg-slate-50/70"><td colSpan={colCount} className="px-6 py-2 text-[11px] text-slate-400 italic">Loading history…</td></tr>
-                        ) : revisions[it._id].length === 0 ? (
-                          <tr className="bg-slate-50/70"><td colSpan={colCount} className="px-6 py-2 text-[11px] text-slate-400 italic">No earlier revisions recorded.</td></tr>
-                        ) : revisions[it._id].map((rev) => {
-                          const chg = (f: string) => rev.changedFields.includes(f) ? "text-primary font-bold" : "text-slate-400";
-                          return (
-                            <tr key={rev._id} className="bg-slate-50/70 border-t border-slate-100/70">
-                              {selCol && <td className="px-3 py-1.5"></td>}
-                              <td className="px-3 py-1.5 align-top"></td>
-                              <td className="px-2 py-1.5 align-top text-[10px] font-bold text-slate-400">RV{rev.revNo}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("description")}`}>{rev.description || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("manufacturer")}`}>{rev.manufacturer || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("modelNo")}`}>{rev.modelNo || "—"}</td>
-                              <td className="px-3 py-1.5"></td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("qty")}`}>{rev.qty || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("unit")}`}>{rev.unit || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("spec")}`}>{rev.spec || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] whitespace-nowrap ${chg("needOnSiteDate")}`}>{rev.needOnSiteDate || "—"}</td>
-                              <td className={`px-3 py-1.5 align-top text-[11px] ${chg("leadTimeDays")}`}>{rev.leadTimeDays || "—"}</td>
-                              <td className="px-3 py-1.5 align-top text-[11px] text-slate-400 whitespace-nowrap">{orderByDate(rev.needOnSiteDate, rev.leadTimeDays) || "—"}</td>
-                              <td className="px-3 py-1.5"></td>
-                              <td className="px-3 py-1.5 align-top text-[10px] text-slate-400">
-                                {statusLabel(rev.status)}
-                                {rev.note && (
-                                  <div className={`mt-0.5 text-[9px] font-semibold italic leading-tight ${rev.note.startsWith("Cancelled") ? "text-red-500" : rev.note.startsWith("Restored") ? "text-emerald-600" : "text-amber-600"}`}>{rev.note}</div>
-                                )}
-                              </td>
-                              <td className="px-2 py-1.5 align-top text-[9px] text-slate-400 whitespace-nowrap leading-tight">{rev.actorName || "—"}<br />{new Date(rev.createdAt).toLocaleDateString()}</td>
-                            </tr>
-                          );
-                        }))}
-                        </Fragment>
-                      );
-                    })}
-                    {/* New-item DRAFT rows — fill in, then ✓ to save once (no revisions until later edits) */}
-                    {canEdit && draftsIn(s._id).map((d) => {
-                      const dc = (field: keyof DraftItem, w = "") => (
-                        <td className="px-1 py-1 align-top"><input value={d[field]} onChange={(e) => editDraft(d.tempId, field, e.target.value)} className={`${cell} ${w}`} /></td>
-                      );
-                      return (
-                        <tr key={d.tempId} className="bg-primary/5">
-                          {selCol && <td className="px-3 py-2 align-top w-8" />}
-                          <td className="px-3 py-2 align-top w-12"><span className="text-[9px] font-bold text-primary uppercase tracking-widest">New</span></td>
-                          <td className="px-2 py-2 align-top"><span className="text-[10px] text-slate-300 px-1.5">—</span></td>
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.description} onChange={(v) => editDraft(d.tempId, "description", v)} className={`${cell} min-w-[30rem] w-full align-top`} /></td>
-                          <td className="px-1 py-1 align-top"><DirectoryNameField className="w-36" value={d.manufacturer} categories={["manufacturer", "supplier", "vendor"]} title="Brand (manufacturer)" placeholder="Pick a brand"
-                            onPick={(co) => editDraft(d.tempId, "manufacturer", co.name)} onClear={() => editDraft(d.tempId, "manufacturer", "")} /></td>
-                          {dc("modelNo", "w-24")}
-                          <td className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>
-                          {dc("qty", "w-14")}
-                          {dc("unit", "w-16")}
-                          <td className="px-1 py-1 align-top"><AutoCell value={d.spec} onChange={(v) => editDraft(d.tempId, "spec", v)} className={`${cell} min-w-[26rem] w-[26rem] align-top`} /></td>
-                          <td className="px-1 py-1 align-top"><input type="date" value={d.needOnSiteDate} onChange={(e) => editDraft(d.tempId, "needOnSiteDate", e.target.value)} className={`${cell} w-32`} /></td>
-                          {dc("leadTimeDays", "w-14")}
-                          <td className="px-3 py-2 align-top text-[11px] text-slate-500 whitespace-nowrap">{orderByDate(d.needOnSiteDate, d.leadTimeDays) || "—"}</td>
-                          <td className="px-3 py-2 align-top"><span className="text-slate-300 text-[10px]">—</span></td>
-                          <td className="px-3 py-2 align-top"><span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-50 text-yellow-700">Not saved</span></td>
-                          <td className="px-2 py-1 align-top">
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => saveDraft(d.tempId)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600" title="Save this item"><Check size={13} /> Save</button>
-                              {/* CR-P-12 — save then jump to Manage to attach pictures / catalogue / data sheet / drawing / submittal + remarks. */}
-                              <button onClick={() => saveDraft(d.tempId, true)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500 text-emerald-600 text-[10px] font-bold hover:bg-emerald-50" title="Save this item and attach its documents (pictures, catalogue, data sheet, drawing, submittal)"><FileText size={13} /> Save &amp; docs</button>
-                              <button onClick={() => removeDraft(d.tempId)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50" title="Discard"><Trash2 size={13} /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="table-fixed text-xs" style={tableStyle}>
+                    {colgroup}
+                    {head(its)}
+                    <tbody className="divide-y divide-slate-50">
+                      {its.length === 0 && draftsIn(s._id).length === 0 ? (
+                        <tr><td colSpan={colCount} className="px-3 py-5 text-center text-[11px] text-slate-400 italic">No items.{canEdit ? " Add one below." : ""}</td></tr>
+                      ) : its.map(renderItem)}
+                      {canEdit && draftsIn(s._id).map(renderDraft)}
+                    </tbody>
+                  </table>
+                </div>
                 {canEdit && draftsIn(s._id).length > 0 && (
                   <div className="px-3 py-2 border-t border-yellow-100 bg-yellow-50/60 flex flex-wrap items-center gap-3">
-                    <span className="text-[11px] font-bold text-yellow-700">{draftsIn(s._id).length} unsaved draft{draftsIn(s._id).length === 1 ? "" : "s"} — nothing is saved until you confirm.</span>
+                    <span className="text-[11px] font-bold text-yellow-700">{draftsIn(s._id).length} unsaved draft{draftsIn(s._id).length === 1 ? "" : "s"}: nothing is saved until you confirm.</span>
                     <button onClick={() => saveAllDrafts(s._id)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 disabled:opacity-50"><Check size={13} /> Save all</button>
                     <button onClick={() => discardAllDrafts(s._id)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600 hover:border-red-200 disabled:opacity-50"><Trash2 size={13} /> Discard all</button>
                   </div>
@@ -911,58 +1129,79 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
         );
       })}
 
-      {/* 2026-10-08 - "when I delete something on the BOQ it stays in the Master Log": items whose
-          category no longer exists showed only there. They are listed here to move or delete. */}
-      {(() => {
-        const known = new Set(sections.map((s) => s._id));
-        const lost = items.filter((it) => !known.has(it.sectionId));
-        if (!lost.length) return null;
-        return (
-          <div className="border border-amber-200 rounded-2xl overflow-hidden">
-            <div className="flex flex-wrap items-center gap-2 bg-amber-50 px-4 py-2.5">
-              <span className="font-bold text-amber-800 text-sm">No category</span>
-              <span className="text-[11px] text-amber-700">{lost.length} item{lost.length === 1 ? "" : "s"} without a category: {lost.length === 1 ? "it shows" : "they show"} in the Master Log. Move each into a category, or delete it.</span>
-            </div>
-            <table className="w-full text-xs">
-              <tbody className="divide-y divide-slate-50">
-                {lost.map((it) => (
-                  <tr key={it._id}>
-                    <td className="px-3 py-2 font-bold text-slate-700 whitespace-pre-wrap break-words">{it.description || <span className="italic font-normal text-slate-400">No description</span>}</td>
-                    <td className="px-3 py-2 text-slate-500">{it.manufacturer || "—"}</td>
-                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{[it.qty, it.unit].filter(Boolean).join(" ") || "—"}</td>
-                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{it.status === "BOQ" ? "Not Started" : it.status}</td>
-                    {canEdit && (
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {sections.length > 0 && (
-                          <select value="" aria-label="Move to a category" className={`${cell} w-auto mr-2`}
-                            onChange={async (e) => {
-                              const sid = e.target.value;
-                              if (!sid) return;
-                              try { const up = await updateProcurementItem(projectId, it._id, { sectionId: sid }); setItems((p) => p.map((x) => (x._id === it._id ? { ...x, ...up } : x))); toast(`Moved to ${sections.find((s) => s._id === sid)?.name || "the category"}.`, "success"); }
-                              catch (err) { toast(err instanceof Error ? err.message : "Could not move it.", "error"); }
-                            }}>
-                            <option value="">Move to…</option>
-                            {sections.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-                          </select>
-                        )}
-                        <button type="button" onClick={() => void hardDelete(it._id)} title="Delete it (also from the Master Log)" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50"><Trash2 size={12} /> Delete</button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* 2026-10-08 - items whose category no longer exists, listed to move or delete. */}
+      {!layout.flat && sectionFilter === "all" && lostItems.length > 0 && (
+        <div className="border border-amber-200 rounded-2xl overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 bg-amber-50 px-4 py-2.5">
+            <span className="font-bold text-amber-800 text-sm">No category</span>
+            <span className="text-[11px] text-amber-700">{lostItems.length} item{lostItems.length === 1 ? "" : "s"} without a category. Move each into a category, or delete it.</span>
           </div>
-        );
-      })()}
+          <table className="w-full text-xs">
+            <tbody className="divide-y divide-slate-50">
+              {lostItems.map((it) => (
+                <tr key={it._id}>
+                  <td className="px-3 py-2 font-bold text-slate-700 whitespace-pre-wrap break-words">{it.description || <span className="italic font-normal text-slate-400">No description</span>}</td>
+                  <td className="px-3 py-2 text-slate-500">{it.manufacturer || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{[it.qty, it.unit].filter(Boolean).join(" ") || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{statusText(it.status)}</td>
+                  {canEdit && (
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {sections.length > 0 && (
+                        <select value="" aria-label="Move to a category" className={`${cell} w-auto mr-2`}
+                          onChange={async (e) => {
+                            const sid = e.target.value;
+                            if (!sid) return;
+                            try { const up = await updateProcurementItem(projectId, it._id, { sectionId: sid }); setItems((p) => p.map((x) => (x._id === it._id ? { ...x, ...up } : x))); toast(`Moved to ${sections.find((s) => s._id === sid)?.name || "the category"}.`, "success"); }
+                            catch (err) { toast(err instanceof Error ? err.message : "Could not move it.", "error"); }
+                          }}>
+                          <option value="">Move to…</option>
+                          {sections.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                        </select>
+                      )}
+                      <button type="button" onClick={() => void hardDelete(it._id)} title="Delete it" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50"><Trash2 size={12} /> Delete</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      </div>
 
-      {/* I3 — cancelled items now stay in place (red rows) inside their category, with Restore.
-          A one-line note points there when any are collapsed out of view. */}
+      {/* I3 - cancelled items stay in place (red rows) inside their category, with Restore. */}
       {cancelled.length > 0 && (
         <p className="text-[11px] text-red-500/80 font-medium px-1">
-          {cancelled.length} cancelled item{cancelled.length === 1 ? "" : "s"} kept for claims — shown in red within their categories (Restore available on each).
+          {cancelled.length} cancelled item{cancelled.length === 1 ? "" : "s"} kept for claims, shown in red within {cancelled.length === 1 ? "its category" : "their categories"} (Restore available on each).
         </p>
       )}
+
+      {/* 2026-10-09 - the Master Log's activity timeline (append-only audit), here now. */}
+      <div className="border border-slate-100 rounded-2xl overflow-hidden">
+        <button onClick={() => setShowActivity((v) => !v)} aria-expanded={showActivity} className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
+          {showActivity ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+          <History size={14} className="text-slate-400" />
+          <span className="font-bold text-slate-700 text-sm">Activity timeline ({events.length})</span>
+        </button>
+        {showActivity && (
+          <div className="px-4 pb-3 max-h-72 overflow-y-auto">
+            {events.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic py-2">No activity yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {events.map((e) => (
+                  <li key={e._id} className="flex flex-wrap items-start gap-x-2 text-[11px]">
+                    <span className="text-slate-300 whitespace-nowrap">{new Date(e.createdAt).toLocaleString()}</span>
+                    <span className="font-bold text-slate-600 capitalize">{e.entityType} {e.action}</span>
+                    {(e.fromValue || e.toValue) && <span className="text-slate-400">{[e.fromValue, e.toValue].filter(Boolean).join(" → ")}</span>}
+                    <span className="text-slate-400 ml-auto whitespace-nowrap">{e.actorName}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
       {/* Import modal — explains the expected columns + offers the template, then takes the file. */}
       {importModal && (() => {
         const secName = importModal.mode === "section" ? (sections.find((s) => s._id === importModal.sectionId)?.name || "this category") : null;
@@ -1064,14 +1303,14 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       )}
       {dialogs}
       {showPreview && (
-        <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, items, projectInfo)} onClose={() => setShowPreview(false)} fitOption={{ note: "Bill of Quantities" }} />
+        <PdfPreviewModal title="Bill of Quantity (BOQ)" fileName="BOQ.pdf" build={() => buildBoqPdf(sections, shownRows, projectInfo, printLayout(scopeText))} onClose={() => setShowPreview(false)} fitOption={{ note: "Bill of Quantities" }} />
       )}
       {/* CR-P-14 — per-line export (one BOQ line as its own PDF, downloadable/shareable). */}
       {linePreview && (
         <PdfPreviewModal
           title={`BOQ item #${displayNo[linePreview.item._id] ?? ""} — ${linePreview.item.description || "line"}${linePreview.extras.length ? " (+ past revisions)" : ""}`}
           fileName={`BOQ_item_${displayNo[linePreview.item._id] ?? ""}.pdf`}
-          build={() => buildBoqPdf(sections.filter((s) => s._id === linePreview.item.sectionId), [linePreview.item, ...linePreview.extras], projectInfo)}
+          build={() => buildBoqPdf(sections.filter((s) => s._id === linePreview.item.sectionId), [linePreview.item, ...linePreview.extras], projectInfo, { ...printLayout(), flat: false })}
           onClose={() => setLinePreview(null)}
         />
       )}
@@ -1116,7 +1355,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                   {mField("Need on site", "needOnSiteDate", "date")}
                   {mField("Lead time (days)", "leadTimeDays")}
                 </div>
-                <p className="text-[11px] text-slate-500">Order-by date: <span className="font-bold text-slate-700">{orderByDate(mDraft.needOnSiteDate || m.needOnSiteDate, mDraft.leadTimeDays || m.leadTimeDays) || "—"}</span> · Status: <span className="font-bold text-slate-700">{statusLabel(m.status)}</span> · RV{m.revNo || 0}</p>
+                <p className="text-[11px] text-slate-500">Order-by date: <span className="font-bold text-slate-700">{orderByDate(mDraft.needOnSiteDate || m.needOnSiteDate, mDraft.leadTimeDays || m.leadTimeDays) || "—"}</span> · Status: <span className="font-bold text-slate-700">{statusText(m.status)}</span> · RV{m.revNo || 0}</p>
 
                 {/* CR-P-12 — remarks + per-item reference files (pictures, catalogue, data sheet, drawing). */}
                 <div className="space-y-1">
@@ -1214,7 +1453,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                         <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{it.qty || "—"}</td>
                         <td className="px-2 py-1.5 text-slate-500">{it.unit || "—"}</td>
                         <td className="px-2 py-1.5 text-slate-500">{it.spec || "—"}</td>
-                        <td className="px-2 py-1.5"><span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold">{statusLabel(it.status)}</span></td>
+                        <td className="px-2 py-1.5"><span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${statusCls(it.status)}`}>{statusText(it.status)}</span></td>
                         <td className="px-2 py-1.5 text-right"><button onClick={() => setRfqDraft((p) => (p || []).filter((x) => x._id !== it._id))} className="text-slate-300 hover:text-red-500" title="Remove from this RFQ"><Trash2 size={12} /></button></td>
                       </tr>
                     ))}
@@ -1236,7 +1475,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       subtitle="Freeze a PDF or Excel copy of the BOQ. Preview, print, or download any revision anytime."
       canEdit={canEdit}
       formats={[
-        { label: "PDF", ext: "pdf", baseName: "BOQ", build: () => buildBoqPdf(sections, items, projectInfo) },
+        { label: "PDF", ext: "pdf", baseName: "BOQ", build: () => buildBoqPdf(sections, items, projectInfo, printLayout()) },
         { label: "Excel", ext: "xlsx", baseName: "BOQ", build: buildBoqExcelBlob },
       ]}
       fetchList={() => fetchSavedDocuments(projectId, "boq")}

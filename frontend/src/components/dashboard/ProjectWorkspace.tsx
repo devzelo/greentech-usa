@@ -21,7 +21,6 @@ import type { ProposalContent, TechnicalProposalContent, FinancialProposalConten
 import { uploadProposalAsset, uploadInlineImage, setProjectArchived } from "../../lib/api";
 import DocumentViewer from "./DocumentViewer";
 import ProcurementBOQ from "./ProcurementBOQ";
-import ProcurementMasterLog from "./ProcurementMasterLog";
 import ProcurementSubmittals from "./ProcurementSubmittals";
 import ProcurementRFQ from "./ProcurementRFQ";
 import ProcurementQuotes from "./ProcurementQuotes";
@@ -281,8 +280,8 @@ const FIN_PERM_BY_KEY: Record<string, string> = Object.fromEntries(FIN_SUBTABS.m
 
 // Procurement sub-tabs that can be granted to a guest (e.g. a logistics-company subcontractor)
 // individually. Permission keys are stored in the guest's tabPermissions like any other tab.
+// 2026-10-09 - the Master Log is part of the BOQ now; a guest given the old "proc-log" sees the BOQ.
 const PROC_SUBTABS = [
-  { key: "log", permId: "proc-log", label: "Master Log" },
   { key: "boq", permId: "proc-boq", label: "BOQ" },
   { key: "submittals", permId: "proc-submittals", label: "Submittals" },
   { key: "rfqs", permId: "proc-rfqs", label: "RFQs" },
@@ -711,7 +710,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const toggleFold = (mid: string) => setFoldedSecs((p) => { const n = new Set(p); if (n.has(mid)) n.delete(mid); else n.add(mid); return n; });
   const [builderEdit, setBuilderEdit] = useState<{ vol: "technical" | "financial"; before: string } | null>(null);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "closing" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
-  const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
+  const [procSub, setProcSub] = useState<"boq" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("boq"); // Procurement module sub-tab (default = the BOQ, which holds the Master Log now)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
   const [highlightSubItem, setHighlightSubItem] = useState<string | undefined>(undefined); // §C9 — flash a submittal when jumped to from the BOQ
   const [openPoId, setOpenPoId] = useState<string | undefined>(undefined);   // CR 328 - from a work package
@@ -3863,7 +3862,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
-  const hasAnyProcPerm = PROC_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
+  const hasAnyProcPerm = [...PROC_SUBTABS.map((s) => s.permId), "proc-log"].some((p) => myGuestPerms[p] === "view" || myGuestPerms[p] === "edit");
   const allTabs = isOwner
     ? allTabsAll
     : isGuest
@@ -3895,15 +3894,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // perm (an absent perm = Hidden). Only legacy guests with no sub-tab perms fall back to the
     // module-level "procurement" grant — otherwise hiding a sub-tab would be overridden by it.
     const p = hasAnyProcPerm ? myGuestPerms[PROC_PERM_BY_KEY[key]] : myGuestPerms["procurement"];
-    return p === "edit" || p === "view" ? p : "none";
+    // The BOQ took the Master Log in: the better of the two grants.
+    const old = key === "boq" && hasAnyProcPerm ? myGuestPerms["proc-log"] : undefined;
+    return p === "edit" || old === "edit" ? "edit" : p === "view" || old === "view" ? "view" : "none";
   };
   const procVisible = (key: string) => (key === "legacy" ? false : procPermFor(key) !== "none");
   const procNav = ([
-    { k: "log", label: "Master Log" }, { k: "boq", label: "BOQ" }, { k: "submittals", label: "Submittals" },
+    { k: "boq", label: "BOQ" }, { k: "submittals", label: "Submittals" },
     { k: "rfqs", label: "RFQs" }, { k: "quotes", label: "Quotes" }, { k: "po", label: "Purchase Orders" },
     { k: "invoices", label: "Invoices" }, { k: "shipment", label: "Shipment" }, { k: "legacy", label: "Legacy Log" },
   ] as const).filter((t) => procVisible(t.k));
-  const procActive = procNav.some((t) => t.k === procSub) ? procSub : (procNav[0]?.k || "log");
+  const procActive = procNav.some((t) => t.k === procSub) ? procSub : (procNav[0]?.k || "boq");
 
   // Sub-tab helpers — top-level = default tabs + custom tabs without a parentId
   const getParentId = (t: { id: string }) =>
@@ -6980,7 +6981,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
               {/* canEdit is per sub-tab: staff get full edit; a guest gets edit only where granted. */}
               {procActive === "boq" && id && <ProcurementBOQ projectId={id} canEdit={procPermFor("boq") === "edit"} projectInfo={projectPdfInfo(project)} onGoToSubmittals={(itemId) => { setHighlightSubItem(itemId); setProcSub("submittals"); }} onGoToRFQ={(rfqId) => { setOpenRfqId(rfqId); setProcSub("rfqs"); }} onGoToPO={() => setProcSub("po")} />}
-              {procActive === "log" && id && <ProcurementMasterLog projectId={id} canEdit={procPermFor("log") === "edit"} projectInfo={projectPdfInfo(project)} />}
               {procActive === "submittals" && id && <ProcurementSubmittals projectId={id} canEdit={procPermFor("submittals") === "edit"} projectName={project?.name} clientName={project?.clientInfo?.name} highlightItemId={highlightSubItem} onHighlightDone={() => setHighlightSubItem(undefined)} />}
               {procActive === "rfqs" && id && <ProcurementRFQ projectId={id} canEdit={procPermFor("rfqs") === "edit"} projectInfo={projectPdfInfo(project)} onGoToPO={() => setProcSub("po")} openRfqId={openRfqId} onOpenedRfq={() => setOpenRfqId(undefined)} />}
               {procActive === "quotes" && id && <ProcurementQuotes projectId={id} canEdit={procPermFor("quotes") === "edit"} />}

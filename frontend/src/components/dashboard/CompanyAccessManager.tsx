@@ -29,7 +29,6 @@ export const TAB_ROWS: { id: string; label: string; indent?: boolean }[] = [
   { id: "invoice-sent", label: "Finances · Invoice Sent", indent: true },
   { id: "invoice-received", label: "Finances · Invoice Received", indent: true },
   { id: "procurement", label: "Procurement & Submittals" },
-  { id: "proc-log", label: "Procurement · Master Log", indent: true },
   { id: "proc-boq", label: "Procurement · BOQ", indent: true },
   { id: "proc-submittals", label: "Procurement · Submittals", indent: true },
   { id: "proc-rfqs", label: "Procurement · RFQs", indent: true },

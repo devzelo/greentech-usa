@@ -350,7 +350,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
         toast(`${s.name} added. It is the last line above, and it is open below.`, "success");
       } else if (popup.sid) {
         patch(await updateShipment(projectId, popup.sid, body));
-        toast("Shipment updated. Linked Master Log items follow the shipment status automatically.", "success");
+        toast("Shipment updated. Linked BOQ items follow the shipment status automatically.", "success");
       }
       setPopup(null);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save shipment.", "error"); }
@@ -413,7 +413,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h3 className="text-xl font-display font-bold text-slate-900">Shipment</h3>
-          <p className="text-xs font-medium text-slate-400 mt-1">Track every delivery — link its POs, set the status (it updates the Master Log automatically) and keep all shipping documents together.</p>
+          <p className="text-xs font-medium text-slate-400 mt-1">Track every delivery — link its POs, set the status (it updates the BOQ automatically) and keep all shipping documents together.</p>
         </div>
         {canEdit && <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary transition-all shrink-0"><Plus size={13} /> New shipment</button>}
       </div>
@@ -493,7 +493,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   </div>
                   <div className="flex items-center gap-2">
                     {canEdit ? (
-                      <select value={active.status || "Preparing"} onChange={(e) => setStatus(active, e.target.value as ShipmentStatus)} title="Shipment status — also updates the linked items on the Master Log" className={`px-2.5 py-1 rounded-full text-[10px] font-bold outline-none cursor-pointer border-0 ${STATUS_META[active.status || "Preparing"].cls}`}>
+                      <select value={active.status || "Preparing"} onChange={(e) => setStatus(active, e.target.value as ShipmentStatus)} title="Shipment status: also updates the linked items on the BOQ" className={`px-2.5 py-1 rounded-full text-[10px] font-bold outline-none cursor-pointer border-0 ${STATUS_META[active.status || "Preparing"].cls}`}>
                         {STATUSES.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
                       </select>
                     ) : (
@@ -783,7 +783,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   <option value="">Leave as {STATUS_META[active.status || "Preparing"].label}</option>
                   {STATUSES.map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
                 </select></label>
-              <p className="text-[10px] text-slate-400">Saved to this shipment's tracking history. Changing the status also moves the linked POs' items on the Master Log.</p>
+              <p className="text-[10px] text-slate-400">Saved to this shipment's tracking history. Changing the status also moves the linked POs' items on the BOQ.</p>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setLogOpen(false)} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
                 <button onClick={() => void saveLog(active)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-primary disabled:opacity-50">
@@ -1002,12 +1002,12 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                 </div>
               </FormSection>
 
-              {/* Link purchase orders — the shipment's status will drive these POs' items on the Master Log */}
+              {/* Link purchase orders — the shipment's status will drive these POs' items on the BOQ */}
               <FormSection
                 tone="slate"
                 icon={<Link2 size={11} />}
                 title="Linked purchase orders"
-                hint="Their items follow this shipment's status on the Master Log and show on the Packing List row."
+                hint="Their items follow this shipment's status on the BOQ and show on the Packing List row."
                 right={<button onClick={() => setPoPickerOpen((v) => !v)} className="text-[10px] font-bold text-primary hover:underline shrink-0">{poPickerOpen ? "Done" : "+ Add PO"}</button>}
               >
                 {/* Cost of goods is computed live from the selected POs' invoice amounts. */}
