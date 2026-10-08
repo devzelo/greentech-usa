@@ -452,4 +452,17 @@ const ProjectSchema = new Schema<IProject>(
   { timestamps: true }
 );
 
+// 2026-10-08 - the bonding costs follow the schedule: when it (or the dates, or the bonding) is
+// saved, the interest over the project's duration is worked out again (lib/bondingExpenses).
+// A new project is left to the route that creates it, which knows who did.
+ProjectSchema.pre("save", function () {
+  this.$locals.bondingResync = !this.isNew && (this.isModified("schedule") || this.isModified("startDate") || this.isModified("endDate") || this.isModified("bonding"));
+});
+ProjectSchema.post("save", function (doc) {
+  if (!doc.$locals?.bondingResync) return;
+  void import("../lib/bondingExpenses")
+    .then((m) => m.syncBondingExpenses(doc.projectId, doc.bonding as never, {}, m.projectDays(doc as never)))
+    .catch(() => undefined);
+});
+
 export default mongoose.model<IProject>("Project", ProjectSchema);

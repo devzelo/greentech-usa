@@ -59,9 +59,48 @@ export const fromAmount = (amount: string, contract: number) => {
   return { amount, percent: contract && a ? pctText((a / contract) * 100) : "" };
 };
 
-/** 2026-10-08 - the bonds needed, added up: what the bank's fee and interest are a percent of. */
+/** 2026-10-08 - the bonds that cost the project, added up: what the bank's fee and interest are a
+ *  percent of. The bid bond is returned after the bidding, so it is not a cost. */
 export const bondsTotal = (b: ProjectBonding) =>
-  b.bonded === "yes" ? (["bid", "performance", "payment"] as const).filter((k) => b[k].required).reduce((s, k) => s + moneyNum(b[k].amount), 0) : 0;
+  b.bonded === "yes" ? (["performance", "payment"] as const).filter((k) => b[k].required).reduce((s, k) => s + moneyNum(b[k].amount), 0) : 0;
+
+type Dated = { schedule?: { milestones?: Array<{ plannedStart?: string; plannedEnd?: string }>; extensions?: Array<{ endDate?: string }> } | null; startDate?: string; endDate?: string };
+/** 2026-10-08 - the project's length in days, for the interest: the schedule's first start to its last
+ *  finish (or a later approved extension), else the project's dates, else a year. As the server does. */
+export function projectSpan(p: Dated): { days: number; from: "schedule" | "dates" | "default" } {
+  const t = (s?: string) => (s ? Date.parse(s) : NaN);
+  const ms = p.schedule?.milestones || [];
+  let start = Math.min(...ms.map((m) => t(m.plannedStart)).filter((x) => isFinite(x)));
+  let end = Math.max(...ms.map((m) => (isFinite(t(m.plannedEnd)) ? t(m.plannedEnd) : t(m.plannedStart))).filter((x) => isFinite(x)));
+  const fromSchedule = isFinite(start) || isFinite(end);
+  if (!isFinite(start)) start = t(p.startDate);
+  if (!isFinite(end)) end = t(p.endDate);
+  const ext = Math.max(...(p.schedule?.extensions || []).map((e) => t(e.endDate)).filter((x) => isFinite(x)));
+  if (isFinite(ext) && (!isFinite(end) || ext > end)) end = ext;
+  if (!(isFinite(start) && isFinite(end) && end > start)) return { days: 365, from: "default" };
+  return { days: Math.round((end - start) / 86400000) + 1, from: fromSchedule ? "schedule" : "dates" };
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+/** 2026-10-08 - what the guarantees cost the project, as the server files them in Expenses: the bank
+ *  fee (once) and the interest over the project's days, on the performance and payment bonds and on
+ *  the letter of credit. */
+export function bondingCosts(b: ProjectBonding, days: number): Array<{ label: string; amount: number }> {
+  const out: Array<{ label: string; amount: number }> = [];
+  const add = (label: string, base: number, pct: string, overTime: boolean) => {
+    const p = moneyNum(pct);
+    const amount = cents(((base * p) / 100) * (overTime ? days / 365 : 1));
+    if (base > 0 && p > 0 && amount > 0) out.push({ label, amount });
+  };
+  const bonds = bondsTotal(b);
+  const iloc = b.iloc.required ? moneyNum(b.iloc.amount) : 0;
+  add("Bank fee, performance and payment bonds", bonds, b.feePercent, false);
+  add("Interest, performance and payment bonds", bonds, b.interestRate, true);
+  add("Bank fee, letter of credit", iloc, b.iloc.feePercent, false);
+  add("Interest, letter of credit", iloc, b.iloc.interestRate, true);
+  return out;
+}
+export const bondingCostTotal = (b: ProjectBonding, days: number) => cents(bondingCosts(b, days).reduce((s, c) => s + c.amount, 0));
 /** A percent of an amount, as money ("" when either is missing). */
 export const pctOf = (percent: string, base: number) => {
   const p = parseFloat(percent);

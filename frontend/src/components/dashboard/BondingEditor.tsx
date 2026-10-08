@@ -2,9 +2,9 @@ import { useState } from "react";
 import DirectoryNameField from "./DirectoryNameField";
 import { ShieldCheck, Landmark, Pencil, Loader2 } from "lucide-react";
 import {
-  bondingLines, bondsTotal, fromAmount, fromPercent, money, moneyNum, pctOf, withBonding, type BondLine, type ProjectBonding,
+  bondingCostTotal, bondingLines, bondsTotal, fromAmount, fromPercent, money, moneyNum, projectSpan, withBonding, type BondLine, type ProjectBonding,
 } from "../../lib/bonding";
-import MoneyInput from "./MoneyInput";
+import MoneyInput, { formatMoney } from "./MoneyInput";
 import { updateProject, type ApiProject } from "../../lib/api";
 import { toast } from "../../lib/toast";
 
@@ -15,7 +15,7 @@ import { toast } from "../../lib/toast";
  */
 
 const BONDS: Array<{ key: "bid" | "performance" | "payment"; label: string; hint: string }> = [
-  { key: "bid", label: "Bid bond", hint: "With the proposal (often 10%); returned after the award" },
+  { key: "bid", label: "Bid bond", hint: "With the proposal (often 10%); returned after the bidding, so not a cost" },
   { key: "performance", label: "Performance bond", hint: "Asked by the client; held until handover" },
   { key: "payment", label: "Payment bond", hint: "Guarantees subcontractors and suppliers are paid" },
 ];
@@ -32,22 +32,28 @@ function Toggle({ on, onChange, disabled, label }: { on: boolean; onChange: (v: 
   );
 }
 
-export default function BondingEditor({ value, onChange, contractValue }: {
+export default function BondingEditor({ value, onChange, contractValue, duration = { days: 365, from: "default" } }: {
   value: ProjectBonding;
   onChange: (b: ProjectBonding) => void;
   /** The contract value the percentages work from ("$1,000,000"). */
   contractValue: string;
+  /** How long the project runs, for the interest (lib/bonding projectSpan). */
+  duration?: { days: number; from: "schedule" | "dates" | "default" };
 }) {
   const contract = moneyNum(contractValue);
   const bonded = value.bonded === "yes";
-  // 2026-10-08 - the bank's fee and a year's interest are a percent of what is guaranteed (the bonds
-  // needed, or the letter of credit), so they follow those amounts; saved, they become expenses.
+  // 2026-10-08 - the bank's fee and the interest are a percent of what is guaranteed (the performance
+  // and payment bonds, or the letter of credit; the bid bond comes back, so it is not a cost), the
+  // interest over the project's days. Saved, they become expenses of the project.
   const bonds = bondsTotal(value);
   const ilocAmt = value.iloc.required ? moneyNum(value.iloc.amount) : 0;
-  const worked = (pct: string, base: number, year = false) => {
-    const v = pctOf(pct, base);
-    return v ? <span className="normal-case tracking-normal text-slate-500">= {v}{year ? " a year" : ""}</span> : null;
+  const days = duration.days;
+  const worked = (pct: string, base: number, overTime = false) => {
+    const p = moneyNum(pct);
+    const v = Math.round(((base * p) / 100) * (overTime ? days / 365 : 1) * 100) / 100;
+    return base > 0 && p > 0 && v > 0 ? <span className="block text-[10px] font-semibold text-slate-500">= {formatMoney(v)}{overTime ? ` over ${days} days` : ""}</span> : null;
   };
+  const total = bondingCostTotal(value, days);
   const setLine = (key: "bid" | "performance" | "payment", patch: Partial<BondLine>) => onChange({ ...value, [key]: { ...value[key], ...patch } });
   const setIloc = (patch: Partial<ProjectBonding["iloc"]>) => onChange({ ...value, iloc: { ...value.iloc, ...patch } });
   const seg = (v: ProjectBonding["bonded"], text: string) => (
@@ -105,10 +111,10 @@ export default function BondingEditor({ value, onChange, contractValue }: {
           <div className="space-y-0.5"><span className={lbl}>Bonding company / bank</span>
             <DirectoryNameField value={value.bank} disabled={!bonded} categories={["financial", "other"]} title="Bonding company / bank" placeholder="Pick from the Directory"
               onPick={(c) => onChange({ ...value, bank: c.name })} onClear={() => onChange({ ...value, bank: "" })} /></div>
-          <label className="space-y-0.5"><span className={lbl}>Fee % {bonded && worked(value.feePercent, bonds)}</span>
-            <input className={inp} disabled={!bonded} inputMode="decimal" value={value.feePercent} onChange={(e) => onChange({ ...value, feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" /></label>
-          <label className="space-y-0.5"><span className={lbl}>Interest rate % {bonded && worked(value.interestRate, bonds, true)}</span>
-            <input className={inp} disabled={!bonded} inputMode="decimal" value={value.interestRate} onChange={(e) => onChange({ ...value, interestRate: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="7" /></label>
+          <label className="space-y-0.5"><span className={lbl}>Fee %</span>
+            <input className={inp} disabled={!bonded} inputMode="decimal" value={value.feePercent} onChange={(e) => onChange({ ...value, feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" />{bonded && worked(value.feePercent, bonds)}</label>
+          <label className="space-y-0.5"><span className={lbl}>Interest % a year</span>
+            <input className={inp} disabled={!bonded} inputMode="decimal" value={value.interestRate} onChange={(e) => onChange({ ...value, interestRate: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="7" />{bonded && worked(value.interestRate, bonds, true)}</label>
         </div>
       </div>
 
@@ -128,17 +134,18 @@ export default function BondingEditor({ value, onChange, contractValue }: {
             <div className="col-span-2 space-y-0.5 sm:col-span-1"><span className={lbl}>Bank / institution</span>
               <DirectoryNameField value={value.iloc.bank} categories={["financial", "other"]} title="Bank / institution" placeholder="Pick from the Directory"
                 onPick={(c) => setIloc({ bank: c.name })} onClear={() => setIloc({ bank: "" })} /></div>
-            <label className="space-y-0.5"><span className={lbl}>Fee % {worked(value.iloc.feePercent, ilocAmt)}</span>
-              <input className={inp} inputMode="decimal" value={value.iloc.feePercent} onChange={(e) => setIloc({ feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" /></label>
-            <label className="space-y-0.5"><span className={lbl}>Interest % {worked(value.iloc.interestRate, ilocAmt, true)}</span>
-              <input className={inp} inputMode="decimal" value={value.iloc.interestRate} onChange={(e) => setIloc({ interestRate: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="7" /></label>
+            <label className="space-y-0.5"><span className={lbl}>Fee %</span>
+              <input className={inp} inputMode="decimal" value={value.iloc.feePercent} onChange={(e) => setIloc({ feePercent: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="2" />{worked(value.iloc.feePercent, ilocAmt)}</label>
+            <label className="space-y-0.5"><span className={lbl}>Interest % a year</span>
+              <input className={inp} inputMode="decimal" value={value.iloc.interestRate} onChange={(e) => setIloc({ interestRate: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="7" />{worked(value.iloc.interestRate, ilocAmt, true)}</label>
           </div>
         )}
       </div>
 
       {((bonded && bonds > 0 && (value.feePercent || value.interestRate)) || (ilocAmt > 0 && (value.iloc.feePercent || value.iloc.interestRate))) && (
         <p className="text-[11px] text-slate-500">
-          The fees are a percent of what is guaranteed{bonded && bonds > 0 ? <> (the bonds: <b className="text-slate-700">{money(bonds)}</b>{ilocAmt > 0 ? "; " : ""}</> : " ("}{ilocAmt > 0 ? <>the letter of credit: <b className="text-slate-700">{money(ilocAmt)}</b></> : ""}). When saved, each fee and one year's interest is added to the project's Expenses, for approval like any expense.
+          The bid bond is returned after the bidding, so it is not a cost. The fees and interest are a percent of what is guaranteed{bonded && bonds > 0 ? <> (the performance and payment bonds: <b className="text-slate-700">{money(bonds)}</b>{ilocAmt > 0 ? "; " : ""}</> : " ("}{ilocAmt > 0 ? <>the letter of credit: <b className="text-slate-700">{money(ilocAmt)}</b></> : ""}), the interest over the project's <b className="text-slate-700">{days} days</b> {duration.from === "schedule" ? "on the schedule's Gantt chart" : duration.from === "dates" ? "from its start and end dates" : "(a year, until the schedule or the dates are set)"}.
+          {total > 0 && <> In all <b className="text-slate-700">{formatMoney(total)}</b>.</>} When saved, each is added to the project's Expenses from the start, and the financial proposal's price table can carry it with "+ Bonding costs".
         </p>
       )}
 
@@ -200,7 +207,7 @@ export function BondingCard({ project, canEdit, onSaved }: { project: ApiProject
           </span>
         )}
       </div>
-      {draft ? <BondingEditor value={draft} onChange={setDraft} contractValue={project.value} /> : <BondingSummary value={current} />}
+      {draft ? <BondingEditor value={draft} onChange={setDraft} contractValue={project.value} duration={projectSpan(project)} /> : <BondingSummary value={current} />}
     </div>
   );
 }

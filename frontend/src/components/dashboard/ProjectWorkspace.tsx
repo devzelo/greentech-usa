@@ -61,9 +61,10 @@ import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjec
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import StandardAppendices, { loadStandardLists } from "./StandardAppendices";
 import AppendixListManager from "./AppendixListManager";
-import SharedMoneyInput from "./MoneyInput";
+import SharedMoneyInput, { formatMoney } from "./MoneyInput";
 import { saveStandardAppendices, type StandardAppendixItem } from "../../lib/api";
 import { tableCalc, ADJUSTMENT_PRESETS } from "../../lib/pricing";
+import { bondingCostTotal, projectSpan, withBonding } from "../../lib/bonding";
 
 /** Step 7 - which proposal volume a section handler works on (both have sections). */
 type Vol = "technical" | "financial";
@@ -1127,7 +1128,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // Step 7b - phase headings, lines under a table (VAT, DBA, markup, discount), option years.
   const addGroupRow = (tid: string) => patchTableById(tid, (tb) => ({ ...tb, rows: [...tb.rows, { id: `r-${uid()}`, cells: {}, type: "group" as const, label: "" }] }));
   const setRowLabel = (tid: string, rid: string, label: string) => patchTableById(tid, (tb) => ({ ...tb, rows: tb.rows.map((r) => (r.id === rid ? { ...r, label } : r)) }));
-  const addAdjustment = (tid: string, p: { label: string; mode: "percent" | "fixed"; value: string }) =>
+  const addAdjustment = (tid: string, p: { label: string; mode: "percent" | "fixed"; value: string; link?: "bonding" }) =>
     patchTableById(tid, (tb) => ({ ...tb, adjustments: [...(tb.adjustments || []), { id: `a-${uid()}`, ...p }] }));
   const setAdjustment = (tid: string, aid: string, patch: Partial<FinancialAdjustment>) =>
     patchTableById(tid, (tb) => ({ ...tb, adjustments: (tb.adjustments || []).map((a) => (a.id === aid ? { ...a, ...patch } : a)) }));
@@ -3831,6 +3832,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const proposalCanEdit = canEdit && !openVolFinal;
   const volCanEdit = (v: Vol) => canEdit && !finalOf(v);
   const builderCanEdit = (v: Vol) => volCanEdit(v) && builderEdit?.vol === v;
+  // 2026-10-08 - "the performance and payment bonds are part of the financial proposal, with the bank
+  // fee and the interest over the project's duration per the Gantt chart." A "Bonding costs" line
+  // under a price table follows the project's figures while the financial proposal is being edited.
+  const bondingSpan = project ? projectSpan(project) : { days: 365, from: "default" as const };
+  const bondingCost = project ? bondingCostTotal(withBonding(project.bonding), bondingSpan.days) : 0;
+  const bondingCostText = formatMoney(bondingCost, financial.currency || "$");
+  const finEditing = builderCanEdit("financial");
+  useEffect(() => {
+    if (!finEditing) return;
+    const linked = resolveFinancialTables(financial).flatMap((t) => (t.adjustments || []).filter((a) => a.link === "bonding"));
+    if (!linked.some((a) => a.value !== bondingCostText || a.mode !== "fixed")) return;
+    updateTables((ts) => ts.map((t) => ({ ...t, adjustments: (t.adjustments || []).map((a) => (a.link === "bonding" ? { ...a, mode: "fixed" as const, value: bondingCostText } : a)) })));
+    setDirty(true);
+  }, [finEditing, bondingCostText, financial]);
   const startBuilderEdit = (v: Vol) => setBuilderEdit({ vol: v, before: JSON.stringify(v === "financial" ? financial : technical) });
   const saveBuilderEdit = async () => { await handleSave(); setBuilderEdit(null); };
   const cancelBuilderEdit = async () => {
@@ -5657,23 +5672,36 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 {ADJUSTMENT_PRESETS.map((p) => (
                                   <button key={p.label} onClick={() => addAdjustment(tb.id, p)} className="px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200">+ {p.label}</button>
                                 ))}
+                                {bondingCost > 0 && !(tb.adjustments || []).some((a) => a.link === "bonding") && (
+                                  <button onClick={() => addAdjustment(tb.id, { label: "Performance & payment bonds and letter of credit (bank fees and interest)", mode: "fixed", value: bondingCostText, link: "bonding" })}
+                                    title="The project's bonding costs, from Legal Docs: bank fees and interest over the project's duration"
+                                    className="px-2 py-1 rounded-lg bg-emerald-50 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100">+ Bonding costs</button>
+                                )}
                               </div>
                             )}
                           </div>
                           {(tb.adjustments || []).length === 0 && <p className="text-[11px] text-slate-400">None. Add VAT, DBA insurance, a markup or a discount if the price needs one.</p>}
                           {(tb.adjustments || []).map((a) => (
-                            <div key={a.id} className="grid grid-cols-1 sm:grid-cols-[1.5fr_1fr_0.7fr_1fr_auto] gap-2 items-center">
+                            <Fragment key={a.id}>
+                            <div className="grid grid-cols-1 sm:grid-cols-[1.5fr_1fr_0.7fr_1fr_auto] gap-2 items-center">
                               <input value={a.label} onChange={(e) => setAdjustment(tb.id, a.id, { label: e.target.value })} disabled={!canEdit} aria-label="Line label" className={inp} />
-                              <select value={a.mode} onChange={(e) => setAdjustment(tb.id, a.id, { mode: e.target.value as "percent" | "fixed" })} disabled={!canEdit} aria-label="Percent or fixed" className={inp}>
+                              <select value={a.mode} onChange={(e) => setAdjustment(tb.id, a.id, { mode: e.target.value as "percent" | "fixed" })} disabled={!canEdit || a.link === "bonding"} aria-label="Percent or fixed" className={inp}>
                                 <option value="percent">% of the lines</option>
                                 <option value="fixed">Fixed amount</option>
                               </select>
                               {a.mode === "fixed"
-                                ? <SharedMoneyInput value={a.value} currency={financial.currency || "$"} allowNegative onChange={(v) => setAdjustment(tb.id, a.id, { value: v })} disabled={!canEdit} placeholder="-$5,000.00" aria-label="Value" className={`${inp} text-right`} />
+                                ? <SharedMoneyInput value={a.value} currency={financial.currency || "$"} allowNegative onChange={(v) => setAdjustment(tb.id, a.id, { value: v })} disabled={!canEdit || a.link === "bonding"} placeholder="-$5,000.00" aria-label="Value" className={`${inp} text-right`} />
                                 : <input value={a.value} onChange={(e) => setAdjustment(tb.id, a.id, { value: e.target.value })} disabled={!canEdit} placeholder="15" aria-label="Value" className={`${inp} text-right`} />}
                               <span className="text-right text-xs font-bold text-slate-700">{fmtMoney(calc.adjustments.find((x) => x.id === a.id)?.amount || 0)}</span>
                               {canEdit ? <button onClick={() => removeAdjustment(tb.id, a.id)} aria-label="Remove line" className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button> : <span />}
                             </div>
+                            {a.link === "bonding" && (
+                              <p className="text-[10px] text-slate-400 -mt-1">
+                                From the project's Bonding &amp; letter of credit (Legal Docs): the bank fees and the interest over {bondingSpan.days} days{bondingSpan.from === "schedule" ? " on the Gantt chart" : bondingSpan.from === "dates" ? " (the project's dates)" : " (a year until the schedule is set)"}. The bid bond is returned, so it is not counted.
+                                {a.value !== bondingCostText && <span className="text-amber-600"> The figures now come to {bondingCostText || formatMoney(0, financial.currency || "$")}; Edit to bring this line up to date.</span>}
+                              </p>
+                            )}
+                            </Fragment>
                           ))}
                         </div>
 

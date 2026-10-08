@@ -1,5 +1,5 @@
 import BondingEditor from "./BondingEditor";
-import { emptyBonding, type ProjectBonding } from "../../lib/bonding";
+import { emptyBonding, projectSpan, type ProjectBonding } from "../../lib/bonding";
 import WipFields from "./WipFields";
 import { emptyWip, type ProjectWip } from "../../lib/wip";
 import { motion, AnimatePresence } from "motion/react";
@@ -710,7 +710,7 @@ export default function NewProjectForm() {
           {/* CR 309 - bonded or not, which bonds, or a bank letter of credit instead. */}
           <div className="space-y-1 md:col-span-2 lg:col-span-4">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bonding &amp; letter of credit</label>
-            <BondingEditor value={bonding} onChange={setBonding} contractValue={projectValue} />
+            <BondingEditor value={bonding} onChange={setBonding} contractValue={projectValue} duration={projectSpan({ startDate, endDate })} />
             <p className="text-[10px] text-slate-400">The same figures show at the top of the project&apos;s Legal Docs, where they can be updated once a bank accepts.</p>
           </div>
           <div className="space-y-1 md:col-span-2 lg:col-span-4">

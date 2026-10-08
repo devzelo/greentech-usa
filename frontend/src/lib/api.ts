@@ -399,7 +399,11 @@ export interface FinancialColumn { id: string; label: string; kind: FinancialCol
 /** A line (cells keyed by column id), or a phase heading (`type: "group"`) whose lines get a subtotal. */
 export interface FinancialRow { id: string; cells: Record<string, string>; type?: "item" | "group"; label?: string }
 /** A line under a price table: VAT, DBA insurance or a markup (percent of the lines), or a fixed amount. */
-export interface FinancialAdjustment { id: string; label: string; mode: "percent" | "fixed"; value: string }
+export interface FinancialAdjustment {
+  id: string; label: string; mode: "percent" | "fixed"; value: string;
+  /** 2026-10-08 - "bonding": a fixed amount that follows the project's bonding costs. */
+  link?: "bonding";
+}
 export interface FinancialTable {
   id: string; title: string; columns: FinancialColumn[]; rows: FinancialRow[];
   adjustments?: FinancialAdjustment[];
