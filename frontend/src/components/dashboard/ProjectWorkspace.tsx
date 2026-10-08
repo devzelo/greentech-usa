@@ -470,6 +470,9 @@ export default function ProjectWorkspace() {
   // Step 8 - plus the JV as its own registered entity (legal name, UEI, CAGE, address, combined logo).
   // CR-P (31) — `companyId` is the Directory company the partner was picked from.
   type JVInfo = { enabled: boolean; partnerName: string; partnerAddress: string; contactName: string; email: string; phone: string; lead: string; logo: string; notes: string; stamps: JVImage[]; signatures: JVImage[]; legalName: string; uei: string; cage: string; legalAddress: string; combinedLogo: string; companyId: string };
+  // 2026-10-08 - the JV partner's logo for letterheads: the JV section's, else the logo on the
+  // partner's Directory profile ("grab the logo from the partner profile").
+  const [jvCompanyLogo, setJvCompanyLogo] = useState("");
   const [jvInfo, setJvInfo] = useState<JVInfo>({ enabled: false, partnerName: "", partnerAddress: "", contactName: "", email: "", phone: "", lead: "", logo: "", notes: "", stamps: [], signatures: [], legalName: "", uei: "", cage: "", legalAddress: "", combinedLogo: "", companyId: "" });
   // Editing the JV record marks the workspace dirty so the unsaved-changes guard applies —
   // uploaded partner stamps/signatures only persist via Save Workspace / Save Identity.
@@ -1752,15 +1755,24 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
 
   // Assemble the proposal PDF blob — optionally merging the section's uploaded attachments.
+  useEffect(() => {
+    if (!jvInfo.enabled || !jvInfo.companyId) { setJvCompanyLogo(""); return; }
+    let live = true;
+    fetchCompany(jvInfo.companyId).then((c) => { if (live) setJvCompanyLogo(c.logoUrl || ""); }).catch(() => { if (live) setJvCompanyLogo(""); });
+    return () => { live = false; };
+  }, [jvInfo.enabled, jvInfo.companyId]);
+  const jvLogoOf = () => jvInfo.logo || project?.jointVenture?.logo || jvCompanyLogo;
   const buildProposalBlob = async (which: "technical" | "financial", withAttachments: boolean): Promise<Blob> => {
     if (!project || !id) throw new Error("Project not loaded.");
+    const jvSaved = project.jointVenture?.enabled ? project.jointVenture : undefined;
+    const pdfProject = jvSaved && !jvSaved.logo && jvLogoOf() ? { ...project, jointVenture: { ...jvSaved, logo: jvLogoOf() } } : project;
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
     // 2026-10-06 - projects picked from our records print what their Project Info says now.
     const pool = hasLinkedProjects(technical) || hasLinkedProjects(financial) ? await linkedProjectPool() : [];
     const tech = withLiveProjects(technical, pool), fin = withLiveProjects(financial, pool);
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
-    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical: tech, financial: fin, logoUrl, resumes: teamResumes, requirements }, ctx);
+    const makeParts = (ctx: PageCtx) => proposalParts({ kind: which, project: pdfProject, cover: which === "financial" ? coverFinancial : cover, coverLetter: which === "financial" ? coverLetterFinancial : coverLetter, backCover, letterhead, customLetterheadUrl, technical: tech, financial: fin, logoUrl, resumes: teamResumes, requirements }, ctx);
     const atts = withAttachments ? await fetchDocuments(id, which === "technical" ? "proposals-technical" : "proposals-financial") : [];
     // Item 104 / spec 6 - warn when a company document in the proposal has expired.
     {
@@ -4896,7 +4908,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   It sees JV edits not yet saved, so the letter matches what is on screen. */}
               {proposalSub === "eoi" && project && (
                 <EoiBuilder
-                  project={{ ...project, jointVenture: { ...(project.jointVenture || {}), ...jvInfo } as ApiProject["jointVenture"] }}
+                  project={{ ...project, jointVenture: { ...(project.jointVenture || {}), ...jvInfo, logo: jvLogoOf() } as ApiProject["jointVenture"] }}
                   cover={cover}
                   value={eoi}
                   onChange={(v) => { setEoi(v); setDirty(true); }}
@@ -6152,7 +6164,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                   defaults={{
                                     projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                                     party2: { name: jvInfo.partnerName, contactName: jvInfo.contactName, address: jvInfo.partnerAddress, email: jvInfo.email, phone: jvInfo.phone, logoUrl: jvInfo.logo, companyId: jvInfo.companyId || "" },
-                                    jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
+                                    jv: { name: jvInfo.partnerName, logoUrl: jvLogoOf() },
                                     contextLines: [
                                       { label: "Project", value: project?.name || "" },
                                       { label: "Project No", value: project?.id || "" },
@@ -6374,7 +6386,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                             defaults={{
                               projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                               party2: { name: v.name, contactName: v.contactName, address: [v.city, v.country].filter(Boolean).join(", "), email: v.email, phone: v.phone, logoUrl: "", companyId: v.companyId || "" },
-                              jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
+                              jv: { name: jvInfo.partnerName, logoUrl: jvLogoOf() },
                               contextLines: [
                                 { label: "Project", value: project?.name || "" },
                                 { label: "Project No", value: project?.id || "" },
@@ -6572,7 +6584,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                               defaults={{
                                 projectName: project?.name || "", projectNo: project?.id || "", projectLocation: project?.location || "",
                                 party2: { name: sub.name, contactName: sub.contact || "", address: "", email: sub.email || "", phone: sub.phone || "", logoUrl: "", companyId: sub.companyId || "" },
-                                jv: { name: jvInfo.partnerName, logoUrl: jvInfo.logo },
+                                jv: { name: jvInfo.partnerName, logoUrl: jvLogoOf() },
                                 contextLines: [
                                   { label: "Project", value: project?.name || "" },
                                   { label: "Project No", value: project?.id || "" },

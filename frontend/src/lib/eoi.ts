@@ -27,7 +27,7 @@ const todayIso = () => {
 export interface EoiResolved {
   date: string; solicitationNo: string; projectTitle: string; projectType: string; location: string; country: string;
   recipientName: string; recipientTitle: string; agency: string;
-  jv: boolean; jvLogo: string; firmName: string; firmUei: string; firmAddress: string;
+  jv: boolean; jvLogo: string; partnerLogo: string; firmName: string; firmUei: string; firmAddress: string;
   bullets: string[]; bondingPercent: string;
   pocName: string; pocPhone: string; pocEmail: string;
   signatory?: EoiContent["signatory"]; stampUrl: string;
@@ -60,6 +60,7 @@ export function eoiDefaults(project: ApiProject, cover: ProposalCover | undefine
     agency: (cover?.submittedTo || cover?.clientName || project.clientInfo?.name || "").trim(),
     jv,
     jvLogo: jv ? project.jointVenture?.combinedLogo || project.jointVenture?.logo || "" : "",
+    partnerLogo: jv ? project.jointVenture?.logo || "" : "",
     firmName: jv ? jvEntityName(project) : COMPANY.name,
     firmUei: jv ? (project.jointVenture?.uei || "").trim() : COMPANY.uei,
     firmAddress: jv ? (project.jointVenture?.legalAddress || "").trim() || COMPANY.mailingAddress : COMPANY.mailingAddress,

@@ -282,7 +282,7 @@ function RichText({ html, keyBase }: { html: string; keyBase: string }) {
 function Sheet({ lh, label, note, narrow, children }: { lh: LhConfig; label: string; note: string; narrow?: boolean; children?: ReactNode; key?: string }) {
   return (
     <Page size="LETTER" style={[lh.mode === "brand" ? styles.page : styles.pagePlain, narrow ? styles.pageNarrow : {}]} wrap>
-      {lh.mode === "brand" && <LetterheadHeader />}
+      {lh.mode === "brand" && <LetterheadHeader partnerLogo={lh.jv ? abs(lh.jv) : undefined} />}
       {lh.mode === "custom" && (
         <View style={styles.customHeader} fixed>
           {lh.logo ? <Image src={lh.logo} style={styles.customLogo} /> : <Text style={{ fontWeight: 700, color: BRAND.slate }}>{COMPANY.name}</Text>}

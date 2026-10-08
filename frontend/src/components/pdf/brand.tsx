@@ -53,10 +53,19 @@ export function registerBrandFonts() {
 // The band carries the client-approved art only. A JV partner's logo used to sit on a white chip in
 // it, which read as an empty white box whenever the logo did not load; the JV shows in the text
 // instead (the submitter on the cover, the EOI's firm name).
-export function LetterheadHeader() {
+export function LetterheadHeader({ partnerLogo }: { partnerLogo?: string } = {}) {
+  const H = LETTERHEAD.header.h;
+  // 2026-10-08 - on a joint venture the partner's logo sits on the band after ours (our lockup ends
+  // at about 197 pt; the wave starts at about 490 pt), behind a thin rule, on a white chip.
   return (
-    <View fixed style={{ position: "absolute", top: 0, left: 0, width: PAGE.w, height: LETTERHEAD.header.h }}>
-      <Image src={abs(LETTERHEAD.header.src)} style={{ width: PAGE.w, height: LETTERHEAD.header.h }} />
+    <View fixed style={{ position: "absolute", top: 0, left: 0, width: PAGE.w, height: H }}>
+      <Image src={abs(LETTERHEAD.header.src)} style={{ width: PAGE.w, height: H }} />
+      {!!partnerLogo && <View style={{ position: "absolute", left: 210, top: H * 0.26, width: 0.8, height: H * 0.54, backgroundColor: "rgba(255,255,255,0.45)" }} />}
+      {!!partnerLogo && (
+        <View style={{ position: "absolute", left: 220, top: H * 0.2, height: H * 0.64, backgroundColor: "#FFFFFF", borderRadius: 4, paddingHorizontal: 5, justifyContent: "center" }}>
+          <Image src={partnerLogo} style={{ height: H * 0.64 - 6, maxWidth: 130, objectFit: "contain" }} />
+        </View>
+      )}
     </View>
   );
 }
