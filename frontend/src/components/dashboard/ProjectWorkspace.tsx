@@ -700,6 +700,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const owner = !!(project && cu && (project as ApiProject & { ownerId?: string }).ownerId === cu.id);
     if (financialLocked && !owner && proposalSub === "financial") setProposalSub("overview");
   }, [financialLocked, project, proposalSub]);
+  // 2026-10-08 - the builder is read-only until Edit, like the cover page: the volume being edited,
+  // and its content when Edit was clicked (Cancel puts it back, even past an autosave).
+  const [builderEdit, setBuilderEdit] = useState<{ vol: "technical" | "financial"; before: string } | null>(null);
   const [proposalDocTab, setProposalDocTab] = useState<"cover" | "letter" | "builder" | "closing" | "attachments" | "versions">("builder"); // inner tab inside Technical/Financial
   const [procSub, setProcSub] = useState<"boq" | "log" | "submittals" | "rfqs" | "quotes" | "po" | "invoices" | "shipment" | "legacy">("log"); // Procurement module sub-tab (default = Master Log overview)
   const [finSub, setFinSub] = useState<FinSub>("expenses"); // CR-P-30 — Finances module sub-tab
@@ -3642,7 +3645,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   const customEditorFor = (m: ProposalSectionMeta, vol: Vol) => {
     // CR 203 - once its volume is marked Final, every box in this section is read-only.
-    const canEdit = volCanEdit(vol);
+    // 2026-10-08 - and until Edit is clicked in the builder.
+    const canEdit = builderCanEdit(vol);
     const s = sectionsOfVol(vol).find((x) => x.id === m.refId);
     if (!s) return null;
     // Spec 4 - Government forms and external documents are inserted as uploaded: no text
@@ -3796,6 +3800,22 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   };
   const proposalCanEdit = canEdit && !openVolFinal;
   const volCanEdit = (v: Vol) => canEdit && !finalOf(v);
+  const builderCanEdit = (v: Vol) => volCanEdit(v) && builderEdit?.vol === v;
+  const startBuilderEdit = (v: Vol) => setBuilderEdit({ vol: v, before: JSON.stringify(v === "financial" ? financial : technical) });
+  const saveBuilderEdit = async () => { await handleSave(); setBuilderEdit(null); };
+  const cancelBuilderEdit = async () => {
+    if (!builderEdit) return;
+    const { vol, before } = builderEdit;
+    const now = JSON.stringify(vol === "financial" ? financial : technical);
+    if (now !== before) {
+      if (!(await brandedConfirm({ title: "Discard the changes?", message: `The ${vol === "financial" ? "Financial" : "Technical"} Proposal goes back to how it was when you clicked Edit.`, confirmLabel: "Discard changes", danger: true }))) return;
+      const was = JSON.parse(before);
+      if (vol === "financial") setFinancial(was); else setTechnical(was);
+      // An autosave may already have stored the edits: store the content as it was.
+      await handleSave(true, vol === "financial" ? { financial: was } : { technical: was });
+    }
+    setBuilderEdit(null);
+  };
   // Visible tabs: owner sees all; guest sees granted tabs; employee sees tabs whose Employees toggle is on
   // A guest can reach Procurement if they have the module perm OR any procurement sub-tab perm.
   const hasAnyProcPerm = PROC_SUBTABS.some((s) => myGuestPerms[s.permId] === "view" || myGuestPerms[s.permId] === "edit");
@@ -4684,7 +4704,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
           {/* PROPOSALS */}
           {activeTab === "proposals" && id && project && (() => {
             // While the open volume is marked Final nothing in it can be changed (CR 203).
-            const canEdit = proposalCanEdit;
+            const mayEdit = proposalCanEdit;   // allowed to edit at all (not Final, has the right)
+            const inBuilder = (proposalSub === "technical" || proposalSub === "financial") && proposalDocTab === "builder";
+            const canEdit = inBuilder ? proposalCanEdit && builderEdit?.vol === proposalSub : proposalCanEdit;
             const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
             const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
             const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
@@ -4693,7 +4715,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
             const ActionButtons = ({ which }: { which: "technical" | "financial" }) => (
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); }}  /* CR-B-14b — autosave before preview */
+                  onClick={() => { if (dirty && mayEdit) void handleSave(true); setProposalPreview(which); }}  /* CR-B-14b — autosave before preview */
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors"
                 >
                   <Eye size={13} /> Preview
@@ -4705,7 +4727,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     { key: "pdf", label: "PDF", hint: "The generated pages only", icon: <FileDown size={14} />, busy: proposalDownloading === `${which}-false`, onSelect: () => downloadProposal(which, false) },
                     { key: "word", label: "Word (.docx)", hint: "An editable copy", icon: <FileText size={14} />, busy: proposalDownloading === `${which}-docx`, onSelect: () => downloadProposalWord(which) },
                     ...(which === "financial" ? [{ key: "excel", label: "Excel (.xlsx)", hint: "The price tables, one sheet each with totals", icon: <FileSpreadsheet size={14} />, onSelect: exportAllTablesExcel }] : []),
-                    { key: "print", label: "Print", hint: "Opens the preview; print from its toolbar", icon: <Printer size={14} />, onSelect: () => { if (dirty && canEdit) void handleSave(true); setProposalPreview(which); } },
+                    { key: "print", label: "Print", hint: "Opens the preview; print from its toolbar", icon: <Printer size={14} />, onSelect: () => { if (dirty && mayEdit) void handleSave(true); setProposalPreview(which); } },
                   ]}
                 />
                 {/* CR 203 - a Final volume is locked; the only way on is a new revision. */}
@@ -4717,14 +4739,27 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                     <RotateCcw size={13} /> Start a new revision
                   </button>
                 )}
+                {/* 2026-10-08 - read-only until Edit; while editing, Cancel puts it back and Save keeps it. */}
+                {mayEdit && builderEdit?.vol !== which && (
+                  <button onClick={() => startBuilderEdit(which)} disabled={!!builderEdit}
+                    title={builderEdit ? `Save or cancel the ${builderEdit.vol} proposal first` : undefined}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary transition-colors disabled:opacity-50">
+                    <Edit2 size={13} /> Edit
+                  </button>
+                )}
+                {mayEdit && builderEdit?.vol === which && (
+                  <button onClick={() => void cancelBuilderEdit()} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition-colors">
+                    <X size={13} /> Cancel
+                  </button>
+                )}
                 {/* CR-B-14a - the rest of the standard action set for the Proposal builder
                     (Save / Duplicate / Mark as Final / Discard / Reset, with confirmations). */}
-                {canEdit && (
+                {mayEdit && builderEdit?.vol === which && (
                   <BuilderActions
                     confirm={dlgConfirm}
                     saving={saving}
                     dirty={dirty}
-                    onSave={() => handleSave()}
+                    onSave={() => void saveBuilderEdit()}
                     onDuplicate={() => saveRevision(false)}
                     markCompleteLabel="Mark as Final"
                     markCompleteTitle={`Mark the ${which === "financial" ? "Financial" : "Technical"} Proposal as Final?`}
@@ -4743,6 +4778,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                         // Save it straight away, so the status is still Final after a reload.
                         await handleSave(true, which === "financial" ? { financial: { ...financial, finalized: mark } } : { technical: { ...technical, finalized: mark } });
                         // CR-P (84) - name it the way the table does: Rev 0, Rev 1, ...
+                        setBuilderEdit(null);
                         toast(`Marked as Final (Rev ${mark.revision}). The proposal is locked; start a new revision to keep editing.`, "success");
                         await loadNextFinalVer();
                       } catch (e) { toast(e instanceof Error ? e.message : "Could not mark final.", "error"); }
