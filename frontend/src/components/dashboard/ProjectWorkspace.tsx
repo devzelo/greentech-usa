@@ -71,6 +71,7 @@ type Vol = "technical" | "financial";
 import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePageBadge";
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
+import { LogoPicker } from "./ImagePicker";
 import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
@@ -530,19 +531,11 @@ export default function ProjectWorkspace() {
                 Uploading here overrides it for this project only. */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partner Logo <span className="font-medium normal-case text-slate-400">— pulled from the Directory partner; used as this project's JV letterhead</span></label>
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                  {jvInfo.logo ? <img src={assetSrc(jvInfo.logo)} alt="Partner logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
-                </div>
-                {!disabled && (
-                  <div className="flex items-center gap-2">
-                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
-                      {jvLogoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {jvInfo.logo ? "Replace" : "Upload logo"}
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleJvLogoUpload(f); e.target.value = ""; }} disabled={jvLogoUploading} />
-                    </label>
-                    {jvInfo.logo && <button type="button" onClick={() => updateJv("logo", "")} className="text-[11px] font-bold text-red-500 hover:underline">Remove</button>}
-                  </div>
-                )}
+              {/* 2026-10-09 - chosen from the Logos folder (or the partner's Directory logo), or uploaded. */}
+              <div className="max-w-md">
+                <LogoPicker value={jvInfo.logo || ""} onChange={(v) => updateJv("logo", v)} disabled={disabled}
+                  extra={jvCompanyLogo ? [{ name: jvInfo.partnerName || "The partner", url: jvCompanyLogo, note: "The partner, from the Directory" }] : []}
+                  placeholder="Select the partner's logo" noneLabel="No partner logo" ariaLabel="Partner logo" />
               </div>
             </div>
             {/* Who is leading the project — GreenTech or the named partner */}
@@ -579,19 +572,9 @@ export default function ProjectWorkspace() {
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">JV Combined Logo <span className="font-medium normal-case text-slate-400">(both companies' marks; shown on the JV's EOIs)</span></label>
-              <div className="flex items-center gap-3">
-                <div className="w-28 h-16 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                  {jvInfo.combinedLogo ? <img src={assetSrc(jvInfo.combinedLogo)} alt="JV combined logo" className="w-full h-full object-contain" /> : <FileImage size={20} className="text-slate-300" />}
-                </div>
-                {!disabled && (
-                  <div className="flex items-center gap-2">
-                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
-                      {jvLogoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {jvInfo.combinedLogo ? "Replace" : "Upload logo"}
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleJvLogoUpload(f, "combinedLogo"); e.target.value = ""; }} disabled={jvLogoUploading} />
-                    </label>
-                    {jvInfo.combinedLogo && <button type="button" onClick={() => updateJv("combinedLogo", "")} className="text-[11px] font-bold text-red-500 hover:underline">Remove</button>}
-                  </div>
-                )}
+              <div className="max-w-md">
+                <LogoPicker value={jvInfo.combinedLogo || ""} onChange={(v) => updateJv("combinedLogo", v)} disabled={disabled}
+                  placeholder="Select the JV's combined logo" noneLabel="No combined logo" ariaLabel="JV combined logo" />
               </div>
             </div>
           </div>

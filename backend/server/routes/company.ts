@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from "express";
+import crypto from "crypto";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -140,6 +141,15 @@ const TERMS_TAB_ID = "company-terms";
 // Proposal step 5 (item 99) - "resumes are stored in Company Documents under Resumes and selected
 // rather than re-uploaded each time". Files uploaded here are typed as resumes automatically.
 const RESUMES_TAB_ID = "company-resumes";
+// 2026-10-09 - "save all the stamps in the Stamps folder; the dropdown shows them. Same for logos.
+// A folder for signatures too." The Logos folder (Company documents) and the Signatures folder
+// (Classified, beside Stamps) feed the document builders' pickers.
+const LOGOS_TAB_ID = "company-logos";
+const SIGNATURES_TAB_ID = "classified-signatures";
+const SEED_LOGOS = [
+  { name: "GreenTech USA.png", url: "/gt-usa-logo-new.png", description: "The company logo." },
+  { name: "GreenTech USA horizontal.png", url: "/gt-logo-horizontal.png", description: "The horizontal lockup." },
+];
 // The company's standing PO terms, seeded so a fresh install already has them to attach.
 const SEED_TERMS = [
   {
@@ -264,6 +274,22 @@ async function ensureSeeded() {
     await CompanyTab.updateOne(
       { tabId: TERMS_TAB_ID },
       { $setOnInsert: { tabId: TERMS_TAB_ID, label: "Terms & Conditions", parentId: "", order: 901, system: true, kind: "company" } },
+      { upsert: true }
+    );
+    await CompanyTab.updateOne(
+      { tabId: LOGOS_TAB_ID },
+      { $setOnInsert: { tabId: LOGOS_TAB_ID, label: "Logos", parentId: "", order: 903, system: true, kind: "company" } },
+      { upsert: true }
+    );
+    if (!(await CompanyFile.countDocuments({ tabId: LOGOS_TAB_ID }))) {
+      await CompanyFile.insertMany(SEED_LOGOS.map((d) => ({
+        kind: "company", tabId: LOGOS_TAB_ID, name: d.name, url: d.url,
+        fileType: extOf(d.name), size: "—", description: d.description, uploadedByName: "System",
+      })));
+    }
+    await CompanyTab.updateOne(
+      { tabId: SIGNATURES_TAB_ID },
+      { $setOnInsert: { tabId: SIGNATURES_TAB_ID, label: "Signatures", parentId: "", order: 2, system: true, kind: "classified" } },
       { upsert: true }
     );
     await CompanyTab.updateOne(
@@ -475,11 +501,64 @@ router.get("/proposal-docs", async (req: AuthedRequest, res: Response, next: Nex
 router.get("/stamps", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await ensureSeeded();
-    const files = await CompanyFile.find({ kind: "classified", tabId: STAMP_TAB_ID }).sort({ createdAt: -1 }).lean();
+    const files = await CompanyFile.find({ kind: "classified", tabId: STAMP_TAB_ID, archived: { $ne: true } }).sort({ name: 1 }).lean();
     res.json(files);
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/company/logos — the Logos folder, for the logo picker in the document builders.
+router.get("/logos", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    await ensureSeeded();
+    res.json(await CompanyFile.find({ tabId: LOGOS_TAB_ID, archived: { $ne: true } }).sort({ name: 1 }).lean());
+  } catch (err) { next(err); }
+});
+
+// GET /api/company/signature-files — the Signatures folder (Classified), readable by any staff
+// member for the signature picker, as the stamps are.
+router.get("/signature-files", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    await ensureSeeded();
+    res.json(await CompanyFile.find({ kind: "classified", tabId: SIGNATURES_TAB_ID, archived: { $ne: true } }).sort({ name: 1 }).lean());
+  } catch (err) { next(err); }
+});
+
+// POST /api/company/picked-images — a stamp, logo or signature picture uploaded for one document
+// ("if it is not in the folder, we can upload it manually from a different place"). Kept for that
+// document only (the folders stay as the admin keeps them). Pictures only, checked by their bytes.
+const PICK_KINDS: Record<string, string[]> = { stamp: ["png", "jpg"], signature: ["png", "jpg"], logo: ["png", "jpg", "webp", "gif"] };
+const pictureType = (file: string): string => {
+  try {
+    const fd = fs.openSync(file, "r");
+    const b = Buffer.alloc(12);
+    fs.readSync(fd, b, 0, 12, 0);
+    fs.closeSync(fd);
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+    if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+    if (b.subarray(0, 4).toString("latin1") === "GIF8") return "gif";
+    if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "webp";
+  } catch { /* unreadable */ }
+  return "";
+};
+const pickedUpload = multer({ dest: path.join("uploads", "company", "picked", "incoming"), limits: { fileSize: 10 * 1024 * 1024 } });
+router.post("/picked-images", pickedUpload.single("file"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Choose a picture." });
+    const kind = String(req.body?.kind || "");
+    const allowed = PICK_KINDS[kind];
+    const type = pictureType(req.file.path);
+    if (!allowed || !allowed.includes(type)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: kind === "logo" ? "Choose a PNG, JPEG, WebP or GIF picture." : "Choose a PNG or JPEG picture." });
+    }
+    const dir = path.join("uploads", "company", "picked", kind);
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${type}`);
+    fs.renameSync(req.file.path, dest);
+    res.status(201).json({ url: `/${dest.replace(/\\/g, "/")}`, name: req.file.originalname.replace(/\.[a-z0-9]+$/i, "").slice(0, 120) });
+  } catch (err) { if (req.file) fs.unlink(req.file.path, () => {}); next(err); }
 });
 
 // GET /api/company/nda-files — reusable NDA files (the NDA Files tab, now under Company documents),

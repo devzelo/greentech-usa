@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import User from "../models/User";
 import Project from "../models/Project";
 import Agreement from "../models/Agreement";
+import CompanyFile from "../models/CompanyFile";
 import { getProjectAccess, canViewTab, sectionToTabId, type ProjectAccess } from "./access";
 import { isSharedWith, partyMaySee, type PartyIdentity } from "./agreementAccess";
 
@@ -82,6 +83,10 @@ async function agreementOpen(aid: string, me: Who): Promise<boolean> {
   return named.some((p) => (!!me.companyId && String(p.companyId || "") === me.companyId) || (!!me.email && String(p.email || "").toLowerCase() === me.email));
 }
 
+/** A stamp or signature from the Classified folders (they print on documents). */
+const printedPicture = (rel: string) => cached(`f:${rel}`, async () =>
+  !!(await CompanyFile.exists({ tabId: { $in: ["classified-stamps", "classified-signatures"] }, filePath: { $in: [`uploads/${rel}`, `uploads\\${rel.replace(/\//g, "\\")}`] } })));
+
 /** May this signed-in user open the file at `rel` (a path under uploads/, posix, normalized)? */
 export async function mayReadUpload(userId: string, rel: string): Promise<boolean> {
   const me = await who(userId);
@@ -94,8 +99,11 @@ export async function mayReadUpload(userId: string, rel: string): Promise<boolea
   switch (first) {
     case "signatures": return true;
     case "company":
-      if (second === "logos") return true;
+      // Logos (the Directory's and the Logos folder) and pictures picked for one document.
+      if (second === "logos" || second === "company-logos" || second === "picked") return true;
       if (second === "profile") return !!me.companyId && third === me.companyId;
+      // The stamps and signatures print on the documents an outside login is shown.
+      if (second === "classified") return printedPicture(rel);
       return false;   // GreenTech's own company and classified documents
     case "resumes": case "profile-gallery": case "users":
       // Their own files; a company login also sees its colleagues' resumes.

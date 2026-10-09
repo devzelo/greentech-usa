@@ -1051,7 +1051,7 @@ export async function fetchMyFiles(): Promise<UserFile[]> { return request('/me/
 export interface SignatureBlock { name: string; title: string; phone: string; email: string; website: string; address: string }
 export interface ApiSignature extends SignatureBlock { id: string; label: string; url: string; isDefault: boolean }
 /** CR 361 - a GreenTech login who can sign, with their signatures. */
-export interface ApiSigner { id: string; name: string; jobTitle: string; email: string; phone: string; signatures: ApiSignature[] }
+export interface ApiSigner { id: string; name: string; jobTitle: string; email: string; phone: string; signatures: ApiSignature[]; /** 2026-10-09 */ group?: "staff" | "partner"; company?: string }
 export async function fetchSigners(): Promise<ApiSigner[]> { return request('/me/signers'); }
 export async function fetchMySignatures(): Promise<ApiSignature[]> { return request('/me/signatures'); }
 export async function uploadMySignature(file: File, label: string): Promise<ApiSignature[]> {
@@ -3716,6 +3716,14 @@ export async function deleteCredential(id: string): Promise<void> { await reques
 export async function fetchCredentialPeople(): Promise<ApiCredentialPerson[]> { return request('/company/credential-people'); }
 
 export async function fetchStamps(): Promise<CompanyFile[]> { return request('/company/stamps'); }
+// 2026-10-09 - the Logos folder (Company documents) and the Signatures folder (Classified), for the
+// document builders' pickers; and a picture uploaded for one document ("not in the folder").
+export async function fetchLogoFiles(): Promise<CompanyFile[]> { return request('/company/logos'); }
+export async function fetchSignatureFiles(): Promise<CompanyFile[]> { return request('/company/signature-files'); }
+export async function uploadPickedImage(kind: "stamp" | "logo" | "signature", file: File): Promise<{ url: string; name: string }> {
+  const fd = new FormData(); fd.append('kind', kind); fd.append('file', file);
+  return postMultipart<{ url: string; name: string }>('/api/company/picked-images', fd);
+}
 export async function fetchNdaFiles(): Promise<CompanyFile[]> { return request('/company/nda-files'); }
 /** CR-P (45) - the standard terms & conditions pool (its own Company Documents tab). */
 export async function fetchTermsFiles(): Promise<CompanyFile[]> { return request('/company/terms-files'); }

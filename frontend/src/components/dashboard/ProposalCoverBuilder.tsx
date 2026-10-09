@@ -7,6 +7,7 @@ import CompanyPicker from "./CompanyPicker";
 import { toast } from "../../lib/toast";
 import { COMPANY } from "../pdf/brand";
 import { RESTRICTION_LEGEND, defaultSubmitter, CoverOnlyDocument } from "./ProposalPDF";
+import { LogoPicker } from "./ImagePicker";
 
 const inp = "w-full bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
 const lbl = "text-[10px] font-bold text-slate-400 uppercase tracking-widest";
@@ -119,6 +120,9 @@ export default function ProposalCoverBuilder({
   // cover has none of its own yet.
   const clientCompanyId = project.clientInfo?.companyId || "";
   const partnerCompanyId = project.jointVenture?.companyId || "";
+  // 2026-10-09 - their Directory logos, offered by name in the logo pickers.
+  const clientDir = useDirectoryCompany(cover.clientCompanyId || clientCompanyId, cover.clientName || project.clientInfo?.name);
+  const partnerDir = useDirectoryCompany(partnerCompanyId || undefined, project.jointVenture?.partnerName);
   useEffect(() => {
     let live = true;
     void (async () => {
@@ -135,8 +139,6 @@ export default function ProposalCoverBuilder({
   const [uploading, setUploading] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const imgInput = useRef<HTMLInputElement>(null);
-  const jvInput = useRef<HTMLInputElement>(null);
-  const clientLogoInput = useRef<HTMLInputElement>(null);
 
   const setCover = <K extends keyof ProposalCover>(k: K, v: ProposalCover[K]) => onCoverChange({ ...cover, [k]: v });
   // 2026-10-07 - the cover's client in the Directory (the project's client when the cover names none).
@@ -323,22 +325,14 @@ export default function ProposalCoverBuilder({
 
             {/* The client's seal or logo, printed opposite ours on the cover (the samples show the agency seal). */}
             {g.title === "Client" && (
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="space-y-1">
                 <span className={lbl}>Client logo or seal</span>
-                {cover.clientLogoUrl ? (
-                  <div className="relative">
-                    <img src={withFileToken(cover.clientLogoUrl)} alt="Client logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
-                    {canEdit && <button onClick={() => setCover("clientLogoUrl", "")} aria-label="Remove client logo" className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-slate-400 italic">None yet.</span>
-                )}
-                {canEdit && (
-                  <button onClick={() => clientLogoInput.current?.click()} disabled={uploading === "client-logo"} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200">
-                    {uploading === "client-logo" ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
-                  </button>
-                )}
-                <input ref={clientLogoInput} type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const u = await doUpload(f, "client-logo"); if (u) setCover("clientLogoUrl", u); } e.target.value = ""; }} />
+                {/* 2026-10-09 - chosen from the Logos folder (or the client's Directory logo), or uploaded. */}
+                <div className="max-w-md">
+                  <LogoPicker value={cover.clientLogoUrl || ""} onChange={(v) => setCover("clientLogoUrl", v)} disabled={!canEdit}
+                    extra={clientDir?.logoUrl ? [{ name: clientDir.name, url: clientDir.logoUrl, note: "The client, from the Directory" }] : []}
+                    placeholder="Select the client's logo" noneLabel="No client logo" ariaLabel="Client logo" />
+                </div>
               </div>
             )}
 
@@ -382,22 +376,14 @@ export default function ProposalCoverBuilder({
           </div>
           {/* CR 368 - a JV project's cover shows the partner's logo: this cover's own, else the JV's. */}
           {isJvProject && (
-            <div className="flex items-center gap-3">
-              {cover.jvLogoUrl || jvProjectLogo ? (
-                <div className="relative">
-                  <img src={withFileToken(cover.jvLogoUrl || jvProjectLogo)} alt="Partner logo" className="h-12 w-auto object-contain rounded-lg border border-slate-100 bg-white p-1" />
-                  {canEdit && !!cover.jvLogoUrl && <button onClick={() => setCover("jvLogoUrl", "")} title="Use the JV's own logo again" className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow text-slate-400 hover:text-red-500"><X size={12} /></button>}
-                  {!cover.jvLogoUrl && <span className="mt-0.5 block text-[10px] text-slate-400">From the JV (Project Identity)</span>}
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-400 italic">No partner logo yet: add it to the JV in Project Identity, or upload one for this cover.</p>
-              )}
-              {canEdit && (
-                <button onClick={() => jvInput.current?.click()} disabled={uploading === "jv"} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200">
-                  {uploading === "jv" ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload partner logo
-                </button>
-              )}
-              <input ref={jvInput} type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const u = await doUpload(f, "jv"); if (u) setCover("jvLogoUrl", u); } e.target.value = ""; }} />
+            <div className="max-w-md space-y-1">
+              <span className={lbl}>Partner logo</span>
+              <LogoPicker value={cover.jvLogoUrl || jvProjectLogo} onChange={(v) => setCover("jvLogoUrl", v)} disabled={!canEdit}
+                extra={[
+                  ...(jvProjectLogo ? [{ name: project.jointVenture?.partnerName || "The JV partner", url: jvProjectLogo, note: "The JV's logo (Project Identity)" }] : []),
+                  ...(partnerDir?.logoUrl ? [{ name: partnerDir.name, url: partnerDir.logoUrl, note: "The partner, from the Directory" }] : []),
+                ]}
+                placeholder="Select the partner's logo" noneLabel="The JV's own logo" ariaLabel="Partner logo" />
             </div>
           )}
         </div>
