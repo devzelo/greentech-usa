@@ -4287,14 +4287,62 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
               frosted card on it. Without one (or one that fails to load): no picture area at all,
               just the details in a plain white card like the rest of the page, with a quiet "Add
               cover picture" for the owner. */}
-          {(() => { const hasCover = !!project.image && !coverBroken; return (
+          {(() => {
+            const hasCover = !!project.image && !coverBroken;
+            // 2026-10-09 - "when the project name is long, it moves the buttons; keep them always in
+            // the top right corner": the actions sit in the card's corner, out of the title's line,
+            // and the card keeps that corner free so a long name wraps before it.
+            const nActions = (canManage ? 1 : 0) + 1 + (isOwner ? (project.image ? 2 : 1) : 0);
+            const corner = ["", "sm:pr-14", "sm:pr-24", "sm:pr-32", "sm:pr-40"][nActions] || "sm:pr-40";
+            const actions = (
+              <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5 sm:right-3 sm:top-3">
+                {canManage && (
+                  <button
+                    onClick={openEditIdentity}
+                    title={isOwner ? "Edit project identity" : "View project identity"}
+                    aria-label={isOwner ? "Edit project identity" : "View project identity"}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-primary hover:bg-white/70 transition-all"
+                  >
+                    {isOwner ? <Edit2 size={16} /> : <Eye size={16} />}
+                  </button>
+                )}
+                {/* Set a personal reminder about this project — the notification links back here. */}
+                <ReminderButton
+                  compact
+                  title={`Follow up on ${project.name}`}
+                  contextLabel={`Project · ${project.name} (${project.id})`}
+                  link={`/dashboard/projects/${project.id}`}
+                  projectId={project.id}
+                  projectName={project.name}
+                />
+                {/* CR 349 - the cover picture's controls: "Add cover picture" without one;
+                    "Change picture" and Remove with one. */}
+                {isOwner && (
+                  imageUploading ? (
+                    <span className="inline-flex items-center p-1.5 text-slate-400" title="Saving the picture"><Loader2 size={16} className="animate-spin" /></span>
+                  ) : (
+                    <>
+                      <label className="p-1.5 rounded-lg text-slate-500 hover:text-primary hover:bg-white/70 cursor-pointer transition-all" title={hasCover ? "Change the cover picture" : "Add a cover picture behind the project's details"} aria-label={hasCover ? "Change the cover picture" : "Add a cover picture"}>
+                        {hasCover ? <FileImage size={16} /> : <ImagePlus size={16} />}
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
+                      </label>
+                      {!!project.image && (
+                        <button type="button" onClick={() => void removeProjectImage()} className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition-all" title="Remove the cover picture" aria-label="Remove the cover picture"><Trash2 size={16} /></button>
+                      )}
+                    </>
+                  )
+                )}
+              </div>
+            );
+            return (
           <div className={`relative flex-1 min-w-0 overflow-hidden border ${hasCover ? "rounded-3xl border-slate-200 bg-slate-200" : "rounded-2xl border-slate-100 bg-white shadow-sm"}`}>
             {hasCover && (
               <>
                 <img src={assetSrc(project.image)} alt="" aria-hidden onError={() => setCoverBroken(true)} className="absolute inset-0 w-full h-full object-cover" />
               </>
             )}
-          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 ${hasCover ? `${GLASS} m-3 sm:m-5 mt-10 sm:mt-12 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : "p-4 sm:p-5"}`}>
+          <div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 pt-12 ${corner} ${hasCover ? `${GLASS} m-3 sm:m-5 mt-10 sm:mt-12 p-4 sm:p-5 rounded-2xl w-fit max-w-[calc(100%-1.5rem)]` : "p-4 sm:p-5"}`}>
+            {actions}
             {/* CR 295 / 296 - the GT project number, whole: four digits (year, then its place in
                 that year). The number sets the width, so four digits sit in a square and a longer
                 number issued under the old scheme widens the chip instead of wrapping inside it. */}
@@ -4320,43 +4368,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 {project.jointVenture?.enabled && !isGuest && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600" title={`Joint Venture with ${project.jointVenture.partnerName || "partner"}${project.jointVenture.lead ? ` · ${project.jointVenture.lead}` : ""}`}>
                     <Users size={11} /> JV{project.jointVenture.partnerName ? ` · ${project.jointVenture.partnerName}` : ""}
-                  </span>
-                )}
-                {canManage && (
-                  <button
-                    onClick={openEditIdentity}
-                    title={isOwner ? "Edit project identity" : "View project identity"}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50 transition-all"
-                  >
-                    {isOwner ? <Edit2 size={16} /> : <Eye size={16} />}
-                  </button>
-                )}
-                {/* Set a personal reminder about this project — the notification links back here. */}
-                <ReminderButton
-                  compact
-                  title={`Follow up on ${project.name}`}
-                  contextLabel={`Project · ${project.name} (${project.id})`}
-                  link={`/dashboard/projects/${project.id}`}
-                  projectId={project.id}
-                  projectName={project.name}
-                />
-                {/* CR 349 - the cover picture's controls sit here, in the card, always in this spot:
-                    "Add cover picture" without one; "Change picture" and Remove with one. */}
-                {isOwner && (
-                  <span className="inline-flex items-center">
-                    {imageUploading ? (
-                      <span className="inline-flex items-center p-1.5 text-slate-400" title="Saving the picture"><Loader2 size={16} className="animate-spin" /></span>
-                    ) : (
-                      <>
-                        <label className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-50 cursor-pointer transition-all" title={hasCover ? "Change the cover picture" : "Add a cover picture behind the project's details"} aria-label={hasCover ? "Change the cover picture" : "Add a cover picture"}>
-                          {hasCover ? <FileImage size={16} /> : <ImagePlus size={16} />}
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setCoverBroken(false); void handleProjectImageUpload(f); } }} />
-                        </label>
-                        {!!project.image && (
-                          <button type="button" onClick={() => void removeProjectImage()} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all" title="Remove the cover picture" aria-label="Remove the cover picture"><Trash2 size={16} /></button>
-                        )}
-                      </>
-                    )}
                   </span>
                 )}
               </div>
