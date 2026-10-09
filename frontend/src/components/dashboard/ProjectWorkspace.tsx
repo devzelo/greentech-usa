@@ -7557,7 +7557,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                       : "Preview only. Only the owner can edit and update the project identity."}
                   </p>
                 </div>
-                <button onClick={cancelEditIdentity} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+                <div className="flex items-start gap-3">
+                  {/* 2026-10-09 - who created the project (its owner). Shown here only: not on the
+                      lists, the reports or the public site. */}
+                  {!!project.owner && (
+                    <div className="text-right" title="Who created this project">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Created by</p>
+                      <p className="text-xs font-bold text-slate-700">{project.owner}</p>
+                      {!!project.createdAt && !isNaN(new Date(project.createdAt).getTime()) && (
+                        <p className="text-[10px] text-slate-400">{new Date(project.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                      )}
+                    </div>
+                  )}
+                  <button onClick={cancelEditIdentity} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+                </div>
               </div>
 
               {/* 2026-10-09 - the project's pictures: the same gallery as Manage Showcase (lib/projectGallery).

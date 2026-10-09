@@ -2112,7 +2112,6 @@ export interface ApiPublicProject {
   location: string;
   category: string;
   description: string;
-  owner: string;
   image?: string;
   startDate: string;
   endDate: string;
@@ -2136,7 +2135,6 @@ export interface ApiPublicProjectDetail {
   location: string;
   category: string;
   description: string;
-  owner: string;
   startDate: string;
   endDate: string;
   progress: number;

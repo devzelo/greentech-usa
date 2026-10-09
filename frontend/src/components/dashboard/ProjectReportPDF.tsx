@@ -270,7 +270,7 @@ export default function ProjectReportPDF({ project, financials, include, client,
     ["Project Type", projectCategories(project).join(", ")], ["Contract No.", project.contractNo], ["Solicitation No.", project.solicitationNo],
     ["Contract Type", project.contractType],
     ["Period", [project.startDate, end].filter(Boolean).join(" to ") + (end && end !== project.endDate ? " (extended)" : "")],
-    ["Contract Value", project.value], ["Status", project.status], ["Owner", project.owner],
+    ["Contract Value", project.value], ["Status", project.status],
     ...(SHOW_PENDING_PROJECT_FIELDS ? [["Funding", project.fiscal], ["Disciplines", project.disciplines?.join(", ")], ["Compliance", project.compliance]] : []),
   ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim()) as Array<[string, string]>;
   const clientName = client?.name || project.clientInfo?.name || "";

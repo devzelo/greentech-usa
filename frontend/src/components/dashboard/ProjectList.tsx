@@ -383,7 +383,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                             <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left font-bold text-slate-900 group-hover:text-primary hover:text-primary hover:underline transition-colors truncate cursor-pointer" title="Open project">{p.name}</button>
                             {/* Both numbers: our internal project number and the client's contract number. */}
                             <span className="text-[10px] text-slate-400 font-medium">
-                              No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""} · Lead: {p.owner}
+                              No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}
                             </span>
                             {p.location && <span className="text-[10px] text-slate-500 font-bold">{locationFlag(p.location) && <span className="text-[1.3em] leading-none align-middle mr-0.5">{locationFlag(p.location)}</span>}{p.location}</span>}
                             <span className="flex items-center gap-1.5 flex-wrap">

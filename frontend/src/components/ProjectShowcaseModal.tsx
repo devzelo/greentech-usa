@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  X, ChevronLeft, ChevronRight, MapPin, Calendar, User, Building2,
+  X, ChevronLeft, ChevronRight, MapPin, Calendar, Building2,
   FileText, Download, ExternalLink, Loader2, ImageOff,
 } from "lucide-react";
 import { fetchPublicProject, ApiPublicProjectDetail, GalleryItem } from "../lib/api";
@@ -184,13 +184,6 @@ export default function ProjectShowcaseModal({ projectId, onClose }: { projectId
                   <div className="flex items-center gap-2.5 text-sm text-slate-600">
                     <Calendar size={16} className="text-primary flex-shrink-0" />
                     <span className="font-bold text-slate-900">{data.startDate || "—"} → {data.endDate || "—"}</span>
-                  </div>
-                )}
-                {data.owner && (
-                  <div className="flex items-center gap-2.5 text-sm text-slate-600">
-                    <User size={16} className="text-primary flex-shrink-0" />
-                    <span className="text-slate-400 font-medium">Lead:</span>
-                    <span className="font-bold text-slate-900">{data.owner}</span>
                   </div>
                 )}
               </div>

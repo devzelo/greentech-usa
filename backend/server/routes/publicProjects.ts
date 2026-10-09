@@ -19,7 +19,7 @@ function coverFor(p: { gallery?: GalleryItem[]; image?: string }): string {
 router.get("/projects", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const projects = await Project.find({ published: true, status: { $ne: "Draft" } })
-      .select("projectId name status location category description owner image gallery startDate endDate fiscal disciplines progress")
+      .select("projectId name status location category description image gallery startDate endDate fiscal disciplines progress")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -30,7 +30,6 @@ router.get("/projects", async (_req: Request, res: Response, next: NextFunction)
       location: p.location || "",
       category: p.category || "",
       description: p.description || "",
-      owner: p.owner || "",
       image: coverFor(p),
       startDate: p.startDate || "",
       endDate: p.endDate || "",
@@ -73,7 +72,6 @@ router.get("/projects/:id", async (req: Request, res: Response, next: NextFuncti
       location: p.location || "",
       category: p.category || "",
       description: p.description || "",
-      owner: p.owner || "",
       startDate: p.startDate || "",
       endDate: p.endDate || "",
       progress: p.progress ?? 0,

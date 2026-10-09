@@ -266,7 +266,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
               )}
               <View style={s.metaLine}>
                 {!!assets[p.id]?.flag && <Image src={assets[p.id].flag!} style={s.flagMd} />}
-                <Text style={[s.cardMeta, { marginBottom: 0 }]}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}   ·   Owner: {p.owner || "-"}</Text>
+                <Text style={[s.cardMeta, { marginBottom: 0 }]}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}</Text>
               </View>
 
               <View style={s.statRow}>
