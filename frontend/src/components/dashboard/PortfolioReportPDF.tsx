@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { ApiProject, ProjectFinancials } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
 import { effectiveEndDate } from "../../lib/projectSchedule";
@@ -24,8 +24,9 @@ const tone = (status: string) => STATUS_TONE[status] || STATUS_TONE.Planning;
 const statusText = (status?: string) => (status || "-").replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase();
 
 // Columns of the at-a-glance table (widths add up to 100%).
+// 2026-10-09 - the project column also carries its location (with the flag) and its client (with the logo).
 const COLS: Array<{ label: string; w: string; right?: boolean }> = [
-  { label: "ID", w: "12%" }, { label: "PROJECT", w: "21%" }, { label: "STATUS", w: "12%" },
+  { label: "ID", w: "10%" }, { label: "PROJECT", w: "25%" }, { label: "STATUS", w: "10%" },
   { label: "VALUE", w: "11.5%", right: true }, { label: "INCOME", w: "11.5%", right: true },
   { label: "EXPENSES", w: "11.5%", right: true }, { label: "PROFIT", w: "11.5%", right: true },
   { label: "DONE", w: "9%", right: true },
@@ -78,6 +79,16 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 6.6, fontWeight: 700, color: BRAND.s400, letterSpacing: 0.9, lineHeight: 1.3, marginBottom: 2 },
   statValue: { fontSize: 9.2, fontWeight: 700, color: BRAND.slate, lineHeight: 1.3 },
   track: { height: 5, backgroundColor: BRAND.border, borderRadius: 3, marginTop: 2 },
+  // 2026-10-09 - the client and the location, with the logo and the flag.
+  subRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
+  sub: { fontSize: 6.6, color: BRAND.s500, lineHeight: 1.25 },
+  flagSm: { height: 7, marginRight: 3 },
+  logoSm: { height: 11, maxWidth: 32, objectFit: "contain", marginRight: 3 },
+  clientRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  clientLogo: { height: 26, maxWidth: 96, objectFit: "contain", marginRight: 8 },
+  clientName: { fontSize: 9.2, fontWeight: 700, color: BRAND.slate, lineHeight: 1.3 },
+  metaLine: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  flagMd: { height: 9, marginRight: 5 },
   fill: { height: 5, backgroundColor: BRAND.emerald, borderRadius: 3 },
 });
 
@@ -99,9 +110,11 @@ type Props = {
   scope?: string;
   title?: string;
   logoUrl?: string;
+  /** 2026-10-09 - per project id: the client's logo and the country's flag, as PNGs. */
+  assets?: Record<string, { logo?: string; flag?: string }>;
 };
 
-export default function PortfolioReportPDF({ projects, financials = {}, scope = "", title = "Portfolio Report" }: Props) {
+export default function PortfolioReportPDF({ projects, financials = {}, scope = "", title = "Portfolio Report", assets = {} }: Props) {
   const fin = (id: string) => financials[id] || { income: 0, expenses: 0 };
   const sum = (f: (p: ApiProject) => number) => projects.reduce((n, p) => n + f(p), 0);
 
@@ -199,7 +212,11 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
               const [, fg] = tone(p.status);
               const cells = [
                 <Text key="id" style={[s.td, s.tdId]}>{p.id}</Text>,
-                <Text key="nm" style={s.td}>{p.name}</Text>,
+                <View key="nm" style={{ paddingVertical: 4, paddingHorizontal: 5 }}>
+                  <Text style={{ fontSize: 7.9, color: BRAND.slate, lineHeight: 1.3 }}>{p.name}</Text>
+                  {!!p.location && <View style={s.subRow}>{!!assets[p.id]?.flag && <Image src={assets[p.id].flag!} style={s.flagSm} />}<Text style={s.sub}>{p.location}</Text></View>}
+                  {!!p.clientInfo?.name && <View style={s.subRow}>{!!assets[p.id]?.logo && <Image src={assets[p.id].logo!} style={s.logoSm} />}<Text style={s.sub}>{p.clientInfo.name}</Text></View>}
+                </View>,
                 <Text key="st" style={[s.td, s.tdStatus, { color: fg }]}>{statusText(p.status)}</Text>,
                 <Text key="v" style={s.td}>{valueOf(p.value) ? dollars(valueOf(p.value)) : "-"}</Text>,
                 <Text key="in" style={s.td}>{dollars(f.income)}</Text>,
@@ -241,7 +258,16 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
                 </View>
               </View>
               <Text style={s.cardId}>{p.id}</Text>
-              <Text style={s.cardMeta}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}   ·   Owner: {p.owner || "-"}</Text>
+              {(!!p.clientInfo?.name || !!assets[p.id]?.logo) && (
+                <View style={s.clientRow}>
+                  {!!assets[p.id]?.logo && <Image src={assets[p.id].logo!} style={s.clientLogo} />}
+                  <View><Text style={s.statLabel}>CLIENT</Text><Text style={s.clientName}>{p.clientInfo?.name || "-"}</Text></View>
+                </View>
+              )}
+              <View style={s.metaLine}>
+                {!!assets[p.id]?.flag && <Image src={assets[p.id].flag!} style={s.flagMd} />}
+                <Text style={[s.cardMeta, { marginBottom: 0 }]}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}   ·   Owner: {p.owner || "-"}</Text>
+              </View>
 
               <View style={s.statRow}>
                 <View style={s.stat}><Text style={s.statLabel}>PROJECT VALUE</Text><Text style={s.statValue}>{p.value || "-"}</Text></View>

@@ -17,6 +17,8 @@ import { statusMeta, statusMatches, PROJECT_STATUSES } from "../../lib/projectSt
 import { createPortal } from "react-dom";
 import { WIP_CURRENT, WIP_OPPORTUNITY } from "../../lib/wip";
 import { locationFlag } from "../../lib/countryFlag";
+import { flagPng, projectFlag } from "../../lib/flagImage";
+import { pdfLogo } from "../../lib/logoImage";
 import FinanceStrip from "./FinanceStrip";
 import { Fig, FiguresToggle } from "./FiguresPrivacy";
 import AggregateBoard from "./AggregateBoard";
@@ -168,6 +170,20 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   // outside logins only where GT has switched the figures on for them). With none, no button.
   const reportProjects = filtered.filter((p) => p.canSeeFigures !== false);
   const internalProjects = reportProjects.filter((p) => stages.some((st) => statusMatches(st, p.status)));
+  // 2026-10-09 - the Quick Report shows each project's client logo and country flag: both as PNGs,
+  // read once per logo / flag (a PDF draws only PNG and JPEG, and no emoji).
+  const reportAssets = async (list: ApiProject[]) => {
+    const logos = new Map<string, Promise<string | undefined>>();
+    const out: Record<string, { logo?: string; flag?: string }> = {};
+    await Promise.all(list.map(async (p) => {
+      const url = clientLogo(p);
+      if (url && !logos.has(url)) logos.set(url, pdfLogo(url).catch(() => undefined));
+      const logo = url ? await logos.get(url) : undefined;
+      const flag = await flagPng(projectFlag(p));
+      out[p.id] = { logo: logo && /^data:image\/(png|jpe?g)[;,]/i.test(logo) ? logo : undefined, flag: flag || undefined };
+    }));
+    return out;
+  };
   const stageCount = (st: string) => reportProjects.filter((p) => statusMatches(st, p.status)).length;
   const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
@@ -381,7 +397,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-600">{projectCategories(p).join(", ") || "—"}</td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-medium text-slate-600">
                         {p.clientInfo?.name
-                          ? <span className="flex items-center gap-2.5"><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} /><span className="min-w-0">{p.clientInfo.name}</span></span>
+                          ? <span className="flex items-center gap-2.5"><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={47} /><span className="min-w-0">{p.clientInfo.name}</span></span>
                           : "—"}
                       </td>
                       <td className="px-4 sm:px-6 py-4 sm:py-6 text-xs font-bold text-slate-500">{p.contractYear || "—"}</td>
@@ -573,14 +589,18 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         <PdfPreviewModal
           title={mode === "my" ? "Quick Report · My Projects" : "Quick Report · All Projects"}
           fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
-          build={() => pdf(
-            <PortfolioReportPDF
-              projects={internalProjects}
-              financials={financials}
-              logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
-              scope={mode === "my" ? "My Projects" : "All Projects"}
-            />
-          ).toBlob()}
+          build={async () => {
+            const assets = await reportAssets(internalProjects);
+            return pdf(
+              <PortfolioReportPDF
+                projects={internalProjects}
+                financials={financials}
+                logoUrl={`${window.location.origin}/gt-logo-horizontal.png`}
+                scope={mode === "my" ? "My Projects" : "All Projects"}
+                assets={assets}
+              />
+            ).toBlob();
+          }}
           onClose={() => setShowReport(false)}
         />
       )}

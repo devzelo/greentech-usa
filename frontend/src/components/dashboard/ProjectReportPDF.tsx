@@ -229,9 +229,11 @@ interface Props {
   packages?: { money: boolean; items: ReportPackage[] };
   /** The assigned people by name (the project holds their employee ids). */
   team?: string[];
+  /** 2026-10-09 - the country's flag, as a PNG (lib/flagImage). */
+  flag?: string;
 }
 
-export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photo, gallery = [], galleryTotal = 0, packages, team }: Props) {
+export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photo, gallery = [], galleryTotal = 0, packages, team, flag }: Props) {
   const on = (k: ReportSection) => include?.[k] !== false;
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
@@ -283,7 +285,10 @@ export default function ProjectReportPDF({ project, financials, include, client,
         <GradBar w={120} h={4} r={2} id="report-title" />
         <View style={s.metaRow}>
           <View style={[s.pill, { backgroundColor: pillBg }]}><Text style={[s.pillText, { color: pillFg }]}>{(project.status || "-").toUpperCase()}</Text></View>
-          <Text style={s.meta}>{project.location || "Location not set"}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 12 }}>
+            {!!flag && <Image src={flag} style={{ height: 9, marginRight: 4 }} />}
+            <Text style={[s.meta, { marginRight: 0 }]}>{project.location || "Location not set"}</Text>
+          </View>
           <Text style={s.meta}>Owner: {project.owner || "-"}</Text>
         </View>
 

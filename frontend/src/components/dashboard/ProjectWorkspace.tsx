@@ -71,6 +71,7 @@ import ResumePageBadge, { countResumePages, RESUME_PAGE_LIMIT } from "./ResumePa
 import InvoiceLedger from "./InvoiceLedger";
 import ReminderButton from "./ReminderButton";
 import { LogoPicker } from "./ImagePicker";
+import { flagPng, projectFlag } from "../../lib/flagImage";
 import ProjectBoard from "./ProjectBoard";
 import ProposalCoverBuilder from "./ProposalCoverBuilder";
 import ProposalLetterBuilder from "./ProposalLetterBuilder";
@@ -8734,7 +8735,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
           fileName={fileName([project.name, "Report"], "pdf")}
-          build={() => pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photo={reportPhoto} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} />).toBlob()}
+          build={async () => { const flag = await flagPng(projectFlag(project)); return pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photo={reportPhoto} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} flag={flag || undefined} />).toBlob(); }}
           onClose={() => setShowReport(false)}
         />
       )}
