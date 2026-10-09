@@ -362,7 +362,7 @@ export default function ProjectReportPDF({ project, financials, include, client,
           <>
             <KpiRow items={[
               { label: "START DATE", value: fmtDay(project.startDate) || "-" },
-              { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: fmtDay(effectiveEndDate(project)) || "-" },
+              { label: !!project.endDate && effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: fmtDay(effectiveEndDate(project)) || "-" },
               { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
               { label: "COMPLETION", value: `${progress}%`, tone: BRAND.emerald },
             ]} />

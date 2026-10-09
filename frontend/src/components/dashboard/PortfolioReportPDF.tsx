@@ -1,8 +1,10 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { ApiProject, ProjectFinancials } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
-import { effectiveEndDate } from "../../lib/projectSchedule";
-import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading } from "../pdf/brand";
+import { effectiveEndDate, fmtDay } from "../../lib/projectSchedule";
+import { timelineOverview } from "../../lib/timelineOverview";
+import { BRAND, GUTTER, LETTERHEAD_PAGE, PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading } from "../pdf/brand";
+import { TimelineStrip } from "../pdf/ReportTimeline";
 import { KpiRow } from "./ProjectReportPDF";
 
 registerBrandFonts();
@@ -114,13 +116,21 @@ type Props = {
   assets?: Record<string, { logo?: string; flag?: string }>;
 };
 
+// The room inside a project card: the page's text width, less the card's padding and borders.
+const CARD_INNER = PAGE.w - GUTTER * 2 - 12 * 2 - 3.8;
+
 export default function PortfolioReportPDF({ projects, financials = {}, scope = "", title = "Portfolio Report", assets = {} }: Props) {
   const fin = (id: string) => financials[id] || { income: 0, expenses: 0 };
   const sum = (f: (p: ApiProject) => number) => projects.reduce((n, p) => n + f(p), 0);
 
   const ongoing = projects.filter((p) => isOngoing(p.status)).length;
   const completed = projects.filter((p) => isDone(p.status)).length;
-  const avgProgress = projects.length ? Math.round(sum((p) => Math.max(0, Math.min(100, p.progress ?? 0))) / projects.length) : 0;
+  // 2026-10-09 - each project's timeline, as on its own report: the work complete is counted from
+  // its phases (cancelled ones left out), the same figure the timeline card shows.
+  const timelines = new Map(projects.map((p) => [p.id, timelineOverview(p)]));
+  const workOf = (p: ApiProject) => timelines.get(p.id)?.workPct ?? 0;
+  const hasTimeline = (p: ApiProject) => { const o = timelines.get(p.id); return !!(o && (o.contractStart || o.deadline || o.hasMs)); };
+  const avgProgress = projects.length ? Math.round(sum(workOf) / projects.length) : 0;
   const totalValue = sum((p) => valueOf(p.value));
   const totalIncome = sum((p) => fin(p.id).income);
   const totalExpenses = sum((p) => fin(p.id).expenses);
@@ -222,7 +232,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
                 <Text key="in" style={s.td}>{dollars(f.income)}</Text>,
                 <Text key="ex" style={s.td}>{dollars(f.expenses)}</Text>,
                 <Text key="pr" style={[s.td, { fontWeight: 700, color: profit >= 0 ? GREEN : RED }]}>{dollars(profit)}</Text>,
-                <Text key="dn" style={s.td}>{Math.max(0, Math.min(100, p.progress ?? 0))}%</Text>,
+                <Text key="dn" style={s.td}>{workOf(p)}%</Text>,
               ];
               return (
                 <View key={p.id} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
@@ -243,7 +253,8 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
         {/* Each project in detail. The heading travels with the first card (unbreakable together),
             so it is never left alone at the foot of a page. */}
         {projects.map((p, i) => {
-          const progress = Math.max(0, Math.min(100, p.progress ?? 0));
+          const progress = workOf(p);
+          const line = hasTimeline(p);
           const [bg, fg] = tone(p.status);
           const f = fin(p.id);
           const profit = f.income - f.expenses;
@@ -266,7 +277,7 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
               )}
               <View style={s.metaLine}>
                 {!!assets[p.id]?.flag && <Image src={assets[p.id].flag!} style={s.flagMd} />}
-                <Text style={[s.cardMeta, { marginBottom: 0 }]}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}</Text>
+                <Text style={[s.cardMeta, { marginBottom: 0 }]}>{p.location || "-"}   ·   {projectCategories(p).join(", ") || "-"}{line ? `   ·   Team: ${p.assignedEmployees?.length ?? 0}` : ""}</Text>
               </View>
 
               <View style={s.statRow}>
@@ -275,13 +286,24 @@ export default function PortfolioReportPDF({ projects, financials = {}, scope = 
                 <View style={s.stat}><Text style={s.statLabel}>EXPENSES</Text><Text style={s.statValue}>{money(f.expenses)}</Text></View>
                 <View style={s.stat}><Text style={s.statLabel}>{pl ? "PROFIT" : "LOSS"}</Text><Text style={[s.statValue, { color: pl ? GREEN : "#B91C1C" }]}>{money(profit)}</Text></View>
               </View>
-              <View style={s.statRow}>
-                <View style={s.stat}><Text style={s.statLabel}>START</Text><Text style={s.statValue}>{p.startDate || "-"}</Text></View>
-                <View style={s.stat}><Text style={s.statLabel}>{effectiveEndDate(p) !== p.endDate ? "EXTENDED END" : "TARGET END"}</Text><Text style={s.statValue}>{effectiveEndDate(p) || "-"}</Text></View>
-                <View style={s.stat}><Text style={s.statLabel}>TEAM</Text><Text style={s.statValue}>{p.assignedEmployees?.length ?? 0}</Text></View>
-                <View style={s.stat}><Text style={s.statLabel}>PROGRESS</Text><Text style={s.statValue}>{progress}%</Text></View>
-              </View>
-              <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
+              {/* 2026-10-09 - the project's timeline with its milestones, as on its own report
+                  (components/pdf/ReportTimeline): the dates, the time left, the work complete, the
+                  track and the phases. A project with no dates and no phases keeps the plain bar. */}
+              {line ? (
+                <View style={{ marginTop: 4 }}>
+                  <TimelineStrip project={p} width={CARD_INNER} marginBottom={0} />
+                </View>
+              ) : (
+                <>
+                  <View style={s.statRow}>
+                    <View style={s.stat}><Text style={s.statLabel}>START</Text><Text style={s.statValue}>{fmtDay(p.startDate) || "-"}</Text></View>
+                    <View style={s.stat}><Text style={s.statLabel}>{!!p.endDate && effectiveEndDate(p) !== p.endDate ? "EXTENDED END" : "TARGET END"}</Text><Text style={s.statValue}>{fmtDay(effectiveEndDate(p)) || "-"}</Text></View>
+                    <View style={s.stat}><Text style={s.statLabel}>TEAM</Text><Text style={s.statValue}>{p.assignedEmployees?.length ?? 0}</Text></View>
+                    <View style={s.stat}><Text style={s.statLabel}>PROGRESS</Text><Text style={s.statValue}>{progress}%</Text></View>
+                  </View>
+                  <View style={s.track}><View style={[s.fill, { width: `${progress}%` }]} /></View>
+                </>
+              )}
             </View>
           );
           return i === 0 ? <View key={p.id} wrap={false}><SectionHeading title="Project Details" />{card}</View> : card;

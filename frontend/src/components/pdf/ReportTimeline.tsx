@@ -72,7 +72,7 @@ function Fact({ label, sub, first, children }: { label: string; sub?: ReactNode;
 }
 
 /** The card from the top of the schedule (TimelineBar), opened: the figures, the track and the phases. */
-export function TimelineStrip({ project, width }: { project: ApiProject; width: number }) {
+export function TimelineStrip({ project, width, marginBottom = 12 }: { project: ApiProject; width: number; marginBottom?: number }) {
   const o = timelineOverview(project);
   const { contractStart, startIsContractDate, origEnd, deadline, extended, hasMs, workPct, focus, today, pos, todayPct, elapsedPct, overdue, remaining, remainingDays, totalDays, origDays, addedDays, dots, undated } = o;
   if (!contractStart && !deadline && !hasMs) return null;
@@ -85,7 +85,7 @@ export function TimelineStrip({ project, width }: { project: ApiProject; width: 
   const per = Math.max(1, Math.ceil(dots.length / nRows));
   const rows = Array.from({ length: nRows }, (_, r) => dots.slice(r * per, r * per + per)).filter((r) => r.length);
   return (
-    <View wrap={false} style={{ border: `0.8 solid ${T.s200}`, borderRadius: 10, backgroundColor: BRAND.white, marginBottom: 12 }}>
+    <View wrap={false} style={{ border: `0.8 solid ${T.s200}`, borderRadius: 10, backgroundColor: BRAND.white, marginBottom }}>
       {/* The figures. On screen they run along one line; on paper they sit in a title row (with the
           late count and the work complete at its right), then four equal columns, so nothing wraps
           part-way across the card. */}
