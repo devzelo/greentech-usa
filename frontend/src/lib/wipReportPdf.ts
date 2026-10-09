@@ -2,12 +2,12 @@ import { PDFDocument, rgb, type Color, type PDFFont, type PDFImage, type PDFPage
 import type { ApiProject, ProjectFinancials } from "./api";
 import { BOTTOM, C, NARROW, WIDE_LANDSCAPE, brandPage, gradBar, loadBrand, stampPageNumbers, type Brand, type Flow } from "./pdfBrand";
 import { COMPANY } from "./brandTokens";
-import { moneyNum } from "./bonding";
-import { WIP_CURRENT, WIP_OPPORTUNITY, contractWithChanges, withWip } from "./wip";
-import { effectiveEndDate, fmtDay, parseDate } from "./projectSchedule";
-import { statusMatches } from "./projectStatus";
-import { timelineOverview } from "./timelineOverview";
+import { fmtDay } from "./projectSchedule";
 import { fitOneLine, wrapText } from "./pdfText";
+import {
+  WIP_ACTIVE_COLUMNS, WIP_ACTIVE_TITLE, WIP_BADGE, WIP_DEFS_TITLE, WIP_OPPS_COLUMNS, WIP_OPPS_TITLE, WIP_TITLE,
+  usd, wipActive, wipDefinitions, wipOpportunities, type WipInput,
+} from "./wipData";
 
 /**
  * CR 311 (2026-09-25): the work-in-progress (WIP) report banks, sureties and bonding companies ask
@@ -18,10 +18,9 @@ import { fitOneLine, wrapText } from "./pdfText";
  *   2. Potential Projects - Revenue Capture Opportunities: the proposals out, their estimated value,
  *      the chance of winning (Pwin) and the value weighted by it.
  *   3. Formulas & Report Definitions.
- * Figures the system does not hold for a project print as a dash, to be filled in by hand.
+ * Figures the system does not hold for a project print as a dash, to be filled in by hand. The
+ * figures come from lib/wipData, which the Excel and Word copies read too.
  */
-
-const inStatuses = (p: ApiProject, list: string[]) => list.some((s) => statusMatches(s, p.status));
 
 const PAGE = WIDE_LANDSCAPE;
 const X = NARROW + 10;
@@ -29,17 +28,6 @@ const W = PAGE.w - X * 2;
 const RED = rgb(0.86, 0.15, 0.15);
 // The total row's band, a shade between the brand's mist and its border, as in the template.
 const TOTAL_FILL = rgb(0.933, 0.949, 0.965);
-
-const usd = (n: number) => `${n < 0 ? "(" : ""}${Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}${n < 0 ? ")" : ""}`;
-/** "Jan 2026", as the template writes the dates. */
-const monthYear = (v?: string) => { const d = parseDate(v); return d ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : ""; };
-/** The contract's competition, as the template's "Set-Aside / Competitive" column reads it. */
-const competition = (v: string) => (!v ? "" : /full and open|competitive/i.test(v) ? "Competitive" : v.replace(/\bset-aside\b/i, "Set-Aside").replace(/^./, (c) => c.toUpperCase()));
-/** City and country, from the site address when it has them. */
-const placeOf = (p: ApiProject) => {
-  const city = p.siteAddress?.city?.trim(), country = p.siteAddress?.country?.trim();
-  return city || country ? [city, country].filter(Boolean).join(", ") : (p.location || "").trim();
-};
 
 // ── A table with logos and flags in its cells ───────────────────────────────────────────────────
 type Block = { text: string; font: PDFFont; size: number; color: Color; maxLines?: number };
@@ -181,16 +169,9 @@ function drawTable(b: Brand, flow: Flow, cols: Col[], rows: Cell[][], total: str
 /** Column widths from the template's proportions, stretched to the sheet. */
 const widths = (weights: number[]) => { const t = weights.reduce((s, x) => s + x, 0); return weights.map((x) => (x / t) * W); };
 
-export async function buildWipReportPdf(o: {
-  projects: ApiProject[];
-  financials: Record<string, ProjectFinancials>;
-  current: boolean;
-  opportunities: boolean;
-  scope: string;
+export async function buildWipReportPdf(o: WipInput & {
   /** Per project id: the client's logo and the country's flag, as PNG (or JPEG) data URLs. */
   assets?: Record<string, { logo?: string; flag?: string }>;
-  /** 2026-10-09 - the Project Location column, chosen when the report is made (shown unless false). */
-  location?: boolean;
 }): Promise<Blob> {
   const doc = await PDFDocument.create();
   const b = await loadBrand(doc);
@@ -216,8 +197,8 @@ export async function buildWipReportPdf(o: {
   const placed = <T,>(xs: T[]) => (showPlace ? xs : xs.slice(0, -1));
 
   // ── The heading, as the template sets it ──
-  const HEAD = "GREENTECH USA  |  CONTRACT BACKLOG & REVENUE OPPORTUNITIES";
-  const WIP = "WORK IN PROGRESS (WIP)";
+  const HEAD = WIP_TITLE;
+  const WIP = WIP_BADGE;
   f.y -= 4;
   f.page.drawText(HEAD, { x: X, y: f.y - 20, size: 21, font: b.bold, color: C.slate });
   const ww = b.display.widthOfTextAtSize(WIP, 30);
@@ -244,38 +225,20 @@ export async function buildWipReportPdf(o: {
 
   // ── 1. Active Projects - Contract Backlog ──
   if (o.current) {
-    const rows = o.projects.filter((p) => inStatuses(p, WIP_CURRENT)).map((p) => {
-      const w = withWip(p.wip);
-      const fin = o.financials[p.id] || ({} as ProjectFinancials);
-      const value = contractWithChanges(p.value, w);
-      const invoiced = fin.totalInvoiced ?? fin.income ?? 0;
-      const costs = fin.expenses ?? 0;
-      const hasCtc = !!w.costToComplete?.trim();
-      const ctc = hasCtc ? moneyNum(w.costToComplete) : null;
-      const total = ctc !== null ? costs + ctc : null;
-      // Revenue earned, cost to cost: the share of the estimated total cost spent so far. Without a
-      // cost to complete, the work complete from the project's timeline.
-      const earned = value ? (total ? Math.min(value, (value * costs) / total) : (value * timelineOverview(p).workPct) / 100) : 0;
-      const profit = ctc !== null ? value - (costs + ctc) : null;
-      return { p, w, value, earned, remaining: value - earned, invoiced, costs, ctc, profit };
-    });
-    section("1. Active Projects - Contract Backlog");
-    const labels = [
-      "Customer", "Project Name /\nBrief Description", "Prime\nContractor", "Contract\nType", "Set-Aside /\nCompetitive", "Start\nDate", "End\nDate",
-      "Contract\nValue", "Revenue\nEarned", "Remaining\nContract Value", "Invoiced\nto Date", "Costs to\nDate", "Cost to\nComplete", "Estimated\nGross Profit", "Project\nLocation*",
-    ];
-    const cols: Col[] = widths(placed([156, 196, 88, 80, 84, 62, 62, 84, 84, 96, 84, 82, 86, 96, 112])).map((w, i) => ({ w, label: labels[i] }));
+    const rows = wipActive(o);
+    section(WIP_ACTIVE_TITLE);
+    const cols: Col[] = widths(placed([156, 196, 88, 80, 84, 62, 62, 84, 84, 96, 84, 82, 86, 96, 112])).map((w, i) => ({ w, label: WIP_ACTIVE_COLUMNS[i] }));
     const cells: Cell[][] = [];
     for (const r of rows) {
       const a = await assetsOf(r.p);
       cells.push([
-        { kind: "customer", logo: a.logo, name: r.p.clientInfo?.name || "-" },
+        { kind: "customer", logo: a.logo, name: r.customer || "-" },
         project(r.p),
-        txt(r.w.primeContractor || COMPANY.name),
-        txt(r.p.contractType || ""),
-        txt(competition(r.w.competition)),
-        txt(monthYear(r.p.startDate || r.p.contractDate)),
-        txt(monthYear(effectiveEndDate(r.p))),
+        txt(r.prime),
+        txt(r.contractType),
+        txt(r.competition),
+        txt(r.start),
+        txt(r.end),
         txt(r.value ? usd(r.value) : ""),
         txt(r.value ? usd(Math.round(r.earned)) : ""),
         txt(r.value ? usd(Math.round(r.remaining)) : ""),
@@ -283,7 +246,7 @@ export async function buildWipReportPdf(o: {
         txt(usd(r.costs)),
         txt(r.ctc !== null ? usd(r.ctc) : ""),
         txt(r.profit !== null ? usd(r.profit) : "", r.profit !== null && r.profit < 0 ? { color: RED, font: b.bold } : {}),
-        ...(showPlace ? [{ kind: "place", flag: a.flag, text: placeOf(r.p) || "-" } as Cell] : []),
+        ...(showPlace ? [{ kind: "place", flag: a.flag, text: r.place || "-" } as Cell] : []),
       ]);
     }
     const total = rows.length ? [
@@ -298,33 +261,24 @@ export async function buildWipReportPdf(o: {
 
   // ── 2. Potential Projects - Revenue Capture Opportunities ──
   if (o.opportunities) {
-    const rows = o.projects.filter((p) => inStatuses(p, WIP_OPPORTUNITY)).map((p) => {
-      const w = withWip(p.wip);
-      const value = moneyNum(p.value);
-      const pwin = parseFloat(w.winChance);
-      return { p, w, value, pwin: isFinite(pwin) ? pwin : null, weighted: isFinite(pwin) ? (value * pwin) / 100 : null };
-    });
-    section("2. Potential Projects - Revenue Capture Opportunities");
-    const labels = [
-      "Customer", "Project Name /\nBrief Description", "Prime Contractor", "Contract Type", "Set-Aside /\nCompetitive", "Expected\nStart Date", "Expected\nEnd Date",
-      "Estimated\nContract Value", "Pwin (%)", "Weighted\nContract Value", "Project Location*",
-    ];
-    const cols: Col[] = widths(placed([156, 206, 120, 120, 126, 98, 98, 112, 74, 120, 136])).map((w, i) => ({ w, label: labels[i] }));
+    const rows = wipOpportunities(o);
+    section(WIP_OPPS_TITLE);
+    const cols: Col[] = widths(placed([156, 206, 120, 120, 126, 98, 98, 112, 74, 120, 136])).map((w, i) => ({ w, label: WIP_OPPS_COLUMNS[i] }));
     const cells: Cell[][] = [];
     for (const r of rows) {
       const a = await assetsOf(r.p);
       cells.push([
-        { kind: "customer", logo: a.logo, name: r.p.clientInfo?.name || "-" },
+        { kind: "customer", logo: a.logo, name: r.customer || "-" },
         project(r.p),
-        txt(r.w.primeContractor || COMPANY.name),
-        txt(r.p.contractType || ""),
-        txt(competition(r.w.competition)),
-        txt(monthYear(r.p.startDate) || "TBD"),
-        txt(monthYear(r.p.endDate) || "TBD"),
+        txt(r.prime),
+        txt(r.contractType),
+        txt(r.competition),
+        txt(r.start),
+        txt(r.end),
         txt(r.value ? usd(r.value) : ""),
         txt(r.pwin !== null ? `${r.pwin}%` : ""),
         txt(r.weighted !== null ? usd(Math.round(r.weighted)) : ""),
-        ...(showPlace ? [{ kind: "place", flag: a.flag, text: placeOf(r.p) || "-" } as Cell] : []),
+        ...(showPlace ? [{ kind: "place", flag: a.flag, text: r.place || "-" } as Cell] : []),
       ]);
     }
     const total = rows.length ? ["TOTAL", "", "", "", "", "", "", usd(sum(rows, (r) => r.value)), "", usd(Math.round(sum(rows, (r) => r.weighted))), ...(showPlace ? [""] : [])] : null;
@@ -333,27 +287,12 @@ export async function buildWipReportPdf(o: {
   }
 
   // ── 3. Formulas & Report Definitions ──
-  const left = [
-    "Remaining Contract Value = Contract Value - Revenue Earned.",
-    "Estimated Gross Profit = Contract Value - (Costs to Date + Cost to Complete).",
-    "Estimated Total Cost = Costs to Date + Cost to Complete.",
-    "Revenue Earned: value of work completed; may differ from invoiced amounts. Here Contract Value x Costs to Date / Estimated Total Cost; without a Cost to Complete, Contract Value x the work complete on the timeline.",
-    "Invoiced to Date: total invoices issued to the customer, not cash received.",
-  ];
-  const right = [
-    "Weighted Contract Value = Estimated Contract Value x (Pwin / 100).",
-    "Costs to Date: actual project costs incurred.",
-    "Cost to Complete: estimated additional costs to finish the project.",
-    "Totals: sum monetary columns; Pwin is project-specific and is not summed.",
-    showPlace
-      ? "Project Location*: optional field; city and country. Contract Value includes approved change orders; a dash is a figure not held for the project."
-      : "Contract Value includes approved change orders; a dash is a figure not held for the project.",
-  ];
+  const { left, right } = wipDefinitions(showPlace);
   const DEF = 10.5, colW = (W - 60) / 2 - 10;
   const defH = (list: string[]) => list.reduce((h, t) => h + wrapText(b.regular, t, DEF, colW).length * DEF * 1.45 + 9, 0);
   const boxH = Math.max(defH(left), defH(right)) + 36;
   if (f.y - 30 - boxH < BOTTOM) f = newPage();
-  f.page.drawText("3. Formulas & Report Definitions", { x: X, y: f.y - 17, size: 17, font: b.bold, color: C.slate });
+  f.page.drawText(WIP_DEFS_TITLE, { x: X, y: f.y - 17, size: 17, font: b.bold, color: C.slate });
   f.y -= 32;
   f.page.drawRectangle({ x: X, y: f.y - boxH, width: W, height: boxH, color: C.mist, borderColor: C.border, borderWidth: 0.6 });
   [left, right].forEach((list, ci) => {

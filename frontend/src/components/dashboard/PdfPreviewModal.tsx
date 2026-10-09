@@ -16,7 +16,7 @@ export interface PreviewAction {
   tone?: "primary" | "final";
 }
 
-export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption, actions, hint, toggles, rebuildKey }: {
+export default function PdfPreviewModal({ title, fileName, build, onClose, fitOption, actions, hint, toggles, rebuildKey, exports }: {
   title: string;
   fileName: string;
   build: () => Promise<Blob>;
@@ -31,8 +31,17 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
   toggles?: Array<{ key: string; label: string; icon?: ReactNode; title?: string; value: boolean; onChange: (v: boolean) => void }>;
   /** Changes whenever a toggle above changes, so the PDF is built again. */
   rebuildKey?: string | number;
+  /** 2026-10-09 - the same document in other formats (Excel, Word), to change or add to by hand. */
+  exports?: Array<{ label: string; icon?: ReactNode; title?: string; run: () => Promise<void> | void }>;
 }) {
   const [acting, setActing] = useState("");
+  const [exporting, setExporting] = useState("");
+  const runExport = async (x: NonNullable<typeof exports>[number]) => {
+    setExporting(x.label);
+    try { await x.run(); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not export.", "error"); }
+    finally { setExporting(""); }
+  };
   const act = async (a: PreviewAction) => {
     setActing(a.label);
     try { if ((await a.onClick()) !== false) onClose(); }
@@ -125,6 +134,11 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
                 </div>
               )}
             </div>
+            {exports?.map((x) => (
+              <button key={x.label} onClick={() => void runExport(x)} disabled={!!exporting} title={x.title} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50">
+                {exporting === x.label ? <Loader2 size={12} className="animate-spin" /> : x.icon} {x.label}
+              </button>
+            ))}
             <button onClick={download} disabled={!blob} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-50 ${actions?.length ? "border border-slate-200 text-slate-600 hover:bg-slate-50" : "bg-slate-900 text-white hover:bg-primary"}`}><Download size={12} /> Download</button>
             {actions?.map((a) => (
               <button key={a.label} onClick={() => void act(a)} disabled={!blob || !!acting}

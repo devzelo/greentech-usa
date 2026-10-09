@@ -7,7 +7,9 @@
 // every page) and a footer with the company line and "Page X of Y". Word reads the header and footer
 // from the mso-element blocks in the hidden table at the end (the standard single-file technique),
 // and loads the letterhead picture from the platform.
-export function downloadHtmlAsWord(title: string, bodyHtml: string, filename: string): void {
+// 2026-10-09 - `page`: a landscape sheet instead of portrait Letter (the WIP report, 22 x 17 in, the
+// largest page Word takes).
+export function downloadHtmlAsWord(title: string, bodyHtml: string, filename: string, page?: { width: string; height: string; margin?: string }): void {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const doc = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset='utf-8'><title>${escapeHtml(title)}</title>
@@ -21,7 +23,7 @@ export function downloadHtmlAsWord(title: string, bodyHtml: string, filename: st
   .muted{color:#64748B;} .right{text-align:right;} img{max-width:100%;}
   p.MsoHeader,p.MsoFooter{margin:0;}
   p.MsoFooter{font-size:7.5pt;color:#64748B;border-top:1.5pt solid #10B981;padding-top:3pt;}
-  @page WordSection1{size:8.5in 11.0in;margin:1.0in 1.0in 0.9in 1.0in;mso-header-margin:.3in;mso-footer-margin:.35in;mso-header:h1;mso-footer:f1;mso-page-orientation:portrait;}
+  @page WordSection1{size:${page ? `${page.width} ${page.height}` : "8.5in 11.0in"};margin:${page?.margin || "1.0in 1.0in 0.9in 1.0in"};mso-header-margin:.3in;mso-footer-margin:.35in;mso-header:h1;mso-footer:f1;mso-page-orientation:${page ? "landscape" : "portrait"};}
   div.WordSection1{page:WordSection1;}
   table#hdrftr{margin:0 0 0 900in;width:1px;height:1px;overflow:hidden;}
 </style></head>

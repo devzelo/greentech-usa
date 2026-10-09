@@ -3,7 +3,7 @@ import { fileName as docFileName } from "../../lib/fileNames";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
   ArrowUpRight, Globe, AlertCircle, X, Loader2, Archive, Handshake,
-  Briefcase, FolderSearch, FileEdit
+  Briefcase, FolderSearch, FileEdit, FileSpreadsheet
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -187,6 +187,9 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
     return out;
   };
   const stageCount = (st: string) => reportProjects.filter((p) => statusMatches(st, p.status)).length;
+  // 2026-10-09 - the WIP report's input and file name, the same for its PDF, Excel and Word copies.
+  const wipInput = () => ({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects", location: wipLocation });
+  const wipName = (ext: string) => docFileName(["GreenTech USA", "Work in Progress (WIP) Report", mode === "my" ? "My Projects" : "All Projects", fmtDay(new Date())], ext);
   const fiveTotals = sumFive(filtered.map((p) => fiveFromFinancials(financials[p.id])));
 
   return (
@@ -589,14 +592,31 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {showReport && reportType === "wip" && (
         <PdfPreviewModal
           title={`Work in progress report · ${mode === "my" ? "My Projects" : "All Projects"}`}
-          fileName={docFileName(["GreenTech USA", "Work in Progress (WIP) Report", mode === "my" ? "My Projects" : "All Projects", fmtDay(new Date())], "pdf")}
+          fileName={wipName("pdf")}
           fitOption={{ note: "GreenTech USA LLC · work in progress (WIP) report" }}
           build={async () => {
             const { buildWipReportPdf } = await import("../../lib/wipReportPdf");
             // 2026-10-09 - each customer's logo and each country's flag, as in the template.
             const assets = await reportAssets(reportProjects.filter((p) => [...WIP_CURRENT, ...WIP_OPPORTUNITY].some((st) => statusMatches(st, p.status))));
-            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects", assets, location: wipLocation });
+            return buildWipReportPdf({ ...wipInput(), assets });
           }}
+          exports={[
+            {
+              label: "Excel", icon: <FileSpreadsheet size={12} />, title: "The report as an Excel sheet, with live formulas, to change or add to",
+              run: async () => {
+                const { buildWipExcel } = await import("../../lib/wipReportExport");
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(buildWipExcel(wipInput()));
+                a.download = wipName("xlsx");
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+              },
+            },
+            {
+              label: "Word", icon: <FileText size={12} />, title: "The report as a Word document, to edit",
+              run: async () => { const { downloadWipWord } = await import("../../lib/wipReportExport"); downloadWipWord(wipInput(), wipName("doc")); },
+            },
+          ]}
           onClose={() => setShowReport(false)}
         />
       )}
