@@ -382,8 +382,10 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                           <div className="flex flex-col min-w-0">
                             <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left font-bold text-slate-900 group-hover:text-primary hover:text-primary hover:underline transition-colors truncate cursor-pointer" title="Open project">{p.name}</button>
                             {/* Both numbers: our internal project number and the client's contract number. */}
+                            {/* 2026-10-09 - the Lead (the project's creator) shows on this table only: not on
+                                the grid cards, the reports or the public site. */}
                             <span className="text-[10px] text-slate-400 font-medium">
-                              No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}
+                              No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}{p.owner ? ` · Lead: ${p.owner}` : ""}
                             </span>
                             {p.location && <span className="text-[10px] text-slate-500 font-bold">{locationFlag(p.location) && <span className="text-[1.3em] leading-none align-middle mr-0.5">{locationFlag(p.location)}</span>}{p.location}</span>}
                             <span className="flex items-center gap-1.5 flex-wrap">
