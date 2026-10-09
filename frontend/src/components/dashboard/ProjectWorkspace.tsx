@@ -3735,6 +3735,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
 
   // Load everything on mount
   const canManage = isOwner || isAssigned;      // employee-level structural actions (add tabs, export)
+  // 2026-10-09 - Edit in the projects list's menu lands here with ?edit=identity: Project Identity
+  // opens once the project has loaded, and the flag leaves the address (a refresh will not reopen it).
+  useEffect(() => {
+    if (!project || searchParams.get("edit") !== "identity") return;
+    if (isOwner) openEditIdentity();
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("edit"); return next; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, searchParams]);
   // CR 203 - a volume marked Final is locked: its status shows everywhere and editing needs a new revision.
   const finalOf = (v: "technical" | "financial") => (v === "financial" ? financial.finalized : technical.finalized);
   // 2026-10-07 - the revision the builder is on: the final one when locked, otherwise the one

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { MoreHorizontal, FolderOpen, Link2, Copy, Archive, RotateCcw, Trash2, Loader2 } from "lucide-react";
-import { setProjectArchived, duplicateProject, deleteProject, type ApiProject } from "../../lib/api";
+import { MoreHorizontal, FolderOpen, Link2, Copy, Archive, RotateCcw, Trash2, Loader2, Pencil } from "lucide-react";
+import { setProjectArchived, duplicateProject, deleteProject, getAuthUser, type ApiProject } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 
-// The 3-dot actions menu on project rows/cards (CR-P-26): Open, Copy link, Duplicate, Archive/
+// The 3-dot actions menu on project rows/cards (CR-P-26): Open, Edit, Copy link, Duplicate, Archive/
 // Restore, Delete. Staff-only actions are hidden when !canManage.
 export default function ProjectActionsMenu({
   project, canManage, archivedView, onMutate, variant = "button",
@@ -27,6 +27,9 @@ export default function ProjectActionsMenu({
   const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
 
   const close = () => setOpen(false);
+  // 2026-10-09 - Edit opens the project with its Project Identity open. Only the owner can change
+  // the identity (the server holds the same rule), so only the owner sees Edit.
+  const isOwner = !!project.ownerId && String(project.ownerId) === getAuthUser()?.id;
   const openMenu = () => {
     const r = triggerRef.current?.getBoundingClientRect();
     if (r) {
@@ -128,6 +131,7 @@ export default function ProjectActionsMenu({
           <button type="button" aria-label="Close menu" className="fixed inset-0 cursor-default" style={{ zIndex: 129 }} onClick={close} />
           <div className="fixed w-48 bg-white border border-slate-100 rounded-xl shadow-2xl p-1.5" style={{ top: pos.top, bottom: pos.bottom, right: pos.right, zIndex: 130 }}>
             <Item icon={FolderOpen} label="Open project" onClick={() => { close(); navigate(`/dashboard/projects/${project.id}`); }} />
+            {isOwner && <Item icon={Pencil} label="Edit" onClick={() => { close(); navigate(`/dashboard/projects/${project.id}?edit=identity`); }} />}
             <Item icon={Link2} label="Copy link" onClick={copyLink} />
             {canManage && <Item icon={Copy} label="Duplicate" onClick={duplicate} />}
             {canManage && <Item icon={project.archived ? RotateCcw : Archive} label={project.archived ? "Restore" : "Archive"} onClick={toggleArchive} />}
