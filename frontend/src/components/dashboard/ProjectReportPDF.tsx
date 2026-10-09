@@ -190,7 +190,7 @@ function ReportRichText({ html }: { html: string }) {
  * and the person printing it can leave out whatever does not belong in this particular copy.
  */
 export type ReportSection =
-  | "overview" | "projectInfo" | "clientInfo" | "photo" | "summary" | "milestones" | "phases"
+  | "overview" | "projectInfo" | "clientInfo" | "photo" | "summary" | "milestones"
   | "notes" | "financials" | "subs" | "vendors" | "gallery" | "workPackages" | "team";
 
 // 2026-10-09 - the first page is a cover: the project's picture, its information and the client's.
@@ -203,7 +203,6 @@ export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: s
   { key: "overview", label: "Key figures and progress", hint: "Opens the report: dates, team size, overall completion" },
   { key: "summary", label: "Description and scope", hint: "The project's description and key scope of work" },
   { key: "milestones", label: "Timeline", hint: "The timeline card, the phases and milestones, the critical path and extensions of time" },
-  { key: "phases", label: "Older timeline phases", hint: "The earlier phase list, when one is kept" },
   { key: "subs", label: "Subcontractors", hint: "Who is working under this project" },
   { key: "vendors", label: "Vendors", hint: "The suppliers on this project" },
   { key: "financials", label: "Finance status", hint: "Value, income, expenses, profit" },
@@ -252,7 +251,6 @@ interface Props {
 export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photos = [], gallery = [], galleryTotal = 0, packages, team, flag }: Props) {
   const on = (k: ReportSection) => include?.[k] !== false;
   const subs = project.subcontractors || [];
-  const phases = project.timeline?.phases || [];
   const assigned = project.assignedEmployees || [];
   // With a timeline set up, the progress comes from the phases' % complete (as in the project).
   // 2026-10-09 - the work complete as the timeline card counts it (cancelled items left out).
@@ -404,25 +402,6 @@ export default function ProjectReportPDF({ project, financials, include, client,
           <View>
             <SectionHeading title="Timeline: phases & milestones" />
             <ReportTimeline project={project} width={PAGE.w - GUTTER * 2} />
-          </View>
-        )}
-
-        {/* Timeline */}
-        {on("phases") && phases.length > 0 && (
-          <View>
-            <SectionHeading title="Timeline Phases" />
-            <View style={s.tHead} wrap={false} minPresenceAhead={24}>
-              <Text style={[s.th, { flex: 2 }]}>PHASE</Text>
-              <Text style={[s.th, { flex: 1 }]}>START</Text>
-              <Text style={[s.th, { flex: 1 }]}>END</Text>
-            </View>
-            {phases.map((p, i) => (
-              <View key={i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
-                <Text style={[s.td, { flex: 2, fontWeight: 700 }]}>{p.name || "-"}</Text>
-                <Text style={[s.td, { flex: 1 }]}>{p.start || "-"}</Text>
-                <Text style={[s.td, { flex: 1 }]}>{p.end || "-"}</Text>
-              </View>
-            ))}
           </View>
         )}
 
