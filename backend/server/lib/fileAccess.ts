@@ -3,6 +3,9 @@ import User from "../models/User";
 import Project from "../models/Project";
 import Agreement from "../models/Agreement";
 import CompanyFile from "../models/CompanyFile";
+import ProcurementPO from "../models/ProcurementPO";
+import ProjectRequest from "../models/ProjectRequest";
+import Invoice from "../models/Invoice";
 import { getProjectAccess, canViewTab, sectionToTabId, type ProjectAccess } from "./access";
 import { isSharedWith, partyMaySee, type PartyIdentity } from "./agreementAccess";
 
@@ -87,6 +90,25 @@ async function agreementOpen(aid: string, me: Who): Promise<boolean> {
 const printedPicture = (rel: string) => cached(`f:${rel}`, async () =>
   !!(await CompanyFile.exists({ tabId: { $in: ["classified-stamps", "classified-signatures"] }, filePath: { $in: [`uploads/${rel}`, `uploads\\${rel.replace(/\//g, "\\")}`] } })));
 
+/**
+ * A Classified stamp or signature as it prints on a document this outside login is shown: the
+ * company's signature block of an agreement given to it, or the purchase order, request or invoice
+ * of a project it is a guest on.
+ */
+async function printedForMe(rel: string, me: Who): Promise<boolean> {
+  if (!(await printedPicture(rel))) return false;
+  return cached(`pf:${me.id}:${rel}`, async () => {
+    const pic = { $in: [`/uploads/${rel}`, `uploads/${rel}`] };
+    const ags = await Agreement.find({ $or: [{ "signatures.company.stampUrl": pic }, { "signatures.company.signatureUrl": pic }] }).select("_id").limit(100).lean();
+    for (const a of ags) if (await agreementOpen(String(a._id), me)) return true;
+    const projects = await Project.find({ "guests.userId": me.id }).select("projectId guests").lean() as Array<{ projectId: string; guests?: Array<{ userId?: unknown; expiresAt?: Date | string | null }> }>;
+    const ids = projects.filter((p) => (p.guests || []).some((g) => String(g.userId) === me.id && (!g.expiresAt || new Date(g.expiresAt).getTime() > Date.now()))).map((p) => p.projectId);
+    if (!ids.length) return false;
+    const onDoc = { projectId: { $in: ids }, $or: [{ stampUrl: pic }, { signatureUrl: pic }] };
+    return !!((await ProcurementPO.exists(onDoc)) || (await ProjectRequest.exists(onDoc)) || (await Invoice.exists({ projectId: { $in: ids }, signatureUrl: pic })));
+  });
+}
+
 /** May this signed-in user open the file at `rel` (a path under uploads/, posix, normalized)? */
 export async function mayReadUpload(userId: string, rel: string): Promise<boolean> {
   const me = await who(userId);
@@ -102,8 +124,9 @@ export async function mayReadUpload(userId: string, rel: string): Promise<boolea
       // Logos (the Directory's and the Logos folder) and pictures picked for one document.
       if (second === "logos" || second === "company-logos" || second === "picked") return true;
       if (second === "profile") return !!me.companyId && third === me.companyId;
-      // The stamps and signatures print on the documents an outside login is shown.
-      if (second === "classified") return printedPicture(rel);
+      // A stamp or signature from the Classified folders: only one printed on a document this login
+      // is shown (security review, 2026-10-09), never the folder at large.
+      if (second === "classified") return printedForMe(rel, me);
       return false;   // GreenTech's own company and classified documents
     case "resumes": case "profile-gallery": case "users":
       // Their own files; a company login also sees its colleagues' resumes.
