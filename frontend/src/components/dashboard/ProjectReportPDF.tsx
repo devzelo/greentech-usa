@@ -103,7 +103,7 @@ const c = StyleSheet.create({
   footText: { fontSize: 7, color: BRAND.s400 },
 });
 
-/** The cover's picture stays clear; only its bottom edge fades into the navy below. react-pdf has
+/** The cover's pictures stay clear; only their bottom edge fades into the navy below. react-pdf has
  *  no gradient fill for a View, so faint layers stack (as the proposal's scrim does), each starting
  *  a little lower, easing to about 97% at the edge. */
 function Fade({ w, h }: { w: number; h: number }) {
@@ -196,7 +196,7 @@ export type ReportSection =
 // subcontractors, the finance status, the pictures and the work packages.
 export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: string }> = [
   { key: "projectInfo", label: "Project information", hint: "Cover page: identity, contract, type and dates" },
-  { key: "photo", label: "Project picture", hint: "Cover page: the project's picture, across the top" },
+  { key: "photo", label: "Cover pictures", hint: "Cover page: the pictures ticked in the gallery (two at most), else the cover picture" },
   { key: "clientInfo", label: "Client and logo", hint: "Cover page: the client from the Directory, with its logo" },
   { key: "overview", label: "Key figures and progress", hint: "Opens the report: dates, team size, overall completion" },
   { key: "summary", label: "Description and scope", hint: "The project's description and key scope of work" },
@@ -234,8 +234,8 @@ interface Props {
   include?: Partial<Record<ReportSection, boolean>>;
   client?: ReportClient;
   vendors?: ReportVendor[];
-  /** The project's cover picture, as a data URL (read before the PDF is made). */
-  photo?: string;
+  /** 2026-10-09 - the cover page's pictures (one or two), as data URLs (read before the PDF is made). */
+  photos?: string[];
   /** The gallery's pictures, as data URLs, with their captions. */
   gallery?: Array<{ src: string; caption?: string }>;
   /** How many pictures the gallery holds in all (the report prints the first ones). */
@@ -247,7 +247,7 @@ interface Props {
   flag?: string;
 }
 
-export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photo, gallery = [], galleryTotal = 0, packages, team, flag }: Props) {
+export default function ProjectReportPDF({ project, financials, include, client, vendors = [], photos = [], gallery = [], galleryTotal = 0, packages, team, flag }: Props) {
   const on = (k: ReportSection) => include?.[k] !== false;
   const subs = project.subcontractors || [];
   const phases = project.timeline?.phases || [];
@@ -280,24 +280,27 @@ export default function ProjectReportPDF({ project, financials, include, client,
   ].map((x) => (x || "").trim()).filter(Boolean);
   const showClient = on("clientInfo") && !!clientName;
   const clientLogo = on("clientInfo") && client?.logo ? client.logo : "";
-  // The cover's picture: the project's own (Project Identity), when the picture is wanted.
-  const coverPhoto = on("photo") ? photo : undefined;
+  // The cover's pictures: the ones picked in the gallery (two at most), else the cover picture.
+  const coverPhotos = on("photo") ? photos.slice(0, 2) : [];
   // The picture band gives way as the information grows (the client's logo and name take about five
   // rows), so the cover stays one page.
   const coverRows = Math.max(on("projectInfo") ? infoRows.length : 0, showClient || clientLogo ? clientLines.length + 5 : 0);
-  const coverH = coverPhoto ? Math.max(240, Math.min(380, 540 - coverRows * 20)) : 0;
+  const coverH = coverPhotos.length ? Math.max(240, Math.min(380, 540 - coverRows * 20)) : 0;
   const scope = (project.scopeOfWork || []).map((x) => (x || "").trim()).filter(Boolean);
   const hasDescription = !!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim();
 
   return (
     <Document title={`${project.name} - Project Report`} author="GreenTech USA LLC">
-      {/* 2026-10-09 - the first page is a cover, as the proposal's: the project's picture across the
+      {/* 2026-10-09 - the first page is a cover, as the proposal's: the project's pictures across the
           top half, then on navy the project's information and the client's (with its logo). The
           report itself starts on the next page. */}
       <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter" }}>
-        {!!coverPhoto && (
-          <View style={{ height: coverH, position: "relative" }}>
-            <Image src={coverPhoto} style={{ width: PAGE.w, height: coverH, objectFit: "cover" }} />
+        {coverPhotos.length > 0 && (
+          <View style={{ height: coverH, position: "relative", flexDirection: "row", backgroundColor: BRAND.slate }}>
+            {/* One picture runs the full width; two share it. */}
+            {coverPhotos.map((src, i) => (
+              <Image key={i} src={src} style={{ width: coverPhotos.length > 1 ? (PAGE.w - 4) / 2 : PAGE.w, height: coverH, objectFit: "cover", marginLeft: i ? 4 : 0 }} />
+            ))}
             <Fade w={PAGE.w} h={coverH} />
           </View>
         )}

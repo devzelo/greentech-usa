@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import Project from "../models/Project";
 import { requireAuth, blockGuests, AuthedRequest } from "../middleware/auth";
+import { cleanGallery, coverOf, linkedGallery } from "../lib/projectGallery";
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -44,13 +45,16 @@ router.post("/", upload.single("file"), async (req: AuthedRequest, res: Response
       return res.status(403).json({ error: "Only the project owner can change the image." });
     }
 
-    // Remove the previous image file if it lived under this project's folder
-    if (project.image && project.image.startsWith("/uploads/")) {
-      const oldPath = project.image.replace(/^\//, "");
-      fs.unlink(oldPath, () => undefined);
-    }
-
+    // 2026-10-09 - the cover is the gallery's first picture: the new one takes the old cover's place
+    // at the head of the gallery (keeping its pick for the report).
     const url = `/${req.file.path.replace(/\\/g, "/")}`;
+    const gallery = linkedGallery(project.image, cleanGallery(project.toObject().gallery));
+    const old = gallery.find((g) => g.url === project.image) || gallery.find((g) => g.type === "image");
+    // Only a file under this project's own image folder is removed from disk (a gallery upload may
+    // be in use elsewhere, as on a proposal).
+    const own = `/uploads/${req.params.id}/project-image/`;
+    if (old && old.url.startsWith(own) && !old.url.includes("..")) fs.unlink(old.url.replace(/^\//, ""), () => undefined);
+    project.set("gallery", [{ type: "image", source: "upload", url, caption: "", report: !!old?.report }, ...gallery.filter((g) => g !== old)]);
     project.image = url;
     await project.save();
 
@@ -71,7 +75,10 @@ router.delete("/", async (req: AuthedRequest, res: Response, next: NextFunction)
     // Only a file under this project's own image folder is removed from disk.
     const own = `/uploads/${req.params.id}/project-image/`;
     if (project.image && project.image.startsWith(own) && !project.image.includes("..")) fs.unlink(project.image.replace(/^\//, ""), () => undefined);
-    project.image = "";
+    // 2026-10-09 - the picture comes out of the gallery too, and the next one becomes the cover.
+    const gallery = cleanGallery(project.toObject().gallery).filter((g) => g.url !== project.image);
+    project.set("gallery", gallery);
+    project.image = coverOf(gallery);
     await project.save();
     res.json(project);
   } catch (err) { next(err); }

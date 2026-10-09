@@ -156,6 +156,8 @@ export interface GalleryItem {
   source: "upload" | "link";
   url: string;
   caption?: string;
+  /** 2026-10-09 - picked for the Quick Report's cover page (two at most; lib/projectGallery). */
+  report?: boolean;
 }
 
 export interface ApiUser {

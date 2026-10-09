@@ -18,6 +18,7 @@ import { moveToTrash } from "../lib/recycleBin";
 import { duplicateProject } from "../lib/duplicateProject";
 import { cleanBonding, cleanWip } from "../lib/bonding";
 import { projectDays, syncBondingExpenses } from "../lib/bondingExpenses";
+import { cleanGallery, coverOf } from "../lib/projectGallery";
 
 // Shared check: is the requester the JV partner of this project (or staff)?
 async function partnerCanEdit(req: AuthedRequest, project: { jointVenture?: { email?: string }; ownerId?: unknown; assignedEmployees?: string[]; guests?: Array<{ userId: unknown; tabPermissions?: Record<string, "view" | "edit">; expiresAt?: Date | string | null }> }): Promise<boolean> {
@@ -459,6 +460,11 @@ router.put("/:id", async (req: AuthedRequest, res: Response, next: NextFunction)
     // The contract document is written only by /projects/:id/contract, which also cleans up the
     // old file — a blanket PUT must never null it out and orphan the upload.
     delete req.body.contractFile;
+    // 2026-10-09 - the gallery's first picture is the project's cover (lib/projectGallery).
+    if (req.body.gallery !== undefined) {
+      req.body.gallery = cleanGallery(req.body.gallery);
+      req.body.image = coverOf(req.body.gallery);
+    }
 
     const beforeAssigned = new Set(existing.assignedEmployees || []);
 

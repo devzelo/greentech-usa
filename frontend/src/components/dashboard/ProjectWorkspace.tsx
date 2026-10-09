@@ -33,6 +33,8 @@ import { BondingCard } from "./BondingEditor";
 import WipFields from "./WipFields";
 import { withWip, type ProjectWip } from "../../lib/wip";
 import { logoAsPng, pdfLogo, photoAsJpeg } from "../../lib/logoImage";
+import ProjectGallery from "./ProjectGallery";
+import { linkedGallery, reportCoverUrls } from "../../lib/projectGallery";
 import ProjectReportPDF, { REPORT_SECTIONS, type ReportClient, type ReportPackage, type ReportSection, type ReportVendor } from "./ProjectReportPDF";
 import PdfPreviewModal from "./PdfPreviewModal";
 import PresenceBar from "./PresenceBar";
@@ -56,7 +58,7 @@ import EoiBuilder from "./EoiBuilder";
 import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import { makeZip } from "../../lib/zip";
-import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos, projectEntries, withClientLogos } from "../../lib/pastPerformance";
+import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectEntries, withClientLogos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import StandardAppendices, { loadStandardLists } from "./StandardAppendices";
 import AppendixListManager from "./AppendixListManager";
@@ -348,8 +350,8 @@ export default function ProjectWorkspace() {
   });
   const [reportClient, setReportClient] = useState<ReportClient | undefined>();
   const [reportVendors, setReportVendors] = useState<ReportVendor[]>([]);
-  // 2026-10-07 - the report's first-page picture, its gallery and the work packages.
-  const [reportPhoto, setReportPhoto] = useState<string | undefined>();
+  // 2026-10-07 - the report's cover pictures, its gallery and the work packages.
+  const [reportPhotos, setReportPhotos] = useState<string[]>([]);
   const [reportGallery, setReportGallery] = useState<{ items: Array<{ src: string; caption?: string }>; total: number }>({ items: [], total: 0 });
   const [reportPackages, setReportPackages] = useState<{ money: boolean; items: ReportPackage[] } | undefined>();
   const [reportBusy, setReportBusy] = useState(false);
@@ -1799,13 +1801,14 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // CR 289 - the solicitation number, and the Directory company the client was picked from.
     solicitationNo: string; clientCompanyId: string;
     wip: ProjectWip;   // CR 312
+    gallery: GalleryItem[];   // 2026-10-09 - the project's pictures (lib/projectGallery)
   };
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState<IdentityForm>({
     name: "", clientName: "", status: "Planning", category: "", categories: [], contractType: "", cpars: "", siteAddress: EMPTY_SITE_ADDRESS,
     description: "", reportNotes: "", fiscal: "", compliance: "", value: "",
     startDate: "", endDate: "", progress: 0, disciplines: "", contractNo: "", contractYear: "", contractDate: "",
-    solicitationNo: "", clientCompanyId: "", wip: withWip(),
+    solicitationNo: "", clientCompanyId: "", wip: withWip(), gallery: [],
   });
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
@@ -1866,6 +1869,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       contractYear: project.contractYear || "",
       contractDate: project.contractDate || "",
       wip: withWip(project.wip),
+      gallery: linkedGallery(project),
     });
     // The JV editor writes straight into the shared jvInfo state, so snapshot it — Cancel must
     // discard partner edits (including removed stamps/signatures) just like the other fields.
@@ -1911,6 +1915,8 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         // CR 312 - only sent by someone who can see the figures, so a blank never overwrites them.
         ...(project.canSeeFigures !== false ? { wip: identityForm.wip } : {}),
         jointVenture: jvInfo, // §M — JV now lives in Project Identity
+        // 2026-10-09 - the gallery; its first picture becomes the project's cover on the server.
+        ...(isOwner ? { gallery: identityForm.gallery } : {}),
       });
       setProject(updated);
       setClientInfo((prev) => ({ ...prev, name: identityForm.clientName, companyId: identityForm.clientCompanyId }));
@@ -1949,7 +1955,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // CR 349 - the cover picture can be removed from the header.
   const removeProjectImage = async () => {
     if (!id) return;
-    if (!(await brandedConfirm({ title: "Remove the cover picture?", message: "The project's details show on a plain card again. You can add a picture later.", confirmLabel: "Remove", danger: true }))) return;
+    // 2026-10-09 - the cover is the gallery's first picture, so it comes out of the gallery too.
+    const next = !!project && linkedGallery(project).some((g) => g.type === "image" && g.url !== project.image);
+    if (!(await brandedConfirm({ title: "Remove the cover picture?", message: next ? "It comes out of the gallery too, and the next picture in the gallery becomes the cover." : "It comes out of the gallery too, and the project's details show on a plain card again. You can add a picture later.", confirmLabel: "Remove", danger: true }))) return;
     setImageUploading(true);
     try { setProject(await deleteProjectImage(id)); toast("Cover picture removed.", "success"); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not remove the picture.", "error"); }
@@ -2139,11 +2147,13 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       } else setReportVendors([]);
       // 2026-10-07 - the pictures are read here, as JPEGs, so the PDF never waits on a file; one that
       // cannot be read is left out.
-      const photos = projectPhotos(project);
-      let cover: string | undefined;
-      if (reportInclude.photo !== false && photos[0]) { try { cover = await photoAsJpeg(withFileToken(photos[0]), 1400); } catch { /* no picture */ } }
-      setReportPhoto(cover);
-      const shots = (project.gallery || []).filter((g) => g.type === "image" && !!g.url);
+      // 2026-10-09 - the cover page shows the pictures picked in the gallery (two at most), else the
+      // cover picture: one runs the page's full width, two share it.
+      const coverUrls = reportInclude.photo !== false ? reportCoverUrls(project) : [];
+      const covers: string[] = [];
+      for (const u of coverUrls) { try { covers.push(await photoAsJpeg(withFileToken(u), coverUrls.length > 1 ? 900 : 1400)); } catch { /* no picture */ } }
+      setReportPhotos(covers);
+      const shots = linkedGallery(project).filter((g) => g.type === "image" && !!g.url);
       const pics: Array<{ src: string; caption?: string }> = [];
       if (reportInclude.gallery !== false) {
         for (const g of shots.slice(0, 12)) { try { pics.push({ src: await photoAsJpeg(withFileToken(g.url), 700), caption: g.caption }); } catch { /* skipped */ } }
@@ -2994,7 +3004,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   // ── Public Showcase (owner only) ─────────────────────────────────────────────
   const [showShowcaseModal, setShowShowcaseModal] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
-  const [galleryLink, setGalleryLink] = useState("");
   const [showcaseDocs, setShowcaseDocs] = useState<ApiDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
 
@@ -3013,45 +3022,17 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const [scDraft, setScDraft] = useState<ShowcaseDraft | null>(null);
   const [scSaving, setScSaving] = useState(false);
   const startShowcaseEdit = () => setScDraft({
-    gallery: [...((project?.gallery as GalleryItem[]) || [])],
+    gallery: project ? linkedGallery(project) : [],
     showClientName: project?.showClientName !== false,
     docPublic: Object.fromEntries(showcaseDocs.map((d) => [d._id, !!d.public])),
   });
   const setScGallery = (fn: (g: GalleryItem[]) => GalleryItem[]) => setScDraft((d) => (d ? { ...d, gallery: fn(d.gallery) } : d));
   const docPublicOf = (d: ApiDocument) => (scDraft ? scDraft.docPublic[d._id] ?? !!d.public : !!d.public);
   const scDirty = !!scDraft && (
-    JSON.stringify(scDraft.gallery) !== JSON.stringify((project?.gallery as GalleryItem[]) || [])
+    JSON.stringify(scDraft.gallery) !== JSON.stringify(project ? linkedGallery(project) : [])
     || scDraft.showClientName !== (project?.showClientName !== false)
     || showcaseDocs.some((d) => docPublicOf(d) !== !!d.public));
 
-  const handleGalleryUpload = async (file: File) => {
-    if (!id) return;
-    setGalleryUploading(true);
-    try {
-      const { url, type } = await uploadGalleryFile(id, file);
-      setScGallery((g) => [...g, { type, source: "upload", url, caption: "" }]);
-      toast("Added to the gallery. Save to keep it.", "success");
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Upload failed.", "error");
-    } finally {
-      setGalleryUploading(false);
-    }
-  };
-  const handleAddGalleryLink = () => {
-    const url = galleryLink.trim();
-    if (!url) return;
-    setScGallery((g) => [...g, { type: "video", source: "link", url, caption: "" }]);
-    setGalleryLink("");
-  };
-  const removeGalleryItem = (i: number) => setScGallery((g) => g.filter((_, idx) => idx !== i));
-  const moveGalleryItem = (i: number, dir: -1 | 1) => setScGallery((g) => {
-    const j = i + dir;
-    if (j < 0 || j >= g.length) return g;
-    const arr = [...g];
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    return arr;
-  });
-  const setGalleryCaption = (i: number, caption: string) => setScGallery((g) => g.map((x, idx) => (idx === i ? { ...x, caption } : x)));
   const toggleShowClientName = () => setScDraft((d) => (d ? { ...d, showClientName: !d.showClientName } : d));
   const toggleDocPublic = (d: ApiDocument) => setScDraft((sc) => (sc ? { ...sc, docPublic: { ...sc.docPublic, [d._id]: !(sc.docPublic[d._id] ?? !!d.public) } } : sc));
 
@@ -3059,7 +3040,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   const cancelShowcaseEdit = async (): Promise<boolean> => {
     if (scDirty && !(await brandedConfirm({ title: "Discard the changes?", message: "The showcase stays as it was last saved.", confirmLabel: "Discard changes" }))) return false;
     setScDraft(null);
-    setGalleryLink("");
     return true;
   };
   const closeShowcase = async (): Promise<boolean> => {
@@ -3078,7 +3058,6 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         setShowcaseDocs((prev) => prev.map((x) => (x._id === d._id ? { ...x, public: u.public } : x)));
       }
       setScDraft(null);
-      setGalleryLink("");
       toast("Showcase saved.", "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not save the showcase.", "error");
@@ -7571,42 +7550,11 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <button onClick={cancelEditIdentity} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
 
-              {/* Image */}
+              {/* 2026-10-09 - the project's pictures: the same gallery as Manage Showcase (lib/projectGallery). */}
               <div className="mb-6">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Project Image</p>
-                <div className="flex items-center gap-4">
-                  <div className="w-32 h-24 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
-                    {project.image ? (
-                      <img src={assetSrc(project.image)} alt={project.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-300">
-                        <FileImage size={28} />
-                      </div>
-                    )}
-                  </div>
-                  {isOwner ? (
-                    <div className="flex-grow space-y-2">
-                      <label className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
-                        {imageUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                        {imageUploading ? "Uploading…" : project.image ? "Replace image" : "Upload image"}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleProjectImageUpload(f);
-                            e.target.value = "";
-                          }}
-                          disabled={imageUploading}
-                        />
-                      </label>
-                      <p className="text-[10px] text-slate-400">Shown on the public Projects page card. PNG/JPG up to 8 MB.</p>
-                    </div>
-                  ) : (
-                    <p className="text-[10px] text-slate-400 italic">No image set by the owner yet.</p>
-                  )}
-                </div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project Images</p>
+                <p className="text-[11px] text-slate-400 mb-3">The same gallery as in Manage Showcase. The first picture is the project's cover (its card and this page's header); tick up to two for the Quick Report's cover page.{isOwner ? " Save Identity keeps the changes." : ""}</p>
+                <ProjectGallery projectId={project.id} items={isOwner ? identityForm.gallery : linkedGallery(project)} editing={isOwner} onChange={(fn) => setIdentityForm((f) => ({ ...f, gallery: fn(f.gallery) }))} onBusy={setGalleryUploading} />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -7891,7 +7839,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                   <button onClick={cancelEditIdentity} className="flex-1 py-3 rounded-2xl border border-slate-200 font-bold text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
                   <button
                     onClick={handleSaveIdentity}
-                    disabled={identitySaving || !identityForm.name.trim()}
+                    disabled={identitySaving || galleryUploading || !identityForm.name.trim()}
                     className="flex-1 py-3 rounded-2xl bg-gt-gradient text-white font-bold text-sm shadow-lg disabled:opacity-40 flex items-center justify-center gap-2"
                   >
                     {identitySaving && <Loader2 size={14} className="animate-spin" />}
@@ -8253,47 +8201,9 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <div className="bg-white p-6 rounded-2xl border border-slate-100 space-y-4">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-1">Gallery</h3>
-                    <p className="text-xs text-slate-400">Images &amp; videos for the carousel. The first image is the project's card cover.{scDraft ? "" : " Click Edit to add, reorder or caption them."}</p>
+                    <p className="text-xs text-slate-400">Images and videos for the carousel, the same gallery as in Project Identity. The first picture is the project's cover; tick up to two for the Quick Report's cover page.{scDraft ? "" : " Click Edit to change them."}</p>
                   </div>
-                  {(() => { const gal = scDraft ? scDraft.gallery : ((project.gallery as GalleryItem[]) || []); return gal.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">{scDraft ? "No media yet. Upload images/videos or add a video link below." : "No media yet."}</p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {gal.map((g, i) => (
-                        <div key={`${g.url}-${i}`} className="flex gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div className="w-20 h-16 rounded-lg overflow-hidden bg-slate-200 flex items-center justify-center flex-shrink-0">
-                            {g.type === "image" ? <img src={assetSrc(g.url)} alt="" className="w-full h-full object-cover" /> : <Globe size={20} className="text-slate-400" />}
-                          </div>
-                          <div className="flex-grow min-w-0 flex flex-col">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[9px] font-bold uppercase tracking-widest text-primary">{g.type}{g.source === "link" ? " · link" : ""}</span>
-                              {i === 0 && g.type === "image" && <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">· cover</span>}
-                            </div>
-                            {scDraft
-                              ? <input value={g.caption || ""} onChange={(e) => setGalleryCaption(i, e.target.value)} placeholder="Caption (optional)" aria-label="Caption" className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-primary/10 mt-auto" />
-                              : <p className={`mt-auto truncate text-xs ${g.caption ? "font-semibold text-slate-700" : "italic text-slate-400"}`} title={g.caption || ""}>{g.caption || "No caption"}</p>}
-                          </div>
-                          {scDraft && (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <button onClick={() => moveGalleryItem(i, -1)} disabled={i === 0} aria-label="Move up" className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↑</button>
-                              <button onClick={() => moveGalleryItem(i, 1)} disabled={i === gal.length - 1} aria-label="Move down" className="px-1.5 rounded text-slate-400 hover:text-primary disabled:opacity-30 text-sm font-bold">↓</button>
-                              <button onClick={() => removeGalleryItem(i)} aria-label="Remove" className="p-1 rounded text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ); })()}
-                  {scDraft && <div className="flex flex-wrap gap-3 pt-1">
-                    <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-primary cursor-pointer transition-colors">
-                      {galleryUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload image / video
-                      <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleGalleryUpload(f); e.target.value = ""; }} disabled={galleryUploading} />
-                    </label>
-                    <div className="flex gap-2 flex-grow min-w-[220px]">
-                      <input value={galleryLink} onChange={(e) => setGalleryLink(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddGalleryLink()} placeholder="Paste a YouTube / Vimeo link…" className="flex-grow bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-primary/10" />
-                      <button onClick={handleAddGalleryLink} className="px-4 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200">Add link</button>
-                    </div>
-                  </div>}
+                  <ProjectGallery projectId={id} items={scDraft ? scDraft.gallery : linkedGallery(project)} editing={!!scDraft} onChange={setScGallery} onBusy={setGalleryUploading} />
                 </div>
 
                 {/* Client name visibility */}
@@ -8735,7 +8645,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
           fileName={fileName([project.name, "Report"], "pdf")}
-          build={async () => { const flag = await flagPng(projectFlag(project)); return pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photo={reportPhoto} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} flag={flag || undefined} />).toBlob(); }}
+          build={async () => { const flag = await flagPng(projectFlag(project)); return pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photos={reportPhotos} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} flag={flag || undefined} />).toBlob(); }}
           onClose={() => setShowReport(false)}
         />
       )}

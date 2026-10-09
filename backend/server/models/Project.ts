@@ -188,7 +188,9 @@ export interface IProject extends Document {
   }>;
   tabAccess: Record<string, { employees: boolean; employeeIds?: string[] }>;
   // Public showcase
-  gallery: Array<{ type: "image" | "video"; source: "upload" | "link"; url: string; caption?: string }>;
+  // 2026-10-09 - the first picture is the cover (kept as `image`); `report` picks it for the Quick
+  // Report's cover page (two at most). See lib/projectGallery.
+  gallery: Array<{ type: "image" | "video"; source: "upload" | "link"; url: string; caption?: string; report?: boolean }>;
   showClientName: boolean;
   // Subcontractor access: each subcontractor User gets per-tab access on this project.
   // tabPermissions[tabId] = "view" | "edit"; a tab absent from the map is hidden.
@@ -427,6 +429,7 @@ const ProjectSchema = new Schema<IProject>(
         source: { type: String, enum: ["upload", "link"], default: "upload" },
         url: { type: String, required: true },
         caption: { type: String, default: "" },
+        report: { type: Boolean, default: false },
       },
     ],
     showClientName: { type: Boolean, default: true },
