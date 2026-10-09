@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
-  ArrowUpRight, Globe, Clock, AlertCircle, X, Loader2, Archive, Handshake,
+  ArrowUpRight, Globe, AlertCircle, X, Loader2, Archive, Handshake,
   Briefcase, FolderSearch, FileEdit
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -433,73 +433,75 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             </div>
           )}
 
-          {/* Grid View */}
+          {/* Grid View. 2026-10-09 - a compact card: the picture, the name and numbers, the status, one
+              line of facts (category, location, year, deadline), the milestones, then the client
+              with its logo at the foot. */}
           {filtered.length > 0 && view === "grid" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5">
               {filtered.map((p, i) => (
                 <motion.div
                   key={p.id}
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.05 }}
-                  className="relative bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm hover:shadow-xl transition-all group"
+                  className="relative flex flex-col bg-white rounded-3xl border border-slate-100 p-5 shadow-sm hover:shadow-xl transition-all group"
                 >
                   {/* CR-P-25 — the project's identity picture as a cover on the grid card. The menu
                       sits on the CARD (not inside the image) so its dropdown isn't clipped. */}
-                  {p.image ? (
+                  {p.image && (
                     <>
-                      <div className="relative -mx-8 -mt-8 mb-6 h-44 overflow-hidden rounded-t-[2.5rem] bg-slate-100">
+                      <div className="relative -mx-5 -mt-5 mb-4 h-32 overflow-hidden rounded-t-3xl bg-slate-100">
                         <img src={withFileToken(p.image)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
-                        {p.clientInfo?.name && <span className="absolute bottom-3 left-6 rounded-2xl bg-white p-1 shadow-lg" title={`Client: ${p.clientInfo.name}`}><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={48} className="!border-0" /></span>}
                       </div>
                       <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} variant="overlay" />
                     </>
-                  ) : (
-                    <div className="flex justify-between items-start mb-6">
-                      {p.clientInfo?.name
-                        ? <span title={`Client: ${p.clientInfo.name}`}><ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={56} className="rounded-2xl" /></span>
-                        : <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300"><Clock size={28} /></div>}
-                      <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} />
-                    </div>
                   )}
-                  <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="text-left w-full cursor-pointer" title="Open project">
-                    <h3 className="text-xl font-display font-bold text-slate-900 mb-1 group-hover:text-primary hover:text-primary hover:underline transition-colors line-clamp-1">{p.name}</h3>
-                  </button>
+                  <div className="flex items-start justify-between gap-3">
+                    <button onClick={() => navigate(`/dashboard/projects/${p.id}`)} className="min-w-0 text-left cursor-pointer" title="Open project">
+                      <h3 className="text-base font-display font-bold leading-snug text-slate-900 group-hover:text-primary hover:text-primary hover:underline transition-colors line-clamp-2">{p.name}</h3>
+                    </button>
+                    {!p.image && <ProjectActionsMenu project={p} canManage={isStaff} archivedView={archivedView} onMutate={setProjects} />}
+                  </div>
                   {/* Both numbers, same as the list view. */}
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">
+                  <p className="mt-0.5 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                     No {p.id}{p.contractNo ? ` · Contract ${p.contractNo}` : ""}
                   </p>
-                  <div className="mb-3 flex items-center gap-1.5 flex-wrap">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border ${statusMeta(p.status).badge}`}>
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta(p.status).badge}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${statusMeta(p.status).dot}`} /> {statusMeta(p.status).label}
                     </span>
                     {/* CR-P-23 — JV badge. */}
-                    {p.jointVenture?.enabled && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold border border-indigo-100" title={p.jointVenture.partnerName ? `Joint Venture with ${p.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={11} /> JV</span>}
+                    {p.jointVenture?.enabled && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold border border-indigo-100" title={p.jointVenture.partnerName ? `Joint Venture with ${p.jointVenture.partnerName}` : "Joint Venture project"}><Handshake size={11} /> JV</span>}
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 font-medium mb-5">
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 font-medium">
                     {projectCategories(p).length > 0 && <span><span className="text-slate-400">Category:</span> <span className="font-bold text-slate-700">{projectCategories(p).join(", ")}</span></span>}
-                    {p.clientInfo?.name && <span><span className="text-slate-400">Client:</span> <span className="font-bold text-slate-700">{p.clientInfo.name}</span></span>}
+                    {p.location && <span><span className="text-slate-400">Location:</span> <span className="font-bold text-slate-700">{locationFlag(p.location) && <span className="mr-0.5 text-[1.3em] leading-none align-middle">{locationFlag(p.location)}</span>}{p.location}</span></span>}
                     {p.contractYear && <span><span className="text-slate-400">Year:</span> <span className="font-bold text-slate-700">{p.contractYear}</span></span>}
                     {p.endDate && <span title={effectiveEndDate(p) !== p.endDate ? `Extended; original end date ${p.endDate}` : undefined}><span className="text-slate-400">Deadline:</span> <span className={`font-bold ${overdue(p) ? "text-red-600" : "text-slate-700"}`}>{effectiveEndDate(p)}{overdue(p) ? " ⚠" : ""}</span></span>}
                   </div>
 
-                  <div className="mb-6"><MilestoneTrack project={p} /></div>
+                  <div className="mt-3"><MilestoneTrack project={p} /></div>
 
-                  <div className="space-y-3 pt-5 border-t border-slate-50">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400 font-medium">Lead</span>
-                      <span className="text-slate-900 font-bold">{p.owner}</span>
+                  {/* The client: its logo, then its name and contact. Kept at the card's foot, so the
+                      cards in a row line up. */}
+                  <div className="mt-auto pt-4">
+                    <div className="flex items-center gap-3 border-t border-slate-100 pt-3">
+                      {p.clientInfo?.name ? (
+                        <>
+                          <ClientMark name={p.clientInfo.name} logo={clientLogo(p)} size={40} />
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Client</p>
+                            <p className="truncate text-sm font-bold text-slate-900" title={p.clientInfo.name}>{p.clientInfo.name}</p>
+                            {p.clientInfo.contactName && <p className="truncate text-[11px] text-slate-500">{p.clientInfo.contactName}</p>}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs italic text-slate-400">No client set</p>
+                      )}
                     </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400 font-medium">Location</span>
-                      <span className="font-bold text-slate-700 truncate max-w-[10rem]">{locationFlag(p.location) && <span className="mr-1 text-[1.3em] leading-none align-middle">{locationFlag(p.location)}</span>}{p.location || "—"}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-8">
                     <button
                       onClick={() => navigate(`/dashboard/projects/${p.id}`)}
-                      className="w-full bg-slate-50 group-hover:bg-gt-gradient group-hover:text-white py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                      className="mt-3 w-full bg-slate-50 group-hover:bg-gt-gradient group-hover:text-white py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                     >
                       Open Project Workspace <ArrowUpRight size={14} />
                     </button>
