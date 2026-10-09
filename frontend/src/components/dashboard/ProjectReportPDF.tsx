@@ -2,11 +2,13 @@ import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/render
 import type { ReactNode } from "react";
 import type { ApiProject } from "../../lib/api";
 import { projectCategories } from "../../lib/api";
-import { effectiveEndDate, fmtDate, milestoneLength, parseDate, phasePercent, planSchedule } from "../../lib/projectSchedule";
+import { effectiveEndDate, fmtDate, fmtDay, milestoneLength, parseDate, phasePercent, planSchedule } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
 import { SHOW_PENDING_PROJECT_FIELDS } from "../../lib/pendingDesign";
 import { PAGE } from "../pdf/brand";
 import { Logo as GtLogo } from "../pdf/ProposalCovers";
+import ReportTimeline, { hasReportTimeline } from "../pdf/ReportTimeline";
+import { timelineOverview } from "../../lib/timelineOverview";
 
 registerBrandFonts();
 
@@ -200,7 +202,7 @@ export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: s
   { key: "clientInfo", label: "Client and logo", hint: "Cover page: the client from the Directory, with its logo" },
   { key: "overview", label: "Key figures and progress", hint: "Opens the report: dates, team size, overall completion" },
   { key: "summary", label: "Description and scope", hint: "The project's description and key scope of work" },
-  { key: "milestones", label: "Timeline", hint: "The phases and milestones behind the progress" },
+  { key: "milestones", label: "Timeline", hint: "The timeline card, the phases and milestones, the critical path and extensions of time" },
   { key: "phases", label: "Older timeline phases", hint: "The earlier phase list, when one is kept" },
   { key: "subs", label: "Subcontractors", hint: "Who is working under this project" },
   { key: "vendors", label: "Vendors", hint: "The suppliers on this project" },
@@ -253,8 +255,8 @@ export default function ProjectReportPDF({ project, financials, include, client,
   const phases = project.timeline?.phases || [];
   const assigned = project.assignedEmployees || [];
   // With a timeline set up, the progress comes from the phases' % complete (as in the project).
-  const plan = planSchedule(project.schedule?.milestones || [], project.startDate || project.contractDate || "", new Date(), effectiveEndDate(project));
-  const progress = plan.milestones.length ? plan.progress : Math.max(0, Math.min(100, project.progress ?? 0));
+  // 2026-10-09 - the work complete as the timeline card counts it (cancelled items left out).
+  const progress = timelineOverview(project).workPct;
   const income = financials?.income ?? 0;
   const expenses = financials?.expenses ?? 0;
   const profit = income - expenses;
@@ -361,8 +363,8 @@ export default function ProjectReportPDF({ project, financials, include, client,
         {on("overview") && (
           <>
             <KpiRow items={[
-              { label: "START DATE", value: project.startDate || "-" },
-              { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: effectiveEndDate(project) || "-" },
+              { label: "START DATE", value: fmtDay(project.startDate) || "-" },
+              { label: effectiveEndDate(project) !== project.endDate ? "EXTENDED END" : "TARGET END", value: fmtDay(effectiveEndDate(project)) || "-" },
               { label: "TEAM", value: `${assigned.length} member${assigned.length === 1 ? "" : "s"}` },
               { label: "COMPLETION", value: `${progress}%`, tone: BRAND.emerald },
             ]} />
@@ -395,37 +397,15 @@ export default function ProjectReportPDF({ project, financials, include, client,
           </View>
         )}
 
-        {/* CR-P (120)-(125) — the milestones behind the progress. */}
-        {on("milestones") && plan.milestones.length > 0 && (
+        {/* 2026-10-09 - the timeline as the Timeline / Milestones tab shows it: the card from the top of
+            the schedule, the phases and milestones under their phases (numbered 1, 1.1, 1.2), the
+            critical path and the extensions of time (components/pdf/ReportTimeline). */}
+        {on("milestones") && hasReportTimeline(project) && (
           <View>
             <SectionHeading title="Timeline: phases & milestones" />
-            <View style={s.tHead} wrap={false} minPresenceAhead={24}>
-              <Text style={[s.th, { width: 24 }]}>#</Text>
-              <Text style={[s.th, { flex: 2.2 }]}>MILESTONE</Text>
-              <Text style={[s.th, { flex: 1 }]}>DURATION</Text>
-              <Text style={[s.th, { flex: 2 }]}>PLANNED</Text>
-              <Text style={[s.th, { flex: 1.5 }]}>STATUS</Text>
-            </View>
-            {plan.milestones.map((m, i) => {
-              const done = parseDate(m.actualEnd || m.doneAt);
-              const pct = phasePercent(m);
-              const [label, color] = m.state === "done" ? [`Completed${done ? ` ${fmtDate(done)}` : ""}`, BRAND.emerald]
-                : m.state === "overdue" ? [`Past planned end (${pct}%)`, "#B45309"]
-                : m.state === "current" ? [`In progress (${pct}%)`, "#1D4ED8"]
-                : ["Not started", BRAND.s500];
-              return (
-                <View key={m.id || i} style={[s.tRow, i % 2 === 1 ? s.tRowAlt : {}]} wrap={false}>
-                  <Text style={[s.td, { width: 24 }]}>{i + 1}</Text>
-                  <Text style={[s.td, { flex: 2.2, fontWeight: 700 }]}>{m.name}</Text>
-                  <Text style={[s.td, { flex: 1 }]}>{milestoneLength(m)}</Text>
-                  <Text style={[s.td, { flex: 2 }]}>{m.start && m.end ? `${fmtDate(m.start)} to ${fmtDate(m.end)}` : "-"}</Text>
-                  <Text style={[s.td, { flex: 1.5, fontWeight: 700, color }]}>{label}</Text>
-                </View>
-              );
-            })}
+            <ReportTimeline project={project} width={PAGE.w - GUTTER * 2} />
           </View>
         )}
-
 
         {/* Timeline */}
         {on("phases") && phases.length > 0 && (

@@ -2,9 +2,10 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, ChevronRight, Clock, Flag, GanttChart, Gauge, Loader2, Pencil, X } from "lucide-react";
 import type { ApiExtension, ApiProject } from "../../../lib/api";
 import {
-  DAY, MILESTONE_STATE_LABEL, daysBetween, effectiveEndDate, fmtDay, fmtShort, humanGap, isMilestonePoint, milestoneFocus, parseDate, phaseColor, phasePercent, planSchedule,
+  DAY, MILESTONE_STATE_LABEL, fmtDay, fmtShort, isMilestonePoint, phaseColor, phasePercent,
   type PlannedMilestone,
 } from "../../../lib/projectSchedule";
+import { timelineOverview } from "../../../lib/timelineOverview";
 import ExtensionsPanel from "./ExtensionsPanel";
 
 /**
@@ -46,49 +47,13 @@ export default function TimelineBar({ project, canEdit, onOpenTimeline, onSaveEx
     return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [extOpen]);
 
-  const milestones = useMemo(() => (project.schedule?.milestones || []).filter((m) => m.status !== "cancelled"), [project.schedule]);
-  const contractStart = parseDate(project.startDate || project.contractDate);
-  const startIsContractDate = !parseDate(project.startDate) && !!parseDate(project.contractDate);
-  const startLabel = startIsContractDate ? "Contract date" : "Start date";
-  const origEnd = parseDate(project.endDate);
-  const deadline = parseDate(effectiveEndDate(project));
-  const extended = !!(deadline && origEnd && deadline > origEnd);
-  const plan = useMemo(() => planSchedule(milestones, project.startDate || project.contractDate, new Date(), effectiveEndDate(project)), [milestones, project]);
-  const hasMs = milestones.length > 0;
-  const workPct = hasMs ? plan.progress : Math.max(0, Math.min(100, Math.round(project.progress || 0)));
-  const focus = milestoneFocus(plan);
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  // The track runs over the contract; phases outside it widen it.
-  const trackStart = plan.start || contractStart;
-  const trackEnd = plan.finish || deadline;
-  const span = trackStart && trackEnd ? Math.max(DAY, trackEnd.getTime() - trackStart.getTime()) : 0;
-  const pos = (d: Date) => (trackStart && span ? Math.max(0, Math.min(100, ((d.getTime() - trackStart.getTime()) / span) * 100)) : 0);
-  const todayPct = trackStart && span ? pos(today) : null;
-  const elapsedPct = contractStart && deadline && deadline > contractStart
-    ? Math.max(0, Math.min(100, (daysBetween(contractStart, today) / daysBetween(contractStart, deadline)) * 100)) : null;
-  const overdue = !!(deadline && today > deadline && workPct < 100);
-  const remaining = deadline ? (overdue ? `${humanGap(deadline, today)} overdue` : humanGap(today, deadline)) : "";
-  const remainingDays = deadline ? Math.abs(daysBetween(today, deadline)) : 0;
-
-  /**
-   * CR 287 (2026-09-23): how long the contract runs, all told. Counted the same way a phase's
-   * duration is counted on the schedule (start to end), so the two agree. When time has been
-   * granted, both numbers are shown: what was signed, and what it now runs to.
-   * CR 322 - first day and last day both count: 1 Sep to 15 Sep is 15 days (GT Comments 2, the
-   * KFC example: "Project Duration: 15 days").
-   */
-  const totalDays = contractStart && deadline ? Math.max(0, daysBetween(contractStart, deadline) + 1) : null;
-  const origDays = contractStart && origEnd ? Math.max(0, daysBetween(contractStart, origEnd) + 1) : null;
-  const addedDays = extended && totalDays !== null && origDays !== null ? totalDays - origDays : 0;
+  // 2026-10-09 - the figures come from lib/timelineOverview, which the Quick Report prints from too.
+  const { contractStart, startIsContractDate, origEnd, deadline, extended, plan, hasMs, workPct, focus, today, pos, todayPct, elapsedPct, overdue, remaining, remainingDays, totalDays, origDays, addedDays, dots, undated } =
+    useMemo(() => timelineOverview(project), [project]);
   const durationTitle = totalDays === null ? ""
     : extended && origDays !== null
       ? `Total contract duration: ${origDays} days as signed, ${totalDays} days with ${addedDays} day${addedDays === 1 ? "" : "s"} of extension.`
       : `Total contract duration: ${totalDays} days, start to end.`;
-
-  const dots: PlannedMilestone[] = plan.milestones.filter((m) => m.start).sort((a, b) => a.start!.getTime() - b.start!.getTime());
-  const undated = plan.milestones.filter((m) => !m.start).length;
 
   const extensions = (
     <div ref={extRef} className="relative min-w-0 shrink-0">
