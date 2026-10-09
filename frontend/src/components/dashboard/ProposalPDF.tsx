@@ -125,7 +125,10 @@ const styles = StyleSheet.create({
   ppPillText: { fontSize: 6.8, fontWeight: 700, letterSpacing: 0.8, color: "#047857", lineHeight: 1.2 },
   ppPillTextOngoing: { color: "#1D4ED8" },
   ppTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
-  ppInfo: { flex: 1, border: `0.8 solid ${BRAND.border}` },
+  ppLeft: { flex: 1 },
+  ppInfo: { border: `0.8 solid ${BRAND.border}` },
+  // 2026-10-09 - the client's logo, big, on the left over the information table and lined up with it.
+  ppClientLogo: { height: 60, maxWidth: 240, objectFit: "contain", alignSelf: "flex-start", marginBottom: 8 },
   ppInfoHead: { backgroundColor: BRAND.slate, paddingVertical: 5, paddingHorizontal: 7 },
   ppInfoHeadText: { fontSize: 7, fontWeight: 700, color: BRAND.white, letterSpacing: 1, lineHeight: 1.2 },
   ppRow: { flexDirection: "row", borderTop: `0.6 solid ${BRAND.border}` },
@@ -741,6 +744,7 @@ function PpHeading({ children }: { children: string }) {
  *  project record (withLiveProjects). */
 function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: string }) {
   const photo = e.showPhoto !== false && e.photo ? abs(e.photo) : "";
+  const logo = e.clientLogo || "";
   const poc = [e.poc, e.pocEmail, e.pocPhone].map((x) => x?.trim()).filter(Boolean).join("\n");
   const rows = ([
     ["Client / Agency", e.client], ["Location", e.location], ["Contract No.", e.contractNo], ["Contract Type", e.contractType],
@@ -762,22 +766,27 @@ function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: stri
           </View>
         )}
       </View>
-      {(rows.length > 0 || !!photo) && (
+      {(rows.length > 0 || !!photo || !!logo) && (
         <View style={styles.ppTop} wrap={false}>
-          {rows.length > 0 && (
-            <View style={styles.ppInfo}>
-              <View style={styles.ppInfoHead}><Text style={styles.ppInfoHeadText}>PROJECT INFORMATION</Text></View>
-              {rows.map(([l, v]) => (
-                <View key={l} style={styles.ppRow}>
-                  <Text style={styles.ppRowLabel}>{l}</Text>
-                  <Text style={styles.ppRowValue}>{v}</Text>
+          {(rows.length > 0 || !!logo) && (
+            <View style={styles.ppLeft}>
+              {!!logo && <Image src={logo} style={styles.ppClientLogo} />}
+              {rows.length > 0 && (
+                <View style={styles.ppInfo}>
+                  <View style={styles.ppInfoHead}><Text style={styles.ppInfoHeadText}>PROJECT INFORMATION</Text></View>
+                  {rows.map(([l, v]) => (
+                    <View key={l} style={styles.ppRow}>
+                      <Text style={styles.ppRowLabel}>{l}</Text>
+                      <Text style={styles.ppRowValue}>{v}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              )}
             </View>
           )}
           {!!photo && (
-            <View style={rows.length ? styles.ppPhotoBox : { width: "100%" }}>
-              <Image src={photo} style={rows.length ? styles.ppPhoto : [styles.ppPhoto, { height: 220 }]} />
+            <View style={rows.length || logo ? styles.ppPhotoBox : { width: "100%" }}>
+              <Image src={photo} style={rows.length || logo ? styles.ppPhoto : [styles.ppPhoto, { height: 220 }]} />
             </View>
           )}
         </View>

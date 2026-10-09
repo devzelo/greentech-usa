@@ -56,7 +56,7 @@ import type { EoiContent, RfpDetails } from "../../lib/api";
 import RfpCompliancePanel from "./RfpCompliancePanel";
 import SectionGroupTemplates from "./SectionGroupTemplates";
 import { makeZip } from "../../lib/zip";
-import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos } from "../../lib/pastPerformance";
+import { PROJECT_SECTION_KEYS, referencesOnly, withLiveProjects, hasLinkedProjects, linkedProjectPool, projectPhotos, projectEntries, withClientLogos } from "../../lib/pastPerformance";
 import { FINANCIAL_SECTION_LIBRARY, APPENDIX_LIBRARY } from "../../lib/proposalLibrary";
 import StandardAppendices, { loadStandardLists } from "./StandardAppendices";
 import AppendixListManager from "./AppendixListManager";
@@ -1769,7 +1769,20 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     const logoUrl = `${window.location.origin}/gt-usa-logo-new.png`;
     // 2026-10-06 - projects picked from our records print what their Project Info says now.
     const pool = hasLinkedProjects(technical) || hasLinkedProjects(financial) ? await linkedProjectPool() : [];
-    const tech = withLiveProjects(technical, pool), fin = withLiveProjects(financial, pool);
+    let tech = withLiveProjects(technical, pool), fin = withLiveProjects(financial, pool);
+    // 2026-10-09 - each past performance sheet carries its client's logo, from the Directory.
+    const entries = [...projectEntries(tech), ...projectEntries(fin)];
+    if (entries.length) {
+      const companies = await fetchCompanies().catch(() => [] as ApiCompany[]);
+      const byId = new Map(companies.filter((c) => c.logoUrl).map((c) => [c._id, c.logoUrl!]));
+      const byName = new Map(companies.filter((c) => c.logoUrl).map((c) => [c.name.trim().toLowerCase(), c.logoUrl!]));
+      const urlOf = (e: ProposalSimilarProject) => (e.clientCompanyId && byId.get(e.clientCompanyId)) || byName.get((e.client || "").trim().toLowerCase()) || "";
+      const urls = [...new Set(entries.map(urlOf).filter(Boolean))];
+      const pngs = new Map(await Promise.all(urls.map(async (u) => [u, (await pdfLogo(u)) || ""] as [string, string])));
+      const logoOf = (e: ProposalSimilarProject) => pngs.get(urlOf(e)) || undefined;
+      tech = withClientLogos(tech, logoOf);
+      fin = withClientLogos(fin, logoOf);
+    }
     // CR-P (94) - generated pages and each section's uploaded files, in document order.
     // Built as a function of the page context, so the contents can carry page numbers (two passes).
     // 2026-10-08 - the client's logo, the JV partner's logo and a custom letterhead logo as PNGs

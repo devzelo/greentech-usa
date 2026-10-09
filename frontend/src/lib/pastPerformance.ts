@@ -56,6 +56,8 @@ export function entryFromProject(p: ApiProject, prev?: ProposalSimilarProject): 
     location: p.location || "",
     contractType: p.contractType || "",
     workType: projectTags(p).join(", "),
+    // 2026-10-09 - the client as the project links it, so its Directory logo prints on the sheet.
+    clientCompanyId: p.clientInfo?.companyId || prev?.clientCompanyId || "",
     poc: p.clientInfo?.contactName || "",
     pocEmail: p.clientInfo?.email || "",
     pocPhone: p.clientInfo?.phone || "",
@@ -85,6 +87,20 @@ export function withLiveProjects<T extends WithProjects>(c: T, pool: ApiProject[
     ...c,
     ...(c.similarProjects ? { similarProjects: live(c.similarProjects) } : {}),
     ...(c.sections ? { sections: c.sections.map((s) => (s.projects?.length ? { ...s, projects: live(s.projects) } : s)) } : {}),
+  };
+}
+
+/** Every past performance entry in a volume, wherever it sits. */
+export const projectEntries = (c: WithProjects): ProposalSimilarProject[] =>
+  [...(c.similarProjects || []), ...(c.sections || []).flatMap((s) => s.projects || [])];
+
+/** 2026-10-09 - each entry with its client's logo (a print-time copy; nothing here is saved). */
+export function withClientLogos<T extends WithProjects>(c: T, logoOf: (e: ProposalSimilarProject) => string | undefined): T {
+  const put = (xs: ProposalSimilarProject[]) => xs.map((e) => { const l = logoOf(e); return l ? { ...e, clientLogo: l } : e; });
+  return {
+    ...c,
+    ...(c.similarProjects ? { similarProjects: put(c.similarProjects) } : {}),
+    ...(c.sections ? { sections: c.sections.map((s) => (s.projects?.length ? { ...s, projects: put(s.projects) } : s)) } : {}),
   };
 }
 

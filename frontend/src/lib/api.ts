@@ -317,6 +317,8 @@ export interface ProposalSimilarProject {
   workType?: string;                     // the project's categories and nature types
   poc?: string; pocEmail?: string; pocPhone?: string;   // client point of contact
   clientCompanyId?: string;              // 2026-10-07 - a typed-in entry's client, from the Directory
+  /** 2026-10-09 - print time only (never saved): the client's logo from the Directory, as a PNG. */
+  clientLogo?: string;
   cpars?: string;                        // "Yes" | "No" | "Pending" | ""
   photo?: string;
   scope?: string[];                      // 2026-10-06 - key scope of work, from the project's About This Project

@@ -62,7 +62,10 @@ const s = StyleSheet.create({
   // 2026-10-07 - the first page as on a past performance page: the information table on the left,
   // the project's picture and the client (with its logo) on the right.
   top: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
-  info: { flex: 1, border: `0.8 solid ${BRAND.border}` },
+  infoCol: { flex: 1 },
+  info: { border: `0.8 solid ${BRAND.border}` },
+  // 2026-10-09 - the client's logo, big, on the left over the information table and lined up with it.
+  clientLogoBig: { height: 60, maxWidth: 240, objectFit: "contain", alignSelf: "flex-start", marginBottom: 8 },
   infoHead: { backgroundColor: BRAND.slate, paddingVertical: 5, paddingHorizontal: 7 },
   infoHeadText: { fontSize: 7, fontWeight: 700, color: BRAND.white, letterSpacing: 1, lineHeight: 1.2 },
   infoRow: { flexDirection: "row", borderTop: `0.6 solid ${BRAND.border}` },
@@ -72,7 +75,6 @@ const s = StyleSheet.create({
   photo: { width: "100%", height: 130, objectFit: "cover", borderRadius: 6, marginBottom: 10 },
   clientCard: { border: `0.8 solid ${BRAND.border}`, borderRadius: 6, padding: 10, borderLeft: `3 solid ${BRAND.emerald}` },
   clientLabel: { fontSize: 6.6, fontWeight: 700, color: BRAND.s500, letterSpacing: 0.9, lineHeight: 1.3, marginBottom: 5 },
-  clientCardLogo: { height: 30, maxWidth: 140, objectFit: "contain", marginBottom: 6 },
   clientName: { fontSize: 10, fontWeight: 700, color: BRAND.slate, lineHeight: 1.3 },
   clientLine: { fontSize: 8, color: BRAND.s600, lineHeight: 1.4, marginTop: 1.5 },
   scope: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
@@ -261,7 +263,8 @@ export default function ProjectReportPDF({ project, financials, include, client,
     client?.email || project.clientInfo?.email, client?.phone || project.clientInfo?.phone,
     client?.address || project.clientInfo?.address, client?.website,
   ].map((x) => (x || "").trim()).filter(Boolean);
-  const showClient = on("clientInfo") && (!!clientName || !!client?.logo);
+  const showClient = on("clientInfo") && !!clientName;
+  const clientLogo = on("clientInfo") && client?.logo ? client.logo : "";
   const scope = (project.scopeOfWork || []).map((x) => (x || "").trim()).filter(Boolean);
   const hasDescription = !!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim();
 
@@ -285,26 +288,30 @@ export default function ProjectReportPDF({ project, financials, include, client,
         </View>
 
         {/* 2026-10-07 - the project at a glance, as on a past performance page. */}
-        {(on("projectInfo") || showPhoto || showClient) && (
+        {(on("projectInfo") || showPhoto || showClient || !!clientLogo) && (
           <View style={s.top} wrap={false}>
-            {on("projectInfo") && (
-              <View style={s.info}>
-                <View style={s.infoHead}><Text style={s.infoHeadText}>PROJECT INFORMATION</Text></View>
-                {infoRows.map(([l, v]) => (
-                  <View key={l} style={s.infoRow}>
-                    <Text style={s.infoLabel}>{l}</Text>
-                    <Text style={s.infoValue}>{v}</Text>
+            {(on("projectInfo") || !!clientLogo) && (
+              <View style={s.infoCol}>
+                {!!clientLogo && <Image src={clientLogo} style={s.clientLogoBig} />}
+                {on("projectInfo") && (
+                  <View style={s.info}>
+                    <View style={s.infoHead}><Text style={s.infoHeadText}>PROJECT INFORMATION</Text></View>
+                    {infoRows.map(([l, v]) => (
+                      <View key={l} style={s.infoRow}>
+                        <Text style={s.infoLabel}>{l}</Text>
+                        <Text style={s.infoValue}>{v}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                )}
               </View>
             )}
             {(showPhoto || showClient) && (
-              <View style={on("projectInfo") ? s.side : { width: "100%" }}>
-                {showPhoto && <Image src={photo!} style={on("projectInfo") ? s.photo : [s.photo, { height: 200 }]} />}
+              <View style={on("projectInfo") || clientLogo ? s.side : { width: "100%" }}>
+                {showPhoto && <Image src={photo!} style={on("projectInfo") || clientLogo ? s.photo : [s.photo, { height: 200 }]} />}
                 {showClient && (
                   <View style={s.clientCard}>
                     <Text style={s.clientLabel}>CLIENT</Text>
-                    {!!client?.logo && <Image src={client.logo} style={s.clientCardLogo} />}
                     <Text style={s.clientName}>{clientName}</Text>
                     {clientLines.map((l, i) => <Text key={i} style={s.clientLine}>{l}</Text>)}
                   </View>

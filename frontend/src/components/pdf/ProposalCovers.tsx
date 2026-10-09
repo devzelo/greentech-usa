@@ -132,12 +132,13 @@ function Hero({ d }: { d: CoverData }) {
         <Mosaic images={d.images} w={PAGE.w} h={H} />
         <Scrim w={PAGE.w} h={H} />
         <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
-          {/* 2026-10-08 - logos as on every cover: ours 1.5 times (30 to 45), the client's 4 times (28 to 112). */}
+          {/* 2026-10-08 - logos as on every cover: ours 1.5 times (30 to 45), the client's 4 times (28 to 112).
+              2026-10-09 - the client's bigger again (124 high, up to 250 wide). */}
           <Logo h={45} />
           {!!d.partnerLogo && <View style={{ width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.45)", marginHorizontal: 14 }} />}
           {!!d.partnerLogo && <PartnerMark src={d.partnerLogo} h={24} />}
         </View>
-        {!!d.clientLogo && <View style={{ position: "absolute", top: 34, right: 52 }}><ClientMark src={d.clientLogo} h={112} maxW={d.partnerLogo ? 130 : 220} /></View>}
+        {!!d.clientLogo && <View style={{ position: "absolute", top: 30, right: 52 }}><ClientMark src={d.clientLogo} h={124} maxW={d.partnerLogo ? 140 : 250} /></View>}
       </View>
 
       <View style={{ paddingHorizontal: 52, flex: 1, justifyContent: "space-between", paddingTop: 16, paddingBottom: 34 }}>
@@ -200,11 +201,11 @@ function Formal({ d }: { d: CoverData }) {
       <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="formalTop" /></View>
       <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {/* 2026-10-08 - ours 1.5 times (22 to 33), the client's 4 times (28 to 112). */}
+          {/* 2026-10-08 - ours 1.5 times (22 to 33), the client's 4 times (28 to 112); 2026-10-09 - 124, up to 250 wide. */}
           <LogoChip h={33} padX={16} />
           {!!d.partnerLogo && <View style={{ marginLeft: 10, border: `1 solid ${BRAND.border}`, borderRadius: 8 }}><PartnerMark src={d.partnerLogo} h={26} /></View>}
           <View style={{ flex: 1, minWidth: 12 }} />
-          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={112} maxW={d.partnerLogo ? 130 : 230} />}
+          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={124} maxW={d.partnerLogo ? 150 : 250} />}
         </View>
 
         <View style={{ flex: 1, justifyContent: "center", paddingVertical: 18 }}>
@@ -268,8 +269,8 @@ function Panel({ d }: { d: CoverData }) {
 
       <View style={{ flex: 1, padding: 36, justifyContent: "space-between" }}>
         <View>
-          {/* 2026-10-08 - the client's seal 4 times bigger (26 to 104). */}
-          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 12 }}><ClientMark src={d.clientLogo} h={104} /></View>}
+          {/* 2026-10-08 - the client's seal 4 times bigger (26 to 104); 2026-10-09 - 124, up to the column's width. */}
+          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 12 }}><ClientMark src={d.clientLogo} h={124} maxW={290} /></View>}
           <View style={{ height: 140, borderRadius: 10, overflow: "hidden", border: `1 solid ${BRAND.border}` }}>
             {!!d.images[0] && <Image src={d.images[0]} style={{ width: "100%", height: 140, objectFit: "cover" }} />}
           </View>
