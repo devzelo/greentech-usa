@@ -501,7 +501,8 @@ router.get("/proposal-docs", async (req: AuthedRequest, res: Response, next: Nex
 router.get("/stamps", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await ensureSeeded();
-    const files = await CompanyFile.find({ kind: "classified", tabId: STAMP_TAB_ID, archived: { $ne: true } }).sort({ name: 1 }).lean();
+    // 2026-10-09 (security review) - only what the stamp picker shows: the name and the picture.
+    const files = await CompanyFile.find({ kind: "classified", tabId: STAMP_TAB_ID, archived: { $ne: true } }).select("name url filePath fileType").sort({ name: 1 }).lean();
     res.json(files);
   } catch (err) {
     next(err);
@@ -521,7 +522,8 @@ router.get("/logos", async (_req: AuthedRequest, res: Response, next: NextFuncti
 router.get("/signature-files", async (_req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
     await ensureSeeded();
-    res.json(await CompanyFile.find({ kind: "classified", tabId: SIGNATURES_TAB_ID, archived: { $ne: true } }).sort({ name: 1 }).lean());
+    // Only what the signature picker shows: the name and the picture (security review).
+    res.json(await CompanyFile.find({ kind: "classified", tabId: SIGNATURES_TAB_ID, archived: { $ne: true } }).select("name url filePath fileType").sort({ name: 1 }).lean());
   } catch (err) { next(err); }
 });
 
