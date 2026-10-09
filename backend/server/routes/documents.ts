@@ -24,6 +24,22 @@ async function sectionAccess(req: AuthedRequest, projectId: string, section: str
   return { canView: canViewTab(access, tabId, tabAccess), canEdit: access.role !== "none" && canEditTab(access, tabId) };
 }
 
+/**
+ * 2026-10-09 - security fix: the list without a section had no check at all (any signed-in user,
+ * any project). Admins see everything; anyone else needs access to the project, and sees only the
+ * sections whose tab they may view (guests by their grants, employees by the tab's access).
+ */
+async function viewerOf(req: AuthedRequest, projectId: string) {
+  if (req.user!.role === "admin") return { all: true as const };
+  const project = await Project.findOne({ projectId }).select("ownerId assignedEmployees guests tabAccess").lean();
+  if (!project) return null;
+  const me = await User.findById(req.user!.userId).select("empId").lean();
+  const access = getProjectAccess(project, req.user!.userId, (me as { empId?: string } | null)?.empId || "");
+  if (access.role === "none") return null;
+  const tabAccess = (project as { tabAccess?: Record<string, { employees?: boolean; employeeIds?: string[] }> }).tabAccess;
+  return { all: false as const, sees: (section: string) => canViewTab(access, sectionToTabId(section), tabAccess) };
+}
+
 // Resolve the requester's edit permission for a given section's tab.
 async function canEditSection(req: AuthedRequest, projectId: string, section: string): Promise<boolean> {
   const a = await sectionAccess(req, projectId, section);
@@ -66,17 +82,17 @@ const upload = multer({ storage });
 // GET /api/projects/:id/documents?section=
 router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    // Guests may only read a section they can view.
-    if (req.user!.role === "subcontractor" && req.query.section) {
-      const a = await sectionAccess(req, req.params.id, req.query.section as string);
-      if (!a?.canView) return res.json([]);
-    }
+    // Only the sections the requester may view (see viewerOf).
+    const viewer = await viewerOf(req, req.params.id);
+    if (!viewer) return res.status(403).json({ error: "You do not have access to this project." });
+    const section = req.query.section ? String(req.query.section) : "";
+    if (section && !viewer.all && !viewer.sees(section)) return res.json([]);
     const filter: Record<string, unknown> = { projectId: req.params.id };
-    if (req.query.section) filter.section = req.query.section as string;
+    if (section) filter.section = section;
     // Hide archived files by default; ?archived=true shows the archived view (CR-P-10).
     filter.archived = req.query.archived === "true" ? true : { $ne: true };
     const docs = await ProjectDocument.find(filter).sort({ uploadedAt: -1 });
-    res.json(docs);
+    res.json(viewer.all || section ? docs : docs.filter((d) => viewer.sees(String(d.section || ""))));
   } catch (err) {
     next(err);
   }
@@ -137,10 +153,8 @@ router.get("/folders", async (req: AuthedRequest, res: Response, next: NextFunct
   try {
     const section = String(req.query.section || "");
     if (!section) return res.json([]);
-    if (req.user!.role === "subcontractor") {
-      const a = await sectionAccess(req, req.params.id, section);
-      if (!a?.canView) return res.json([]);
-    }
+    const viewer = await viewerOf(req, req.params.id);
+    if (!viewer || (!viewer.all && !viewer.sees(section))) return res.json([]);
     res.json(await DocumentFolder.find({ projectId: req.params.id, section }).sort({ path: 1 }).lean());
   } catch (err) { next(err); }
 });

@@ -14,6 +14,7 @@ import { canSeeFigures } from "../lib/access";
 import { buildCompanyLinks } from "../lib/profileLinks";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { resolveMyCompany } from "../lib/myCompany";
 
 const humanFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -31,6 +32,24 @@ const SELF_FIELDS = ["name", "logoUrl", "address", "phone", "email", "website", 
 // Companies / Contact Directory (client CR-P-06). Top-level, project-independent master list.
 const router = Router();
 router.use(requireAuth);
+
+// 2026-10-09 - security fix: every Directory route only asked for a signed-in user, so a vendor or
+// subcontractor login could read every company's contacts, banking and tax details, and change or
+// delete them. An outside login (role "subcontractor") now only reads the Directory through its
+// pickers (names, categories and logos) and its own company in full; it changes nothing.
+const PUBLIC_FIELDS = "name category categories logoUrl";
+const isOutside = (req: AuthedRequest) => req.user?.role === "subcontractor";
+router.use((req: AuthedRequest, res: Response, next: NextFunction) => {
+  if (!isOutside(req)) return next();
+  const read = req.method === "GET" && (req.path === "/" || /^\/[a-f\d]{24}$/i.test(req.path));
+  if (!read) return res.status(403).json({ error: "Only GreenTech USA staff can change the Directory." });
+  next();
+});
+async function myCompanyId(req: AuthedRequest): Promise<string> {
+  const u = await User.findById(req.user!.userId).select("role email companyId").lean() as { _id: unknown; role?: string; email?: string; companyId?: unknown } | null;
+  const c = u ? await resolveMyCompany(u) : null;
+  return c ? String(c._id) : "";
+}
 
 const FIELDS = ["name", "category", "categories", "logoUrl", "address", "phone", "email", "website", "contactPersons", "banking", "tax", "notes", "archived"] as const;
 
@@ -54,13 +73,16 @@ router.get("/", async (req: AuthedRequest, res: Response, next: NextFunction) =>
     const filter: Record<string, unknown> = {};
     if (req.query.category) { const c = String(req.query.category); filter.$or = [{ category: c }, { categories: c }]; }
     filter.archived = req.query.archived === "true" ? true : { $ne: true };
-    res.json(await Company.find(filter).sort({ name: 1 }).lean());
+    const q = Company.find(filter).sort({ name: 1 });
+    res.json(await (isOutside(req) ? q.select(PUBLIC_FIELDS) : q).lean());
   } catch (err) { next(err); }
 });
 
 router.get("/:id", async (req: AuthedRequest, res: Response, next: NextFunction) => {
   try {
-    const c = await Company.findById(req.params.id).lean();
+    const own = isOutside(req) ? (await myCompanyId(req)) === req.params.id : true;
+    const q = Company.findById(req.params.id);
+    const c = await (own ? q : q.select(PUBLIC_FIELDS)).lean();
     if (!c) return res.status(404).json({ error: "Company not found." });
     res.json(c);
   } catch (err) { next(err); }

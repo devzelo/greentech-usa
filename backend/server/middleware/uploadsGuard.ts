@@ -3,6 +3,7 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import ProjectDocument from "../models/ProjectDocument";
 import { JWT_SECRET } from "../config/secrets";
+import { mayReadUpload } from "../lib/fileAccess";
 
 // Folders whose contents render in <img>/<video> tags (no auth header possible)
 // and that also power the public marketing site — these stay publicly servable.
@@ -33,17 +34,25 @@ export async function uploadsGuard(req: Request, res: Response, next: NextFuncti
     const bearer = header && header.startsWith("Bearer ") ? header.slice(7) : "";
     const queryToken = typeof req.query.token === "string" ? req.query.token : "";
 
-    const grantsAccess = (token: string): boolean => {
+    // A single-file share token opens its one file. A session or files token names a user, and
+    // since 2026-10-09 that user must be allowed this file (lib/fileAccess.ts): staff any file, an
+    // outside login only what it could see in the app.
+    const userOf = (token: string): string | "share" | null => {
       try {
         const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-        if (decoded.scope === "files") return true;
-        if (decoded.scope === "file") return decoded.path === normalized;
-        return typeof decoded.userId === "string"; // a regular session token
+        if (decoded.scope === "file") return decoded.path === normalized ? "share" : null;
+        return typeof decoded.userId === "string" ? decoded.userId : null; // files token or a session token
       } catch {
-        return false;
+        return null;
       }
     };
-    if ([queryToken, bearer].some((t) => t && grantsAccess(t))) return next();
+    let signedIn = false;
+    for (const t of [queryToken, bearer]) {
+      if (!t) continue;
+      const u = userOf(t);
+      if (u === "share") return next();
+      if (u) { signedIn = true; if (await mayReadUpload(u, normalized)) return next(); }
+    }
 
     // filePath is stored with OS-native separators — match either form.
     const winPath = "uploads\\" + normalized.replace(/\//g, "\\");
@@ -54,6 +63,7 @@ export async function uploadsGuard(req: Request, res: Response, next: NextFuncti
     });
     if (isPublicDoc) return next();
 
+    if (signedIn) return res.status(403).json({ error: "You do not have access to this file." });
     return res.status(401).json({ error: "Authentication required." });
   } catch (err) {
     next(err);
