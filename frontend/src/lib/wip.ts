@@ -46,6 +46,10 @@ export const plannedProfit = (value: string, w: ProjectWip) => {
   return isFinite(p) ? (moneyNum(value) * p) / 100 : 0;
 };
 
-/** CR 311 - which projects go in each table of the WIP report, by status. */
-export const WIP_CURRENT = ["Active", "Warranty", "Closed"];
+/**
+ * CR 311 - which projects go in each table of the WIP report, by status. 2026-10-09 - the first table
+ * is the contract backlog (the client's template: "Active Projects"): contracts still running,
+ * through the warranty period. A closed contract has no backlog left.
+ */
+export const WIP_CURRENT = ["Active", "Warranty"];
 export const WIP_OPPORTUNITY = ["Proposal", "BidSubmitted"];

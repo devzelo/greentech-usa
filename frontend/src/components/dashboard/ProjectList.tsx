@@ -552,14 +552,14 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
               ) : (
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tables to include</p>
-                  {([["current", "Current and completed contracts", WIP_CURRENT], ["opportunities", "Future opportunities (proposals out)", WIP_OPPORTUNITY]] as const).map(([k, t, list]) => (
+                  {([["current", "Active projects (contract backlog)", WIP_CURRENT], ["opportunities", "Potential projects (revenue opportunities)", WIP_OPPORTUNITY]] as const).map(([k, t, list]) => (
                     <label key={k} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                       <input type="checkbox" className="accent-emerald-500" checked={wipParts[k]} onChange={(e) => setWipParts((cur) => ({ ...cur, [k]: e.target.checked }))} />
                       <span className="flex-1">{t}</span>
                       <span className="text-[10px] text-slate-400">{reportProjects.filter((p) => list.some((st) => statusMatches(st, p.status))).length}</span>
                     </label>
                   ))}
-                  <p className="text-[10px] text-slate-400">A large landscape table (11 x 17 in), one line per contract, to copy into each bank&apos;s own form. Profit, change orders, cost to complete, funded value and chance of winning come from each project&apos;s bank report figures.</p>
+                  <p className="text-[10px] text-slate-400">The bank WIP layout on a landscape sheet (24 x 18 in): the contract backlog, the revenue opportunities and the formulas. Invoiced and costs to date come from the invoices and expenses; change orders, cost to complete, prime contractor, set-aside and Pwin from each project&apos;s bank report figures.</p>
                 </div>
               )}
             </div>
@@ -582,9 +582,12 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
         <PdfPreviewModal
           title={`Work in progress report · ${mode === "my" ? "My Projects" : "All Projects"}`}
           fileName={`GreenTech_WIP_Report_${new Date().toISOString().slice(0, 10)}.pdf`}
+          fitOption={{ note: "GreenTech USA LLC · work in progress (WIP) report" }}
           build={async () => {
             const { buildWipReportPdf } = await import("../../lib/wipReportPdf");
-            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects" });
+            // 2026-10-09 - each customer's logo and each country's flag, as in the template.
+            const assets = await reportAssets(reportProjects.filter((p) => [...WIP_CURRENT, ...WIP_OPPORTUNITY].some((st) => statusMatches(st, p.status))));
+            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects", assets });
           }}
           onClose={() => setShowReport(false)}
         />
