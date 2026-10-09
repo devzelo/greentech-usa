@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { createPortal } from "react-dom";
 import MoneyInput from "./MoneyInput";
@@ -239,7 +240,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       const body = invoiceBody(bDraft); body.status = "Sent";
       const srv = await updateInvoice(projectId, builderId, body); patch(srv);
       const blob = await buildInvoicePdf(srv, { projectInfo, allInvoices: rows });
-      await emailFileAttachment(blob, `Invoice_${srv.number}.pdf`, addr, `Invoice #${srv.number}`);
+      await emailFileAttachment(blob, docFileName([`Invoice ${srv.number}`], "pdf"), addr, `Invoice #${srv.number}`);
       toast(`Invoice #${srv.number} emailed to ${addr}.`, "success");
       setBuilderId(null); setBDraft(null); setFreshId(null);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not send the invoice.", "error"); }
@@ -283,7 +284,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
 
   const viewPO = (po: ApiProcurementPO) => setPoPreview({
     title: `Purchase Order ${po.poNo}${po.vendorName ? ` · ${po.vendorName}` : ""}`,
-    fileName: `PO_${po.poNo}.pdf`,
+    fileName: docFileName([`Purchase Order ${po.poNo}`], "pdf"),
     build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob,
   });
 
@@ -449,7 +450,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
       toast(isSent ? "Marked as received." : "Marked as paid and added to Expenses.", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not record it.", "error"); }
   };
-  const previewInvoice = (row: ApiInvoice) => setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${row.number}`, fileName: `Invoice_${row.number || "draft"}.pdf`, build: () => buildInvoicePdf(row, { projectInfo, allInvoices: rows }) });
+  const previewInvoice = (row: ApiInvoice) => setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${row.number}`, fileName: docFileName([`${isSent ? "Invoice" : "Bill"} ${row.number || "Draft"}`], "pdf"), build: () => buildInvoicePdf(row, { projectInfo, allInvoices: rows }) });
   const removePayment = async (row: ApiInvoice, pid: string) => {
     if (!(await confirm({ title: "Remove payment?", message: "The linked expense row is removed too.", confirmLabel: "Remove" }))) return;
     try { patch(await deleteInvoicePayment(projectId, row._id, pid)); onExpensesChanged?.(); }
@@ -996,7 +997,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                 <div className="flex items-center gap-2">
                   <button onClick={() => {
                     const merged: ApiInvoice = { ...(cur as ApiInvoice), receiverKind: bDraft.receiverKind, party: bDraft.party, date: bDraft.date, description: bDraft.description, lineItems: bDraft.mode === "build" ? bDraft.lineItems : [], amount: bDraft.mode === "build" ? String(lineTotal(bDraft.lineItems)) : bDraft.amount, bank: bDraft.bank, terms: bDraft.terms, signerName: bDraft.signerName, signerTitle: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl, contractTotal: bDraft.contractRef.source ? bDraft.contractTotal : "", contractRef: bDraft.contractRef, companyId: bDraft.companyId };
-                    setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: `Invoice_${cur?.number || "draft"}.pdf`, build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
+                    setPoPreview({ title: `${isSent ? "Invoice" : "Bill"} #${cur?.number}`, fileName: docFileName([`${isSent ? "Invoice" : "Bill"} ${cur?.number || "Draft"}`], "pdf"), build: () => buildInvoicePdf(merged, { projectInfo, allInvoices: rows }) });
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><Eye size={13} /> Preview PDF</button>
                   {/* CR-B-14a — Word export. */}
                   <button onClick={() => {
@@ -1010,7 +1011,7 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                       + (bDraft.terms ? `<h2>Terms</h2><p>${escapeHtml(bDraft.terms)}</p>` : "")
                       + (bDraft.bank?.name ? `<h2>Bank information</h2><p>${escapeHtml(bDraft.bank.name)}<br/>${escapeHtml(bDraft.bank.accountName || "")} ${escapeHtml(bDraft.bank.accountNumber || "")}<br/>${escapeHtml(bDraft.bank.iban || "")} ${escapeHtml(bDraft.bank.swift || "")}</p>` : "")
                       + (bDraft.signerName ? `<p style="margin-top:24pt">_________________________<br/>${escapeHtml(bDraft.signerName)}${bDraft.signerTitle ? `, ${escapeHtml(bDraft.signerTitle)}` : ""}</p>` : "");
-                    downloadHtmlAsWord(`Invoice ${cur?.number || ""}`, body, `Invoice_${cur?.number || "draft"}`);
+                    downloadHtmlAsWord(`Invoice ${cur?.number || ""}`, body, `${isSent ? "Invoice" : "Bill"} ${cur?.number || "Draft"}`);
                   }} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 inline-flex items-center gap-1.5"><FileText size={13} /> Word</button>
                   {/* CR-B-14a — confirm before closing so changes aren't lost accidentally. */}
                   <button onClick={async () => { if (await confirm({ title: "Are you sure you want to close?", message: "Any unsaved changes to this invoice will be lost.", confirmLabel: "Close", cancelLabel: "Keep editing", danger: true })) { void closeBuilder(); } }} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold disabled:opacity-50">Close</button>

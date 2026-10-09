@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import DirectoryNameField from "./DirectoryNameField";
 import * as XLSX from "xlsx";
 import { Plus, Trash2, Upload, Download, Loader2, Ban, RotateCcw, ChevronDown, ChevronRight, Pencil, Eye, Copy, ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Search, Settings2, Check, Lock, Unlock, FileText, X, AlertTriangle, CheckCircle2, Clock, History, Columns3, MoveHorizontal, ArrowLeftRight, LayoutList, Rows3, Printer } from "lucide-react";
@@ -618,7 +619,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       // module regardless of which path created the RFQ. Best-effort.
       try {
         const blob = await buildRfqPdf(rfq, undefined, projectInfo);
-        await uploadDocument(projectId, new File([blob], `RFQ_${rfq.rfqNo}.pdf`, { type: "application/pdf" }), "procurement-rfq", true);
+        await uploadDocument(projectId, new File([blob], docFileName([`RFQ ${rfq.rfqNo}`], "pdf"), { type: "application/pdf" }), "procurement-rfq", true);
       } catch { /* best-effort */ }
       toast(`RFQ ${rfq.rfqNo} created with ${list.length} item(s).`, "success");
       setSelected({}); setRfqDraft(null); await load(); onGoToRFQ?.(rfq._id);
@@ -772,7 +773,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setSubMenu(null)} />
                     <div className="absolute z-20 mt-1 left-3 bg-white border border-slate-200 rounded-xl shadow-lg py-1 w-44 text-left">
-                      {rev && <button onClick={() => { setSubMenu(null); setSubPreview({ title: `${sub.title || sub.productName || "Submittal"}, Rev ${rev.revisionNo}`, fileName: `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`, build: async () => (await buildSubmittalPackage(sub, rev)).blob }); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Eye size={12} /> Preview PDF</button>}
+                      {rev && <button onClick={() => { setSubMenu(null); setSubPreview({ title: `${sub.title || sub.productName || "Submittal"}, Rev ${rev.revisionNo}`, fileName: docFileName([sub.title || sub.productName || "Submittal", `Rev ${rev.revisionNo}`], "pdf"), build: async () => (await buildSubmittalPackage(sub, rev)).blob }); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Eye size={12} /> Preview PDF</button>}
                       {onGoToSubmittals && <button onClick={() => { setSubMenu(null); onGoToSubmittals(it._id); }} className="w-full text-left px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><ExternalLink size={12} /> Open in Submittals</button>}
                     </div>
                   </>
@@ -1335,7 +1336,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       {linePreview && (
         <PdfPreviewModal
           title={`BOQ item #${displayNo[linePreview.item._id] ?? ""} — ${linePreview.item.description || "line"}${linePreview.extras.length ? " (+ past revisions)" : ""}`}
-          fileName={`BOQ_item_${displayNo[linePreview.item._id] ?? ""}.pdf`}
+          fileName={docFileName([`BOQ Item ${displayNo[linePreview.item._id] ?? ""}`, linePreview.item.description], "pdf")}
           build={() => buildBoqPdf(sections.filter((s) => s._id === linePreview.item.sectionId), [linePreview.item, ...linePreview.extras], projectInfo, { ...printLayout(), flat: false })}
           onClose={() => setLinePreview(null)}
         />
@@ -1506,8 +1507,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       subtitle="Freeze a PDF or Excel copy of the BOQ. Preview, print, or download any revision anytime."
       canEdit={canEdit}
       formats={[
-        { label: "PDF", ext: "pdf", baseName: "BOQ", build: () => buildBoqPdf(sections, items, projectInfo, printLayout()) },
-        { label: "Excel", ext: "xlsx", baseName: "BOQ", build: buildBoqExcelBlob },
+        { label: "PDF", ext: "pdf", baseName: "Bill of Quantities", build: () => buildBoqPdf(sections, items, projectInfo, printLayout()) },
+        { label: "Excel", ext: "xlsx", baseName: "Bill of Quantities", build: buildBoqExcelBlob },
       ]}
       fetchList={() => fetchSavedDocuments(projectId, "boq")}
       saveVersion={(file, fileName, meta) => saveDocumentVersion(projectId, { kind: "boq", title: meta.title, status: meta.status }, file, fileName)}

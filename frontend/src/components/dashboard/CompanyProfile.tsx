@@ -471,7 +471,7 @@ export default function CompanyProfile({
       {reportOpen && (
         <PdfPreviewModal
           title={`${company.name} · profile report`}
-          fileName={fileName([company.name, "Profile report"], "pdf")}
+          fileName={fileName([company.name, "Profile Report"], "pdf")}
           build={buildReport}
           onClose={() => setReportOpen(false)}
           fitOption={{ note: `${company.name} · profile report` }}

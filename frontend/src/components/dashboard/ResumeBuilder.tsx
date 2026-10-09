@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import PhoneInput from "./PhoneInput";
 import { formatPhone } from "../../lib/phone";
 import { motion } from "motion/react";
@@ -329,7 +330,7 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
                     logoUrl={`${window.location.origin}/gt-usa-logo-new.png`}
                   />
                 }
-                fileName={`${(me.name || "resume").replace(/\s+/g, "_")}_Resume.pdf`}
+                fileName={docFileName([me.name, "Resume"], "pdf")}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gt-gradient text-white rounded-2xl text-sm font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all"
               >
                 {({ loading: pdfLoading }) => (

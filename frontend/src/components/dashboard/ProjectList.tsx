@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import {
   Search, Filter, LayoutGrid, List as ListIcon, FileText,
   ArrowUpRight, Globe, AlertCircle, X, Loader2, Archive, Handshake,
@@ -9,7 +10,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchProjects, fetchProjectFinancials, fetchCompanies, getAuthUser, withFileToken, projectCategories, ApiProject, ProjectFinancials } from "../../lib/api";
 import { pdf } from "@react-pdf/renderer";
 import PortfolioReportPDF from "./PortfolioReportPDF";
-import { effectiveEndDate } from "../../lib/projectSchedule";
+import { effectiveEndDate, fmtDay } from "../../lib/projectSchedule";
 import MilestoneTrack from "./MilestoneTrack";
 import PdfPreviewModal from "./PdfPreviewModal";
 import { useMeta } from "../../hooks/useMeta";
@@ -581,7 +582,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {showReport && reportType === "wip" && (
         <PdfPreviewModal
           title={`Work in progress report · ${mode === "my" ? "My Projects" : "All Projects"}`}
-          fileName={`GreenTech_WIP_Report_${new Date().toISOString().slice(0, 10)}.pdf`}
+          fileName={docFileName(["GreenTech USA", "Work in Progress (WIP) Report", mode === "my" ? "My Projects" : "All Projects", fmtDay(new Date())], "pdf")}
           fitOption={{ note: "GreenTech USA LLC · work in progress (WIP) report" }}
           build={async () => {
             const { buildWipReportPdf } = await import("../../lib/wipReportPdf");
@@ -595,7 +596,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
       {showReport && reportType === "internal" && (
         <PdfPreviewModal
           title={mode === "my" ? "Quick Report · My Projects" : "Quick Report · All Projects"}
-          fileName={`Portfolio_${mode === "my" ? "MyProjects" : "AllProjects"}_Report.pdf`}
+          fileName={docFileName(["GreenTech USA", "Portfolio Report", mode === "my" ? "My Projects" : "All Projects", fmtDay(new Date())], "pdf")}
           build={async () => {
             const assets = await reportAssets(internalProjects);
             return pdf(

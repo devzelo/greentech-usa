@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { formatPhone } from "../../lib/phone";
 import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt, Archive, RotateCcw } from "lucide-react";
@@ -190,7 +191,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const autoSavePoDoc = async (po: ApiProcurementPO) => {
     try {
       const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-      await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder);
+      await uploadDocument(projectId, new File([blob], docFileName([`Purchase Order ${po.poNo}`], "pdf"), { type: "application/pdf" }), docSection, true, docFolder);
     } catch { /* best-effort */ }
   };
   // CR-PR-06 — a manual PO (not from a BOQ/quote); opens straight into the editor.
@@ -314,7 +315,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
   const downloadPdf = async (po: ApiProcurementPO) => {
     try {
       const { blob, skipped } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-      downloadBlob(blob, `PO_${po.poNo}.pdf`);
+      downloadBlob(blob, docFileName([`Purchase Order ${po.poNo}`], "pdf"));
       // Keep the Documents copy current — creating the PO document supersedes the earlier
       // auto-saved copy (which was made before terms, signatures and attachments existed).
       void autoSavePoDoc(po);
@@ -326,7 +327,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     setSavingDoc(po._id);
     try {
       const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-      const file = new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" });
+      const file = new File([blob], docFileName([`Purchase Order ${po.poNo}`], "pdf"), { type: "application/pdf" });
       await uploadDocument(projectId, file, docSection, true, docFolder);
       toast("Saved to project documents (Procurement → Purchase Orders).", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
@@ -376,9 +377,9 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
       onChanged?.();
       toast(`PO ${barPo.poNo} saved.`, "success");
     }) : undefined,
-    preview: () => setPreview({ title: `Purchase Order ${barPo.poNo}`, fileName: `PO_${barPo.poNo}.pdf`, build: () => poPdf(barPo) }),
-    download: () => void busyRun(async () => downloadBlob(await poPdf(barPo), `PO_${barPo.poNo}.pdf`)),
-    share: { fileName: `PO_${barPo.poNo}.pdf`, prepare: async () => documentUrl(await uploadDocument(projectId, new File([await poPdf(barPo)], `PO_${barPo.poNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder)) },
+    preview: () => setPreview({ title: `Purchase Order ${barPo.poNo}`, fileName: docFileName([`Purchase Order ${barPo.poNo}`], "pdf"), build: () => poPdf(barPo) }),
+    download: () => void busyRun(async () => downloadBlob(await poPdf(barPo), docFileName([`Purchase Order ${barPo.poNo}`], "pdf"))),
+    share: { fileName: docFileName([`Purchase Order ${barPo.poNo}`], "pdf"), prepare: async () => documentUrl(await uploadDocument(projectId, new File([await poPdf(barPo)], docFileName([`Purchase Order ${barPo.poNo}`], "pdf"), { type: "application/pdf" }), docSection, true, docFolder)) },
     busy: barBusy,
     note: `PO ${barPo.poNo}${pos.length > 1 ? ` (${pos.length} purchase orders on this package)` : ""}. Edits save as you make them.`,
   });
@@ -655,7 +656,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
           heading={`Saved PO ${po.poNo} Versions`}
           subtitle="Freeze a PDF copy of this PO. Preview, print, or download any revision anytime."
           canEdit={canEdit}
-          formats={[{ label: "PDF", ext: "pdf", baseName: `PO_${po.poNo}`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob }]}
+          formats={[{ label: "PDF", ext: "pdf", baseName: `Purchase Order ${po.poNo}`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob }]}
           fetchList={() => fetchSavedDocuments(projectId, "po", po._id)}
           saveVersion={(file, fileName, meta) => saveDocumentVersion(projectId, { kind: "po", refId: po._id, title: meta.title, status: meta.status }, file, fileName)}
           update={(docId, body) => updateSavedDocument(projectId, docId, body)}
@@ -671,7 +672,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <FileDown size={16} /> Create PO document
             </button>
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: `PO_${po.poNo}.pdf`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors whitespace-nowrap"><Eye size={15} /> Preview</button>
+              <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: docFileName([`Purchase Order ${po.poNo}`], "pdf"), build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors whitespace-nowrap"><Eye size={15} /> Preview</button>
               <button onClick={() => savePoToDocuments(po)} disabled={savingDoc === po._id} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap">{savingDoc === po._id ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Save to documents</button>
               {/* CR-B-14a / CR-PR-01 — Word export. */}
               <button onClick={() => {
@@ -683,7 +684,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
                   + htmlTable(["#", "Description", "Qty", "Unit price", "Total"], rows, [2, 3, 4])
                   + `<p class="right"><strong>Total: ${escapeHtml(fmt(nn(po.total)))}</strong></p>`
                   + (po.terms ? `<h2>Terms &amp; Conditions</h2><p>${escapeHtml(po.terms)}</p>` : "");
-                downloadHtmlAsWord(`PO ${po.poNo}`, body, `PO_${po.poNo}`);
+                downloadHtmlAsWord(`PO ${po.poNo}`, body, `Purchase Order ${po.poNo}`);
               }} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors whitespace-nowrap"><FileText size={15} /> Word</button>
             </div>
             <p className="text-[10px] text-slate-400 text-center">Bundles the PO details, vendor quote, invoice &amp; other files — with the Terms &amp; Conditions added last.</p>
@@ -710,7 +711,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <td className="px-3 py-2 align-top">
                 <div className="flex items-center justify-end gap-1.5">
                   {canEdit && <button onClick={() => setManageId(po._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — status, terms, invoice, documents"><Settings2 size={12} /> Manage</button>}
-                  <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: `PO_${po.poNo}.pdf`, build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview PO document"><Eye size={14} /></button>
+                  <button onClick={() => setPreview({ title: `Purchase Order ${po.poNo}`, fileName: docFileName([`Purchase Order ${po.poNo}`], "pdf"), build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview PO document"><Eye size={14} /></button>
                   <button onClick={() => downloadPdf(po)} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="PO PDF"><Download size={14} /></button>
                   {canEdit && <button onClick={() => archivePO(po._id, !po.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500 hover:bg-white" title={po.archived ? "Restore" : "Archive"}>{po.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                   {canEdit && <button onClick={() => removePO(po._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete"><Trash2 size={13} /></button>}

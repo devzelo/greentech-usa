@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import {
   FileArchive, Layers, MessageSquare, Plus, Settings2, Trash2, X, Loader2, Upload, FileText, Eye, Download,
   Folder, FolderPlus, ChevronRight, ChevronDown, Archive, RotateCcw,
@@ -156,7 +157,7 @@ export default function CloseoutDocsTab({ projectId, canEdit, projectName }: { p
       {preview && (
         <PdfPreviewModal
           title="Closeout Package (combined)"
-          fileName={`Closeout_Package_${projectName || projectId}.pdf`}
+          fileName={docFileName([projectName || projectId, "Closeout Package"], "pdf")}
           build={async () => {
             const fresh = await fetchTableRows(projectId, TABLE_KEY);
             const { blob, skipped, included } = await buildCloseoutPackage(fresh.filter((r) => r.data?.archived !== "1"), projectName);

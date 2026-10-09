@@ -135,11 +135,13 @@ export default function PdfPreviewModal({ title, fileName, build, onClose, fitOp
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={16} /></button>
           </div>
         </div>
+        {/* 2026-10-09 - the browser's own toolbar is hidden: its download names the file after the
+            preview's temporary link (a long number). Download and Print above give the real name. */}
         <div className="flex-grow bg-slate-100">
           {error ? (
             <div className="h-full flex items-center justify-center text-sm text-red-500 px-6 text-center">{error}</div>
           ) : url ? (
-            <iframe title={title} src={url} className="w-full h-full border-0" />
+            <iframe title={title} src={`${url}#toolbar=0&navpanes=0`} className="w-full h-full border-0" />
           ) : (
             <div className="h-full flex items-center justify-center text-slate-300"><Loader2 size={24} className="animate-spin" /></div>
           )}

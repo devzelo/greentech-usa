@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock, Settings2 } from "lucide-react";
@@ -274,7 +275,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
   };
   // CR 212 - "Change Order Proposal", not just "COP"; a custom request uses the name it was given.
   const fullType = (r: ApiProjectRequest) => (r.type === "Custom Request" && r.customTitle ? r.customTitle : r.type);
-  const openPreview = (r: ApiProjectRequest) => setPreview({ title: `${r.number} · ${fullType(r)}${r.title ? ` · ${r.title}` : ""}`, fileName: `${r.number}.pdf`, build: () => buildRequestPdf(r, projectInfo, clientName) });
+  const openPreview = (r: ApiProjectRequest) => setPreview({ title: `${r.number} · ${fullType(r)}${r.title ? ` · ${r.title}` : ""}`, fileName: docFileName([r.number, fullType(r), r.title], "pdf"), build: () => buildRequestPdf(r, projectInfo, clientName) });
   // CR 210 - see the document before it is saved, exactly as it will print.
   const previewDraft = () => {
     const code = draft.type.match(/\(([^)]+)\)/)?.[1] || "REQ";
@@ -285,7 +286,7 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
       stampUrl: draft.stampUrl, contextLines: draft.contextLines, sections: draft.sections.map(({ title, body }) => ({ title, body })), to: draftTo, attachmentCovers: !!draft.covers,
       responses: [], files: [], archived: false, addedByName: "", createdAt: "", updatedAt: "",
     } as unknown as ApiProjectRequest;
-    setPreview({ title: `Preview · ${draft.title || draft.type}`, fileName: `${code}-draft.pdf`, build: () => buildRequestPdf(asRequest, projectInfo, clientName) });
+    setPreview({ title: `Preview · ${draft.title || draft.type}`, fileName: docFileName([code, draft.title || draft.type, "Draft"], "pdf"), build: () => buildRequestPdf(asRequest, projectInfo, clientName) });
   };
   const download = async (r: ApiProjectRequest) => { try { downloadBlob(await buildRequestPdf(r, projectInfo, clientName), `${r.number}.pdf`); } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); } };
 

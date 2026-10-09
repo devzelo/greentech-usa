@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Eye, FolderUp, History, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, Search, Send, Settings2, Trash2, Upload, X, XCircle } from "lucide-react";
 import { fetchWorkPackages, fetchExpenseCategories, fetchProcurementPOs, fetchExpenseReviewers, type ExpenseReviewer,
   addExpense, updateExpense, deleteExpense, uploadExpenseAttachment, deleteExpenseAttachment, addExpenseComment,
@@ -811,7 +812,7 @@ function ExpenseEditor({ projectId, expense, historic, canEdit, canApprove, isSt
       </div>
       {viewFile && <DocumentViewer doc={viewFile} onClose={() => setViewFile(null)} />}
       {preview && expense && (
-        <PdfPreviewModal title={`Expense ${expense.expenseNo || ""}`.trim()} fileName={`${expense.expenseNo || "Expense"}.pdf`} build={() => buildExpensePdf(expense, { categoryName: showCat ? (code: string) => cats.find((c) => c.code === code)?.name || "" : undefined, workPackage: packages.find((p) => p._id === expense.workPackageId)?.name })} onClose={() => setPreview(false)} />
+        <PdfPreviewModal title={`Expense ${expense.expenseNo || ""}`.trim()} fileName={docFileName([`Expense ${expense.expenseNo || ""}`], "pdf")} build={() => buildExpensePdf(expense, { categoryName: showCat ? (code: string) => cats.find((c) => c.code === code)?.name || "" : undefined, workPackage: packages.find((p) => p._id === expense.workPackageId)?.name })} onClose={() => setPreview(false)} />
       )}
     </div>
   );

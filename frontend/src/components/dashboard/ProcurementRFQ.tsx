@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import { Loader2, Plus, Trash2, ChevronRight, ChevronDown, Download, Award, Building2, Eye, AlertCircle, Search, Settings2, X, Send, Upload, FileText, CheckCircle2, Truck, Check, Paperclip, Archive, RotateCcw, DollarSign } from "lucide-react";
 import {
   fetchVendors, addVendor, updateVendor, deleteVendor, fetchRfqs, createRfq, updateRfq, deleteRfq, setRfqArchived, sendRfq,
@@ -329,7 +330,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
         if (!v) { missed.push(c.name); continue; }
         try {
           const blob = await buildRfqWithSubmittals(saved, v);
-          await emailRfqToVendor(projectId, saved._id, v._id, blob, `RFQ_${saved.rfqNo}_${v.name.replace(/\s+/g, "_")}.pdf`);
+          await emailRfqToVendor(projectId, saved._id, v._id, blob, docFileName([`RFQ ${saved.rfqNo}`, v.name], "pdf"));
           sent++;
         } catch (e) { if (/not set up/i.test(e instanceof Error ? e.message : "")) setupMissing = true; missed.push(c.name); if (setupMissing) break; }
       }
@@ -489,7 +490,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const autoSaveRfqDoc = async (rfq: ApiRfq) => {
     try {
       const blob = await buildRfqWithSubmittals(rfq);
-      await uploadDocument(projectId, new File([blob], `RFQ_${rfq.rfqNo}.pdf`, { type: "application/pdf" }), docSection, true, docFolder);
+      await uploadDocument(projectId, new File([blob], docFileName([`RFQ ${rfq.rfqNo}`], "pdf"), { type: "application/pdf" }), docSection, true, docFolder);
     } catch { /* best-effort */ }
   };
   // Save the RFQ PDF into the organized project documents (Procurement → RFQs). When a vendor is
@@ -498,8 +499,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     setSavingDoc(vendor ? `${rfq._id}:${vendor._id}` : rfq._id);
     try {
       const blob = await buildRfqWithSubmittals(rfq, vendor);
-      const suffix = vendor ? `_${vendor.name.replace(/\s+/g, "_")}` : "";
-      const file = new File([blob], `RFQ_${rfq.rfqNo}${suffix}.pdf`, { type: "application/pdf" });
+      const file = new File([blob], docFileName([`RFQ ${rfq.rfqNo}`, vendor?.name], "pdf"), { type: "application/pdf" });
       await uploadDocument(projectId, file, docSection, !vendor, docFolder);
       toast(vendor ? `Saved ${vendor.name}'s RFQ to documents.` : ownerPackage ? "Saved to the package's documents (Project Management)." : "Saved to project documents (Procurement → RFQs).", "success");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not save.", "error"); }
@@ -512,7 +512,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     setMailing(`${rfq._id}:${vendor._id}`);
     try {
       const blob = await buildRfqWithSubmittals(rfq, vendor);
-      const r = await emailRfqToVendor(projectId, rfq._id, vendor._id, blob, `RFQ_${rfq.rfqNo}_${vendor.name.replace(/\s+/g, "_")}.pdf`);
+      const r = await emailRfqToVendor(projectId, rfq._id, vendor._id, blob, docFileName([`RFQ ${rfq.rfqNo}`, vendor.name], "pdf"));
       setRfqs((p) => p.map((x) => (x._id === rfq._id ? { ...x, emails: r.emails } : x)));
       toast(`Emailed to ${r.to}.`, "success");
     } catch (e) {
@@ -577,7 +577,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
           // Auto-save the PO document into the project documents (whether or not it's saved manually later).
           try {
             const { blob } = await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo);
-            await uploadDocument(projectId, new File([blob], `PO_${po.poNo}.pdf`, { type: "application/pdf" }), ownerPackage ? "pm-work-packages" : "procurement-po", true, docFolder);
+            await uploadDocument(projectId, new File([blob], docFileName([`Purchase Order ${po.poNo}`], "pdf"), { type: "application/pdf" }), ownerPackage ? "pm-work-packages" : "procurement-po", true, docFolder);
           } catch { /* best-effort */ }
           toast(`Purchase order created. Opening ${ownerPackage ? "the package's" : ""} Purchase Orders.`.replace("  ", " "), "success");
           onGoToPO?.(po._id);
@@ -615,7 +615,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
     catch (err) { toast(err instanceof Error ? err.message : "Delete failed.", "error"); }
   };
   const downloadRfqPdf = async (rfq: ApiRfq, vendorId?: string) => {
-    try { const blob = await buildRfqWithSubmittals(rfq, vendors.find((v) => v._id === vendorId)); downloadBlob(blob, `RFQ_${rfq.rfqNo}${vendorId ? "_" + vendorName(vendorId).replace(/\s+/g, "_") : ""}.pdf`); }
+    try { const blob = await buildRfqWithSubmittals(rfq, vendors.find((v) => v._id === vendorId)); downloadBlob(blob, docFileName([`RFQ ${rfq.rfqNo}`, vendorId ? vendorName(vendorId) : ""], "pdf")); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not build PDF.", "error"); }
   };
 
@@ -635,9 +635,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
   const [barBusy, setBarBusy] = useState(false);
   const busyRun = async (fn: () => Promise<void>) => { setBarBusy(true); try { await fn(); } catch (e) { toast(e instanceof Error ? e.message : "Could not make the PDF.", "error"); } finally { setBarBusy(false); } };
   usePackageBar(onBar, !inline || form ? undefined : !barRfq ? null : inline === "request" ? {
-    preview: () => setPreview({ title: `RFQ ${barRfq.rfqNo}`, fileName: `RFQ_${barRfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(barRfq) }),
-    download: () => void busyRun(async () => downloadBlob(await buildRfqWithSubmittals(barRfq), `RFQ_${barRfq.rfqNo}.pdf`)),
-    share: { fileName: `RFQ_${barRfq.rfqNo}.pdf`, prepare: async () => shareRfqFile(await buildRfqWithSubmittals(barRfq), `RFQ_${barRfq.rfqNo}.pdf`) },
+    preview: () => setPreview({ title: `RFQ ${barRfq.rfqNo}`, fileName: docFileName([`RFQ ${barRfq.rfqNo}`], "pdf"), build: () => buildRfqWithSubmittals(barRfq) }),
+    download: () => void busyRun(async () => downloadBlob(await buildRfqWithSubmittals(barRfq), docFileName([`RFQ ${barRfq.rfqNo}`], "pdf"))),
+    share: { fileName: docFileName([`RFQ ${barRfq.rfqNo}`], "pdf"), prepare: async () => shareRfqFile(await buildRfqWithSubmittals(barRfq), docFileName([`RFQ ${barRfq.rfqNo}`], "pdf")) },
     busy: barBusy,
     note: `RFQ ${barRfq.rfqNo}${rfqs.length > 1 ? ` (${rfqs.length} RFQs on this package)` : ""}. Edit RFQ changes it; each vendor's copy is below.`,
   } : {
@@ -650,9 +650,9 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
       onChanged?.();
       toast("Quotes saved.", "success");
     }) : undefined,
-    preview: () => setPreview({ title: `Quote comparison · RFQ ${barRfq.rfqNo}`, fileName: `Quotes_${barRfq.rfqNo}.pdf`, build: () => comparisonPdf(barRfq) }),
-    download: () => void busyRun(async () => downloadBlob(await comparisonPdf(barRfq), `Quotes_${barRfq.rfqNo}.pdf`)),
-    share: { fileName: `Quotes_${barRfq.rfqNo}.pdf`, prepare: async () => shareRfqFile(await comparisonPdf(barRfq), `Quotes_${barRfq.rfqNo}.pdf`) },
+    preview: () => setPreview({ title: `Quote comparison · RFQ ${barRfq.rfqNo}`, fileName: docFileName([`Quote Comparison RFQ ${barRfq.rfqNo}`], "pdf"), build: () => comparisonPdf(barRfq) }),
+    download: () => void busyRun(async () => downloadBlob(await comparisonPdf(barRfq), docFileName([`Quote Comparison RFQ ${barRfq.rfqNo}`], "pdf"))),
+    share: { fileName: docFileName([`Quote Comparison RFQ ${barRfq.rfqNo}`], "pdf"), prepare: async () => shareRfqFile(await comparisonPdf(barRfq), docFileName([`Quote Comparison RFQ ${barRfq.rfqNo}`], "pdf")) },
     busy: barBusy,
     note: `Quotes on RFQ ${barRfq.rfqNo}. Prices save as you type.`,
   });
@@ -849,7 +849,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   {/* Actions — the generic (no-vendor) RFQ document. */}
                   <div className="flex flex-wrap items-center gap-2">
                     {sent && <span className="inline-flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold text-emerald-600"><CheckCircle2 size={14} /> Sent to vendors{rfq.sentAt ? ` · ${rfq.sentAt}` : ""}</span>}
-                    <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: `RFQ_${rfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(rfq) })} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Eye size={12} /> Preview (generic)</button>
+                    <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: docFileName([`RFQ ${rfq.rfqNo}`], "pdf"), build: () => buildRfqWithSubmittals(rfq) })} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Eye size={12} /> Preview (generic)</button>
                     <button onClick={() => downloadRfqPdf(rfq)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><Download size={12} /> Generic PDF</button>
                     {/* CR-B-14a / CR-PR-01 — Word export. */}
                     <button onClick={() => {
@@ -859,7 +859,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                         + htmlTable(["#", "Description", "Brand", "Qty", "Unit", "Spec", "Need by"], li.map((l, i) => [String(i + 1), l.description || "", l.manufacturer || "", l.qty || "", l.unit || "", l.spec || "", l.needOnSiteDate || ""]), [3])
                         + (rfq.notes ? `<h2>Notes</h2><p>${escapeHtml(rfq.notes)}</p>` : "")
                         + `<p>Kindly provide your quotation and delivery lead time for the items above.</p>`;
-                      downloadHtmlAsWord(`RFQ ${rfq.rfqNo}`, body, `RFQ_${rfq.rfqNo}`);
+                      downloadHtmlAsWord(`RFQ ${rfq.rfqNo}`, body, `RFQ ${rfq.rfqNo}`);
                     }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50"><FileText size={12} /> Word</button>
                     {canEdit && <button onClick={() => saveRfqToDocuments(rfq)} disabled={savingDoc === rfq._id} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50">{savingDoc === rfq._id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Save to documents</button>}
                   </div>
@@ -877,7 +877,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                           return (
                             <div key={q._id} className="flex flex-wrap items-center gap-2 bg-white rounded-lg border border-slate-100 px-3 py-2">
                               <span className="text-[11px] font-bold text-slate-700 flex-grow">{vendor.name}{vendor.country ? <span className="text-slate-400 font-medium"> · {vendor.country}</span> : null}</span>
-                              <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo} · ${vendor.name}`, fileName: `RFQ_${rfq.rfqNo}_${vendor.name.replace(/\s+/g, "_")}.pdf`, build: () => buildRfqWithSubmittals(rfq, vendor) })} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-100"><Eye size={11} /> Preview</button>
+                              <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo} · ${vendor.name}`, fileName: docFileName([`RFQ ${rfq.rfqNo}`, vendor.name], "pdf"), build: () => buildRfqWithSubmittals(rfq, vendor) })} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-100"><Eye size={11} /> Preview</button>
                               <button onClick={() => downloadRfqPdf(rfq, vendor._id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-100"><Download size={11} /> Download</button>
                               {canEdit && <button onClick={() => saveRfqToDocuments(rfq, vendor)} disabled={savingDoc === busyKey} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-primary hover:bg-primary/5 disabled:opacity-50">{savingDoc === busyKey ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />} Save</button>}
                               {/* CR 338 - email this vendor its copy (again). */}
@@ -1016,7 +1016,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
                   heading={`Saved RFQ ${rfq.rfqNo} Versions`}
                   subtitle="Freeze a PDF copy of this RFQ. Preview, print, or download any revision anytime."
                   canEdit={canEdit}
-                  formats={[{ label: "PDF", ext: "pdf", baseName: `RFQ_${rfq.rfqNo}`, build: () => buildRfqWithSubmittals(rfq) }]}
+                  formats={[{ label: "PDF", ext: "pdf", baseName: `RFQ ${rfq.rfqNo}`, build: () => buildRfqWithSubmittals(rfq) }]}
                   fetchList={() => fetchSavedDocuments(projectId, "rfq", rfq._id)}
                   saveVersion={(file, fileName, meta) => saveDocumentVersion(projectId, { kind: "rfq", refId: rfq._id, title: meta.title, status: meta.status }, file, fileName)}
                   update={(docId, body) => updateSavedDocument(projectId, docId, body)}
@@ -1096,7 +1096,7 @@ export default function ProcurementRFQ({ projectId, canEdit, projectInfo, onGoTo
               <td className="px-3 py-2 align-top">
                 <div className="flex items-center justify-end gap-1.5">
                   {canEdit && <button onClick={() => setManageId(rfq._id)} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-primary hover:text-white" title="Manage — quotes, prices, award, shipping"><Settings2 size={12} /> Manage</button>}
-                  <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: `RFQ_${rfq.rfqNo}.pdf`, build: () => buildRfqWithSubmittals(rfq) })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview"><Eye size={14} /></button>
+                  <button onClick={() => setPreview({ title: `RFQ ${rfq.rfqNo}`, fileName: docFileName([`RFQ ${rfq.rfqNo}`], "pdf"), build: () => buildRfqWithSubmittals(rfq) })} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="Preview"><Eye size={14} /></button>
                   <button onClick={() => downloadRfqPdf(rfq)} className="p-1.5 rounded text-slate-400 hover:text-primary hover:bg-white" title="RFQ PDF"><Download size={14} /></button>
                   {canEdit && <button onClick={() => archiveRfq(rfq._id, !rfq.archived)} className="p-1.5 rounded text-slate-300 hover:text-amber-500 hover:bg-white" title={rfq.archived ? "Restore" : "Archive"}>{rfq.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>}
                   {canEdit && <button onClick={() => removeRfq(rfq._id)} className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-white" title="Delete"><Trash2 size={13} /></button>}

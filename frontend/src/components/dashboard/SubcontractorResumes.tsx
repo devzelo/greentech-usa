@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import PhoneInput from "./PhoneInput";
 import { FileText, Plus, Trash2, Save, Loader2, Download, X, Pencil, Library, Search, ArrowUp, ArrowDown, Eye } from "lucide-react";
 import { PDFDownloadLink } from "@react-pdf/renderer";
@@ -176,7 +177,7 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
               </div>
               <PDFDownloadLink
                 document={<ResumePDF resume={r} person={{ name: r.personName, email: r.contact?.email, phone: r.contact?.phone, avatarUrl: r.photoUrl }} logoUrl={`${window.location.origin}/gt-usa-logo-new.png`} />}
-                fileName={`${(r.personName || "resume").replace(/\s+/g, "_")}_Resume.pdf`}
+                fileName={docFileName([r.personName, "Resume"], "pdf")}
                 className="p-1.5 rounded text-slate-400 hover:text-primary"
                 title="Download PDF"
               >

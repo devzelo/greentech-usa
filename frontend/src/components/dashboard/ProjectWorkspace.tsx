@@ -103,7 +103,7 @@ import ClientPicker from "./ClientPicker";
 import DocTabs from "./DocTabs";
 import ExpenseLog from "./ExpenseLog";
 import ProcurementInvoices from "./ProcurementInvoices";
-import { effectiveEndDate, phasePercent, UNCATEGORISED } from "../../lib/projectSchedule";
+import { effectiveEndDate, fmtDay, phasePercent, UNCATEGORISED } from "../../lib/projectSchedule";
 import { useRefreshSignal } from "../../lib/refreshBus";
 import { fetchSavedDocuments, fetchNextSavedVersion, saveDocumentVersion, updateSavedDocument, deleteSavedDocument, logSavedDocumentSend, attachmentUrl as savedDocUrl, type ApiSavedDocument, type SavedDocStatus } from "../../lib/api";
 import { assembleProposalParts, downloadBlob, type PageCtx } from "../../lib/proposalExport";
@@ -8691,7 +8691,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       {showReport && project && (
         <PdfPreviewModal
           title={`Quick Report · ${project.name || "Project"}`}
-          fileName={fileName([project.name, "Report"], "pdf")}
+          fileName={fileName([project.name, "Project Report", fmtDay(new Date())], "pdf")}
           build={async () => { const flag = await flagPng(projectFlag(project)); return pdf(<ProjectReportPDF project={project} logoUrl={`${window.location.origin}/gt-logo-horizontal.png`} financials={reportFinancials} include={reportInclude as Partial<Record<ReportSection, boolean>>} client={reportClient} vendors={reportVendors} photos={reportPhotos} gallery={reportGallery.items} galleryTotal={reportGallery.total} packages={reportPackages} team={(project.assignedEmployees || []).map((e) => employeePool.find((x) => x.empId === e)?.name || e)} flag={flag || undefined} />).toBlob(); }}
           onClose={() => setShowReport(false)}
         />

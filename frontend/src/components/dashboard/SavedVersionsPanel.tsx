@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import { Plus, Eye, Printer, Download, Trash2, Lock, CheckCircle2, Clock, History } from "lucide-react";
 import { attachmentUrl, type ApiSavedDocument } from "../../lib/api";
 import { useDialogs } from "../../lib/useDialogs";
@@ -93,8 +94,8 @@ export default function SavedVersionsPanel(props: SavedVersionsPanelProps) {
     setBusy(true);
     try {
       const blob = await fmt.build();
-      const safe = fmt.baseName.replace(/[^a-z0-9._-]+/gi, "_");
-      const doc = await saveVersion(blob, `${safe}.${fmt.ext}`, { title: title.trim() || undefined, status: finalOnly || isFinal ? "final" : "draft" });
+      // 2026-10-09 - filed under its real name ("Purchase Order GT-001.pdf"), not a slug.
+      const doc = await saveVersion(blob, docFileName([fmt.baseName], fmt.ext), { title: title.trim() || undefined, status: finalOnly || isFinal ? "final" : "draft" });
       setList((p) => [doc, ...p]);
       setTitle(""); setIsFinal(false); setOpen(false);
       refreshNext();

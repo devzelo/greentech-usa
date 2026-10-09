@@ -286,7 +286,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
     if (!po) { toast("That purchase order isn't available to you.", "error"); return; }
     setPoPreview({
       title: `Purchase Order ${po.poNo}${po.vendorName ? ` · ${po.vendorName}` : ""}`,
-      fileName: `PO_${po.poNo}.pdf`,
+      fileName: fileName([`Purchase Order ${po.poNo}`], "pdf"),
       build: async () => (await buildPoPackage(po, vendors.find((v) => v._id === po.vendorId), projectInfo)).blob,
     });
   };

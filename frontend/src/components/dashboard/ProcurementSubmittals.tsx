@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import DirectoryNameField from "./DirectoryNameField";
 import { Loader2, Plus, Trash2, FileText, Upload, X, FilePlus2, Copy, Download, ChevronRight, ChevronDown, Check, Lock, Search, Eye, AlertTriangle, Settings2, FileCheck2, FolderOpen, Monitor, Archive, RotateCcw, MessageSquare, Pencil } from "lucide-react";
 import FileActions from "./FileActions";
@@ -231,7 +232,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
   const autoSaveSubmittalDoc = async (sub: ApiSubmittal, rev: ApiSubmittalRevision) => {
     try {
       const { blob } = await buildSubmittalPackage(sub, rev);
-      const name = `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`;
+      const name = docFileName([sub.title || sub.productName || "Submittal", `Rev ${rev.revisionNo}`], "pdf");
       await uploadDocument(projectId, new File([blob], name, { type: "application/pdf" }), "procurement-submittals", true);
     } catch { /* best-effort */ }
   };
@@ -259,7 +260,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
     setBuilding(rev._id);
     try {
       const { blob, skipped } = await buildSubmittalPackage(sub, rev);
-      downloadBlob(blob, `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`);
+      downloadBlob(blob, docFileName([sub.title || sub.productName || "Submittal", `Rev ${rev.revisionNo}`], "pdf"));
       if (skipped.length) toast(`Couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info");
     } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); }
     finally { setBuilding(null); }
@@ -356,7 +357,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.cls}`} title="Client decision">{d.label}</span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => setPreview({ title: `${sub.title || sub.productName || "Submittal"} — Rev ${rev.revisionNo}`, fileName: `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`, build: async () => { const { blob, skipped } = await buildSubmittalPackage(sub, rev); if (skipped.length) toast(`Couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info"); return blob; } })} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-white"><Eye size={12} /> Preview</button>
+                <button onClick={() => setPreview({ title: `${sub.title || sub.productName || "Submittal"} — Rev ${rev.revisionNo}`, fileName: docFileName([sub.title || sub.productName || "Submittal", `Rev ${rev.revisionNo}`], "pdf"), build: async () => { const { blob, skipped } = await buildSubmittalPackage(sub, rev); if (skipped.length) toast(`Couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info"); return blob; } })} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-white"><Eye size={12} /> Preview</button>
                 <button onClick={() => buildPackage(sub, rev)} disabled={building === rev._id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-primary disabled:opacity-50">
                   {building === rev._id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Combined PDF
                 </button>
@@ -601,7 +602,7 @@ export default function ProcurementSubmittals({ projectId, canEdit, projectName,
                 {rev.optionLabel && <span className="text-[11px] font-bold text-slate-500">· {rev.optionLabel}</span>}
                 {rev.isCurrent && <span className="text-[9px] font-bold text-primary uppercase tracking-widest">Current</span>}
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${d.cls}`}>{d.label}</span>
-                <button onClick={() => setPreview({ title: `${sub.title || sub.productName || "Submittal"} — Rev ${rev.revisionNo}`, fileName: `${(sub.title || sub.productName || "submittal").replace(/\s+/g, "_")}_Rev${rev.revisionNo}.pdf`, build: async () => { const { blob, skipped } = await buildSubmittalPackage(sub, rev); if (skipped.length) toast(`Couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info"); return blob; } })} className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 text-slate-500 text-[10px] font-bold hover:bg-white"><Eye size={11} /> Preview PDF</button>
+                <button onClick={() => setPreview({ title: `${sub.title || sub.productName || "Submittal"} — Rev ${rev.revisionNo}`, fileName: docFileName([sub.title || sub.productName || "Submittal", `Rev ${rev.revisionNo}`], "pdf"), build: async () => { const { blob, skipped } = await buildSubmittalPackage(sub, rev); if (skipped.length) toast(`Couldn't embed (not PDF/image): ${skipped.join(", ")}`, "info"); return blob; } })} className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 text-slate-500 text-[10px] font-bold hover:bg-white"><Eye size={11} /> Preview PDF</button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[11px]">
                 <div><span className="text-slate-400">Sent:</span> <span className="font-bold text-slate-600">{rev.sentToClientAt || "—"}</span></div>

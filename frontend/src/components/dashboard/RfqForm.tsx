@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import { ArrowDown, ArrowUp, BookOpen, BookmarkPlus, Building2, Check, Copy, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from "lucide-react";
 import {
   withFileToken, RFQ_REQUESTS, fetchLibraryItems, saveLibraryItems, deleteLibraryItem, markLibraryItemsUsed,
@@ -234,7 +235,7 @@ export default function RfqForm({ projectId, projectName, projectSite, rfq, comp
 
   // 2026-10-07 - in a work package: Cancel, Save as Draft (saved, the form stays open), Save (saved
   // and closed), Preview, Download and Share, on the package's bar.
-  const pdfName = `RFQ_${rfq?.rfqNo || "draft"}.pdf`;
+  const pdfName = docFileName([`RFQ ${rfq?.rfqNo || "Draft"}`], "pdf");
   const draftPdf = async () => {
     setBusy("preview");
     try { return await buildPreview(draftRfq()); } finally { setBusy(""); }

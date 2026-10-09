@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { fileName as docFileName } from "../../lib/fileNames";
 import DirectoryNameField from "./DirectoryNameField";
 import {
   Plus, Loader2, Trash2, Archive, ArchiveRestore, CheckCircle2, ArrowLeft, Calendar, MapPin, Users, ListChecks, Save, AtSign, Eye, FolderOpen, RotateCcw, Pencil,
@@ -178,7 +179,7 @@ export default function MinutesPanel({ projectId, section, projectName, projectN
     } catch (e) { toast(e instanceof Error ? e.message : "Could not start a revision.", "error"); }
   };
 
-  const pdfName = (m: ApiMinute) => `${(m.title || NOUN).replace(/[^a-z0-9._-]+/gi, "_")}.pdf`;
+  const pdfName = (m: ApiMinute) => docFileName([m.title || NOUN], "pdf");
   // CR 250 - the printed look before saving, before marking final and before printing.
   const [preview, setPreview] = useState<{ m: ApiMinute; final?: boolean } | null>(null);
   const previewModal = preview && (

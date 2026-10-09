@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
+import { fileName as docFileName } from "../../../lib/fileNames";
 import SignaturePicker, { signerFields } from "../SignaturePicker";
 import PhoneInput from "../PhoneInput";
 import { formatPhone } from "../../../lib/phone";
@@ -924,10 +925,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       if (ag.signedDocument?.filePath) { window.open(attachmentUrl(ag.signedDocument.filePath), "_blank"); return; }
       if (ag.documentMode === "uploaded") {
         // CR-P (69) — every uploaded agreement gets our cover page (parties, dates) merged in front.
-        downloadBlob(await uploadedMergedBlob(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
+        downloadBlob(await uploadedMergedBlob(ag), docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf"));
         return;
       }
-      downloadBlob(await buildAgreementPdf(ag), `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
+      downloadBlob(await buildAgreementPdf(ag), docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf"));
     } catch (err) { toast(err instanceof Error ? err.message : "Could not build the PDF.", "error"); }
   };
   // CR-P (56) — a built agreement has no stored file until it is signed, so the share menu had
@@ -1075,11 +1076,11 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
       <button onClick={() => {
         if (ag.documentMode === "uploaded") {
           // CR-P (69) — every uploaded agreement previews as our cover page + the merged document.
-          setPreview({ title: ag.title || ag.agreementType || "Agreement", fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(ag) });
+          setPreview({ title: ag.title || ag.agreementType || "Agreement", fileName: docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf"), build: () => uploadedMergedBlob(ag) });
           return;
         }
         // CR-P (24) — the preview is titled like the document, not like the file on disk.
-        setPreview({ title: [ag.agreementNo, ag.title || agreementHeading(ag)].filter(Boolean).join(" · "), fileName: `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => buildAgreementPdf(ag) });
+        setPreview({ title: [ag.agreementNo, ag.title || agreementHeading(ag)].filter(Boolean).join(" · "), fileName: docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf"), build: () => buildAgreementPdf(ag) });
       }} className="p-1.5 rounded text-slate-400 hover:text-primary" title="Preview"><Eye size={14} /></button>
       <button onClick={() => download(ag)} className="p-1.5 rounded text-slate-400 hover:text-primary" title={ag.signedDocument ? "Open the signed copy" : "Download PDF"}><Download size={14} /></button>
       <button onClick={() => {
@@ -1110,7 +1111,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
           so drafts had no share at all: "even if it's draft, we should be able to share them." */}
       {canManage && (
         <ShareMenu
-          fileName={`${ag.agreementNo || ag.name || "agreement"}.pdf`}
+          fileName={docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf")}
           fileUrl={storedShareFile(ag) ? attachmentUrl(storedShareFile(ag).replace(/^\/+/, "")) : ""}
           prepareFile={storedShareFile(ag) ? undefined : () => shareCopyUrl(ag)}
           // CR-P (61) — an emailed copy goes in the send log too.
@@ -1138,13 +1139,13 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
   // 2026-10-07 - in a work package, with the editor closed: the agreement's Preview, Download and
   // Share on the package's bar (Save, Save as Draft and Cancel are in the editor, Manage opens it).
   const barAg = ownerPackageId ? list.find((a) => a._id === openId) || list[0] : undefined;
-  const agFile = (ag: ApiAgreement) => `${(ag.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`;
+  const agFile = (ag: ApiAgreement) => docFileName([ag.agreementNo, ag.title || ag.name || "Agreement"], "pdf");
   usePackageBar(onBar, !ownerPackageId ? undefined : editor || !barAg ? null : {
     preview: () => setPreview(barAg.documentMode === "uploaded"
       ? { title: barAg.title || barAg.agreementType || "Agreement", fileName: agFile(barAg), build: () => uploadedMergedBlob(barAg) }
       : { title: [barAg.agreementNo, barAg.title || agreementHeading(barAg)].filter(Boolean).join(" · "), fileName: agFile(barAg), build: () => buildAgreementPdf(barAg) }),
     download: () => void download(barAg),
-    share: canManage ? { fileName: `${barAg.agreementNo || barAg.name || "agreement"}.pdf`, prepare: async () => (storedShareFile(barAg) ? attachmentUrl(storedShareFile(barAg).replace(/^\/+/, "")) : shareCopyUrl(barAg)) } : undefined,
+    share: canManage ? { fileName: docFileName([barAg.agreementNo, barAg.title || barAg.name || "Agreement"], "pdf"), prepare: async () => (storedShareFile(barAg) ? attachmentUrl(storedShareFile(barAg).replace(/^\/+/, "")) : shareCopyUrl(barAg)) } : undefined,
     note: `Agreement ${barAg.agreementNo || barAg.name || ""}: ${barAg.status}. Manage opens it to edit, save, sign and send.`,
   });
 
@@ -2248,7 +2249,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                     const openUploaded = () => {
                       const cur = list.find((a) => a._id === editor?.aid);
                       const previewAg = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody() } as ApiAgreement;
-                      setPreview({ title: draft.title || draft.agreementType || "Agreement", fileName: `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`, build: () => uploadedMergedBlob(previewAg, draft.uploadFile) });
+                      setPreview({ title: draft.title || draft.agreementType || "Agreement", fileName: docFileName([draft.agreementNo, draft.title || draft.name || "Agreement"], "pdf"), build: () => uploadedMergedBlob(previewAg, draft.uploadFile) });
                     };
                     const has = !!draft.uploadFile || !!existing?.filePath;
                     return <button onClick={openUploaded} disabled={!has} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-40"><Eye size={13} /> Preview file</button>;
@@ -2266,7 +2267,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   return (
                     <ShareMenu
                       variant="button"
-                      fileName={`${cur.agreementNo || cur.name || "agreement"}.pdf`}
+                      fileName={docFileName([cur.agreementNo, cur.title || cur.name || "Agreement"], "pdf")}
                       fileUrl={storedShareFile(cur) ? attachmentUrl(storedShareFile(cur).replace(/^\/+/, "")) : ""}
                       prepareFile={storedShareFile(cur) ? undefined : () => shareCopyUrl(cur)}
                       onSent={(e) => { void logAgreementEmail(ctx, cur._id, e.to).then(patch).catch(() => {}); }}
@@ -2286,7 +2287,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                   onExportPdf={async () => {
                     const cur = list.find((a) => a._id === editor.aid);
                     const ag = { ...(cur || {}), ownerContextType: ctx.kind, ...draftBody(), status: (cur?.status || "Draft"), signatures: { company: draft.company, recipient: cur?.signatures?.recipient || { signerName: "", signatureUrl: "", stampUrl: "", signedAt: "", method: "" as const } } } as ApiAgreement;
-                    downloadBlob(await buildAgreementPdf(ag), `${(draft.name || "agreement").replace(/[^\w-]+/g, "_")}.pdf`);
+                    downloadBlob(await buildAgreementPdf(ag), docFileName([draft.agreementNo, draft.title || draft.name || "Agreement"], "pdf"));
                   }}
                   onReset={() => applyTemplate("")}
                   onCancel={() => void closeEditor()}
