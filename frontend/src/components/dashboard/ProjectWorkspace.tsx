@@ -1812,6 +1812,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
   });
   const [identitySaving, setIdentitySaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [identityImagesOpen, setIdentityImagesOpen] = useState(false);   // 2026-10-09 - Project Images folds away
   // CR 336 - a project picture that does not load is treated as no picture (the plain card shows).
   const [coverBroken, setCoverBroken] = useState(false);
   useEffect(() => { setCoverBroken(false); }, [project?.image]);
@@ -1874,6 +1875,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
     // The JV editor writes straight into the shared jvInfo state, so snapshot it — Cancel must
     // discard partner edits (including removed stamps/signatures) just like the other fields.
     jvSnapshot.current = JSON.parse(JSON.stringify(jvInfo)) as JVInfo;
+    setIdentityImagesOpen(false);
     setShowEditIdentity(true);
   };
   const jvSnapshot = useRef<JVInfo | null>(null);
@@ -7558,12 +7560,36 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                 <button onClick={cancelEditIdentity} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button>
               </div>
 
-              {/* 2026-10-09 - the project's pictures: the same gallery as Manage Showcase (lib/projectGallery). */}
-              <div className="mb-6">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project Images</p>
-                <p className="text-[11px] text-slate-400 mb-3">The same gallery as in Manage Showcase. The first picture is the project's cover (its card and this page's header); tick up to two for the Quick Report's cover page.{isOwner ? " Save Identity keeps the changes." : ""}</p>
-                <ProjectGallery projectId={project.id} items={isOwner ? identityForm.gallery : linkedGallery(project)} editing={isOwner} onChange={(fn) => setIdentityForm((f) => ({ ...f, gallery: fn(f.gallery) }))} onBusy={setGalleryUploading} />
-              </div>
+              {/* 2026-10-09 - the project's pictures: the same gallery as Manage Showcase (lib/projectGallery).
+                  It folds away under a one-line summary (closed when the identity opens); folded, the
+                  gallery stays mounted, so an upload in progress or a typed link is kept. */}
+              {(() => {
+                const items = isOwner ? identityForm.gallery : linkedGallery(project);
+                const images = items.filter((g) => g.type === "image");
+                const videos = items.length - images.length;
+                const picks = images.filter((g) => g.report).length;
+                const summary = items.length
+                  ? [`${images.length} ${images.length === 1 ? "picture" : "pictures"}`, videos ? `${videos} ${videos === 1 ? "video" : "videos"}` : "", picks ? `${picks} on the report cover` : ""].filter(Boolean).join(" · ")
+                  : "No pictures yet";
+                return (
+                  <div className="mb-6 rounded-2xl border border-slate-100">
+                    <button type="button" onClick={() => setIdentityImagesOpen((o) => !o)} aria-expanded={identityImagesOpen} className="flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-slate-50">
+                      <span className="flex h-10 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-300">
+                        {images[0] ? <img src={assetSrc(images[0].url)} alt="" className="h-full w-full object-cover" /> : <FileImage size={18} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">Project Images</span>
+                        <span className="block truncate text-xs font-semibold text-slate-600">{summary}{galleryUploading ? " · uploading…" : ""}</span>
+                      </span>
+                      <ChevronDown size={16} className={`flex-shrink-0 text-slate-400 transition-transform ${identityImagesOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    <div className={identityImagesOpen ? "px-3 pb-3" : "hidden"}>
+                      <p className="text-[11px] text-slate-400 mb-3">The same gallery as in Manage Showcase. The first picture is the project's cover (its card and this page's header); tick up to two for the Quick Report's cover page.{isOwner ? " Save Identity keeps the changes." : ""}</p>
+                      <ProjectGallery projectId={project.id} items={items} editing={isOwner} onChange={(fn) => setIdentityForm((f) => ({ ...f, gallery: fn(f.gallery) }))} onBusy={setGalleryUploading} />
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="space-y-2 md:col-span-2">
