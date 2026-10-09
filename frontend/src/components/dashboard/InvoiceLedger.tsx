@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { createPortal } from "react-dom";
 import MoneyInput from "./MoneyInput";
 import { Loader2, Plus, Trash2, X, FileText, Upload, DollarSign, Link2, Wallet, Eye, Download, Send, Settings2, CheckCircle2 } from "lucide-react";
@@ -919,9 +920,8 @@ export default function InvoiceLedger({ projectId, kind, canEdit, projectInfo, o
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signatory
-                    <select className={`${finp} mt-1`} value={signatories.find((s) => s.name === bDraft.signerName && s.signatureUrl === bDraft.signatureUrl)?.id || ""} onChange={(e) => { const s = signatories.find((x) => x.id === e.target.value); if (s) setB({ signerName: s.name, signerTitle: s.title || "", signatureUrl: s.signatureUrl || "" }); }}>
-                      <option value="">Choose…</option>{signatories.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select></label>
+                    <div className="mt-1 normal-case tracking-normal"><SignaturePicker value={{ name: bDraft.signerName, title: bDraft.signerTitle, signatureUrl: bDraft.signatureUrl }} placeholder="Choose…" ariaLabel="Signatory"
+                      onPick={(p) => { const f = signerFields(p, bDraft); setB({ signerName: f.signerName, signerTitle: f.signerTitle, signatureUrl: f.signatureUrl }); }} /></div></label>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signer name<input className={`${finp} mt-1`} value={bDraft.signerName} onChange={(e) => setB({ signerName: e.target.value })} /></label>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Signer title<input className={`${finp} mt-1`} value={bDraft.signerTitle} onChange={(e) => setB({ signerTitle: e.target.value })} /></label>
                 </div>

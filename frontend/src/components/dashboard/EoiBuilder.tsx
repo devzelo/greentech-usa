@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
+import SignaturePicker from "./SignaturePicker";
 import PhoneInput from "./PhoneInput";
 import { formatPhone } from "../../lib/phone";
 import { fileName } from "../../lib/fileNames";
 import { pdf } from "@react-pdf/renderer";
 import PdfFrame from "./PdfFrame";
 import { Eye, Download, RotateCcw, Plus, Trash2, X, Loader2, FileText, ChevronDown, ChevronRight, Check, PenLine, Pencil, Undo2 } from "lucide-react";
-import { fetchSigners, withFileToken, type ApiProject, type ApiSigner, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
+import { withFileToken, type ApiProject, type EoiBodyKey, type EoiContent, type ProposalCover } from "../../lib/api";
 import StampPicker, { stampSrc } from "./StampPicker";
 import { pdfLogo } from "../../lib/logoImage";
 import { eoiDefaults, resolveEoi, eoiStandardText, EOI_BODY_PARTS, EOI_STANDARD_BULLETS, EOI_PROJECT_TYPES } from "../../lib/eoi";
@@ -58,7 +59,6 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   /** 2026-10-06 - Save: the proposal is saved and the EOI goes back to its read view. */
   onSave?: () => Promise<unknown> | void;
 }) {
-  const [signers, setSigners] = useState<ApiSigner[]>([]);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<Record<PartKey, boolean>>({ letter: true, body: false, experience: false, company: false, signature: true });
@@ -71,9 +71,6 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const cancelEdit = () => { if (before) onChange(before); setEditing(false); };
   const save = async () => { setSaving(true); try { await onSave?.(); setEditing(false); } finally { setSaving(false); } };
   const edit = canEdit && editing;
-  useEffect(() => {
-    fetchSigners().then(setSigners).catch(() => {});
-  }, []);
 
   const set = <K extends keyof EoiContent>(k: K, v: EoiContent[K]) => onChange({ ...value, [k]: v, updatedAt: new Date().toISOString() });
   const d = eoiDefaults(project, cover, value.firm, value.signatory);
@@ -95,16 +92,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const chosenStamps = value.stampUrls ?? (value.stampUrl ? [value.stampUrl] : []);
   const pickStamp = (url: string) => onChange({ ...value, stampUrls: url ? [url] : [], stampUrl: url, updatedAt: new Date().toISOString() });
 
-  // CR 361 - who signs: any GreenTech user; then which of their signatures (each with its block).
-  const signer = signers.find((x) => x.id === value.signatory?.userId) || signers.find((x) => x.name === value.signatory?.name);
-  const pickSignature = (u: ApiSigner, sigId?: string) => {
-    const sg = u.signatures.find((x) => x.id === sigId) || u.signatures.find((x) => x.isDefault) || u.signatures[0];
-    set("signatory", {
-      userId: u.id, signatureId: sg?.id || "",
-      name: sg?.name || u.name, title: sg?.title || u.jobTitle || "", signatureUrl: sg?.url || "",
-      email: sg?.email || u.email || "", phone: sg?.phone || u.phone || "", website: sg?.website || "", address: sg?.address || "",
-    });
-  };
+  // CR 361 - who signs: any GreenTech user, and which of their signatures (SignaturePicker, below).
   const setSig = (patch: Partial<NonNullable<EoiContent["signatory"]>>) => value.signatory && set("signatory", { ...value.signatory, ...patch });
 
   // CR 359 - a paragraph changed for this EOI; back to the standard text when it matches again.
@@ -281,32 +269,20 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label htmlFor="eoi-signer" className={lbl}>Signed by</label>
-              <select id="eoi-signer" value={signer?.id || ""} onChange={(e) => { const u = signers.find((x) => x.id === e.target.value); if (u) pickSignature(u); else set("signatory", undefined); }} disabled={!canEdit} className={inp}>
-                <option value="">{value.signatory && !signer ? value.signatory.name : "Choose who signs..."}</option>
-                {signers.map((u) => <option key={u.id} value={u.id}>{u.name}{u.jobTitle ? ` · ${u.jobTitle}` : ""}{u.signatures.length ? "" : " (no signature yet)"}</option>)}
-              </select>
-              <p className="text-[10px] text-slate-400">Anyone at GreenTech. Signatures and their blocks are kept in each person's Profile, Signatures.</p>
+              <span className={lbl}>Signed by</span>
+              {/* 2026-10-09 - anyone at GreenTech or a partner, with the profile signature (each of a
+                  person's signatures is listed); the Signatures folder, the Directory, or an upload. */}
+              <SignaturePicker disabled={!canEdit} ariaLabel="Signed by"
+                value={value.signatory ? { name: value.signatory.name, title: value.signatory.title, signatureUrl: value.signatory.signatureUrl } : undefined}
+                onPick={(p) => {
+                  if (!p) { set("signatory", undefined); return; }
+                  const cur = value.signatory;
+                  set("signatory", p.name === undefined && cur
+                    ? { ...cur, signatureUrl: p.signatureUrl, signatureId: "" }
+                    : { userId: p.userId || "", signatureId: p.signatureId || "", name: p.name || "", title: p.title || "", signatureUrl: p.signatureUrl, email: p.email || "", phone: p.phone || "", website: p.website || "", address: p.address || "" });
+                }} />
+              <p className="text-[10px] text-slate-400">Signatures and their blocks are kept in each person's Profile, Signatures.</p>
             </div>
-            {/* "if he has three signatures I can choose which one" */}
-            {signer && signer.signatures.length > 0 && (
-              <div className="space-y-1.5">
-                <span className={lbl}>Signature</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {signer.signatures.map((sg) => {
-                    const on = value.signatory?.signatureId === sg.id || (!value.signatory?.signatureId && value.signatory?.signatureUrl === sg.url);
-                    return (
-                      <button key={sg.id} type="button" disabled={!canEdit} onClick={() => pickSignature(signer, sg.id)} className={`flex items-center gap-2 rounded-xl border bg-white p-2 text-left ${on ? "border-primary ring-2 ring-primary/20" : "border-slate-100 hover:border-slate-300"}`}>
-                        <span className="flex h-10 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50"><img src={withFileToken(sg.url)} alt="" className="max-h-9 max-w-full object-contain" /></span>
-                        <span className="min-w-0"><span className="block truncate text-[11px] font-bold text-slate-800">{sg.name || sg.label || signer.name}</span><span className="block truncate text-[10px] text-slate-500">{sg.title || "No title"}</span></span>
-                        {on && <Check size={13} className="ml-auto shrink-0 text-primary" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {signer && signer.signatures.length === 0 && <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">{signer.name} has no signature yet: it is added in their Profile, Signatures. The letter prints their name without one.</p>}
           </div>
           <div className="space-y-3">
             {value.signatory ? (

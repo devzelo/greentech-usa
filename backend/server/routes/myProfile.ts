@@ -240,10 +240,27 @@ router.get("/signers", async (req: AuthedRequest, res: Response, next: NextFunct
     if (!me || me.archived || !["admin", "employee"].includes(me.role || "")) return res.status(403).json({ error: "Not available." });
     const users = await User.find({ role: { $in: ["admin", "employee"] }, archived: { $ne: true } })
       .select("name jobTitle phone email signatureUrl signatures").sort({ name: 1 }).lean();
-    res.json(users.map((u) => {
+    // 2026-10-09 - "the signature dropdown shows all the GT users and GT partner users": the logins
+    // of our partners (a Directory company with the Partner category, or a project's JV partner).
+    const [partnerCos, jvIds] = await Promise.all([
+      Company.find({ $or: [{ category: "partner" }, { categories: "partner" }], archived: { $ne: true } }).select("name").lean(),
+      Project.distinct("jointVenture.companyId", { "jointVenture.enabled": true }),
+    ]);
+    const jvCos = await Company.find({ _id: { $in: (jvIds as unknown[]).map(String).filter((x) => /^[a-f\d]{24}$/i.test(x)) } }).select("name").lean();
+    const coName = new Map([...partnerCos, ...jvCos].map((c) => [String(c._id), c.name || ""]));
+    const partners = coName.size
+      ? await User.find({ role: "subcontractor", archived: { $ne: true }, companyId: { $in: [...coName.keys()] } })
+        .select("name jobTitle phone email signatureUrl signatures companyId").sort({ name: 1 }).lean()
+      : [];
+    const shape = (u: (typeof users)[number] & { companyId?: unknown }, group: "staff" | "partner") => {
       const sigs = (u.signatures || []).length ? u.signatures : u.signatureUrl ? [{ _id: "legacy", label: u.name, url: u.signatureUrl, isDefault: true }] : [];
-      return { id: String(u._id), name: u.name, jobTitle: u.jobTitle || "", email: u.email, phone: u.phone || "", signatures: publicSignatures({ ...u, signatures: sigs as BlockSig[] }) };
-    }));
+      return {
+        id: String(u._id), name: u.name, jobTitle: u.jobTitle || "", email: u.email, phone: u.phone || "",
+        signatures: publicSignatures({ ...u, signatures: sigs as BlockSig[] }),
+        group, company: group === "partner" ? coName.get(String(u.companyId)) || "" : "GreenTech USA",
+      };
+    };
+    res.json([...users.map((u) => shape(u, "staff")), ...partners.map((u) => shape(u as (typeof users)[number] & { companyId?: unknown }, "partner"))]);
   } catch (err) { next(err); }
 });
 

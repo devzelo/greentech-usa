@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { formatPhone } from "../../lib/phone";
 import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt, Archive, RotateCcw } from "lucide-react";
 import {
@@ -222,11 +223,9 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
     }).catch((err) => toast(err instanceof Error ? err.message : "Save failed.", "error"));
   };
   // Pick the GreenTech signer from staff who have a signature on file.
-  const selectSigner = async (pid: string, s: ApiSignatory | null) => {
+  const selectSigner = async (pid: string, fields: ReturnType<typeof signerFields>) => {
     try {
-      const po = await updateProcurementPO(projectId, pid, s
-        ? { signerName: s.name, signerEmail: s.email, signerPhone: s.phone, signerTitle: s.jobTitle, signatureUrl: s.signatureUrl }
-        : { signerName: "", signerEmail: "", signerPhone: "", signerTitle: "", signatureUrl: "" });
+      const po = await updateProcurementPO(projectId, pid, fields);
       patch(pid, po);
     } catch (err) { toast(err instanceof Error ? err.message : "Save failed.", "error"); }
   };
@@ -576,11 +575,8 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
               <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">GreenTech USA</p>
               <div>
                 <label className="text-[10px] font-bold text-slate-400">Authorized by</label>
-                <select disabled={!canEdit} value={signatories.find((s) => s.name === po.signerName && s.signatureUrl === po.signatureUrl)?.id || ""} onChange={(e) => selectSigner(po._id, signatories.find((s) => s.id === e.target.value) || null)} className={`${inp} font-bold`}>
-                  <option value="">— Select a signer —</option>
-                  {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
-                </select>
-                {signatories.length === 0 && <p className="text-[10px] text-amber-600 mt-1">No staff have uploaded a signature. Each person uploads theirs in Profile.</p>}
+                <SignaturePicker disabled={!canEdit} value={{ name: po.signerName, title: po.signerTitle, signatureUrl: po.signatureUrl }} ariaLabel="Authorized by"
+                  onPick={(p) => void selectSigner(po._id, signerFields(p, po))} />
               </div>
               {po.signatureUrl && <div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400">Signature:</span><img src={imgSrc(po.signatureUrl)} alt="signature" className="h-8 object-contain" /></div>}
               {/* 2026-10-07 - one stamp from the Stamps folder, chosen like the signature. */}

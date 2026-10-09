@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import SignaturePicker, { signerFields } from "./SignaturePicker";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Upload, ChevronDown, ChevronUp, MessageSquare, Archive, RotateCcw, Lock, Unlock, Copy, Paperclip, UserPlus, Shield, Clock, Settings2 } from "lucide-react";
 import { getAuthUser, fetchCompany, withFileTokensInHtml } from "../../lib/api";
@@ -514,10 +515,8 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
                         {/* GreenTech signer for this request's document, with a preview. */}
                         {canEdit && (
                           <div className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">GreenTech signature
-                            <select className={`${inp} mt-1 font-bold`} value={signatories.find((s) => s.name === r.signerName && s.signatureUrl === r.signatureUrl)?.id || ""} onChange={(e) => pickSigner(e.target.value, (s) => { updateProjectRequest(projectId, r._id, s).then(patch).catch(() => {}); })}>
-                              <option value="">— No signature —</option>
-                              {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
-                            </select>
+                            <div className="mt-1 normal-case tracking-normal"><SignaturePicker value={{ name: r.signerName, title: r.signerTitle, signatureUrl: r.signatureUrl }} placeholder="No signature" ariaLabel="GreenTech signature"
+                              onPick={(p) => { const f = signerFields(p, r); updateProjectRequest(projectId, r._id, { signerName: f.signerName, signerTitle: f.signerTitle, signatureUrl: f.signatureUrl }).then(patch).catch(() => {}); }} /></div>
                             {r.signatureUrl && <div className="flex items-center gap-3 mt-2"><img src={sigSrc(r.signatureUrl)} alt="signature" className="h-10 object-contain bg-white rounded-lg px-2 py-1 border border-slate-200" /><span className="text-[11px] font-bold text-slate-600 normal-case">{r.signerName}{r.signerTitle ? ` · ${r.signerTitle}` : ""}</span></div>}
                             {/* CR-P (146) — the company stamp beside the GreenTech signature. */}
                             <div className="mt-2 space-y-1 font-normal normal-case tracking-normal">
@@ -733,10 +732,8 @@ export default function RequestBuilder({ projectId, category, canEdit, projectIn
               {/* GreenTech signer — the signature (and stamp) printed on the request document, previewed here. */}
               <div className="bg-slate-50 rounded-2xl p-3 space-y-2">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">GreenTech signature</p>
-                <select className={`${inp} font-bold`} value={signatories.find((s) => s.name === draft.signerName && s.signatureUrl === draft.signatureUrl)?.id || ""} onChange={(e) => pickSigner(e.target.value, (s) => setDraft({ ...draft, ...s }))}>
-                  <option value="">— No signature —</option>
-                  {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
-                </select>
+                <SignaturePicker value={{ name: draft.signerName, title: draft.signerTitle, signatureUrl: draft.signatureUrl }} placeholder="No signature" ariaLabel="GreenTech signature"
+                  onPick={(p) => { const f = signerFields(p, draft); setDraft({ ...draft, signerName: f.signerName, signerTitle: f.signerTitle, signatureUrl: f.signatureUrl }); }} />
                 {draft.signatureUrl && (
                   <div className="flex items-center gap-3 pt-1">
                     <img src={sigSrc(draft.signatureUrl)} alt="signature" className="h-12 object-contain bg-white rounded-lg px-2 py-1 border border-slate-200" />

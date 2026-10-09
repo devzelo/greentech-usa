@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
+import SignaturePicker, { signerFields } from "../SignaturePicker";
 import PhoneInput from "../PhoneInput";
 import { formatPhone } from "../../../lib/phone";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
@@ -2150,16 +2151,10 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
               {/* Company signer */}
               <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><PenLine size={11} /> GreenTech signer</p>
-                <select className={`${inp} font-bold`} value={signatories.find((s) => s.name === draft.company.signerName && s.signatureUrl === draft.company.signatureUrl)?.id || ""}
-                  onChange={(e) => {
-                    const s = signatories.find((x) => x.id === e.target.value);
-                    setDraft({ ...draft, company: s
-                      ? { ...draft.company, signerName: s.name, signerTitle: s.jobTitle || "", signerEmail: s.email || "", signerPhone: s.phone || "", signatureUrl: s.signatureUrl }
-                      : { ...draft.company, signerName: "", signerTitle: "", signerEmail: "", signerPhone: "", signatureUrl: "" } });
-                  }}>
-                  <option value="">— Select a signer —</option>
-                  {signatories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.jobTitle ? ` · ${s.jobTitle}` : ""}</option>)}
-                </select>
+                {/* 2026-10-09 - anyone at GreenTech or a partner, with their profile signature; the
+                    Signatures folder, the Directory, or a picture uploaded for this agreement. */}
+                <SignaturePicker value={{ name: draft.company.signerName, title: draft.company.signerTitle, signatureUrl: draft.company.signatureUrl }} ariaLabel="GreenTech signer"
+                  onPick={(p) => setDraft({ ...draft, company: { ...draft.company, ...signerFields(p, draft.company) } })} />
                 {/* 2026-10-07 - the company stamp beside the signature: one, from the Stamps folder. */}
                 <p className="pt-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Company stamp</p>
                 <StampPicker value={draft.company.stampUrl || ""} onChange={(v) => setDraft({ ...draft, company: { ...draft.company, stampUrl: v } })} />

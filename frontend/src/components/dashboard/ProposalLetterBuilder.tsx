@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import SignaturePicker from "./SignaturePicker";
 import PhoneInput from "./PhoneInput";
 import PdfFrame from "./PdfFrame";
 import DOMPurify from "dompurify";
@@ -227,10 +228,8 @@ export default function ProposalLetterBuilder({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className={lbl}>Signed by</span>
-                  <select value="" onChange={(e) => { addSignatory(e.target.value); e.target.value = ""; }} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600" aria-label="Add a signatory">
-                    <option value="">+ Add signatory...</option>
-                    {staff.map((x) => <option key={x.id} value={x.id}>{x.name}{x.jobTitle ? ` · ${x.jobTitle}` : ""}</option>)}
-                  </select>
+                  <SignaturePicker mode="add" placeholder="Add signatory" ariaLabel="Add a signatory"
+                    onPick={(p) => { if (p) set("signatories", [...letter.signatories, { id: uid(), name: p.name || "", title: p.title || "", signatureUrl: p.signatureUrl, email: p.email || "", phone: p.phone || "" }]); }} />
                 </div>
                 {letter.signatories.length === 0 ? (
                   <p className="text-[11px] text-slate-400 italic">No signatory yet: their signature, title, email and phone come from their profile.</p>
