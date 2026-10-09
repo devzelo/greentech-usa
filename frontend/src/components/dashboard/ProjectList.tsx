@@ -92,6 +92,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
   const [reportType, setReportType] = useState<"internal" | "wip">("internal");
   const [stages, setStages] = useState<string[]>(["Proposal", "BidSubmitted", "Active", "Warranty", "Closed"]);
   const [wipParts, setWipParts] = useState({ current: true, opportunities: true });
+  const [wipLocation, setWipLocation] = useState(true);   // 2026-10-09 - the WIP's Project Location column
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -560,6 +561,12 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
                       <span className="text-[10px] text-slate-400">{reportProjects.filter((p) => list.some((st) => statusMatches(st, p.status))).length}</span>
                     </label>
                   ))}
+                  <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Columns</p>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" className="accent-emerald-500" checked={wipLocation} onChange={(e) => setWipLocation(e.target.checked)} />
+                    <span className="flex-1">Project location</span>
+                    <span className="text-[10px] text-slate-400">City, country and flag</span>
+                  </label>
                   <p className="text-[10px] text-slate-400">The bank WIP layout on a landscape sheet (24 x 18 in): the contract backlog, the revenue opportunities and the formulas. Invoiced and costs to date come from the invoices and expenses; change orders, cost to complete, prime contractor, set-aside and Pwin from each project&apos;s bank report figures.</p>
                 </div>
               )}
@@ -588,7 +595,7 @@ export default function ProjectList({ mode }: { mode: "my" | "all" | "drafts" })
             const { buildWipReportPdf } = await import("../../lib/wipReportPdf");
             // 2026-10-09 - each customer's logo and each country's flag, as in the template.
             const assets = await reportAssets(reportProjects.filter((p) => [...WIP_CURRENT, ...WIP_OPPORTUNITY].some((st) => statusMatches(st, p.status))));
-            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects", assets });
+            return buildWipReportPdf({ projects: reportProjects, financials, current: wipParts.current, opportunities: wipParts.opportunities, scope: mode === "my" ? "my projects" : "all projects", assets, location: wipLocation });
           }}
           onClose={() => setShowReport(false)}
         />
