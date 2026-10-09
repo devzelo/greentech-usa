@@ -1,3 +1,4 @@
+import type React from "react";
 import { Page, View, Text, Image, Svg, Defs, LinearGradient, Stop, Rect, Circle } from "@react-pdf/renderer";
 import { BRAND, COMPANY, PAGE, abs, LOGO_MINT, GradBar, Eyebrow } from "./brand";
 
@@ -24,6 +25,10 @@ export interface CoverData {
   badge?: string;      // revision, e.g. "Final Proposal Revision"
   clientLogo?: string; // the client's seal or logo
   notice?: string;     // restriction legend; the confidentiality line is used when empty
+  /** 2026-10-09 - "Submitted by: GT's short info and the GT logo; Submitted to: the client's short
+   *  info and its logo." The first line is the name. */
+  submittedBy?: string[];
+  submittedTo?: string[];
 }
 
 const LOGO_ASPECT = 1588 / 295;   // the trimmed mint lockup
@@ -33,7 +38,9 @@ const LOGO_ASPECT = 1588 / 295;   // the trimmed mint lockup
 const titleCase = (t: string) => t.toLowerCase().replace(/(^|\s)([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
 // A volume label shows as it was typed ("Vol. II: Technical Proposal").
 const headingOf = (d: CoverData) => (d.volume || "").trim() || titleCase(d.kind.trim());
-const eyebrowOf = (d: CoverData) => `Prepared by ${COMPANY.name} · ${d.year}`;
+// "It's GreenTech USA; no need to add LLC."
+export const SHORT_NAME = COMPANY.name.replace(/\s+LLC$/i, "");
+const eyebrowOf = (d: CoverData) => `Prepared by ${SHORT_NAME} · ${d.year}`;
 
 function Logo({ h }: { h: number }) {
   return <Image src={abs(LOGO_MINT)} style={{ width: h * LOGO_ASPECT, height: h }} />;
@@ -64,6 +71,45 @@ function PartnerMark({ src, h = 24 }: { src: string; h?: number }) {
       <Image src={abs(src)} style={{ height: h, maxWidth: h * 3.2, objectFit: "contain" }} />
     </View>
   );
+}
+
+/**
+ * 2026-10-09 - who submits and to whom, each with its logo under the label and its short details
+ * below: our logo (and a JV partner's) beside "Submitted by", the client's seal beside "Submitted
+ * to". The logos sit here, off the cover photos, one size smaller than before.
+ */
+const GT_LOGO_H = { dark: 32, light: 22 };
+const CLIENT_LOGO_H = 84;
+function Party({ label, lines, logos, tone, inRow = true }: { label: string; lines: string[]; logos: React.ReactNode; tone: "dark" | "light"; inRow?: boolean }) {
+  const dark = tone === "dark";
+  // Side by side the two share the row; stacked, each is only as tall as what it holds.
+  return (
+    <View style={inRow ? { flex: 1, paddingRight: 16 } : {}} wrap={false}>
+      <Text style={{ fontSize: 6.4, fontWeight: 700, color: dark ? BRAND.s400 : BRAND.s500, letterSpacing: 1.3 }}>{label}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 7, marginBottom: 7 }}>{logos}</View>
+      {lines.map((l, i) => (
+        <Text key={i} style={{ fontSize: i === 0 ? 9.4 : 7.8, fontWeight: i === 0 ? 700 : 500, color: dark ? (i === 0 ? BRAND.white : BRAND.s300) : (i === 0 ? BRAND.slate : BRAND.s600), marginTop: i ? 2 : 0, lineHeight: 1.3 }}>{l}</Text>
+      ))}
+    </View>
+  );
+}
+function Parties({ d, tone, stacked = false }: { d: CoverData; tone: "dark" | "light"; stacked?: boolean }) {
+  const dark = tone === "dark";
+  const gt = dark ? <Logo h={GT_LOGO_H.dark} /> : <LogoChip h={GT_LOGO_H.light} padX={12} />;
+  const by = (
+    <Party label="SUBMITTED BY" tone={tone} inRow={!stacked} lines={d.submittedBy || []} logos={<>
+      {gt}
+      {!!d.partnerLogo && <View style={{ marginLeft: 10 }}><PartnerMark src={d.partnerLogo} h={dark ? 22 : 20} /></View>}
+    </>} />
+  );
+  const to = (d.submittedTo || []).length > 0 || d.clientLogo ? (
+    <Party label="SUBMITTED TO" tone={tone} inRow={!stacked} lines={d.submittedTo || []} logos={d.clientLogo
+      ? <View style={dark ? {} : { border: `1 solid ${BRAND.border}`, borderRadius: 8 }}><ClientMark src={d.clientLogo} h={CLIENT_LOGO_H} maxW={170} /></View>
+      : null} />
+  ) : null;
+  return stacked
+    ? <View>{by}{to && <View style={{ marginTop: 14 }}>{to}</View>}</View>
+    : <View style={{ flexDirection: "row", alignItems: "flex-start" }}>{by}{to || <View style={{ flex: 1 }} />}</View>;
 }
 
 /** The revision, e.g. "FINAL PROPOSAL REVISION", as an outlined pill. */
@@ -124,44 +170,42 @@ function Scrim({ w, h }: { w: number; h: number }) {
 
 // ── 1 · Dark hero ────────────────────────────────────────────────────────────
 function Hero({ d }: { d: CoverData }) {
-  // The photo band gives way as the fields grow, so a full cover still fits one page.
-  const H = d.fields.length > 9 ? 290 : d.fields.length > 6 ? 330 : 380;
+  // The photo band gives way as the fields grow, so a full cover still fits one page. 2026-10-09:
+  // a little shorter, and with no logo on it (the logos are with Submitted by / Submitted to).
+  const H = d.fields.length > 6 ? 250 : d.fields.length > 3 ? 280 : 310;
   return (
     <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter" }}>
       <View style={{ height: H, position: "relative" }}>
         <Mosaic images={d.images} w={PAGE.w} h={H} />
         <Scrim w={PAGE.w} h={H} />
-        <View style={{ position: "absolute", top: 40, left: 52, flexDirection: "row", alignItems: "center" }}>
-          {/* 2026-10-08 - logos as on every cover: ours 1.5 times (30 to 45), the client's 4 times (28 to 112).
-              2026-10-09 - the client's bigger again (124 high, up to 250 wide). */}
-          <Logo h={45} />
-          {!!d.partnerLogo && <View style={{ width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.45)", marginHorizontal: 14 }} />}
-          {!!d.partnerLogo && <PartnerMark src={d.partnerLogo} h={24} />}
-        </View>
-        {!!d.clientLogo && <View style={{ position: "absolute", top: 30, right: 52 }}><ClientMark src={d.clientLogo} h={124} maxW={d.partnerLogo ? 140 : 250} /></View>}
       </View>
 
-      <View style={{ paddingHorizontal: 52, flex: 1, justifyContent: "space-between", paddingTop: 16, paddingBottom: 34 }}>
+      <View style={{ paddingHorizontal: 52, flex: 1, justifyContent: "space-between", paddingTop: 6, paddingBottom: 26 }}>
         <View>
           <Eyebrow>{eyebrowOf(d)}</Eyebrow>
           {!!d.badge && <Badge text={d.badge} color={BRAND.emerald} />}
-          <Text style={{ fontFamily: "Outfit", fontSize: 36, fontWeight: 700, color: BRAND.white, lineHeight: 1.08 }}>{headingOf(d)}</Text>
-          <Text style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 600, color: BRAND.cyan, lineHeight: 1.25, marginTop: 8, maxWidth: 470 }}>{d.title}</Text>
-          {!!d.subtitle && <Text style={{ fontSize: 11, color: BRAND.s300, marginTop: 12, lineHeight: 1.55, maxWidth: 440 }}>{d.subtitle}</Text>}
+          <Text style={{ fontFamily: "Outfit", fontSize: 34, fontWeight: 700, color: BRAND.white, lineHeight: 1.08 }}>{headingOf(d)}</Text>
+          <Text style={{ fontFamily: "Outfit", fontSize: 17, fontWeight: 600, color: BRAND.cyan, lineHeight: 1.25, marginTop: 7, maxWidth: 480 }}>{d.title}</Text>
+          {!!d.subtitle && <Text style={{ fontSize: 10.5, color: BRAND.s300, marginTop: 9, lineHeight: 1.5, maxWidth: 460 }}>{d.subtitle}</Text>}
         </View>
 
         <View>
           <GradBar w={PAGE.w - 104} h={3} id="heroRule" />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
-            {d.fields.map((f) => (
-              <View key={f.label} style={{ width: "33.3%", paddingRight: 12, marginBottom: 11 }}>
-                <Text style={{ fontSize: 6.4, fontWeight: 600, color: BRAND.s400, letterSpacing: 1.3 }}>{f.label}</Text>
-                <Text style={{ fontSize: 8.8, fontWeight: 700, color: BRAND.white, marginTop: 3, lineHeight: 1.3 }}>{f.value}</Text>
-              </View>
-            ))}
+          {d.fields.length > 0 && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
+              {d.fields.map((f) => (
+                <View key={f.label} style={{ width: "33.3%", paddingRight: 12, marginBottom: 9 }}>
+                  <Text style={{ fontSize: 6.4, fontWeight: 600, color: BRAND.s400, letterSpacing: 1.3 }}>{f.label}</Text>
+                  <Text style={{ fontSize: 8.8, fontWeight: 700, color: BRAND.white, marginTop: 3, lineHeight: 1.3 }}>{f.value}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <View style={{ marginTop: 8, paddingTop: 12, borderTop: "1 solid rgba(255,255,255,0.14)" }}>
+            <Parties d={d} tone="dark" />
           </View>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 6, borderTop: "1 solid rgba(255,255,255,0.14)", paddingTop: 10 }}>
-            <Text style={{ fontSize: 7, color: BRAND.s400, maxWidth: 380 }}>{d.notice || `Confidential & proprietary · Prepared by ${COMPANY.name} · CAGE ${COMPANY.cage}`}</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, borderTop: "1 solid rgba(255,255,255,0.14)", paddingTop: 9 }}>
+            <Text style={{ fontSize: 7, color: BRAND.s400, maxWidth: 380 }}>{d.notice || `Confidential & proprietary · Prepared by ${SHORT_NAME} · CAGE ${COMPANY.cage}`}</Text>
             <Text style={{ fontSize: 7, color: BRAND.s400 }}>{COMPANY.website}</Text>
           </View>
         </View>
@@ -170,65 +214,38 @@ function Hero({ d }: { d: CoverData }) {
   );
 }
 
-/** The emerald-to-blue contact strip at the foot of the light cover. */
-function ContactStrip({ w }: { w: number }) {
-  const items: Array<[string, string]> = [["ADDRESS", COMPANY.address], ["PHONE", COMPANY.phone], ["EMAIL", COMPANY.email], ["WEB", COMPANY.website]];
-  return (
-    <View style={{ width: w, height: 44, borderRadius: 8, overflow: "hidden", flexDirection: "row" }}>
-      <Svg width={w} height={44} style={{ position: "absolute", top: 0, left: 0 }}>
-        <Defs>
-          <LinearGradient id="coverStrip" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor={BRAND.emerald} />
-            <Stop offset="1" stopColor={BRAND.blue} />
-          </LinearGradient>
-        </Defs>
-        <Rect x={0} y={0} width={w} height={44} fill="url(#coverStrip)" />
-      </Svg>
-      {items.map(([l, v], i) => (
-        <View key={l} style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRight: i < items.length - 1 ? "1 solid rgba(255,255,255,0.25)" : undefined }}>
-          <Text style={{ fontSize: 6.2, color: "rgba(255,255,255,0.85)", letterSpacing: 1.2, fontWeight: 600 }}>{l}</Text>
-          <Text style={{ fontSize: 7.8, color: BRAND.white, fontWeight: 700, marginTop: 4 }}>{v}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
 
 // ── 2 · Light formal ─────────────────────────────────────────────────────────
 function Formal({ d }: { d: CoverData }) {
   return (
     <Page size="LETTER" style={{ backgroundColor: BRAND.white, fontFamily: "Inter" }}>
       <View style={{ position: "absolute", top: 0, left: 0 }}><GradBar w={PAGE.w} h={8} r={0} id="formalTop" /></View>
-      <View style={{ paddingHorizontal: 56, paddingTop: 50, paddingBottom: 40, flex: 1 }}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {/* 2026-10-08 - ours 1.5 times (22 to 33), the client's 4 times (28 to 112); 2026-10-09 - 124, up to 250 wide. */}
-          <LogoChip h={33} padX={16} />
-          {!!d.partnerLogo && <View style={{ marginLeft: 10, border: `1 solid ${BRAND.border}`, borderRadius: 8 }}><PartnerMark src={d.partnerLogo} h={26} /></View>}
-          <View style={{ flex: 1, minWidth: 12 }} />
-          {!!d.clientLogo && <ClientMark src={d.clientLogo} h={124} maxW={d.partnerLogo ? 150 : 250} />}
-        </View>
-
-        <View style={{ flex: 1, justifyContent: "center", paddingVertical: 18 }}>
+      <View style={{ paddingHorizontal: 56, paddingTop: 54, paddingBottom: 34, flex: 1 }}>
+        <View style={{ flex: 1, justifyContent: "center", paddingBottom: 14 }}>
           <Eyebrow>{eyebrowOf(d)}</Eyebrow>
           {!!d.badge && <Badge text={d.badge} color={BRAND.emerald} />}
           <Text style={{ fontFamily: "Outfit", fontSize: 38, fontWeight: 700, color: BRAND.slate, lineHeight: 1.08, maxWidth: 480 }}>{headingOf(d)}</Text>
           <Text style={{ fontFamily: "Outfit", fontSize: 19, fontWeight: 600, color: BRAND.s600, lineHeight: 1.25, marginTop: 8, maxWidth: 470 }}>{d.title}</Text>
           {!!d.subtitle && <Text style={{ fontSize: 11, color: BRAND.s600, marginTop: 12, lineHeight: 1.6, maxWidth: 440 }}>{d.subtitle}</Text>}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 22 }}>
-            {d.fields.map((f) => (
-              <View key={f.label} style={{ width: "25%", paddingRight: 10, marginBottom: 10 }}>
-                {/* flexGrow: every card in a row stretches to the tallest one, so the grid stays even. */}
-                <View style={{ flexGrow: 1, backgroundColor: BRAND.mist, borderRadius: 8, padding: 10, borderLeft: `3 solid ${BRAND.emerald}` }}>
-                  <Text style={{ fontSize: 6.2, fontWeight: 700, color: BRAND.s500, letterSpacing: 1.1 }}>{f.label}</Text>
-                  <Text style={{ fontSize: 8, fontWeight: 700, color: BRAND.slate, marginTop: 4, lineHeight: 1.35 }}>{f.value}</Text>
+          {d.fields.length > 0 && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 22 }}>
+              {d.fields.map((f) => (
+                <View key={f.label} style={{ width: "25%", paddingRight: 10, marginBottom: 10 }}>
+                  {/* flexGrow: every card in a row stretches to the tallest one, so the grid stays even. */}
+                  <View style={{ flexGrow: 1, backgroundColor: BRAND.mist, borderRadius: 8, padding: 10, borderLeft: `3 solid ${BRAND.emerald}` }}>
+                    <Text style={{ fontSize: 6.2, fontWeight: 700, color: BRAND.s500, letterSpacing: 1.1 }}>{f.label}</Text>
+                    <Text style={{ fontSize: 8, fontWeight: 700, color: BRAND.slate, marginTop: 4, lineHeight: 1.35 }}>{f.value}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          )}
         </View>
 
-        <ContactStrip w={PAGE.w - 112} />
-        <Text style={{ fontSize: 7, color: BRAND.s400, marginTop: 10, textAlign: "center" }}>{d.notice || CONFIDENTIAL}</Text>
+        <View style={{ borderTop: `1 solid ${BRAND.border}`, paddingTop: 14 }}>
+          <Parties d={d} tone="light" />
+        </View>
+        <Text style={{ fontSize: 7, color: BRAND.s400, marginTop: 14, textAlign: "center" }}>{d.notice || CONFIDENTIAL}</Text>
       </View>
     </Page>
   );
@@ -252,11 +269,8 @@ function Panel({ d }: { d: CoverData }) {
           <Circle cx={20} cy={PAGE.h - 90} r={110} stroke="#FFFFFF" strokeWidth={1} fill="none" opacity={0.14} />
         </Svg>
         <View style={{ flex: 1, padding: 32, justifyContent: "space-between" }}>
-          <View>
-            {/* 2026-10-08 - our logo 1.5 times bigger (18 to 27), the chip a little narrower so it fits the panel. */}
-            <LogoChip h={27} padX={10} />
-            {!!d.partnerLogo && <View style={{ marginTop: 8, alignSelf: "flex-start" }}><PartnerMark src={d.partnerLogo} h={22} /></View>}
-          </View>
+          {/* 2026-10-09 - the logos are with Submitted by / Submitted to, on the right. */}
+          <View />
           <View>
             <Eyebrow color={BRAND.white}>{d.year}</Eyebrow>
             {!!d.badge && <Badge text={d.badge} color={BRAND.white} />}
@@ -269,13 +283,11 @@ function Panel({ d }: { d: CoverData }) {
 
       <View style={{ flex: 1, padding: 36, justifyContent: "space-between" }}>
         <View>
-          {/* 2026-10-08 - the client's seal 4 times bigger (26 to 104); 2026-10-09 - 124, up to the column's width. */}
-          {!!d.clientLogo && <View style={{ alignItems: "flex-end", marginBottom: 12 }}><ClientMark src={d.clientLogo} h={124} maxW={290} /></View>}
-          <View style={{ height: 140, borderRadius: 10, overflow: "hidden", border: `1 solid ${BRAND.border}` }}>
-            {!!d.images[0] && <Image src={d.images[0]} style={{ width: "100%", height: 140, objectFit: "cover" }} />}
+          <View style={{ height: 150, borderRadius: 10, overflow: "hidden", border: `1 solid ${BRAND.border}` }}>
+            {!!d.images[0] && <Image src={d.images[0]} style={{ width: "100%", height: 150, objectFit: "cover" }} />}
           </View>
         </View>
-        <View style={{ flex: 1, justifyContent: "center" }}>
+        <View style={{ flex: 1, justifyContent: "center", paddingVertical: 10 }}>
           {!!d.subtitle && <Text style={{ fontSize: 10.5, color: BRAND.s600, lineHeight: 1.6 }}>{d.subtitle}</Text>}
           <View style={{ marginTop: 14 }}>
             {d.fields.map((f, i, a) => (
@@ -284,6 +296,9 @@ function Panel({ d }: { d: CoverData }) {
                 <Text style={{ fontSize: 8.4, fontWeight: 700, color: BRAND.slate, maxWidth: 190, textAlign: "right", lineHeight: 1.3 }}>{f.value}</Text>
               </View>
             ))}
+          </View>
+          <View style={{ marginTop: 14, paddingTop: 12, borderTop: `1 solid ${BRAND.border}` }}>
+            <Parties d={d} tone="light" stacked />
           </View>
         </View>
         <Text style={{ fontSize: 7, color: BRAND.s400, lineHeight: 1.5 }}>{d.notice || CONFIDENTIAL}</Text>

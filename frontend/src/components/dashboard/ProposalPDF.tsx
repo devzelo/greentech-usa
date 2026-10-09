@@ -13,7 +13,7 @@ import {
   BRAND, COMPANY, PAGE, GUTTER, LETTERHEAD, abs, LETTERHEAD_PAGE, COVER_FALLBACK, registerBrandFonts,
   LetterheadHeader, LetterheadFooter, SectionHeading, Subhead, Eyebrow, GradBar,
 } from "../pdf/brand";
-import ProposalCoverPage, { type CoverData, type CoverField } from "../pdf/ProposalCovers";
+import ProposalCoverPage, { SHORT_NAME, type CoverData, type CoverField } from "../pdf/ProposalCovers";
 import { resolveLetter } from "../../lib/proposalLetter";
 import { pdfAssetUrl } from "../pdf/RichText";
 import SignatureStamp from "../pdf/SignatureStamp";
@@ -330,22 +330,33 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
   const lines = (...xs: Array<string | undefined>) => xs.map((x) => (x || "").trim()).filter(Boolean).join("\n");
   const fields = ([
     [(c?.responseLabel || "Response to Solicitation #").toUpperCase(), c?.solicitationNo],
-    ["PREPARED FOR", c?.clientName || project.clientInfo?.name || ""],
     ["LOCATION", c?.location],
     ["PROJECT", projectName !== title ? projectName : ""],
     ["TASK ORDER NO.", c?.taskOrderNo],
     ["CONTRACT NO.", c?.contractNo],
     ["SUBMITTAL DUE DATE", longDate(c?.dueDate)],
     ["DATE OF SUBMISSION", longDate(c?.submissionDate)],
-    ["SUBMITTED TO", c?.submittedTo],
-    ["ATTENTION", lines(c?.attentionTo, c?.attentionRole, c?.attentionEmail)],
-    ["SUBMITTED BY", lines(c?.submittedBy || defaultSubmitter(project), COMPANY.address)],
-    [COMPANY.name.toUpperCase(), lines(COMPANY.phone, COMPANY.email, COMPANY.website, `UEI ${COMPANY.uei} · CAGE ${COMPANY.cage}`)],
-    [(jv?.partnerName || "").toUpperCase(), jv ? lines(jv.phone, jv.email, jv.partnerAddress) : ""],
-    ["JV REGISTRATION", jv?.uei ? `UEI ${jv.uei}${jv.cage ? ` · CAGE ${jv.cage}` : ""}` : ""],
   ] as Array<[string, string | undefined]>)
     .filter(([l, v]) => !!l && !!v && v.trim())
     .map(([label, value]): CoverField => ({ label, value: value as string }));
+  // 2026-10-09 - "Submitted by: GT's short info then the GT logo; Submitted to: the client's short
+  // info then the client's logo." Each block's first line is the name.
+  const by = (c?.submittedBy || defaultSubmitter(project)).trim();
+  const clientName = (c?.clientName || project.clientInfo?.name || "").trim();
+  const keep = (xs: Array<string | undefined>) => xs.map((x) => (x || "").trim()).filter(Boolean);
+  const submittedBy = keep([
+    by === COMPANY.name ? SHORT_NAME : by, COMPANY.address,
+    [formatPhone(COMPANY.phone), COMPANY.email].filter(Boolean).join(" · "),
+    `UEI ${COMPANY.uei} · CAGE ${COMPANY.cage}`,
+    jv ? [jv.partnerName, [formatPhone(jv.phone), jv.email].filter(Boolean).join(" · ")].filter(Boolean).join(": ") : "",
+    jv?.uei ? `${jv.partnerName || "Partner"}: UEI ${jv.uei}${jv.cage ? ` · CAGE ${jv.cage}` : ""}` : "",
+  ]);
+  const submittedTo = keep([
+    clientName,
+    c?.submittedTo && c.submittedTo.trim() !== clientName ? c.submittedTo : "",
+    c?.attentionTo ? `Attn: ${c.attentionTo}${c?.attentionRole ? `, ${c.attentionRole}` : ""}` : "",
+    c?.attentionEmail,
+  ]);
   const images = (c?.images || []).map((im) => abs(im.url)).filter(Boolean).slice(0, 4);
   const dated = c?.submissionDate || c?.dueDate;
   return {
@@ -361,6 +372,8 @@ function coverData(kind: string, c: ProposalCover | undefined, project: ApiProje
     // CR 368 - a JV project's cover carries the partner's logo too.
     partnerLogo: jv && (c?.jvLogoUrl || jv.logo) ? abs(c?.jvLogoUrl || jv.logo) : undefined,
     notice: c?.restrictionNotice === false ? "" : RESTRICTION_LEGEND,
+    submittedBy,
+    submittedTo,
   };
 }
 
