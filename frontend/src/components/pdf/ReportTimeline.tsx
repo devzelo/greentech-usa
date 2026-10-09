@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Text, View, Svg, Path, Circle } from "@react-pdf/renderer";
 import type { ApiMilestone, ApiProject } from "../../lib/api";
 import {
@@ -57,9 +57,19 @@ const CheckIcon = ({ size, color }: { size: number; color: string }) => (
 );
 
 // ── The timeline card ────────────────────────────────────────────────────────────────────────────
-const lbl = { fontSize: 5.8, fontWeight: 700, color: T.s400, letterSpacing: 0.9, marginRight: 2.5 } as const;
-const val = { fontSize: 7.6, fontWeight: 700, color: T.s800 } as const;
-const item = { flexDirection: "row", alignItems: "center", marginRight: 9, marginBottom: 2 } as const;
+const chip = { flexDirection: "row", alignItems: "center", borderRadius: 8, border: "0.6 solid", paddingHorizontal: 5, paddingVertical: 1.5 } as const;
+const factVal = { fontSize: 8.2, fontWeight: 700, color: T.s800 } as const;
+
+/** One of the card's four figures: a small label, the value, and a grey line under it. */
+function Fact({ label, sub, first, children }: { label: string; sub?: ReactNode; first?: boolean; children: ReactNode }) {
+  return (
+    <View style={[{ flex: 1, paddingRight: 6 }, first ? {} : { paddingLeft: 8, borderLeft: `0.6 solid ${T.s200}` }]}>
+      <Text style={{ fontSize: 5.8, fontWeight: 700, color: T.s400, letterSpacing: 0.9, marginBottom: 2.5 }}>{label}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>{children}</View>
+      {sub ? <Text style={{ fontSize: 6.3, color: T.s400, marginTop: 2 }}>{sub}</Text> : null}
+    </View>
+  );
+}
 
 /** The card from the top of the schedule (TimelineBar), opened: the figures, the track and the phases. */
 export function TimelineStrip({ project, width }: { project: ApiProject; width: number }) {
@@ -76,54 +86,42 @@ export function TimelineStrip({ project, width }: { project: ApiProject; width: 
   const rows = Array.from({ length: nRows }, (_, r) => dots.slice(r * per, r * per + per)).filter((r) => r.length);
   return (
     <View wrap={false} style={{ border: `0.8 solid ${T.s200}`, borderRadius: 10, backgroundColor: BRAND.white, marginBottom: 12 }}>
-      {/* The figures, as in the card's header line */}
-      <View style={{ paddingHorizontal: PAD, paddingTop: 6, paddingBottom: 4 }}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-          <View style={item}>
-            <CalendarClockIcon size={7.5} color={overdue ? T.red500 : T.em500} />
-            <Text style={{ fontSize: 6.6, fontWeight: 700, color: T.s500, letterSpacing: 1.1 }}>TIMELINE</Text>
+      {/* The figures. On screen they run along one line; on paper they sit in a title row (with the
+          late count and the work complete at its right), then four equal columns, so nothing wraps
+          part-way across the card. */}
+      <View style={{ paddingHorizontal: PAD, paddingTop: 7, paddingBottom: 7 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <CalendarClockIcon size={8} color={overdue ? T.red500 : T.em500} />
+            <Text style={{ fontSize: 7, fontWeight: 700, color: T.s500, letterSpacing: 1.2 }}>TIMELINE</Text>
           </View>
-          <View style={item}>
-            <Text style={[lbl, startIsContractDate ? { color: T.amber600 } : {}]}>{startIsContractDate ? "CONTRACT" : "START"}</Text>
-            <Text style={val}>{contractStart ? fmtDay(contractStart) : "Not set"}</Text>
-          </View>
-          {totalDays !== null && (
-            <View style={item}>
-              <Text style={lbl}>DURATION</Text>
-              {extended && origDays !== null ? (
-                <>
-                  <Text style={[val, { color: T.s400, textDecoration: "line-through", marginRight: 2.5 }]}>{origDays}</Text>
-                  <Text style={[val, { color: T.v700, marginRight: 2.5 }]}>{totalDays} days</Text>
-                  <Text style={{ fontSize: 7, fontWeight: 600, color: T.v500 }}>(+{addedDays})</Text>
-                </>
-              ) : <Text style={val}>{totalDays} days</Text>}
-            </View>
-          )}
-          <View style={item}>
-            <ClockIcon size={7} color={overdue ? T.red600 : T.em600} />
-            <Text style={[val, { color: overdue ? T.red600 : T.em600 }]}>
-              {deadline ? (overdue ? remaining : `${remaining} left`) : "No deadline"}
-              {deadline ? <Text style={{ fontWeight: 600, color: T.s400 }}>{` (${remainingDays}d${elapsedPct !== null ? `, ${Math.round(elapsedPct)}% elapsed` : ""})`}</Text> : null}
-            </Text>
-          </View>
-          <View style={item}>
-            <Text style={lbl}>END</Text>
-            <Text style={[val, { color: extended ? T.v700 : T.s900, marginRight: 3 }]}>{deadline ? fmtDay(deadline) : "Not set"}</Text>
-            {extended && <Text style={{ fontSize: 5.8, fontWeight: 700, color: T.v700, backgroundColor: T.v50, borderRadius: 6, paddingHorizontal: 3, paddingVertical: 1, marginRight: 3 }}>Extended</Text>}
-            {extended && origEnd && (
-              <Text style={{ fontSize: 7, fontWeight: 600, color: T.s400 }}>(original <Text style={{ textDecoration: "line-through" }}>{fmtDay(origEnd)}</Text>)</Text>
-            )}
-          </View>
-          {/* As on screen, the late count and the work complete close the line, at its right. */}
-          <View style={[item, { marginLeft: "auto", marginRight: 0 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
             {focus.overdue.length > 0 && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginRight: 6 }}>
-                <AlertIcon size={6.5} color={T.amber600} />
-                <Text style={{ fontSize: 7, fontWeight: 700, color: T.amber600 }}>{focus.overdue.length} late</Text>
+              <View style={[chip, { backgroundColor: "#FFFBEB", borderColor: "#FDE68A", marginRight: 4 }]}>
+                <AlertIcon size={6.5} color="#B45309" />
+                <Text style={{ fontSize: 6.6, fontWeight: 700, color: "#B45309" }}>{focus.overdue.length} late</Text>
               </View>
             )}
-            <Text style={{ fontSize: 7, fontWeight: 700, color: T.blue600 }}>Work {workPct}%{hasMs ? ` · ${focus.done}/${focus.total}` : ""}</Text>
+            <View style={[chip, { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" }]}>
+              <Text style={{ fontSize: 6.6, fontWeight: 700, color: "#1D4ED8" }}>Work {workPct}%{hasMs ? `  ·  ${focus.done} of ${focus.total} phases` : ""}</Text>
+            </View>
           </View>
+        </View>
+        <View style={{ flexDirection: "row", borderTop: `0.6 solid ${T.s100}`, paddingTop: 6 }}>
+          <Fact first label={startIsContractDate ? "CONTRACT DATE" : "START"} sub={startIsContractDate ? "No start date is set" : undefined}>
+            <Text style={factVal}>{contractStart ? fmtDay(contractStart) : "Not set"}</Text>
+          </Fact>
+          <Fact label="DURATION" sub={extended && origDays !== null ? <Text>As signed <Text style={{ textDecoration: "line-through" }}>{origDays}</Text>, +{addedDays} days</Text> : undefined}>
+            <Text style={[factVal, extended ? { color: T.v700 } : {}]}>{totalDays !== null ? `${totalDays} days` : "-"}</Text>
+          </Fact>
+          <Fact label={overdue ? "PAST THE END DATE" : "TIME LEFT"} sub={deadline ? `${remainingDays} days${elapsedPct !== null ? `  ·  ${Math.round(elapsedPct)}% elapsed` : ""}` : undefined}>
+            <ClockIcon size={7} color={overdue ? T.red600 : T.em600} />
+            <Text style={[factVal, { color: overdue ? T.red600 : T.em600 }]}>{deadline ? remaining.replace(/\s*overdue$/, "") : "No deadline"}</Text>
+          </Fact>
+          <Fact label="END" sub={extended && origEnd ? <Text>Originally <Text style={{ textDecoration: "line-through" }}>{fmtDay(origEnd)}</Text></Text> : undefined}>
+            <Text style={[factVal, { color: extended ? T.v700 : T.s900, marginRight: 3 }]}>{deadline ? fmtDay(deadline) : "Not set"}</Text>
+            {extended && <Text style={{ fontSize: 5.6, fontWeight: 700, color: T.v700, backgroundColor: T.v50, borderRadius: 6, paddingHorizontal: 3, paddingVertical: 1 }}>EXTENDED</Text>}
+          </Fact>
         </View>
       </View>
 
