@@ -42,7 +42,7 @@ const headingOf = (d: CoverData) => (d.volume || "").trim() || titleCase(d.kind.
 export const SHORT_NAME = COMPANY.name.replace(/\s+LLC$/i, "");
 const eyebrowOf = (d: CoverData) => `Prepared by ${SHORT_NAME} · ${d.year}`;
 
-function Logo({ h }: { h: number }) {
+export function Logo({ h }: { h: number }) {
   return <Image src={abs(LOGO_MINT)} style={{ width: h * LOGO_ASPECT, height: h }} />;
 }
 

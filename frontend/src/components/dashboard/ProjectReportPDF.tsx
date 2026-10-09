@@ -5,6 +5,8 @@ import { projectCategories } from "../../lib/api";
 import { effectiveEndDate, fmtDate, milestoneLength, parseDate, phasePercent, planSchedule } from "../../lib/projectSchedule";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, Eyebrow, GradBar, SectionHeading, abs } from "../pdf/brand";
 import { SHOW_PENDING_PROJECT_FIELDS } from "../../lib/pendingDesign";
+import { PAGE } from "../pdf/brand";
+import { Logo as GtLogo } from "../pdf/ProposalCovers";
 
 registerBrandFonts();
 
@@ -32,10 +34,8 @@ const s = StyleSheet.create({
   date: { fontSize: 9, color: BRAND.s500, lineHeight: 1.3 },
   idLine: { fontSize: 8, fontWeight: 700, color: BRAND.emerald, letterSpacing: 1.2, lineHeight: 1.3, marginBottom: 4 },
   title: { fontFamily: "Outfit", fontSize: 22, fontWeight: 700, color: BRAND.slate, lineHeight: 1.15, marginBottom: 8 },
-  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 10, marginBottom: 16 },
   pill: { paddingVertical: 3, paddingHorizontal: 7, borderRadius: 4, marginRight: 8 },
   pillText: { fontSize: 7, fontWeight: 700, letterSpacing: 0.8, lineHeight: 1.2 },
-  meta: { fontSize: 9, color: BRAND.s500, lineHeight: 1.3, marginRight: 12 },
 
   kpiRow: { flexDirection: "row", marginBottom: 10 },
   kpi: { flex: 1, backgroundColor: BRAND.mist, borderRadius: 6, borderLeft: `3 solid ${BRAND.emerald}`, paddingVertical: 10, paddingHorizontal: 10, minHeight: 52, justifyContent: "center" },
@@ -59,24 +59,6 @@ const s = StyleSheet.create({
   // The client's own mark, sized to sit inside a row without pushing the column about.
   clientLogo: { height: 34, maxWidth: 120, objectFit: "contain" },
 
-  // 2026-10-07 - the first page as on a past performance page: the information table on the left,
-  // the project's picture and the client (with its logo) on the right.
-  top: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
-  infoCol: { flex: 1 },
-  info: { border: `0.8 solid ${BRAND.border}` },
-  // 2026-10-09 - the client's logo, big, on the left over the information table and lined up with it.
-  clientLogoBig: { height: 60, maxWidth: 240, objectFit: "contain", alignSelf: "flex-start", marginBottom: 8 },
-  infoHead: { backgroundColor: BRAND.slate, paddingVertical: 5, paddingHorizontal: 7 },
-  infoHeadText: { fontSize: 7, fontWeight: 700, color: BRAND.white, letterSpacing: 1, lineHeight: 1.2 },
-  infoRow: { flexDirection: "row", borderTop: `0.6 solid ${BRAND.border}` },
-  infoLabel: { width: "38%", backgroundColor: BRAND.mist, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 7.4, fontWeight: 700, color: BRAND.s600, lineHeight: 1.3 },
-  infoValue: { flex: 1, paddingVertical: 4.5, paddingHorizontal: 7, fontSize: 8, color: BRAND.slate, lineHeight: 1.35 },
-  side: { width: "38%", marginLeft: 14 },
-  photo: { width: "100%", height: 130, objectFit: "cover", borderRadius: 6, marginBottom: 10 },
-  clientCard: { border: `0.8 solid ${BRAND.border}`, borderRadius: 6, padding: 10, borderLeft: `3 solid ${BRAND.emerald}` },
-  clientLabel: { fontSize: 6.6, fontWeight: 700, color: BRAND.s500, letterSpacing: 0.9, lineHeight: 1.3, marginBottom: 5 },
-  clientName: { fontSize: 10, fontWeight: 700, color: BRAND.slate, lineHeight: 1.3 },
-  clientLine: { fontSize: 8, color: BRAND.s600, lineHeight: 1.4, marginTop: 1.5 },
   scope: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
   scopeItem: { width: "50%", flexDirection: "row", paddingRight: 10, marginBottom: 3 },
   gallery: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
@@ -103,6 +85,38 @@ const s = StyleSheet.create({
   rtTd: { flex: 1, fontSize: 8.6, padding: 5, color: BRAND.slate, lineHeight: 1.35, borderRight: `0.6 solid ${BRAND.border}`, borderBottom: `0.6 solid ${BRAND.border}` },
   rtTh: { fontWeight: 700, backgroundColor: BRAND.mist },
 });
+
+// 2026-10-09 - the cover page, on navy as the proposal cover.
+const c = StyleSheet.create({
+  idLine: { fontSize: 8, fontWeight: 700, color: BRAND.emerald, letterSpacing: 1.2, lineHeight: 1.3, marginBottom: 4 },
+  title: { fontFamily: "Outfit", fontSize: 24, fontWeight: 700, color: BRAND.white, lineHeight: 1.15 },
+  metaRow: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 12 },
+  meta: { fontSize: 9, color: BRAND.s300, lineHeight: 1.3 },
+  label: { fontSize: 6.6, fontWeight: 700, color: BRAND.s400, letterSpacing: 1.2, lineHeight: 1.3, marginBottom: 6 },
+  kv: { flexDirection: "row", paddingVertical: 3, borderBottom: "0.6 solid #263043" },
+  k: { width: "38%", fontSize: 7.2, fontWeight: 600, color: BRAND.s400, lineHeight: 1.35, paddingRight: 6 },
+  v: { flex: 1, fontSize: 8.2, fontWeight: 600, color: BRAND.white, lineHeight: 1.35 },
+  logoChip: { alignSelf: "flex-start", backgroundColor: BRAND.white, borderRadius: 6, padding: 5, marginBottom: 8 },
+  clientName: { fontSize: 10.5, fontWeight: 700, color: BRAND.white, lineHeight: 1.3 },
+  clientLine: { fontSize: 8, color: BRAND.s300, lineHeight: 1.4, marginTop: 1.5 },
+  foot: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTop: `1 solid ${BRAND.s700}`, paddingTop: 10 },
+  footText: { fontSize: 7, color: BRAND.s400 },
+});
+
+/** The cover's picture stays clear; only its bottom edge fades into the navy below. react-pdf has
+ *  no gradient fill for a View, so faint layers stack (as the proposal's scrim does), each starting
+ *  a little lower, easing to about 97% at the edge. */
+function Fade({ w, h }: { w: number; h: number }) {
+  const N = 48, H = 72, a = 1 - Math.pow(0.03, 1 / N);
+  return (
+    <View style={{ position: "absolute", left: 0, top: h - H, width: w, height: H }}>
+      {Array.from({ length: N }, (_, i) => {
+        const top = H * Math.pow((1 - Math.pow(0.03, i / N)) / 0.97, 1 / 1.6);
+        return <View key={i} style={{ position: "absolute", left: 0, top, width: w, height: H - top, backgroundColor: BRAND.slate, opacity: a }} />;
+      })}
+    </View>
+  );
+}
 
 function formatToday() {
   return new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -177,14 +191,14 @@ export type ReportSection =
   | "overview" | "projectInfo" | "clientInfo" | "photo" | "summary" | "milestones" | "phases"
   | "notes" | "financials" | "subs" | "vendors" | "gallery" | "workPackages" | "team";
 
-// 2026-10-07 - the first page shows the project at a glance (as a past performance page does), then
-// the description, the timeline, the subcontractors, the finance status, the pictures and the work
-// packages.
+// 2026-10-09 - the first page is a cover: the project's picture, its information and the client's.
+// The report starts on the second page: the key figures, the description, the timeline, the
+// subcontractors, the finance status, the pictures and the work packages.
 export const REPORT_SECTIONS: Array<{ key: ReportSection; label: string; hint: string }> = [
-  { key: "projectInfo", label: "Project information", hint: "First page: identity, contract, type and dates" },
-  { key: "photo", label: "Project picture", hint: "First page: the project's cover picture" },
-  { key: "clientInfo", label: "Client and logo", hint: "First page: the client from the Directory, with its logo" },
-  { key: "overview", label: "Key figures and progress", hint: "First page: dates, team size, overall completion" },
+  { key: "projectInfo", label: "Project information", hint: "Cover page: identity, contract, type and dates" },
+  { key: "photo", label: "Project picture", hint: "Cover page: the project's picture, across the top" },
+  { key: "clientInfo", label: "Client and logo", hint: "Cover page: the client from the Directory, with its logo" },
+  { key: "overview", label: "Key figures and progress", hint: "Opens the report: dates, team size, overall completion" },
   { key: "summary", label: "Description and scope", hint: "The project's description and key scope of work" },
   { key: "milestones", label: "Timeline", hint: "The phases and milestones behind the progress" },
   { key: "phases", label: "Older timeline phases", hint: "The earlier phase list, when one is kept" },
@@ -257,7 +271,6 @@ export default function ProjectReportPDF({ project, financials, include, client,
     ["Contract Value", project.value], ["Status", project.status], ["Owner", project.owner],
     ...(SHOW_PENDING_PROJECT_FIELDS ? [["Funding", project.fiscal], ["Disciplines", project.disciplines?.join(", ")], ["Compliance", project.compliance]] : []),
   ] as Array<[string, string | undefined]>).filter(([, v]) => !!v?.trim()) as Array<[string, string]>;
-  const showPhoto = on("photo") && !!photo;
   const clientName = client?.name || project.clientInfo?.name || "";
   const clientLines = [
     client?.clientType,
@@ -267,11 +280,67 @@ export default function ProjectReportPDF({ project, financials, include, client,
   ].map((x) => (x || "").trim()).filter(Boolean);
   const showClient = on("clientInfo") && !!clientName;
   const clientLogo = on("clientInfo") && client?.logo ? client.logo : "";
+  // The cover's picture: the project's own (Project Identity), when the picture is wanted.
+  const coverPhoto = on("photo") ? photo : undefined;
+  // The picture band gives way as the information grows (the client's logo and name take about five
+  // rows), so the cover stays one page.
+  const coverRows = Math.max(on("projectInfo") ? infoRows.length : 0, showClient || clientLogo ? clientLines.length + 5 : 0);
+  const coverH = coverPhoto ? Math.max(240, Math.min(380, 540 - coverRows * 20)) : 0;
   const scope = (project.scopeOfWork || []).map((x) => (x || "").trim()).filter(Boolean);
   const hasDescription = !!project.description?.trim() || !!project.reportNotes?.replace(/<[^>]*>/g, "").trim();
 
   return (
     <Document title={`${project.name} - Project Report`} author="GreenTech USA LLC">
+      {/* 2026-10-09 - the first page is a cover, as the proposal's: the project's picture across the
+          top half, then on navy the project's information and the client's (with its logo). The
+          report itself starts on the next page. */}
+      <Page size="LETTER" style={{ backgroundColor: BRAND.slate, fontFamily: "Inter" }}>
+        {!!coverPhoto && (
+          <View style={{ height: coverH, position: "relative" }}>
+            <Image src={coverPhoto} style={{ width: PAGE.w, height: coverH, objectFit: "cover" }} />
+            <Fade w={PAGE.w} h={coverH} />
+          </View>
+        )}
+        <View style={{ flex: 1, paddingHorizontal: 44, paddingTop: coverH ? 12 : 64, paddingBottom: 22, justifyContent: "space-between" }}>
+          <View>
+            <Eyebrow>{`PROJECT REPORT  ·  ${formatToday().toUpperCase()}`}</Eyebrow>
+            <Text style={c.idLine}>{project.id || "-"}  ·  {(projectCategories(project).join(", ") || "Uncategorized").toUpperCase()}</Text>
+            <Text style={c.title}>{project.name}</Text>
+            <View style={c.metaRow}>
+              <View style={[s.pill, { backgroundColor: pillBg }]}><Text style={[s.pillText, { color: pillFg }]}>{(project.status || "-").toUpperCase()}</Text></View>
+              {!!flag && <Image src={flag} style={{ height: 9, marginRight: 4 }} />}
+              <Text style={c.meta}>{project.location || "Location not set"}</Text>
+            </View>
+            <GradBar w={PAGE.w - 88} h={3} id="report-cover-rule" />
+            <View style={{ flexDirection: "row", marginTop: 12 }}>
+              {on("projectInfo") && (
+                <View style={{ flex: 1.25, paddingRight: 16 }}>
+                  <Text style={c.label}>PROJECT INFORMATION</Text>
+                  {infoRows.map(([l, v]) => (
+                    <View key={l} style={c.kv}>
+                      <Text style={c.k}>{l}</Text>
+                      <Text style={c.v}>{v}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {(showClient || !!clientLogo) && (
+                <View style={{ flex: 1, paddingLeft: on("projectInfo") ? 16 : 0, borderLeft: on("projectInfo") ? `1 solid ${BRAND.s700}` : undefined }}>
+                  <Text style={c.label}>CLIENT</Text>
+                  {!!clientLogo && <View style={c.logoChip}><Image src={clientLogo} style={{ height: 54, maxWidth: 160, objectFit: "contain" }} /></View>}
+                  {!!clientName && <Text style={c.clientName}>{clientName}</Text>}
+                  {clientLines.map((l, i) => <Text key={i} style={c.clientLine}>{l}</Text>)}
+                </View>
+              )}
+            </View>
+          </View>
+          <View style={c.foot}>
+            <GtLogo h={18} />
+            <Text style={c.footText}>Prepared by GreenTech USA  ·  www.gt-usa.com</Text>
+          </View>
+        </View>
+      </Page>
+
       <Page size="LETTER" style={s.page} wrap>
         <LetterheadHeader />
 
@@ -283,48 +352,7 @@ export default function ProjectReportPDF({ project, financials, include, client,
         <Text style={s.idLine}>{project.id || "-"}  ·  {(projectCategories(project).join(", ") || "Uncategorized").toUpperCase()}</Text>
         <Text style={s.title}>{project.name}</Text>
         <GradBar w={120} h={4} r={2} id="report-title" />
-        <View style={s.metaRow}>
-          <View style={[s.pill, { backgroundColor: pillBg }]}><Text style={[s.pillText, { color: pillFg }]}>{(project.status || "-").toUpperCase()}</Text></View>
-          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 12 }}>
-            {!!flag && <Image src={flag} style={{ height: 9, marginRight: 4 }} />}
-            <Text style={[s.meta, { marginRight: 0 }]}>{project.location || "Location not set"}</Text>
-          </View>
-          <Text style={s.meta}>Owner: {project.owner || "-"}</Text>
-        </View>
-
-        {/* 2026-10-07 - the project at a glance, as on a past performance page. */}
-        {(on("projectInfo") || showPhoto || showClient || !!clientLogo) && (
-          <View style={s.top} wrap={false}>
-            {(on("projectInfo") || !!clientLogo) && (
-              <View style={s.infoCol}>
-                {!!clientLogo && <Image src={clientLogo} style={s.clientLogoBig} />}
-                {on("projectInfo") && (
-                  <View style={s.info}>
-                    <View style={s.infoHead}><Text style={s.infoHeadText}>PROJECT INFORMATION</Text></View>
-                    {infoRows.map(([l, v]) => (
-                      <View key={l} style={s.infoRow}>
-                        <Text style={s.infoLabel}>{l}</Text>
-                        <Text style={s.infoValue}>{v}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-            {(showPhoto || showClient) && (
-              <View style={on("projectInfo") || clientLogo ? s.side : { width: "100%" }}>
-                {showPhoto && <Image src={photo!} style={on("projectInfo") || clientLogo ? s.photo : [s.photo, { height: 200 }]} />}
-                {showClient && (
-                  <View style={s.clientCard}>
-                    <Text style={s.clientLabel}>CLIENT</Text>
-                    <Text style={s.clientName}>{clientName}</Text>
-                    {clientLines.map((l, i) => <Text key={i} style={s.clientLine}>{l}</Text>)}
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        )}
+        <View style={{ height: 16 }} />
 
         {/* Key figures */}
         {on("overview") && (

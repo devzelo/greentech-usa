@@ -2141,7 +2141,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
       // cannot be read is left out.
       const photos = projectPhotos(project);
       let cover: string | undefined;
-      if (reportInclude.photo !== false && photos[0]) { try { cover = await photoAsJpeg(withFileToken(photos[0]), 900); } catch { /* no picture */ } }
+      if (reportInclude.photo !== false && photos[0]) { try { cover = await photoAsJpeg(withFileToken(photos[0]), 1400); } catch { /* no picture */ } }
       setReportPhoto(cover);
       const shots = (project.gallery || []).filter((g) => g.type === "image" && !!g.url);
       const pics: Array<{ src: string; caption?: string }> = [];
