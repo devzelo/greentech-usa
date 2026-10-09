@@ -10,6 +10,7 @@ import {
 } from "../../lib/api";
 import { StatTile, ActivityRow, ProfileSection, jumpToSection } from "./profileBits";
 import TaskMiniBoard from "./TaskMiniBoard";
+import VendorWorkSection from "./VendorWorkSection";
 
 // CR-P (16) — the self profile preview: the same clickable numbers + activity sections the admin
 // sees on a user profile and the Directory shows on a company profile, but for the logged-in
@@ -74,6 +75,9 @@ export default function MyProfileOverview({ isGuest }: { isGuest: boolean }) {
           </div>
         </div>
       )}
+
+      {/* 2026-10-09 - the BOQ lines and work packages given to this company, to price. */}
+      {company && <VendorWorkSection />}
 
       {/* Clickable numbers — same behavior as the user/company profile previews */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">

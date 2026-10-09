@@ -9,6 +9,7 @@ import ProcurementItemRevision from "../models/ProcurementItemRevision";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { procTabGuard } from "../lib/access";
+import { tellCompanyAboutWork } from "../lib/vendorWork";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
@@ -125,7 +126,7 @@ router.post("/items/bulk", async (req: AuthedRequest, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
-const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "locked", "remarks", "draft"] as const;
+const ITEM_FIELDS = ["sectionId", "itemNo", "description", "manufacturer", "modelNo", "qty", "unit", "spec", "needOnSiteDate", "leadTimeDays", "status", "vendorName", "vendorCompanyId", "locked", "remarks", "draft"] as const;
 
 // Per-item file uploads (CR-P-12) — pictures, catalogue, data sheet, drawing.
 const itemHumanSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`);
@@ -142,6 +143,8 @@ router.patch("/items/:iid", async (req: AuthedRequest, res: Response, next: Next
     // Anyone who passes the guard with edit (employee, owner, or a guest granted BOQ/Master-Log edit) may update.
     const patch: Record<string, unknown> = {};
     for (const f of ITEM_FIELDS) if (f in (req.body || {})) patch[f] = req.body[f];
+    // The vendor is a Directory company (its id), or none.
+    if ("vendorCompanyId" in patch && patch.vendorCompanyId && !/^[a-f\d]{24}$/i.test(String(patch.vendorCompanyId))) return res.status(400).json({ error: "Pick the vendor from the Directory." });
     const before = await ProcurementItem.findOne({ _id: req.params.iid, projectId: req.params.id });
     if (!before) return res.status(404).json({ error: "Not found" });
 
@@ -160,6 +163,10 @@ router.patch("/items/:iid", async (req: AuthedRequest, res: Response, next: Next
     }
 
     const row = await ProcurementItem.findByIdAndUpdate(req.params.iid, patch, { new: true, runValidators: true });
+    // 2026-10-09 - a vendor picked for the line hears about it; the line waits in its profile.
+    if (patch.vendorCompanyId && String(patch.vendorCompanyId) !== String(before.vendorCompanyId || "")) {
+      void tellCompanyAboutWork(String(patch.vendorCompanyId), req.params.id, `the BOQ line "${(row?.description || before.description || "").slice(0, 80)}"`);
+    }
     if (patch.status && patch.status !== before.status) {
       await logEvent(req, { entityId: req.params.iid, action: "status", fromValue: before.status, toValue: String(patch.status) });
     }

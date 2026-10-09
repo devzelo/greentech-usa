@@ -227,7 +227,8 @@ router.post("/:rid/quotes/:qid/award", async (req: AuthedRequest, res: Response,
     if (itemIds.length && vendor?.name) {
       await ProcurementItem.updateMany(
         { _id: { $in: itemIds }, projectId: req.params.id, status: { $ne: "Cancelled" } },
-        { $set: { vendorName: vendor.name } }
+        // 2026-10-09 - with its Directory company, so the lines show in the vendor's profile.
+        { $set: { vendorName: vendor.name, ...(vendor.companyId ? { vendorCompanyId: String(vendor.companyId) } : {}) } }
       );
     }
     await logEvent(req, { entityId: req.params.rid, action: "awarded", toValue: q.vendorId });

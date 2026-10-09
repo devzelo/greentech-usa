@@ -28,6 +28,8 @@ export interface IProcurementItem extends Document {
   attachments: Array<{ name: string; filePath: string; fileType: string; size: string; kind: string }>;
   remarks: string;          // free-text remarks (CR-P-12)
   vendorName: string;       // the accepted vendor (set when an RFQ quote is awarded)
+  // 2026-10-09 - the vendor's Directory company: the line shows in that company's profile, to price.
+  vendorCompanyId: string;
   revNo: number;            // I2 — current revision number (0-based); bumps when a tracked field changes
   cancelledAt: Date | null;
   cancelledBy: string;
@@ -60,6 +62,7 @@ const ProcurementItemSchema = new Schema<IProcurementItem>(
     attachments: { type: [{ name: String, filePath: String, fileType: String, size: String, kind: { type: String, default: "other" } }], default: [] },
     remarks: { type: String, default: "" },
     vendorName: { type: String, default: "" },
+    vendorCompanyId: { type: String, default: "", index: true },
     revNo: { type: Number, default: 0 },
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: String, default: "" },

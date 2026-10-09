@@ -13,6 +13,7 @@ import { enrichTasks } from "../lib/taskProfile";
 import { buildUserLinks, buildCompanyLinks, escapeRegex } from "../lib/profileLinks";
 import { partyMaySee } from "../lib/agreementAccess";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { resolveMyCompany } from "../lib/myCompany";
 
 // CR-P (16) — self-profile endpoints. Every role uses these for its own profile preview
 // (the admin-only /api/users/:id/* routes stay untouched), so guests must NOT be blocked here.
@@ -34,19 +35,7 @@ type LeanUser = {
 const BLOCK_FIELDS = ["name", "title", "phone", "email", "website", "address"] as const;
 type BlockSig = { _id: unknown; label?: string; url: string; isDefault?: boolean } & Partial<Record<(typeof BLOCK_FIELDS)[number], string>>;
 
-// A subcontractor/partner login maps to its Directory company via the hard companyId link,
-// falling back to the legacy email match (and back-filling companyId when the match hits).
-async function resolveMyCompany(user: LeanUser) {
-  if (user.role !== "subcontractor") return null;
-  if (user.companyId) {
-    const byId = await Company.findById(user.companyId).select("name email logoUrl address phone website categories category").lean();
-    if (byId) return byId;
-  }
-  if (!user.email) return null;
-  const byEmail = await Company.findOne({ email: user.email.toLowerCase() }).select("name email logoUrl address phone website categories category").lean();
-  if (byEmail) await User.updateOne({ _id: user._id }, { companyId: byEmail._id }).catch(() => undefined);
-  return byEmail;
-}
+// The login's Directory company: lib/myCompany.ts (shared with the vendor portal).
 
 // ── GET /api/me/links — everything related to me, role-aware ────────────────────────────────
 // Staff get the same payload as the admin user profile; a subcontractor/partner login also gets

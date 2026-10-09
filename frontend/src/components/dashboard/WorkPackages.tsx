@@ -26,6 +26,7 @@ import ToolMenu, { MENU_ITEM } from "./timeline/ToolMenu";
 import { GREENTECH } from "../../lib/poPdf";
 import PdfPreviewModal, { type PreviewAction } from "./PdfPreviewModal";
 import ShareMenu from "./ShareMenu";
+import VendorOfferPanel from "./VendorOfferPanel";
 import type { PackageBar } from "../../lib/packageBar";
 import type { WpReportRfq, WpReportSections } from "../../lib/workPackagesPdf";
 
@@ -1009,6 +1010,10 @@ function PackageWindow({ pkg, no, project, projectInfo, canEdit, canUnlink, canM
           )}
           {tab === "money" && canMoney && (
             <div className="space-y-4">
+            {/* 2026-10-09 - what the company doing it sent from its profile: its price, lead time and documents. */}
+            {pkg.responsible?.kind === "company" && !!pkg.responsible.companyId && (
+              <VendorOfferPanel projectId={project.id} kind="package" refId={pkg._id} companyId={pkg.responsible.companyId} companyName={pkg.responsible.name} onChanged={onChanged} />
+            )}
             {contract
               ? <InvoiceLedger projectId={project.id} kind="received" canEdit={canEdit} projectInfo={projectInfo} contract={contract} onRowsChange={invoicesChanged} />
               : (

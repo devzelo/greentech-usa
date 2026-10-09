@@ -57,6 +57,10 @@ export interface IInvoice extends Document {
   attachments: IInvoiceFile[];
   payments: IInvoicePayment[];
   addedByName: string;
+  // 2026-10-09 - "vendor-portal": sent by the vendor from its profile, for its BOQ line or work
+  // package (sourceRef); it starts Pending until GreenTech approves it.
+  source: string;
+  sourceRef: { kind: string; refId: string };
 }
 
 const FileSchema = new Schema<IInvoiceFile>({ name: String, filePath: String, fileType: String, size: String }, { _id: true });
@@ -110,6 +114,8 @@ const InvoiceSchema = new Schema<IInvoice>(
     attachments: { type: [FileSchema], default: [] },
     payments: { type: [PaymentSchema], default: [] },
     addedByName: { type: String, default: "" },
+    source: { type: String, default: "", index: true },
+    sourceRef: { kind: { type: String, default: "" }, refId: { type: String, default: "" } },
   },
   { timestamps: true }
 );

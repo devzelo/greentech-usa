@@ -42,23 +42,25 @@ export function textWidth(text: string, font: string): number {
 const family = () => (typeof document !== "undefined" ? getComputedStyle(document.body).fontFamily : "sans-serif");
 
 /** The space a cell needs around its text: the cell's padding plus its box (a date picker, a chevron). */
-const EXTRA: Partial<Record<BoqColId, number>> = { brand: 44, rev: 34, status: 34, submittal: 26, needOnSite: 34 };
+const EXTRA: Partial<Record<BoqColId, number>> = { brand: 44, vendor: 44, rev: 34, status: 34, submittal: 26, needOnSite: 34 };
 const CELL_PAD = 30;
 /** The narrowest a column gets when the table is fitted to the screen (its heading sets a floor too). */
-const FIT_MIN: Partial<Record<BoqColId, number>> = { description: 170, spec: 130, brand: 100, needOnSite: 118, orderBy: 106, status: 108 };
+const FIT_MIN: Partial<Record<BoqColId, number>> = { description: 170, spec: 130, brand: 100, vendor: 100, needOnSite: 118, orderBy: 106, status: 108 };
 /** The width a heading needs: its label, the sort arrows and the cell padding. */
 const headWidth = (id: BoqColId) => {
   const label = colById(id).label;
   return Math.ceil(textWidth(label.toUpperCase(), `700 10px ${family()}`) + label.length + 15 + 18);
 };
 
-export function useBoqColumns() {
+export function useBoqColumns(exclude: BoqColId[] = []) {
   const [saved, setSaved] = useState<Saved>(read);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* not kept: fine */ } }, [saved]);
   // The tables read their widths from CSS variables on this box, so a drag only restyles it.
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  const visible = BOQ_COLUMNS.filter((c) => saved.on[c.id]);
+  // `exclude`: columns this viewer may not have (the vendor's prices, without the figures right).
+  const available = BOQ_COLUMNS.filter((c) => !exclude.includes(c.id));
+  const visible = available.filter((c) => saved.on[c.id]);
   const widthVars = Object.fromEntries(BOQ_COLUMNS.map((c) => [`--boq-w-${c.id}`, `${saved.w[c.id]}px`])) as CSSProperties;
   const colWidth = (id: BoqColId) => `var(--boq-w-${id})`;
   /** The table's width: its columns plus the fixed ones (tick box, actions). */
@@ -146,7 +148,7 @@ export function useBoqColumns() {
   };
 
   return {
-    flat: saved.flat, fit: saved.fit, on: saved.on, widths: saved.w, visible, boxRef, widthVars, colWidth, tableWidth,
+    flat: saved.flat, fit: saved.fit, on: saved.on, widths: saved.w, available, visible, boxRef, widthVars, colWidth, tableWidth,
     setOn, showAll, setFlat, reset, startResize, keyResize, autoFit, autoFitOne, fitTo,
   };
 }

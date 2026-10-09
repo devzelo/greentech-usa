@@ -14,6 +14,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { tabAccessGuard, canSeeFigures, fetchRequesterAccess } from "../lib/access";
 import { recycleAndDelete } from "../lib/recycleBin";
 import { poLock, agrLock, locksOf, type Lock } from "../lib/workPackageLocks";
+import { tellCompanyAboutWork } from "../lib/vendorWork";
 
 // CR 328 - Work Packages (Project Management). Behind the "pm" tab permission like the schedule
 // and the task board. The list comes back with everything it shows about the linked RFQ, quotes,
@@ -218,6 +219,8 @@ router.post("/", async (req: AuthedRequest, res: Response, next: NextFunction) =
     if (!showMoney) { delete body.budget; delete body.changeOrders; }
     const last = await WorkPackage.findOne({ projectId: req.params.id }).sort({ order: -1 }).select("order").lean();
     const doc = await WorkPackage.create({ ...body, projectId: req.params.id, order: (last?.order ?? 0) + 1, createdByName: req.user!.name || "" });
+    // 2026-10-09 - the company doing it hears about it; the package waits in its profile.
+    if (doc.responsible?.kind === "company" && doc.responsible.companyId) void tellCompanyAboutWork(doc.responsible.companyId, req.params.id, `the work package "${doc.name}"`);
     res.status(201).json((await shape(req.params.id, [doc], showMoney))[0]);
   } catch (err) { next(err); }
 });
@@ -286,8 +289,11 @@ router.patch("/:wid", async (req: AuthedRequest, res: Response, next: NextFuncti
         }
       }
     }
+    const whoBefore = doc.responsible?.kind === "company" ? doc.responsible.companyId || "" : "";
     doc.set(body);
     await doc.save();
+    const whoNow = doc.responsible?.kind === "company" ? doc.responsible.companyId || "" : "";
+    if (whoNow && whoNow !== whoBefore) void tellCompanyAboutWork(whoNow, req.params.id, `the work package "${doc.name}"`);
     res.json((await shape(req.params.id, [doc], showMoney))[0]);
   } catch (err) { next(err); }
 });

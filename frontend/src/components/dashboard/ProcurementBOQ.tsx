@@ -8,15 +8,16 @@ import {
   deleteProcurementItem, bulkAddProcurementItems, fetchSubmittals, fetchProcurementItemRevisions, fetchProcurementEvents,
   createRfq, uploadDocument, uploadProcurementItemFile, deleteProcurementItemFile, attachmentUrl,
   type ApiProcurementSection, type ApiProcurementItem, type ProcurementItemInput, type ApiSubmittal, type ApiProcurementItemRevision,
-  type ApiProcurementEvent, type ProcurementStatus,
+  type ApiProcurementEvent, type ProcurementStatus, fetchVendorOffers, type ApiVendorOffer,
 } from "../../lib/api";
+import VendorOfferPanel from "./VendorOfferPanel";
 import { buildRfqPdf } from "../../lib/rfqPdf";
 import { fetchSavedDocuments, saveDocumentVersion, updateSavedDocument, deleteSavedDocument } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useDialogs } from "../../lib/useDialogs";
 import { buildBoqPdf, type BoqPrintLayout } from "../../lib/boqPdf";
 import {
-  BOQ_COLUMNS, STATUS_META, STATUS_ORDER, DISPO_CLS, boqCellText, colById, isAtRisk, orderByDate, statusCls, statusText, submittalText,
+  STATUS_META, STATUS_ORDER, DISPO_CLS, PRICE_COLS, boqCellText, colById, isAtRisk, orderByDate, statusCls, statusText, submittalText, usd,
   type BoqColId, type BoqTextCtx, type LiveStatus,
 } from "../../lib/boqColumns";
 import { useBoqColumns } from "./useBoqColumns";
@@ -109,7 +110,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
   const [events, setEvents] = useState<ApiProcurementEvent[]>([]);
   const [showActivity, setShowActivity] = useState(false);
   const [colMenu, setColMenu] = useState(false);
-  const layout = useBoqColumns();
+  // 2026-10-09 - what each line's vendor sent from its profile; only for those who see the figures.
+  const [offers, setOffers] = useState<ApiVendorOffer[]>([]);
+  const [offersOk, setOffersOk] = useState(false);
+  const loadOffers = () => fetchVendorOffers(projectId, "boq").then((r) => { setOffers(r.offers); setOffersOk(true); }).catch(() => { setOffers([]); setOffersOk(false); });
+  const layout = useBoqColumns(offersOk ? [] : PRICE_COLS);
   // I1 — inline revision history: which rows are expanded + a per-item cache of revisions.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [revisions, setRevisions] = useState<Record<string, ApiProcurementItemRevision[]>>({});
@@ -151,6 +156,7 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       setItems(i);
       setSubmittals(subs);
       setEvents(ev);
+      void loadOffers();
     } catch { /* keep empty */ }
     finally { setLoading(false); }
   };
@@ -174,7 +180,9 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
 
   const sectionName = (sid: string) => sections.find((s) => s._id === sid)?.name || "No category";
   // What each column says for an item: for sorting, the exports, the print and Auto-fit.
-  const textCtx: BoqTextCtx = { sectionName, numberOf: (iid) => displayNo[iid], submittalOf: (iid) => subByItem[iid] };
+  const offerByItem = new Map<string, ApiVendorOffer>();
+  for (const o of offers) { const it = items.find((x) => x._id === o.refId); if (it && it.vendorCompanyId === o.companyId) offerByItem.set(o.refId, o); }
+  const textCtx: BoqTextCtx = { sectionName, numberOf: (iid) => displayNo[iid], submittalOf: (iid) => subByItem[iid], offerOf: (iid) => offerByItem.get(iid) };
 
   // Every column sorts. One sort applies across the BOQ (by category, each sorts its own rows).
   const [sort, setSort] = useState<{ key: BoqColId; dir: 1 | -1 } | null>(null);
@@ -185,6 +193,8 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
       case "rev": return it.revNo || 0;
       case "qty": return it.qty ? num(it.qty) : "";
       case "lead": return it.leadTimeDays ? num(it.leadTimeDays) : "";
+      case "unitPrice": { const v = offerByItem.get(it._id)?.unitPrice; return v ? num(v) : ""; }
+      case "totalPrice": { const v = offerByItem.get(it._id)?.total; return v ? num(v) : ""; }
       case "status": { const i = STATUS_SORT.indexOf(it.status); return i === -1 ? 99 : i; }
       default: return boqCellText(key, it, textCtx).toLowerCase();
     }
@@ -713,7 +723,23 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
           onPick={(co) => editCell(it._id, "manufacturer", co.name)} onClear={() => editCell(it._id, "manufacturer", "")} /></td>
       );
       case "model": return input("modelNo");
-      case "vendor": return <td key={id} className="px-3 py-2 align-top text-[11px] text-slate-500 break-words" title="The accepted vendor: set when a quote is accepted in the RFQ tab">{it.vendorName || "—"}</td>;
+      // 2026-10-09 - the vendor is picked from the Directory (or set by an awarded RFQ quote); the
+      // line then shows in that company's profile, where it enters its prices.
+      case "vendor": return (
+        <td key={id} className="px-1 py-1 align-top"><DirectoryNameField className={`w-full ${strike}`} value={it.vendorName || ""} disabled={!rowEdit} categories={["vendor", "supplier", "manufacturer", "subcontractor"]} title="Vendor" placeholder="Pick a vendor"
+          onPick={(co) => { editCell(it._id, "vendorName", co.name); editCell(it._id, "vendorCompanyId", co._id); }} onClear={() => { editCell(it._id, "vendorName", ""); editCell(it._id, "vendorCompanyId", ""); }} /></td>
+      );
+      case "unitPrice": return <td key={id} className="px-3 py-2 align-top text-right text-[11px] font-bold tabular-nums text-slate-700">{usd(offerByItem.get(it._id)?.unitPrice) || <span className="font-normal text-slate-300">—</span>}</td>;
+      case "totalPrice": {
+        const o = offerByItem.get(it._id);
+        return (
+          <td key={id} className="px-3 py-2 align-top text-right text-[11px] font-bold tabular-nums text-slate-700">
+            {usd(o?.total) || <span className="font-normal text-slate-300">—</span>}
+            {o && <span className={`mt-0.5 block text-[9px] font-bold uppercase tracking-wide ${o.status === "accepted" ? "text-emerald-600" : "text-blue-600"}`}>{o.status === "accepted" ? "Accepted" : "From the vendor"}</span>}
+          </td>
+        );
+      }
+      case "vendorLead": return <td key={id} className="px-3 py-2 align-top text-[11px] text-slate-600 break-words">{offerByItem.get(it._id)?.leadTime || <span className="text-slate-300">—</span>}</td>;
       case "qty": return input("qty", "text-right");
       case "unit": return input("unit");
       case "spec": return <td key={id} className="px-1 py-1 align-top"><AutoCell value={it.spec || ""} onChange={(v) => editCell(it._id, "spec", v)} disabled={!rowEdit} className={`${cell} align-top ${strike}`} /></td>;
@@ -977,14 +1003,14 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
               <button type="button" onClick={() => layout.setFlat(true)} aria-pressed={layout.flat} title="Every item in one list, as the Master Log showed them: sort across the categories" className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold transition-colors ${layout.flat ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}><LayoutList size={12} /> One list</button>
             </span>
             <div className="relative">
-              <button type="button" onClick={() => setColMenu((v) => !v)} aria-expanded={colMenu} aria-haspopup="true" className={toolBtn}><Columns3 size={12} /> Columns <span className="text-slate-400">{layout.visible.length}/{BOQ_COLUMNS.length}</span></button>
+              <button type="button" onClick={() => setColMenu((v) => !v)} aria-expanded={colMenu} aria-haspopup="true" className={toolBtn}><Columns3 size={12} /> Columns <span className="text-slate-400">{layout.visible.length}/{layout.available.length}</span></button>
               {colMenu && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setColMenu(false)} />
                   <div className="absolute left-0 z-30 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
                     <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Show columns</p>
                     <div className="max-h-72 overflow-y-auto">
-                      {BOQ_COLUMNS.map((c) => {
+                      {layout.available.map((c) => {
                         const last = layout.on[c.id] && layout.visible.length === 1;
                         return (
                           <label key={c.id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 ${last ? "opacity-50" : "cursor-pointer hover:bg-slate-50"}`}>
@@ -1384,6 +1410,11 @@ export default function ProcurementBOQ({ projectId, canEdit, projectInfo, onGoTo
                     </div>
                   )}
                 </div>
+
+                {/* 2026-10-09 - what the line's vendor sent from its profile: Accept or Reopen. */}
+                {offersOk && !!m.vendorCompanyId && (
+                  <VendorOfferPanel projectId={projectId} kind="boq" refId={m._id} companyId={m.vendorCompanyId} companyName={m.vendorName || ""} onChanged={() => void loadOffers()} />
+                )}
 
                 {canEdit && (
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">

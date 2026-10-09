@@ -62,6 +62,8 @@ import scheduleRoutes from "./routes/schedule";
 import workPackageRoutes from "./routes/workPackages";
 import projectCategoryRoutes from "./routes/projectCategories";
 import myProfileRoutes from "./routes/myProfile";
+import vendorPortalRoutes from "./routes/vendorPortal";
+import vendorOfferRoutes from "./routes/vendorOffers";
 import draftRoutes from "./routes/drafts";
 import binRoutes from "./routes/bin";
 import { startBackupCron } from "./services/backupCron";
@@ -135,6 +137,9 @@ app.use("/api/sticky-notes", stickyNoteRoutes);
 app.use("/api/project-categories", projectCategoryRoutes); // CR 183 custom categories
 app.use("/api/toolbox", toolboxRoutes);                   // Quick Toolbox (rates, saved files)
 app.use("/api/my-board", myBoardRoutes);
+// 2026-10-09 - a vendor prices its BOQ lines and work packages from its profile; staff see the offers.
+app.use("/api/me/vendor", vendorPortalRoutes);
+app.use("/api/projects/:id/vendor-offers", vendorOfferRoutes);
 app.use("/api/me", myProfileRoutes);                     // CR-P (16) — self profile preview
 
 app.use("/api/drafts", draftRoutes);

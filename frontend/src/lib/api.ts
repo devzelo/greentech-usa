@@ -1843,6 +1843,9 @@ export interface ApiInvoice {
   _id: string; projectId: string; type: 'sent' | 'received';
   number: string; party: string; amount: string; date: string; status: string; description: string;
   poId: string; subId: string;
+  /** 2026-10-09 - "vendor-portal": sent by the vendor from its profile (Pending until approved). */
+  source?: string;
+  sourceRef?: { kind: string; refId: string };
   // Invoice builder (CR-I-03/04/07).
   receiverKind?: string; companyId?: string; lineItems?: InvoiceLineItem[]; bank?: InvoiceBank;
   /** CR 215 - what the invoice is for (rich text), and the terms: written or a standard file. */
@@ -2249,6 +2252,8 @@ export interface ApiProcurementItem {
   remarks?: string;
   attachments?: Array<{ _id: string; name: string; filePath: string; fileType: string; size: string; kind: string }>;
   vendorName?: string;
+  /** 2026-10-09 - the vendor's Directory company: the line shows in its profile, to price. */
+  vendorCompanyId?: string;
   revNo: number;
   cancelledAt: string | null;
   cancelledBy: string;
@@ -2302,6 +2307,73 @@ export async function deleteProcurementItemFile(projectId: string, iid: string, 
 export async function updateProcurementItem(projectId: string, iid: string, body: ProcurementItemInput): Promise<ApiProcurementItem> {
   return request(`${procBase(projectId)}/items/${iid}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
+// ── 2026-10-09 - vendors price their BOQ lines and work packages from their own profile ──────
+export type OfferKind = "boq" | "package";
+export interface ApiOfferFile { _id: string; name: string; filePath: string; fileType: string; size: string; uploadedByName?: string; uploadedAt?: string }
+/** One company's offer on a BOQ line or a work package (amounts as plain numbers, "1250.5"). */
+export interface ApiVendorOffer {
+  _id: string; projectId: string; companyId: string; companyName: string; kind: OfferKind; refId: string;
+  unitPrice: string; total: string; leadTime: string; notes: string;
+  status: "submitted" | "accepted";
+  submittedAt?: string | null; submittedByName?: string; acceptedAt?: string | null; acceptedByName?: string;
+  attachments: ApiOfferFile[];
+}
+/** An invoice a vendor sent from its profile (a Pending received invoice in Finances). */
+export interface ApiVendorInvoice {
+  _id: string; projectId: string; number: string; amount: string; date: string; status: string;
+  companyId?: string; party?: string; sourceRef?: { kind: string; refId: string };
+  attachments: Array<{ _id?: string; name: string; filePath: string; fileType: string; size: string }>;
+  createdAt?: string;
+}
+// GreenTech's side: the offers of the vendors each line / package names now.
+export async function fetchVendorOffers(projectId: string, kind?: OfferKind): Promise<{ offers: ApiVendorOffer[]; invoices: ApiVendorInvoice[] }> {
+  return request(`/projects/${projectId}/vendor-offers${kind ? `?kind=${kind}` : ""}`);
+}
+export async function acceptVendorOffer(projectId: string, oid: string): Promise<ApiVendorOffer> {
+  return request(`/projects/${projectId}/vendor-offers/${oid}/accept`, { method: "POST" });
+}
+export async function reopenVendorOffer(projectId: string, oid: string): Promise<ApiVendorOffer> {
+  return request(`/projects/${projectId}/vendor-offers/${oid}/reopen`, { method: "POST" });
+}
+// The vendor's side (a company login): its lines and packages, project by project.
+export interface MyVendorWork {
+  company: { id: string; name: string } | null;
+  projects: Array<{
+    projectId: string; name: string; location: string; status: string;
+    items: Array<{ _id: string; category: string; description: string; brand: string; model: string; qty: string; unit: string; spec: string; needOnSiteDate: string }>;
+    packages: Array<{ _id: string; name: string; description: string; type: string; status: string }>;
+  }>;
+  offers: ApiVendorOffer[];
+  invoices: ApiVendorInvoice[];
+}
+export async function fetchMyVendorWork(): Promise<MyVendorWork> {
+  return request("/me/vendor");
+}
+export async function saveMyOffer(kind: OfferKind, refId: string, body: { unitPrice: string; total: string; leadTime: string; notes: string }): Promise<ApiVendorOffer> {
+  return request(`/me/vendor/offers/${kind}/${refId}`, { method: "PUT", body: JSON.stringify(body) });
+}
+async function postForm<T>(path: string, fd: FormData): Promise<T> {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+export async function uploadMyOfferFile(kind: OfferKind, refId: string, file: File): Promise<ApiVendorOffer> {
+  const fd = new FormData(); fd.append("file", file);
+  return postForm(`/me/vendor/offers/${kind}/${refId}/files`, fd);
+}
+export async function deleteMyOfferFile(kind: OfferKind, refId: string, fid: string): Promise<ApiVendorOffer> {
+  return request(`/me/vendor/offers/${kind}/${refId}/files/${fid}`, { method: "DELETE" });
+}
+export async function sendMyInvoice(kind: OfferKind, refId: string, f: { number: string; amount: string; date: string; notes: string }, file: File): Promise<ApiVendorInvoice> {
+  const fd = new FormData();
+  fd.append("number", f.number); fd.append("amount", f.amount); fd.append("date", f.date); fd.append("notes", f.notes); fd.append("file", file);
+  return postForm(`/me/vendor/invoices/${kind}/${refId}`, fd);
+}
+export async function withdrawMyInvoice(iid: string): Promise<void> {
+  await request(`/me/vendor/invoices/${iid}`, { method: "DELETE" });
+}
+
 // I1 — frozen snapshots of an item's previous states (inline revision history).
 export interface ApiProcurementItemRevision {
   _id: string; projectId: string; itemId: string; revNo: number;

@@ -8,7 +8,7 @@ import type { ApiProcurementItem, ProcurementStatus } from "./api";
  */
 export type BoqColId =
   | "category" | "no" | "rev" | "description" | "brand" | "model" | "vendor" | "qty" | "unit"
-  | "spec" | "needOnSite" | "lead" | "orderBy" | "submittal" | "status";
+  | "unitPrice" | "totalPrice" | "spec" | "needOnSite" | "lead" | "vendorLead" | "orderBy" | "submittal" | "status";
 
 export interface BoqColumn {
   id: BoqColId;
@@ -34,13 +34,19 @@ export const BOQ_COLUMNS: BoqColumn[] = [
   { id: "vendor", label: "Vendor", w: 130, max: 260, on: true, wrap: true },
   { id: "qty", label: "Qty", w: 70, max: 130, on: true, align: "right" },
   { id: "unit", label: "Unit", w: 70, max: 130, on: true },
+  // 2026-10-09 - what the line's vendor entered in its profile (only for those who see the figures).
+  { id: "unitPrice", label: "Unit price", w: 110, max: 170, on: true, align: "right" },
+  { id: "totalPrice", label: "Total price", w: 130, max: 190, on: true, align: "right" },
   { id: "spec", label: "Spec / Size", w: 280, max: 520, on: true, wrap: true },
   { id: "needOnSite", label: "Need on site", w: 136, max: 160, on: true },
   { id: "lead", label: "Lead (d)", w: 80, max: 120, on: true, align: "right" },
+  { id: "vendorLead", label: "Vendor lead time", w: 120, max: 220, on: false, wrap: true },
   { id: "orderBy", label: "Order by", w: 110, max: 150, on: true },
   { id: "submittal", label: "Submittal", w: 160, max: 230, on: true, wrap: true },
   { id: "status", label: "Status", w: 136, max: 180, on: true },
 ];
+/** The vendor's figures: hidden from anyone not allowed to see the project's figures. */
+export const PRICE_COLS: BoqColId[] = ["unitPrice", "totalPrice", "vendorLead"];
 export const MIN_COL_W = 40;
 export const MAX_COL_W = 900;
 export const colById = (id: BoqColId) => BOQ_COLUMNS.find((c) => c.id === id)!;
@@ -95,7 +101,14 @@ export interface BoqTextCtx {
   sectionName: (sectionId: string) => string;
   numberOf: (itemId: string) => number | undefined;
   submittalOf: (itemId: string) => SubmittalMark | undefined;
+  /** The offer the line's vendor sent from its profile. */
+  offerOf?: (itemId: string) => { unitPrice: string; total: string; leadTime: string; status: string } | undefined;
 }
+/** A plain amount ("1250.5") as "$1,250.50"; blank stays blank. */
+export const usd = (v?: string) => {
+  const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, ""));
+  return v && isFinite(n) ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "";
+};
 export function boqCellText(id: BoqColId, it: ApiProcurementItem, ctx: BoqTextCtx): string {
   switch (id) {
     case "category": return ctx.sectionName(it.sectionId);
@@ -107,6 +120,9 @@ export function boqCellText(id: BoqColId, it: ApiProcurementItem, ctx: BoqTextCt
     case "vendor": return it.vendorName || "";
     case "qty": return it.qty || "";
     case "unit": return it.unit || "";
+    case "unitPrice": return usd(ctx.offerOf?.(it._id)?.unitPrice);
+    case "totalPrice": return usd(ctx.offerOf?.(it._id)?.total);
+    case "vendorLead": return ctx.offerOf?.(it._id)?.leadTime || "";
     case "spec": return it.spec || "";
     case "needOnSite": return it.needOnSiteDate || "";
     case "lead": return it.leadTimeDays || "";
