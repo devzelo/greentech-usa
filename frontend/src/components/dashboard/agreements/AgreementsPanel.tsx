@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
+import PhoneInput from "../PhoneInput";
+import { formatPhone } from "../../../lib/phone";
 import { Loader2, Plus, Trash2, X, FileText, Eye, EyeOff, Download, Send, PenLine, Handshake, Upload, ChevronDown, ChevronRight, ChevronUp, Copy, Lock, Unlock, History, Ban, CheckCircle2, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Building2, Search } from "lucide-react";
 import {
   fetchAgreements, fetchAgreement, createAgreement, updateAgreement, deleteAgreement, setAgreementArchived,
@@ -1883,7 +1885,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                             <input className={`${inp} col-span-2`} placeholder="Name *" value={p.name} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, name: e.target.value }))} />
                             <input className={`${inp} col-span-2`} placeholder="Contact person" value={p.contactName} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, contactName: e.target.value }))} />
                             <input className={inp} placeholder="Email" value={p.email} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, email: e.target.value }))} />
-                            <input className={inp} placeholder="Phone" value={p.phone} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, phone: e.target.value }))} />
+                            <PhoneInput className={inp} placeholder="Phone" value={p.phone} onChange={(v) => setDraft(writeParty(draft, slot, { ...p, phone: v }))} />
                             <textarea rows={3} className={`${inp} col-span-2 resize-y`} placeholder="Address (paste it as written)" value={p.address} onChange={(e) => setDraft(writeParty(draft, slot, { ...p, address: e.target.value }))} />
                           </div>
                         ) : (
@@ -1924,7 +1926,7 @@ export default function AgreementsPanel({ ctx, canManage, canSign = false, defau
                               <div className="grid grid-cols-1 gap-y-1 bg-slate-50 rounded-lg p-2.5 text-[11px] text-slate-600">
                                 <p><span className="text-slate-400">Contact</span> {p.contactName || "—"}</p>
                                 <p><span className="text-slate-400">Email</span> {p.email || "—"}</p>
-                                <p><span className="text-slate-400">Phone</span> {p.phone || "—"}</p>
+                                <p><span className="text-slate-400">Phone</span> {formatPhone(p.phone) || "—"}</p>
                                 <p><span className="text-slate-400">Address</span> {p.address || "—"}</p>
                               </div>
                             )}

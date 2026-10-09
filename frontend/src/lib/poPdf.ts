@@ -1,4 +1,5 @@
 import { PDFDocument, PDFImage, type PDFPage } from "pdf-lib";
+import { formatPhone } from "./phone";
 import { attachmentUrl, type ApiProcurementPO, type ApiVendor } from "./api";
 import { drawProjectInfo, type ProjectPdfInfo } from "./pdfProjectHeader";
 import { drawWrapped, fitOneLine, wrappedHeight } from "./pdfText";
@@ -109,7 +110,7 @@ async function drawOrder(doc: PDFDocument, b: Brand, po: ApiProcurementPO, vendo
     // The GreenTech logo is in the band; the partner's sits at the top right of its own block.
     const pLogo = await embedImage(doc, partner.logoUrl);
     if (pLogo) { const s = Math.min(90 / pLogo.width, 26 / pLogo.height, 1); drawFitted(f.page, pLogo, rx + colW - pLogo.width * s, y + 8, 90, 26); }
-    rightEnd = partyBlock(f.page, b, rx, y, colW - 96, "Partner", [partner.name, partner.address, partner.email, partner.phone]);
+    rightEnd = partyBlock(f.page, b, rx, y, colW - 96, "Partner", [partner.name, partner.address, partner.email, formatPhone(partner.phone)]);
   }
   y = Math.min(leftEnd, rightEnd) - 10;
   const vEnd = partyBlock(f.page, b, X, y, colW, "Vendor", [po.vendorName || vendor?.name || "(vendor)", [vendor?.city, vendor?.country].filter(Boolean).join(", "), vendor?.contactName ? `Attn: ${vendor.contactName}` : "", vendor?.email || ""]);
@@ -179,7 +180,7 @@ async function drawSignatureStamp(doc: PDFDocument, b: Brand, page: PDFPage, po:
     if (stamp) drawFitted(page, stamp, Math.min(sig ? sigEnd - 22 : x, x + colW - 52), sigTop + 10, 48, 48);
     const textW = colW - 70;
     page.drawText(fitOneLine(b.bold, party.name || "-", 10, textW), { x, y, size: 10, font: b.bold, color: C.slate }); y -= 12;
-    for (const [v, muted] of [[party.title, true], [party.email, false], [party.phone, false], [party.address, true]] as Array<[string | undefined, boolean]>) {
+    for (const [v, muted] of [[party.title, true], [party.email, false], [formatPhone(party.phone), false], [party.address, true]] as Array<[string | undefined, boolean]>) {
       if (!v) continue;
       page.drawText(fitOneLine(b.regular, v, 8.3, textW), { x, y, size: 8.3, font: b.regular, color: muted ? C.s500 : C.s700 }); y -= 11;
     }

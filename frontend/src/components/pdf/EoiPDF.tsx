@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import { formatPhone } from "../../lib/phone";
 import { BRAND, GUTTER, LETTERHEAD_PAGE, registerBrandFonts, LetterheadHeader, LetterheadFooter, abs, COMPANY } from "./brand";
 import { withFileToken } from "../../lib/api";
 import { eoiText, type EoiResolved } from "../../lib/eoi";
@@ -47,7 +48,7 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
   const t = eoiText(r);
   const details = ([
     ["Firm Name", r.firmName], ["UEI (formerly DUNS)", r.firmUei], ["Address", r.firmAddress],
-    ["Point of Contact", r.pocName], ["Telephone", r.pocPhone], ["Email", r.pocEmail],
+    ["Point of Contact", r.pocName], ["Telephone", formatPhone(r.pocPhone)], ["Email", r.pocEmail],
   ] as Array<[string, string]>).filter(([, v]) => !!v?.trim());
   return (
     <Document title={`Expression of Interest - ${r.projectTitle || projectName}`} author={r.firmName}>
@@ -102,7 +103,7 @@ export default function EoiPDF({ r, projectName }: { r: EoiResolved; projectName
           {!!r.signatory?.title && <Text style={s.sigLine}>{r.signatory.title}</Text>}
           <Text style={s.sigLine}>{r.firmName}</Text>
           {/* The signer's contact details one under another: phone, email, website (then the address). */}
-          {!!r.signatory && [r.signatory.phone, r.signatory.email, r.signatory.website || COMPANY.website].filter(Boolean).map((line) => <Text key={line} style={s.sigLine}>{line}</Text>)}
+          {!!r.signatory && [formatPhone(r.signatory.phone), r.signatory.email, r.signatory.website || COMPANY.website].filter(Boolean).map((line) => <Text key={line} style={s.sigLine}>{line}</Text>)}
           {!!r.signatory?.address && <Text style={s.sigLine}>{r.signatory.address}</Text>}
         </View>
         <LetterheadFooter note={`Expression of Interest · ${r.solicitationNo || projectName}`} />

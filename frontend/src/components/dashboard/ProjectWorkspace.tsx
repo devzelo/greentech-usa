@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
+import { formatPhone } from "../../lib/phone";
 import { setCurrentProject } from "../../lib/currentProject";
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -6404,7 +6405,7 @@ const PROP_DOC_STATUS: Record<string, { label: string; cls: string }> = {
                                 ["Vendor name", v.name],
                                 ["Contact person", v.contactName],
                                 ["Email", v.email],
-                                ["Phone", v.phone],
+                                ["Phone", formatPhone(v.phone)],
                                 ["City", v.city],
                                 ["Country", v.country],
                               ].map(([label, val]) => (

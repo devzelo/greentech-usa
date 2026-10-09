@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import PhoneInput from "./PhoneInput";
 import { Camera, Mail, User, Eye, EyeOff, Save, Phone, IdCard, Loader2, CheckCircle2, AlertCircle, Archive, Calendar, Send, Briefcase, MapPin, Receipt, KeyRound, FileText } from "lucide-react";
 import { motion } from "motion/react";
 import { fetchMe, updateMe, changePassword as apiChangePassword, uploadAvatar, withFileToken, fetchBackupPreview, sendBackupNow, setAuthUser, getAuthUser, fetchMyExpenses, ApiUser, BackupPreview, MyExpense } from "../../lib/api";
@@ -327,7 +328,7 @@ export default function Profile() {
                 <div className="space-y-2">
                   <label className={fieldLabel}><Phone size={12} /> Phone</label>
                   {isEditing ? (
-                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (000) 000-0000" className={`${fieldInput} font-medium`} />
+                    <PhoneInput value={phone} onChange={setPhone} placeholder="+1 (000) 000-0000" className={`${fieldInput} font-medium`} />
                   ) : (
                     <p className="text-sm font-medium text-slate-600 px-1">{me.phone || "-"}</p>
                   )}

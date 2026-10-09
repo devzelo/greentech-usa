@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PhoneInput from "./PhoneInput";
 import PdfFrame from "./PdfFrame";
 import DOMPurify from "dompurify";
 import { Check, Eye, Loader2, Pencil, Plus, Undo2, X } from "lucide-react";
@@ -241,7 +242,7 @@ export default function ProposalLetterBuilder({
                     <div className="grid flex-1 grid-cols-2 gap-1.5 md:grid-cols-4">
                       <input value={x.name} onChange={(e) => updateSig(x.id, { name: e.target.value })} placeholder="Name" aria-label="Signatory name" className={inp} />
                       <input value={x.title} onChange={(e) => updateSig(x.id, { title: e.target.value })} placeholder="Title" aria-label="Signatory title" className={inp} />
-                      <input value={x.phone || ""} onChange={(e) => updateSig(x.id, { phone: e.target.value })} placeholder="Mobile" aria-label="Signatory mobile" className={inp} />
+                      <PhoneInput value={x.phone || ""} onChange={(v) => updateSig(x.id, { phone: v })} placeholder="Mobile" aria-label="Signatory mobile" className={inp} />
                       <input value={x.email || ""} onChange={(e) => updateSig(x.id, { email: e.target.value })} placeholder="Email" aria-label="Signatory email" className={inp} />
                     </div>
                     <button onClick={() => removeSig(x.id)} aria-label={`Remove ${x.name}`} className="p-1 rounded-lg text-slate-300 hover:text-red-500"><X size={13} /></button>

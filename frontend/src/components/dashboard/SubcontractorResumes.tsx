@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import PhoneInput from "./PhoneInput";
 import { FileText, Plus, Trash2, Save, Loader2, Download, X, Pencil, Library, Search, ArrowUp, ArrowDown, Eye } from "lucide-react";
 import { PDFDownloadLink } from "@react-pdf/renderer";
 import PdfFrame from "./PdfFrame";
@@ -204,7 +205,7 @@ export default function SubcontractorResumes({ subcontractorName: nameProp, canM
               <div className="space-y-1"><label className={lbl}>Citizenship / Residency</label><input className={inp} value={draft.citizenship} onChange={(e) => set("citizenship", e.target.value)} placeholder="e.g. U.S. Citizen" /></div>
               <div className="space-y-1"><label className={lbl}>Location</label><input className={inp} value={draft.contact.location} onChange={(e) => set("contact", { ...draft.contact, location: e.target.value })} placeholder="City, Country" /></div>
               <div className="space-y-1"><label className={lbl}>Email</label><input className={inp} value={draft.contact.email} onChange={(e) => set("contact", { ...draft.contact, email: e.target.value })} placeholder="email@example.com" /></div>
-              <div className="space-y-1"><label className={lbl}>Phone</label><input className={inp} value={draft.contact.phone} onChange={(e) => set("contact", { ...draft.contact, phone: e.target.value })} placeholder="+1 (000) 000-0000" /></div>
+              <div className="space-y-1"><label className={lbl}>Phone</label><PhoneInput className={inp} value={draft.contact.phone} onChange={(v) => set("contact", { ...draft.contact, phone: v })} placeholder="+1 (000) 000-0000" /></div>
               <div className="space-y-1"><label className={lbl}>Assignment on this project</label><input className={inp} value={draft.assignmentOnProject || ""} onChange={(e) => set("assignmentOnProject", e.target.value)} placeholder="e.g. Project Manager" /></div>
               <div className="space-y-1"><label className={lbl}>Years of experience</label><input className={inp} value={draft.yearsOfExperience || ""} onChange={(e) => set("yearsOfExperience", e.target.value)} placeholder="e.g. +19" /></div>
               <div className="space-y-1 md:col-span-2"><label className={lbl}>Remark</label><textarea rows={2} className={`${inp} resize-none`} value={draft.remark || ""} onChange={(e) => set("remark", e.target.value)} placeholder="e.g. SME of HVAC, WTP & WWTP…" /></div>

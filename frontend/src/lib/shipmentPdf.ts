@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import { formatPhone } from "./phone";
 import type { ApiShipment, ApiShipmentCargo } from "./api";
 import { transportPlain } from "./shipmentModes";
 import { C, GUTTER, LETTER, brandPage, drawTable, kpiCard, loadBrand, sectionHeading, stampPageNumbers, titleBlock, type Flow, type TableCol, type TableRow } from "./pdfBrand";
@@ -117,7 +118,7 @@ export async function buildShipmentPdf(o: ShipmentPdfInput): Promise<Blob> {
   const agency: TableRow[] = [
     { cells: ["Company", dash(s.agencyName)] },
     { cells: ["Contact", dash(s.agencyContact)] },
-    { cells: ["Phone", dash(s.agencyPhone)] },
+    { cells: ["Phone", dash(formatPhone(s.agencyPhone))] },
     { cells: ["Email", dash(s.agencyEmail)] },
     { cells: ["Website", dash(s.agencyWebsite)] },
     { cells: ["Country", dash(s.agencyCountry)] },

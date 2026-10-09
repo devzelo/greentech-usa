@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PhoneInput from "./PhoneInput";
 import { Building2, X, Loader2, Landmark, Upload } from "lucide-react";
 import {
   createCompany, updateCompany, uploadCompanyLogo, withFileToken,
@@ -113,7 +114,7 @@ export default function CompanyEditorModal({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div><label className={label}>Email</label><input className={inp} value={draft.email || ""} onChange={(e) => setDraft({ email: e.target.value })} /></div>
-            <div><label className={label}>Phone</label><input className={inp} value={draft.phone || ""} onChange={(e) => setDraft({ phone: e.target.value })} /></div>
+            <div><label className={label}>Phone</label><PhoneInput className={inp} value={draft.phone || ""} onChange={(v) => setDraft({ phone: v })} /></div>
             <div><label className={label}>Website</label><input className={inp} value={draft.website || ""} onChange={(e) => setDraft({ website: e.target.value })} /></div>
           </div>
           <div><label className={label}>Address</label><textarea rows={4} className={`${inp} resize-y`} placeholder="Paste the full address exactly as written" value={draft.address || ""} onChange={(e) => setDraft({ address: e.target.value })} /></div>
@@ -131,7 +132,7 @@ export default function CompanyEditorModal({
                 <input className={`${inp} py-1.5`} placeholder="Role" value={p.role} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))} />
                 <input className={`${inp} py-1.5`} placeholder="Email" value={p.email} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} />
                 <div className="flex items-center gap-1">
-                  <input className={`${inp} py-1.5`} placeholder="Phone" value={p.phone} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)))} />
+                  <PhoneInput className={`${inp} py-1.5`} placeholder="Phone" value={p.phone} onChange={(v) => setCps(cps().map((x, j) => (j === i ? { ...x, phone: v } : x)))} />
                   <button onClick={() => setCps(cps().filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { formatPhone } from "../../lib/phone";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Building2, ExternalLink, Loader2 } from "lucide-react";
 import { fetchCompany, withFileToken, companyCategories, type ApiCompany } from "../../lib/api";
@@ -107,7 +108,7 @@ export default function ClientInfoCard({ info, notes }: {
         <div className="space-y-3 lg:pl-8">
           {field("Location", location)}
           {field("Address", address ? <span className="whitespace-pre-line">{address}</span> : "")}
-          {field("Phone", phone ? link(phone, `tel:${phone.replace(/\s+/g, "")}`) : "")}
+          {field("Phone", phone ? link(formatPhone(phone), `tel:${phone.replace(/[^\d+]/g, "")}`) : "")}
         </div>
 
         {/* How to reach them, and their mark */}

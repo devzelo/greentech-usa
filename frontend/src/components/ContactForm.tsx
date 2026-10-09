@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import PhoneInput from "./dashboard/PhoneInput";
 import { useState } from "react";
 import { Upload, Send } from "lucide-react";
 
@@ -8,6 +9,7 @@ interface ContactFormProps {
 
 export default function ContactForm({ initialService = "" }: ContactFormProps) {
   const [subject, setSubject] = useState(initialService);
+  const [phone, setPhone] = useState("");
 
   const services = [
     "General Contractor",
@@ -53,8 +55,9 @@ export default function ContactForm({ initialService = "" }: ContactFormProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700 ml-1">Phone Number</label>
-                <input 
-                  type="tel" 
+                <PhoneInput
+                  value={phone}
+                  onChange={setPhone}
                   placeholder="+1 (000) 000-0000"
                   className="w-full px-6 py-4 rounded-2xl bg-white border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none"
                 />

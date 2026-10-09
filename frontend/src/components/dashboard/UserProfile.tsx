@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import {
   ArrowLeft, Pencil, KeyRound, Trash2, Mail, Phone, IdCard, Briefcase, Shield, Building2,
   FileText, Receipt, Bell, Eye, Download, Loader2, PackageCheck, MapPin,
@@ -76,7 +77,7 @@ export default function UserProfile({
         ["Employee ID", user.empId || ""],
         ["Work email", user.email || ""],
         ["Personal email", user.personalEmail || ""],
-        ["Phone", user.phone || ""],
+        ["Phone", formatPhone(user.phone)],
         ["Home address", user.homeAddress || ""],
         ["Account", user.archived ? "Deactivated" : "Active"],
       ],

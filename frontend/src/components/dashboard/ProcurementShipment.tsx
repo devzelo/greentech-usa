@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { fileName } from "../../lib/fileNames";
 import SharedMoneyInput from "./MoneyInput";
 import { Loader2, Plus, Trash2, Upload, X, FileText, Ship, Pencil, Check, MapPin, CalendarClock, Package, Container, Link2, DollarSign, Eye, ExternalLink, Building2, History, RefreshCw, AlertTriangle } from "lucide-react";
@@ -625,7 +626,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                       </div>
                       <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Point of contact</p>
                         <p className="truncate font-bold text-slate-800">{active.agencyContact || "—"}</p>
-                        {(active.agencyPhone || active.agencyEmail) && <p className="truncate text-[10px] text-slate-500">{[active.agencyPhone, active.agencyEmail].filter(Boolean).join(" · ")}</p>}
+                        {(active.agencyPhone || active.agencyEmail) && <p className="truncate text-[10px] text-slate-500">{[formatPhone(active.agencyPhone), active.agencyEmail].filter(Boolean).join(" · ")}</p>}
                       </div>
                       <div><p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Country</p><p className="truncate font-bold text-slate-800">{active.agencyCountry || "—"}</p></div>
                     </div>
@@ -973,7 +974,7 @@ export default function ProcurementShipment({ projectId, canEdit, projectInfo }:
                   </label>
                 </div>
                 <div className="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-                  {([["Phone", draft.agencyPhone], ["Email", draft.agencyEmail], ["Website", draft.agencyWebsite], ["Country", draft.agencyCountry]] as const).map(([l, v]) => (
+                  {([["Phone", formatPhone(draft.agencyPhone)], ["Email", draft.agencyEmail], ["Website", draft.agencyWebsite], ["Country", draft.agencyCountry]] as const).map(([l, v]) => (
                     <div key={l} className="min-w-0 rounded-lg bg-white/70 px-2.5 py-1.5">
                       <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{l}</p>
                       <p className="truncate font-semibold text-slate-700" title={v}>{v || "-"}</p>

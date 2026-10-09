@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from "@react-pdf/renderer";
+import { formatPhone } from "../../lib/phone";
 import type { ReactNode } from "react";
 import type { ApiAgreement } from "../../lib/api";
 import { agreementHeading, shownDates } from "../../lib/agreementPdf";
@@ -154,7 +155,7 @@ function Parties({ ag, lead }: { ag: ApiAgreement; lead?: string; key?: string }
           <View key={i} style={[s.partyCard, { marginRight: i % 2 === 0 ? "3%" : 0 }]} wrap={false}>
             <Text style={s.label}>PARTY {i + 1}</Text>
             <Text style={s.partyName}>{p.name}</Text>
-            {[p.contactName ? `Attn: ${p.contactName}` : "", p.address, p.email, p.phone].filter(Boolean).map((l, j) => (
+            {[p.contactName ? `Attn: ${p.contactName}` : "", p.address, p.email, formatPhone(p.phone)].filter(Boolean).map((l, j) => (
               <Text key={j} style={s.partyLine}>{l}</Text>
             ))}
           </View>
@@ -223,7 +224,7 @@ function Signatures({ ag }: { ag: ApiAgreement; key?: string }) {
       <View style={s.sigLine} />
       <Text style={s.sigName}>{b.sig.signerName || b.party?.contactName || "Name: ____________________"}</Text>
       {!!b.sig.signerTitle && <Text style={s.sigSmall}>{b.sig.signerTitle}</Text>}
-      {[b.party?.address, b.party?.email, b.party?.phone].filter(Boolean).map((l, j) => <Text key={j} style={s.sigSmall}>{l}</Text>)}
+      {[b.party?.address, b.party?.email, formatPhone(b.party?.phone)].filter(Boolean).map((l, j) => <Text key={j} style={s.sigSmall}>{l}</Text>)}
       <Text style={[s.sigSmall, { marginTop: 3 }]}>{b.sig.signedAt ? `Signed: ${b.sig.signedAt}` : "Date: ____________"}</Text>
     </View>
   );

@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import PhoneInput from "./PhoneInput";
+import { formatPhone } from "../../lib/phone";
 import { fileName } from "../../lib/fileNames";
 import { pdf } from "@react-pdf/renderer";
 import PdfFrame from "./PdfFrame";
@@ -116,7 +118,9 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
   const field = (k: TextKey, label: string, opts: { wide?: boolean; list?: string } = {}) => (
     <div className={`space-y-0.5 ${opts.wide ? "col-span-2" : ""}`}>
       <label htmlFor={`eoi-${k}`} className={lbl}>{label}</label>
-      <input id={`eoi-${k}`} value={value[k] || ""} onChange={(e) => set(k, e.target.value)} disabled={!canEdit} placeholder={String(d[k] || "")} list={opts.list} className={inp} />
+      {k === "pocPhone"
+        ? <PhoneInput id={`eoi-${k}`} value={value[k] || ""} onChange={(v) => set(k, v)} disabled={!canEdit} placeholder={formatPhone(String(d[k] || "")) || undefined} className={inp} />
+        : <input id={`eoi-${k}`} value={value[k] || ""} onChange={(e) => set(k, e.target.value)} disabled={!canEdit} placeholder={String(d[k] || "")} list={opts.list} className={inp} />}
     </div>
   );
 
@@ -173,7 +177,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
           </dl>
           <dl className="space-y-1.5">
             {row("Submitted by", `${r.firmName}${r.firmUei ? ` · UEI ${r.firmUei}` : ""}`)}
-            {row("Contact", [r.pocName, r.pocPhone, r.pocEmail].filter(Boolean).join(" · "))}
+            {row("Contact", [r.pocName, formatPhone(r.pocPhone), r.pocEmail].filter(Boolean).join(" · "))}
             {row("Signed by", r.signatory ? (
               <span className="flex items-center gap-2">
                 {r.signatory.signatureUrl && <img src={withFileToken(r.signatory.signatureUrl)} alt="" className="h-7 max-w-[5rem] object-contain" />}
@@ -311,7 +315,7 @@ export default function EoiBuilder({ project, cover, value, onChange, onReset, c
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input value={value.signatory.name} onChange={(e) => setSig({ name: e.target.value })} disabled={!canEdit} placeholder="Name" aria-label="Signer name" className={inp} />
                   <input value={value.signatory.title} onChange={(e) => setSig({ title: e.target.value })} disabled={!canEdit} placeholder="Title, e.g. Managing Director" aria-label="Signer title" className={inp} />
-                  <input value={value.signatory.phone} onChange={(e) => setSig({ phone: e.target.value })} disabled={!canEdit} placeholder="Phone" aria-label="Signer phone" className={inp} />
+                  <PhoneInput value={value.signatory.phone} onChange={(v) => setSig({ phone: v })} disabled={!canEdit} placeholder="Phone" aria-label="Signer phone" className={inp} />
                   <input value={value.signatory.email} onChange={(e) => setSig({ email: e.target.value })} disabled={!canEdit} placeholder="Email" aria-label="Signer email" className={inp} />
                   <input value={value.signatory.website || ""} onChange={(e) => setSig({ website: e.target.value })} disabled={!canEdit} placeholder={COMPANY.website} aria-label="Website" className={inp} />
                   <input value={value.signatory.address || ""} onChange={(e) => setSig({ address: e.target.value })} disabled={!canEdit} placeholder="Address (optional)" aria-label="Address" className={inp} />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { AlertTriangle, ExternalLink, Loader2 } from "lucide-react";
 import { fetchCompanies, fetchCompany, type ApiCompany, type CompanyCategory } from "../../lib/api";
 
@@ -67,7 +68,7 @@ export default function DirectoryDetails({ companyId, name, value, onChange, fie
       : <p className={`text-[11px] text-slate-400 ${className}`}>Pick the company from the Directory: its contact details are read from there.</p>;
   }
   const people = company?.contactPersons || [];
-  const shown = (f: DirectoryField) => (f === "contact" ? value.contactName : value[f]) || "";
+  const shown = (f: DirectoryField) => (f === "contact" ? value.contactName : f === "phone" ? formatPhone(value.phone) : value[f]) || "";
   return (
     <div className={className}>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { Loader2, Trash2, ChevronRight, ChevronDown, Download, Upload, X, FileText, Plus, Eye, Search, Settings2, FileDown, Stamp, PenLine, Check, FileCheck2, Receipt, Archive, RotateCcw } from "lucide-react";
 import {
   fetchProcurementPOs, createProcurementPO, createManualPO, updateProcurementPO, deleteProcurementPO, setProcurementPOArchived,
@@ -606,7 +607,7 @@ export default function ProcurementPO({ projectId, canEdit, projectInfo, onGoToB
                     <p className="text-[10px] text-slate-400">{partnerCompanyId ? "The partner's Directory record has no people yet: add them in the Directory to choose the signer." : "Link the JV partner to the Directory (Project Identity) to choose its signer."}{po.partnerSignerName ? ` Now: ${po.partnerSignerName}.` : ""}</p>
                   );
                 })()}
-                {(po.partnerSignerEmail || po.partnerSignerPhone) && <p className="text-[11px] text-slate-500">{[po.partnerSignerEmail, po.partnerSignerPhone].filter(Boolean).join(" · ")}</p>}
+                {(po.partnerSignerEmail || po.partnerSignerPhone) && <p className="text-[11px] text-slate-500">{[po.partnerSignerEmail, formatPhone(po.partnerSignerPhone)].filter(Boolean).join(" · ")}</p>}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-bold text-slate-400">Signature:</span>
                   {po.partnerSignatureUrl ? <img src={imgSrc(po.partnerSignatureUrl)} alt="partner signature" className="h-8 object-contain" /> : <span className="text-[11px] text-slate-400 italic">none</span>}

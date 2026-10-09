@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { Building2, ArrowLeft, Mail, Phone, Globe, MapPin, Pencil, Archive, RotateCcw, Trash2, Link2, Receipt, FileText, Truck, Award, BookOpen, Download, Eye, Upload, Loader2, Check, X, Landmark, Briefcase, ClipboardList, Quote as QuoteIcon, PackageCheck, Boxes, FilePen, Banknote } from "lucide-react";
 import {
   fetchCompanyLinks, fetchCompanyProfileFiles, uploadCompanyProfileFile, deleteCompanyProfileFile,
@@ -137,10 +138,10 @@ export default function CompanyProfile({
       fields: [
         ["Category", company.category || ""],
         ["Email", company.email || ""],
-        ["Phone", company.phone || ""],
+        ["Phone", formatPhone(company.phone)],
         ["Website", company.website || ""],
         ["Address", company.address || ""],
-        ["Contacts", (company.contactPersons || []).map((c) => [c.name, c.role, c.email, c.phone].filter(Boolean).join(" / ")).join(" | ")],
+        ["Contacts", (company.contactPersons || []).map((c) => [c.name, c.role, c.email, formatPhone(c.phone)].filter(Boolean).join(" / ")).join(" | ")],
         ["Tax ID", company.tax?.taxId || ""],
         ["Registration no.", company.tax?.registrationNo || ""],
         ["Bank", [company.banking?.bankName, company.banking?.accountName, company.banking?.iban].filter(Boolean).join(" · ")],

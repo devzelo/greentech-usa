@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PhoneInput from "./PhoneInput";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { UserPlus, Pencil, Trash2, KeyRound, X, Shield, Mail, IdCard, Phone, Loader2, Search, Handshake, Wand2, Upload, FileText, Download, Eye, Archive, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Users, Briefcase, MapPin } from "lucide-react";
@@ -362,7 +363,7 @@ export default function UserManagement() {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5"><Phone size={13} /> Phone</label>
-                    <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" className={field} />
+                    <PhoneInput value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="Optional" className={field} />
                   </div>
                 </div>
                 <div>

@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, Image, Svg, Path, Circle, Rect } from "@react-pdf/renderer";
+import { formatPhone } from "../../lib/phone";
 import QRCode from "qrcode";
 import { createElement } from "react";
 import type { ReactNode, ReactElement } from "react";
@@ -459,7 +460,7 @@ function ClosingPage({ backCover }: { backCover?: ProposalBackCover }) {
   const lead = words.length > 1 ? `${words.slice(0, -1).join(" ")} ` : "";
   const accent = words[words.length - 1];
   const contact: Array<["web" | "email" | "phone" | "address", string, string]> = [
-    ["web", "WEB", c.website], ["email", "EMAIL", c.email], ["phone", "PHONE", c.phone], ["address", "ADDRESS", c.address],
+    ["web", "WEB", c.website], ["email", "EMAIL", c.email], ["phone", "PHONE", formatPhone(c.phone)], ["address", "ADDRESS", c.address],
   ];
   const inner = PAGE.w - GUTTER * 2;
   return (
@@ -719,7 +720,7 @@ function ProjectReferencesTable({ items }: { items: ProposalSimilarProject[] }) 
           <View style={[styles.td, styles.ppTd, { width: w(5) }]}>
             <Text style={{ fontWeight: 700 }}>{e.poc || "-"}</Text>
             {!!e.pocEmail && <Text>{e.pocEmail}</Text>}
-            {!!e.pocPhone && <Text>{e.pocPhone}</Text>}
+            {!!e.pocPhone && <Text>{formatPhone(e.pocPhone)}</Text>}
           </View>
           <Text style={[styles.td, styles.ppTd, { width: w(6) }]}>{e.location || "-"}</Text>
         </View>
@@ -745,7 +746,7 @@ function PpHeading({ children }: { children: string }) {
 function ProjectDataSheet({ e, label }: { e: ProposalSimilarProject; label: string }) {
   const photo = e.showPhoto !== false && e.photo ? abs(e.photo) : "";
   const logo = e.clientLogo || "";
-  const poc = [e.poc, e.pocEmail, e.pocPhone].map((x) => x?.trim()).filter(Boolean).join("\n");
+  const poc = [e.poc, e.pocEmail, formatPhone(e.pocPhone)].map((x) => x?.trim()).filter(Boolean).join("\n");
   const rows = ([
     ["Client / Agency", e.client], ["Location", e.location], ["Contract No.", e.contractNo], ["Contract Type", e.contractType],
     ["Work Type", e.workType], ["Period of Performance", periodOf(e)], ["Status", e.status],

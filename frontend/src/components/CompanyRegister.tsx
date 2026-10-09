@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PhoneInput from "./dashboard/PhoneInput";
 import { useParams } from "react-router-dom";
 import { Loader2, CheckCircle2, Building2, Plus, X } from "lucide-react";
 import { fetchPublicCompany, submitPublicCompany, type PublicCompany } from "../lib/api";
@@ -71,7 +72,7 @@ export default function CompanyRegister() {
               <div><label className={label}>Company name</label><input className={inp} value={data.name} onChange={(e) => set({ name: e.target.value })} /></div>
               <div><label className={label}>Category</label><input className={`${inp} opacity-70`} value={data.category} disabled /></div>
               <div><label className={label}>Email</label><input className={inp} value={data.email} onChange={(e) => set({ email: e.target.value })} /></div>
-              <div><label className={label}>Phone</label><input className={inp} value={data.phone} onChange={(e) => set({ phone: e.target.value })} /></div>
+              <div><label className={label}>Phone</label><PhoneInput className={inp} value={data.phone} onChange={(v) => set({ phone: v })} /></div>
               <div className="sm:col-span-2"><label className={label}>Website</label><input className={inp} value={data.website} onChange={(e) => set({ website: e.target.value })} /></div>
               <div className="sm:col-span-2"><label className={label}>Address</label><textarea rows={4} className={`${inp} resize-y`} placeholder="Paste the full address exactly as written" value={data.address} onChange={(e) => set({ address: e.target.value })} /></div>
             </div>
@@ -83,7 +84,7 @@ export default function CompanyRegister() {
                   <input className={`${inp} py-1.5`} placeholder="Name" value={p.name} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
                   <input className={`${inp} py-1.5`} placeholder="Role" value={p.role} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))} />
                   <input className={`${inp} py-1.5`} placeholder="Email" value={p.email} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} />
-                  <div className="flex items-center gap-1"><input className={`${inp} py-1.5`} placeholder="Phone" value={p.phone} onChange={(e) => setCps(cps().map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)))} /><button onClick={() => setCps(cps().filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button></div>
+                  <div className="flex items-center gap-1"><PhoneInput className={`${inp} py-1.5`} placeholder="Phone" value={p.phone} onChange={(v) => setCps(cps().map((x, j) => (j === i ? { ...x, phone: v } : x)))} /><button onClick={() => setCps(cps().filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button></div>
                 </div>
               ))}
             </div>

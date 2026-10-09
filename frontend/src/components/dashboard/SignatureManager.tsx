@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
+import PhoneInput from "./PhoneInput";
 import { motion } from "motion/react";
 import { PenLine, Upload, Trash2, Loader2, CheckCircle2, Star, Pencil, Check, X, Signature } from "lucide-react";
 import { fetchMySignatures, uploadMySignature, updateMySignature, deleteMySignature, attachmentUrl, type ApiSignature, type SignatureBlock } from "../../lib/api";
@@ -146,7 +147,9 @@ export default function SignatureManager() {
               {block?.id === s.id ? (
                 <div className="mt-2 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
                   {([["name", "Name"], ["title", "Title, e.g. Managing Director"], ["phone", "Phone"], ["email", "Email"], ["website", `Website (empty: ${COMPANY.website})`], ["address", `Address (empty: ${COMPANY.mailingAddress})`]] as const).map(([k, ph]) => (
-                    <input key={k} value={block[k]} onChange={(e) => setBlock({ ...block, [k]: e.target.value })} placeholder={ph} aria-label={ph} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-primary" />
+                    k === "phone"
+                      ? <PhoneInput key={k} value={block[k]} onChange={(v) => setBlock({ ...block, [k]: v })} placeholder={ph} aria-label={ph} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-primary" />
+                      : <input key={k} value={block[k]} onChange={(e) => setBlock({ ...block, [k]: e.target.value })} placeholder={ph} aria-label={ph} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-primary" />
                   ))}
                   <div className="flex justify-end gap-1 pt-0.5">
                     <button onClick={() => setBlock(null)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100">Cancel</button>

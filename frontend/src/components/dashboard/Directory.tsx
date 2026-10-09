@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { useSearchParams } from "react-router-dom";
 import { Building2, Plus, Search, Pencil, Trash2, X, Archive, RotateCcw, Mail, Phone, Globe, MapPin, Loader2, Link2, Check, Eye, LayoutGrid, List as ListIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import {
@@ -228,7 +229,7 @@ export default function Directory() {
                     </td>
                     <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{companyCategories(c).map((cat) => <span key={cat} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${CAT_CLS[cat]}`}>{catLabel(cat)}</span>)}</div></td>
                     <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.email || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.phone || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatPhone(c.phone) || "—"}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 truncate max-w-[16rem]">{c.address || "—"}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-0.5">

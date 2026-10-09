@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PhoneInput from "./PhoneInput";
 import { Building2, Loader2, Upload, X, Save, PenLine, Stamp } from "lucide-react";
 import {
   fetchProjects, updatePartnerProfile, uploadPartnerAsset, attachmentUrl, getAuthUser,
@@ -131,7 +132,7 @@ export default function PartnerProfileSection() {
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email
               <input className={`${inp} mt-1`} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone
-              <input className={`${inp} mt-1`} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
+              <PhoneInput className={`${inp} mt-1`} value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} /></label>
           </div>
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Address
             <textarea rows={4} className={`${inp} mt-1 resize-y`} placeholder="Paste the full address exactly as written" value={form.partnerAddress} onChange={(e) => setForm({ ...form, partnerAddress: e.target.value })} /></label>

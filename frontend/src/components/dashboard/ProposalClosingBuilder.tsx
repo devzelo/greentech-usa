@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PhoneInput from "./PhoneInput";
 import { Check, Eye, Globe, Loader2, Mail, MapPin, Pencil, Phone, RotateCcw, Undo2, X } from "lucide-react";
 import PdfFrame from "./PdfFrame";
 import type { ProposalBackCover } from "../../lib/api";
@@ -132,7 +133,9 @@ export default function ProposalClosingBuilder({ value, onChange, canEdit, onSav
             {CONTACT.map(({ key, label }) => (
               <div key={key} className="space-y-0.5">
                 <label htmlFor={`closing-${key}`} className={lbl}>{label}</label>
-                <input id={`closing-${key}`} value={value[key] || ""} onChange={(e) => set(key, e.target.value)} placeholder={CLOSING_DEFAULTS[key]} className={inp} />
+                {key === "phone"
+                  ? <PhoneInput id={`closing-${key}`} value={value[key] || ""} onChange={(v) => set(key, v)} placeholder={CLOSING_DEFAULTS[key]} className={inp} />
+                  : <input id={`closing-${key}`} value={value[key] || ""} onChange={(e) => set(key, e.target.value)} placeholder={CLOSING_DEFAULTS[key]} className={inp} />}
               </div>
             ))}
             <div className="space-y-0.5">

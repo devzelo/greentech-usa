@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import PhoneInput from "./PhoneInput";
+import { formatPhone } from "../../lib/phone";
 import { motion } from "motion/react";
 import { FileText, Plus, Trash2, Save, Loader2, Download, FolderPlus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Eye } from "lucide-react";
 import { PDFDownloadLink, pdf } from "@react-pdf/renderer";
@@ -165,7 +167,7 @@ export default function ResumeBuilder({ me }: { me: ApiUser }) {
             </div>
             <div className="space-y-2">
               <label className={label}>Contact Phone</label>
-              <input className={inp} value={resume.contact.phone} onChange={(e) => set("contact", { ...resume.contact, phone: e.target.value })} placeholder={me.phone || "+1 (000) 000-0000"} />
+              <PhoneInput className={inp} value={resume.contact.phone} onChange={(v) => set("contact", { ...resume.contact, phone: v })} placeholder={formatPhone(me.phone) || "+1 (000) 000-0000"} />
             </div>
             <div className="space-y-2">
               <label className={label}>Location</label>

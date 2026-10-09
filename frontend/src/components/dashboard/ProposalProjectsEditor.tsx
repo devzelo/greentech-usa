@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatPhone } from "../../lib/phone";
 import { Plus, Trash2, X, Check, ChevronUp, ChevronDown, FolderSearch, Link2, Search, Loader2, ImageOff, ExternalLink } from "lucide-react";
 import { withFileToken, CONTRACT_TYPES, type ApiProject, type ProposalSimilarProject } from "../../lib/api";
 import { entryFromProject, blankEntry, projectTags, projectPhotos, periodOf, linkedProjectPool } from "../../lib/pastPerformance";
@@ -19,7 +20,7 @@ function TypedClient({ e, canEdit, set }: { e: ProposalSimilarProject; canEdit: 
       <div className="space-y-0.5 md:col-span-2"><span className={lbl}>Client point of contact</span>
         <DirectoryPersonSelect company={co} value={e.poc || ""} disabled={!canEdit} placeholder="Choose the client's contact"
           onPick={(p) => set({ poc: p?.name || "", pocEmail: p?.email || co?.email || "", pocPhone: p?.phone || co?.phone || "" })} />
-        {(e.pocEmail || e.pocPhone) && <p className="text-[10px] text-slate-400">{[e.pocEmail, e.pocPhone].filter(Boolean).join(" · ")}</p>}
+        {(e.pocEmail || e.pocPhone) && <p className="text-[10px] text-slate-400">{[e.pocEmail, formatPhone(e.pocPhone)].filter(Boolean).join(" · ")}</p>}
       </div>
     </>
   );
@@ -146,7 +147,7 @@ export default function ProposalProjectsEditor({ title, items, onChange, canEdit
                     ["Client / agency", v.client], ["Location", v.location], ["Contract no.", v.contractNo],
                     ["Period of performance", periodOf(v)], ["Status", v.status], ["Contract type", v.contractType],
                     ["Work type", v.workType], ["CPARS / evaluation", v.cpars === "Yes" ? "Yes, on file" : v.cpars],
-                    ["Client point of contact", [v.poc, v.pocEmail, v.pocPhone].filter(Boolean).join(" · ")],
+                    ["Client point of contact", [v.poc, v.pocEmail, formatPhone(v.pocPhone)].filter(Boolean).join(" · ")],
                   ] as Array<[string, string | undefined]>).map(([l, val]) => (
                     <div key={l} className="min-w-0">
                       <p className={lbl}>{l}</p>
